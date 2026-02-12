@@ -194,6 +194,34 @@ func representableConst(x constant.Value, check *Checker, typ *Basic, rounded *c
 			panic("unreachable")
 		}
 
+	case isDecimal(typ):
+		x := constant.ToFloat(x)
+		if x.Kind() != constant.Float {
+			return false
+		}
+		switch typ.kind {
+		case Decimal64:
+			if rounded == nil {
+				return fitsFloat64(x)
+			}
+			r := roundFloat64(x)
+			if r != nil {
+				*rounded = r
+				return true
+			}
+		case Decimal128:
+			if rounded == nil {
+				return fitsFloat64(x)
+			}
+			r := roundFloat64(x)
+			if r != nil {
+				*rounded = r
+				return true
+			}
+		default:
+			panic("unreachable")
+		}
+
 	case isString(typ):
 		return x.Kind() == constant.String
 

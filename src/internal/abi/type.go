@@ -64,6 +64,8 @@ const (
 	Uintptr
 	Float32
 	Float64
+	Decimal64
+	Decimal128
 	Complex64
 	Complex128
 	Array
@@ -163,6 +165,8 @@ var kindNames = []string{
 	Uintptr:       "uintptr",
 	Float32:       "float32",
 	Float64:       "float64",
+	Decimal64:     "decimal64",
+	Decimal128:    "decimal128",
 	Complex64:     "complex64",
 	Complex128:    "complex128",
 	Array:         "array",

@@ -169,6 +169,8 @@ func deepValueEqual(v1, v2 Value, visited map[visit]bool) bool {
 		return v1.Float() == v2.Float()
 	case Complex64, Complex128:
 		return v1.Complex() == v2.Complex()
+	case Decimal64, Decimal128:
+		return valueInterface(v1, false) == valueInterface(v2, false)
 	default:
 		// Normal equality suffices
 		return valueInterface(v1, false) == valueInterface(v2, false)

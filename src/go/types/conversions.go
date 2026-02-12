@@ -177,6 +177,14 @@ func (x *operand) convertibleTo(check *Checker, T Type, cause *string) bool {
 		return true
 	}
 
+	// V and T are both decimal types, or one is integer/float and the other is decimal
+	if isDecimal(Vu) && isDecimal(Tu) {
+		return true
+	}
+	if (isIntegerOrFloat(Vu) && isDecimal(Tu)) || (isDecimal(Vu) && isIntegerOrFloat(Tu)) {
+		return true
+	}
+
 	// "V is an integer or a slice of bytes or runes and T is a string type"
 	if (isInteger(Vu) || isBytesOrRunes(Vu)) && isString(Tu) {
 		return true

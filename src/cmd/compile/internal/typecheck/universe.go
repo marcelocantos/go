@@ -125,6 +125,15 @@ func InitUniverse() {
 			ir.OKForConst[et] = true
 			types.IsSimple[et] = true
 		}
+
+		if types.IsDecimal[et] {
+			okforeq[et] = true
+			types.IsOrdered[et] = true
+			okforadd[et] = true
+			okforarith[et] = true
+			ir.OKForConst[et] = true
+			types.IsSimple[et] = true
+		}
 	}
 
 	types.IsSimple[types.TBOOL] = true

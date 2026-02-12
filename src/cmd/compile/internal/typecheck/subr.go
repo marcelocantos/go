@@ -421,6 +421,11 @@ func convertOp(srcConstant bool, src, dst *types.Type) (ir.Op, string) {
 		return ir.OCONV, ""
 	}
 
+	// 4b. src or dst is a decimal type and the other is integer, float, or decimal.
+	if (src.IsDecimal() || dst.IsDecimal()) && (src.IsInteger() || src.IsFloat() || src.IsDecimal()) && (dst.IsInteger() || dst.IsFloat() || dst.IsDecimal()) {
+		return ir.OCONV, ""
+	}
+
 	// 5. src and dst are both complex types.
 	if src.IsComplex() && dst.IsComplex() {
 		if types.SimType[src.Kind()] == types.SimType[dst.Kind()] {
@@ -432,7 +437,7 @@ func convertOp(srcConstant bool, src, dst *types.Type) (ir.Op, string) {
 	// Special case for constant conversions: any numeric
 	// conversion is potentially okay. We'll validate further
 	// within evconst. See #38117.
-	if srcConstant && (src.IsInteger() || src.IsFloat() || src.IsComplex()) && (dst.IsInteger() || dst.IsFloat() || dst.IsComplex()) {
+	if srcConstant && (src.IsInteger() || src.IsFloat() || src.IsComplex() || src.IsDecimal()) && (dst.IsInteger() || dst.IsFloat() || dst.IsComplex() || dst.IsDecimal()) {
 		return ir.OCONV, ""
 	}
 

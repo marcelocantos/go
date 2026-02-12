@@ -7,12 +7,68 @@ package fmt
 import (
 	"internal/fmtsort"
 	"io"
+	"math"
 	"os"
 	"reflect"
 	"strconv"
 	"sync"
 	"unicode/utf8"
+	"unsafe"
 )
+
+// decimal64ToFloat64 converts a decimal64 (BID encoding) to float64.
+// This is a self-contained conversion so fmt doesn't need to linkname
+// into the runtime.
+func decimal64ToFloat64(d decimal64) float64 {
+	b := *(*uint64)(unsafe.Pointer(&d))
+
+	// NaN
+	if b&0x7c00000000000000 == 0x7c00000000000000 {
+		return math.NaN()
+	}
+	// Infinity
+	if b&0x7800000000000000 == 0x7800000000000000 {
+		if b&0x8000000000000000 != 0 {
+			return math.Inf(-1)
+		}
+		return math.Inf(1)
+	}
+
+	sign := b >> 63
+	var exp int
+	var coeff uint64
+	if b&0x6000000000000000 == 0x6000000000000000 {
+		// Large coefficient: top 2 bits of significand are implicit 100
+		exp = int((b >> 51) & 0x3FF)
+		coeff = (b & 0x0007FFFFFFFFFFFF) | 0x0020000000000000
+	} else {
+		exp = int((b >> 53) & 0x3FF)
+		coeff = b & 0x001FFFFFFFFFFFFF
+	}
+	exp -= 398 // bias
+
+	if coeff == 0 {
+		if sign != 0 {
+			return math.Copysign(0, -1)
+		}
+		return 0
+	}
+
+	f := float64(coeff)
+	if exp > 0 {
+		for i := 0; i < exp; i++ {
+			f *= 10
+		}
+	} else if exp < 0 {
+		for i := 0; i < -exp; i++ {
+			f /= 10
+		}
+	}
+	if sign != 0 {
+		f = -f
+	}
+	return f
+}
 
 // Strings for use with buffer.WriteString.
 // This is less overhead than using buffer.Write with byte arrays.
@@ -712,6 +768,8 @@ func (p *pp) printArg(arg any, verb rune) {
 		p.fmtFloat(float64(f), 32, verb)
 	case float64:
 		p.fmtFloat(f, 64, verb)
+	case decimal64:
+		p.fmtFloat(decimal64ToFloat64(f), 64, verb)
 	case complex64:
 		p.fmtComplex(complex128(f), 64, verb)
 	case complex128:
@@ -801,6 +859,12 @@ func (p *pp) printValue(value reflect.Value, verb rune, depth int) {
 		p.fmtComplex(f.Complex(), 64, verb)
 	case reflect.Complex128:
 		p.fmtComplex(f.Complex(), 128, verb)
+	case reflect.Decimal64:
+		d := f.Interface().(decimal64)
+		p.fmtFloat(decimal64ToFloat64(d), 64, verb)
+	case reflect.Decimal128:
+		d := f.Interface().(decimal64) // TODO: decimal128
+		p.fmtFloat(decimal64ToFloat64(d), 64, verb)
 	case reflect.String:
 		p.fmtString(f.String(), verb)
 	case reflect.Map:

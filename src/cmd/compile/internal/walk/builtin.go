@@ -718,6 +718,10 @@ func walkPrint(nn *ir.CallExpr, init *ir.Nodes) ir.Node {
 			on = typecheck.LookupRuntime("printfloat32")
 		case types.TFLOAT64:
 			on = typecheck.LookupRuntime("printfloat64")
+		case types.TDECIMAL64:
+			on = typecheck.LookupRuntime("printdecimal64")
+		case types.TDECIMAL128:
+			on = typecheck.LookupRuntime("printdecimal64") // TODO: printdecimal128
 		case types.TCOMPLEX64:
 			on = typecheck.LookupRuntime("printcomplex64")
 		case types.TCOMPLEX128:
@@ -750,7 +754,12 @@ func walkPrint(nn *ir.CallExpr, init *ir.Nodes) ir.Node {
 		r := ir.NewCallExpr(base.Pos, ir.OCALL, on, nil)
 		if params := on.Type().Params(); len(params) > 0 {
 			t := params[0].Type
-			n = typecheck.Conv(n, t)
+			if n.Type().IsDecimal() {
+				// Decimal types are passed as uint64 (BID encoding).
+				n = typecheck.ConvNop(n, t)
+			} else {
+				n = typecheck.Conv(n, t)
+			}
 			r.Args.Append(n)
 		}
 		calls = append(calls, r)

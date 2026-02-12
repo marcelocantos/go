@@ -29,6 +29,7 @@ var genericOps = []opData{
 	{name: "AddPtr", argLength: 2}, // For address calculations.  arg0 is a pointer and arg1 is an int.
 	{name: "Add32F", argLength: 2, commutative: true},
 	{name: "Add64F", argLength: 2, commutative: true},
+	{name: "Add64D", argLength: 2, commutative: true}, // decimal64 addition
 
 	{name: "Sub8", argLength: 2}, // arg0 - arg1
 	{name: "Sub16", argLength: 2},
@@ -37,6 +38,7 @@ var genericOps = []opData{
 	{name: "SubPtr", argLength: 2},
 	{name: "Sub32F", argLength: 2},
 	{name: "Sub64F", argLength: 2},
+	{name: "Sub64D", argLength: 2}, // decimal64 subtraction
 
 	{name: "Mul8", argLength: 2, commutative: true}, // arg0 * arg1
 	{name: "Mul16", argLength: 2, commutative: true},
@@ -44,9 +46,11 @@ var genericOps = []opData{
 	{name: "Mul64", argLength: 2, commutative: true},
 	{name: "Mul32F", argLength: 2, commutative: true},
 	{name: "Mul64F", argLength: 2, commutative: true},
+	{name: "Mul64D", argLength: 2, commutative: true}, // decimal64 multiplication
 
 	{name: "Div32F", argLength: 2}, // arg0 / arg1
 	{name: "Div64F", argLength: 2},
+	{name: "Div64D", argLength: 2}, // decimal64 division
 
 	{name: "Hmul32", argLength: 2, commutative: true},
 	{name: "Hmul32u", argLength: 2, commutative: true},
@@ -170,6 +174,7 @@ var genericOps = []opData{
 	{name: "EqSlice", argLength: 2, typ: "Bool"}, // arg0 or arg1 is nil; other cases handled by frontend
 	{name: "Eq32F", argLength: 2, commutative: true, typ: "Bool"},
 	{name: "Eq64F", argLength: 2, commutative: true, typ: "Bool"},
+	{name: "Eq64D", argLength: 2, commutative: true, typ: "Bool"}, // decimal64 equality
 
 	{name: "Neq8", argLength: 2, commutative: true, typ: "Bool"}, // arg0 != arg1
 	{name: "Neq16", argLength: 2, commutative: true, typ: "Bool"},
@@ -180,6 +185,7 @@ var genericOps = []opData{
 	{name: "NeqSlice", argLength: 2, typ: "Bool"}, // arg0 or arg1 is nil; other cases handled by frontend
 	{name: "Neq32F", argLength: 2, commutative: true, typ: "Bool"},
 	{name: "Neq64F", argLength: 2, commutative: true, typ: "Bool"},
+	{name: "Neq64D", argLength: 2, commutative: true, typ: "Bool"}, // decimal64 inequality
 
 	{name: "Less8", argLength: 2, typ: "Bool"},  // arg0 < arg1, signed
 	{name: "Less8U", argLength: 2, typ: "Bool"}, // arg0 < arg1, unsigned
@@ -191,6 +197,7 @@ var genericOps = []opData{
 	{name: "Less64U", argLength: 2, typ: "Bool"},
 	{name: "Less32F", argLength: 2, typ: "Bool"},
 	{name: "Less64F", argLength: 2, typ: "Bool"},
+	{name: "Less64D", argLength: 2, typ: "Bool"}, // decimal64 less than
 
 	{name: "Leq8", argLength: 2, typ: "Bool"},  // arg0 <= arg1, signed
 	{name: "Leq8U", argLength: 2, typ: "Bool"}, // arg0 <= arg1, unsigned
@@ -202,6 +209,7 @@ var genericOps = []opData{
 	{name: "Leq64U", argLength: 2, typ: "Bool"},
 	{name: "Leq32F", argLength: 2, typ: "Bool"},
 	{name: "Leq64F", argLength: 2, typ: "Bool"},
+	{name: "Leq64D", argLength: 2, typ: "Bool"}, // decimal64 less or equal
 
 	// the type of a CondSelect is the same as the type of its first
 	// two arguments, which should be register-width scalars; the third
@@ -222,6 +230,7 @@ var genericOps = []opData{
 	{name: "Neg64", argLength: 1},
 	{name: "Neg32F", argLength: 1},
 	{name: "Neg64F", argLength: 1},
+	{name: "Neg64D", argLength: 1}, // decimal64 negation
 
 	{name: "Com8", argLength: 1}, // ^arg0
 	{name: "Com16", argLength: 1},
@@ -346,6 +355,7 @@ var genericOps = []opData{
 	// Encodings of +inf, -inf, and -0 are fine.
 	{name: "Const32F", aux: "Float32"}, // value is math.Float64frombits(uint64(auxint)) and is exactly representable as float 32
 	{name: "Const64F", aux: "Float64"}, // value is math.Float64frombits(uint64(auxint))
+	{name: "Const64D", aux: "Int64"},   // BID-encoded decimal64 stored as int64
 	{name: "ConstInterface"},           // nil interface
 	{name: "ConstSlice"},               // nil slice
 
@@ -490,6 +500,14 @@ var genericOps = []opData{
 	{name: "Cvt32Fto64F", argLength: 1},
 	{name: "Cvt64Fto32F", argLength: 1},
 	{name: "CvtBoolToUint8", argLength: 1},
+
+	// Decimal64 conversions
+	{name: "Cvt64Dto64F", argLength: 1}, // decimal64 -> float64
+	{name: "Cvt64Fto64D", argLength: 1}, // float64 -> decimal64
+	{name: "Cvt64to64D", argLength: 1},  // int64 -> decimal64
+	{name: "Cvt64Dto64", argLength: 1},  // decimal64 -> int64
+	{name: "Cvt64Uto64D", argLength: 1}, // uint64 -> decimal64
+	{name: "Cvt64Dto64U", argLength: 1}, // decimal64 -> uint64
 
 	// Force rounding to precision of type.
 	{name: "Round32F", argLength: 1},

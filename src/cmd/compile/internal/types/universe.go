@@ -25,6 +25,8 @@ var basicTypes = [...]struct {
 	{"float64", TFLOAT64},
 	{"complex64", TCOMPLEX64},
 	{"complex128", TCOMPLEX128},
+	{"decimal64", TDECIMAL64},
+	{"decimal128", TDECIMAL128},
 	{"bool", TBOOL},
 	{"string", TSTRING},
 }
@@ -137,6 +139,9 @@ func InitTypes(defTypeName func(sym *Sym, typ *Type) Object) {
 
 	IsComplex[TCOMPLEX64] = true
 	IsComplex[TCOMPLEX128] = true
+
+	IsDecimal[TDECIMAL64] = true
+	IsDecimal[TDECIMAL128] = true
 }
 
 func makeErrorInterface() *Type {

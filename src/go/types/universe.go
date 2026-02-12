@@ -58,6 +58,8 @@ var Typ = []*Basic{
 	Float64:       {Float64, IsFloat, "float64"},
 	Complex64:     {Complex64, IsComplex, "complex64"},
 	Complex128:    {Complex128, IsComplex, "complex128"},
+	Decimal64:     {Decimal64, IsDecimal, "decimal64"},
+	Decimal128:    {Decimal128, IsDecimal, "decimal128"},
 	String:        {String, IsString, "string"},
 	UnsafePointer: {UnsafePointer, 0, "Pointer"},
 

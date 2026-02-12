@@ -581,6 +581,12 @@ func (d *dwctxt) newtype(gotype loader.Sym) *dwarf.DWDie {
 		newattr(die, dwarf.DW_AT_encoding, dwarf.DW_CLS_CONSTANT, dwarf.DW_ATE_float, 0)
 		newattr(die, dwarf.DW_AT_byte_size, dwarf.DW_CLS_CONSTANT, bytesize, 0)
 
+	case abi.Decimal64,
+		abi.Decimal128:
+		die = d.newdie(&dwtypes, dwarf.DW_ABRV_BASETYPE, name)
+		newattr(die, dwarf.DW_AT_encoding, dwarf.DW_CLS_CONSTANT, dwarf.DW_ATE_decimal_float, 0)
+		newattr(die, dwarf.DW_AT_byte_size, dwarf.DW_CLS_CONSTANT, bytesize, 0)
+
 	case abi.Complex64,
 		abi.Complex128:
 		die = d.newdie(&dwtypes, dwarf.DW_ABRV_BASETYPE, name)

@@ -249,7 +249,9 @@ func (m *argMatcher) match(typ types.Type, topLevel bool) bool {
 
 		case types.UntypedFloat,
 			types.Float32,
-			types.Float64:
+			types.Float64,
+			types.Decimal64,
+			types.Decimal128:
 			return m.t&argFloat != 0
 
 		case types.UntypedComplex,

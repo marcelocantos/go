@@ -830,7 +830,7 @@ func mapKeyError2(t *abi.Type, p unsafe.Pointer) error {
 		return nil
 	}
 	switch t.Kind() {
-	case abi.Float32, abi.Float64, abi.Complex64, abi.Complex128, abi.String:
+	case abi.Float32, abi.Float64, abi.Decimal64, abi.Decimal128, abi.Complex64, abi.Complex128, abi.String:
 		return nil
 	case abi.Interface:
 		i := (*abi.InterfaceType)(unsafe.Pointer(t))

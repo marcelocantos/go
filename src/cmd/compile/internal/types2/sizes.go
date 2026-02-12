@@ -157,6 +157,8 @@ var basicSizes = [...]byte{
 	Uint64:     8,
 	Float32:    4,
 	Float64:    8,
+	Decimal64:  8,
+	Decimal128: 16,
 	Complex64:  8,
 	Complex128: 16,
 }

@@ -5723,6 +5723,7 @@ const (
 	OpAddPtr
 	OpAdd32F
 	OpAdd64F
+	OpAdd64D
 	OpSub8
 	OpSub16
 	OpSub32
@@ -5730,14 +5731,17 @@ const (
 	OpSubPtr
 	OpSub32F
 	OpSub64F
+	OpSub64D
 	OpMul8
 	OpMul16
 	OpMul32
 	OpMul64
 	OpMul32F
 	OpMul64F
+	OpMul64D
 	OpDiv32F
 	OpDiv64F
+	OpDiv64D
 	OpHmul32
 	OpHmul32u
 	OpHmul64
@@ -5834,6 +5838,7 @@ const (
 	OpEqSlice
 	OpEq32F
 	OpEq64F
+	OpEq64D
 	OpNeq8
 	OpNeq16
 	OpNeq32
@@ -5843,6 +5848,7 @@ const (
 	OpNeqSlice
 	OpNeq32F
 	OpNeq64F
+	OpNeq64D
 	OpLess8
 	OpLess8U
 	OpLess16
@@ -5853,6 +5859,7 @@ const (
 	OpLess64U
 	OpLess32F
 	OpLess64F
+	OpLess64D
 	OpLeq8
 	OpLeq8U
 	OpLeq16
@@ -5863,6 +5870,7 @@ const (
 	OpLeq64U
 	OpLeq32F
 	OpLeq64F
+	OpLeq64D
 	OpCondSelect
 	OpAndB
 	OpOrB
@@ -5875,6 +5883,7 @@ const (
 	OpNeg64
 	OpNeg32F
 	OpNeg64F
+	OpNeg64D
 	OpCom8
 	OpCom16
 	OpCom32
@@ -5937,6 +5946,7 @@ const (
 	OpConst64
 	OpConst32F
 	OpConst64F
+	OpConst64D
 	OpConstInterface
 	OpConstSlice
 	OpInitMem
@@ -6006,6 +6016,12 @@ const (
 	OpCvt32Fto64F
 	OpCvt64Fto32F
 	OpCvtBoolToUint8
+	OpCvt64Dto64F
+	OpCvt64Fto64D
+	OpCvt64to64D
+	OpCvt64Dto64
+	OpCvt64Uto64D
+	OpCvt64Dto64U
 	OpRound32F
 	OpRound64F
 	OpIsNonNil
@@ -86477,6 +86493,12 @@ var opcodeTable = [...]opInfo{
 		generic:     true,
 	},
 	{
+		name:        "Add64D",
+		argLen:      2,
+		commutative: true,
+		generic:     true,
+	},
+	{
 		name:    "Sub8",
 		argLen:  2,
 		generic: true,
@@ -86508,6 +86530,11 @@ var opcodeTable = [...]opInfo{
 	},
 	{
 		name:    "Sub64F",
+		argLen:  2,
+		generic: true,
+	},
+	{
+		name:    "Sub64D",
 		argLen:  2,
 		generic: true,
 	},
@@ -86548,12 +86575,23 @@ var opcodeTable = [...]opInfo{
 		generic:     true,
 	},
 	{
+		name:        "Mul64D",
+		argLen:      2,
+		commutative: true,
+		generic:     true,
+	},
+	{
 		name:    "Div32F",
 		argLen:  2,
 		generic: true,
 	},
 	{
 		name:    "Div64F",
+		argLen:  2,
+		generic: true,
+	},
+	{
+		name:    "Div64D",
 		argLen:  2,
 		generic: true,
 	},
@@ -87119,6 +87157,12 @@ var opcodeTable = [...]opInfo{
 		generic:     true,
 	},
 	{
+		name:        "Eq64D",
+		argLen:      2,
+		commutative: true,
+		generic:     true,
+	},
+	{
 		name:        "Neq8",
 		argLen:      2,
 		commutative: true,
@@ -87166,6 +87210,12 @@ var opcodeTable = [...]opInfo{
 	},
 	{
 		name:        "Neq64F",
+		argLen:      2,
+		commutative: true,
+		generic:     true,
+	},
+	{
+		name:        "Neq64D",
 		argLen:      2,
 		commutative: true,
 		generic:     true,
@@ -87221,6 +87271,11 @@ var opcodeTable = [...]opInfo{
 		generic: true,
 	},
 	{
+		name:    "Less64D",
+		argLen:  2,
+		generic: true,
+	},
+	{
 		name:    "Leq8",
 		argLen:  2,
 		generic: true,
@@ -87267,6 +87322,11 @@ var opcodeTable = [...]opInfo{
 	},
 	{
 		name:    "Leq64F",
+		argLen:  2,
+		generic: true,
+	},
+	{
+		name:    "Leq64D",
 		argLen:  2,
 		generic: true,
 	},
@@ -87331,6 +87391,11 @@ var opcodeTable = [...]opInfo{
 	},
 	{
 		name:    "Neg64F",
+		argLen:  1,
+		generic: true,
+	},
+	{
+		name:    "Neg64D",
 		argLen:  1,
 		generic: true,
 	},
@@ -87652,6 +87717,12 @@ var opcodeTable = [...]opInfo{
 	{
 		name:    "Const64F",
 		auxType: auxFloat64,
+		argLen:  0,
+		generic: true,
+	},
+	{
+		name:    "Const64D",
+		auxType: auxInt64,
 		argLen:  0,
 		generic: true,
 	},
@@ -88047,6 +88118,36 @@ var opcodeTable = [...]opInfo{
 	},
 	{
 		name:    "CvtBoolToUint8",
+		argLen:  1,
+		generic: true,
+	},
+	{
+		name:    "Cvt64Dto64F",
+		argLen:  1,
+		generic: true,
+	},
+	{
+		name:    "Cvt64Fto64D",
+		argLen:  1,
+		generic: true,
+	},
+	{
+		name:    "Cvt64to64D",
+		argLen:  1,
+		generic: true,
+	},
+	{
+		name:    "Cvt64Dto64",
+		argLen:  1,
+		generic: true,
+	},
+	{
+		name:    "Cvt64Uto64D",
+		argLen:  1,
+		generic: true,
+	},
+	{
+		name:    "Cvt64Dto64U",
 		argLen:  1,
 		generic: true,
 	},

@@ -27,6 +27,8 @@ var basics = [...]**types.Type{
 	types2.Float64:        &types.Types[types.TFLOAT64],
 	types2.Complex64:      &types.Types[types.TCOMPLEX64],
 	types2.Complex128:     &types.Types[types.TCOMPLEX128],
+	types2.Decimal64:      &types.Types[types.TDECIMAL64],
+	types2.Decimal128:     &types.Types[types.TDECIMAL128],
 	types2.String:         &types.Types[types.TSTRING],
 	types2.UnsafePointer:  &types.Types[types.TUNSAFEPTR],
 	types2.UntypedBool:    &types.UntypedBool,

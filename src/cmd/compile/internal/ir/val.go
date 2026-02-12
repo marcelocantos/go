@@ -51,7 +51,7 @@ func ValidTypeForConst(t *types.Type, v constant.Value) bool {
 	case constant.Int:
 		return t.IsInteger()
 	case constant.Float:
-		return t.IsFloat()
+		return t.IsFloat() || t.IsDecimal()
 	case constant.Complex:
 		return t.IsComplex()
 	}

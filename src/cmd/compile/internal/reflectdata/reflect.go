@@ -399,6 +399,8 @@ var kinds = []abi.Kind{
 	types.TUINTPTR:    abi.Uintptr,
 	types.TFLOAT32:    abi.Float32,
 	types.TFLOAT64:    abi.Float64,
+	types.TDECIMAL64:  abi.Decimal64,
+	types.TDECIMAL128: abi.Decimal128,
 	types.TBOOL:       abi.Bool,
 	types.TSTRING:     abi.String,
 	types.TPTR:        abi.Pointer,
@@ -630,6 +632,7 @@ func needkeyupdate(t *types.Type) bool {
 		return false
 
 	case types.TFLOAT32, types.TFLOAT64, types.TCOMPLEX64, types.TCOMPLEX128, // floats and complex can be +0/-0
+		types.TDECIMAL64, types.TDECIMAL128, // decimals can have +0/-0
 		types.TINTER,
 		types.TSTRING: // strings might have smaller backing stores
 		return true

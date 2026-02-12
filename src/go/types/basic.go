@@ -30,6 +30,8 @@ const (
 	Float64
 	Complex64
 	Complex128
+	Decimal64
+	Decimal128
 	String
 	UnsafePointer
 
@@ -59,9 +61,10 @@ const (
 	IsComplex
 	IsString
 	IsUntyped
+	IsDecimal
 
-	IsOrdered   = IsInteger | IsFloat | IsString
-	IsNumeric   = IsInteger | IsFloat | IsComplex
+	IsOrdered   = IsInteger | IsFloat | IsDecimal | IsString
+	IsNumeric   = IsInteger | IsFloat | IsComplex | IsDecimal
 	IsConstType = IsBoolean | IsNumeric | IsString
 )
 

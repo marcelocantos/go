@@ -365,7 +365,7 @@ func tcConv(n *ir.ConvExpr) ir.Node {
 	case ir.OCONVNOP:
 		if t.Kind() == n.Type().Kind() {
 			switch t.Kind() {
-			case types.TFLOAT32, types.TFLOAT64, types.TCOMPLEX64, types.TCOMPLEX128:
+			case types.TFLOAT32, types.TFLOAT64, types.TCOMPLEX64, types.TCOMPLEX128, types.TDECIMAL64, types.TDECIMAL128:
 				// Floating point casts imply rounding and
 				// so the conversion must be kept.
 				n.SetOp(ir.OCONV)

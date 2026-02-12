@@ -313,6 +313,18 @@ func CalcSize(t *Type) {
 		t.floatRegs = 2
 		t.setAlg(ACPLX128)
 
+	case TDECIMAL64:
+		w = 8
+		t.align = uint8(RegSize)
+		t.intRegs = 1
+		t.setAlg(ADECIMAL64)
+
+	case TDECIMAL128:
+		w = 16
+		t.align = uint8(RegSize)
+		t.intRegs = 2
+		t.setAlg(ADECIMAL128)
+
 	case TPTR:
 		w = int64(PtrSize)
 		t.intRegs = 1

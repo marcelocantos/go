@@ -30,6 +30,8 @@ const (
 	AFLOAT64
 	ACPLX64
 	ACPLX128
+	ADECIMAL64
+	ADECIMAL128
 	ASPECIAL // Type needs special comparison/hashing functions.
 )
 

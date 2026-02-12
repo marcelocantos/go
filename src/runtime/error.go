@@ -297,6 +297,10 @@ func printanycustomtype(i any) {
 		print(typestring, *(*complex64)(eface.data))
 	case abi.Complex128:
 		print(typestring, *(*complex128)(eface.data))
+	case abi.Decimal64:
+		print(typestring, "(")
+		printdecimal64(*(*decimal64)(eface.data))
+		print(")")
 	default:
 		print("(", typestring, ") ", eface.data)
 	}

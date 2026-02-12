@@ -45,7 +45,7 @@ func identical(t1, t2 *Type, flags int, assumedEqual map[typePair]struct{}) bool
 	if t1.obj != nil || t2.obj != nil {
 		if flags&identStrict == 0 && (t1.HasShape() || t2.HasShape()) {
 			switch t1.kind {
-			case TINT8, TUINT8, TINT16, TUINT16, TINT32, TUINT32, TINT64, TUINT64, TINT, TUINT, TUINTPTR, TCOMPLEX64, TCOMPLEX128, TFLOAT32, TFLOAT64, TBOOL, TSTRING, TPTR, TUNSAFEPTR:
+			case TINT8, TUINT8, TINT16, TUINT16, TINT32, TUINT32, TINT64, TUINT64, TINT, TUINT, TUINTPTR, TCOMPLEX64, TCOMPLEX128, TFLOAT32, TFLOAT64, TDECIMAL64, TDECIMAL128, TBOOL, TSTRING, TPTR, TUNSAFEPTR:
 				return true
 			}
 			// fall through to unnamed type comparison for complex types.

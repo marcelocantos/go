@@ -49,6 +49,9 @@ const (
 	TFLOAT32
 	TFLOAT64
 
+	TDECIMAL64
+	TDECIMAL128
+
 	TBOOL
 
 	TPTR
@@ -1127,7 +1130,8 @@ func (t *Type) cmp(x *Type) Cmp {
 
 	switch t.kind {
 	case TBOOL, TFLOAT32, TFLOAT64, TCOMPLEX64, TCOMPLEX128, TUNSAFEPTR, TUINTPTR,
-		TINT8, TINT16, TINT32, TINT64, TINT, TUINT8, TUINT16, TUINT32, TUINT64, TUINT:
+		TINT8, TINT16, TINT32, TINT64, TINT, TUINT8, TUINT16, TUINT32, TUINT64, TUINT,
+		TDECIMAL64, TDECIMAL128:
 		return CMPeq
 
 	case TSSA:
@@ -1343,6 +1347,10 @@ func (t *Type) IsComplex() bool {
 	return t.kind == TCOMPLEX64 || t.kind == TCOMPLEX128 || t == UntypedComplex
 }
 
+func (t *Type) IsDecimal() bool {
+	return t.kind == TDECIMAL64 || t.kind == TDECIMAL128
+}
+
 // IsPtr reports whether t is a regular Go pointer type.
 // This does not include unsafe.Pointer.
 func (t *Type) IsPtr() bool {
@@ -1424,7 +1432,8 @@ func (t *Type) IsScalar() bool {
 	switch t.kind {
 	case TBOOL, TINT8, TUINT8, TINT16, TUINT16, TINT32,
 		TUINT32, TINT64, TUINT64, TINT, TUINT,
-		TUINTPTR, TCOMPLEX64, TCOMPLEX128, TFLOAT32, TFLOAT64:
+		TUINTPTR, TCOMPLEX64, TCOMPLEX128, TFLOAT32, TFLOAT64,
+		TDECIMAL64, TDECIMAL128:
 		return true
 	}
 	return false
@@ -1788,6 +1797,7 @@ var (
 	IsInt     [NTYPE]bool
 	IsFloat   [NTYPE]bool
 	IsComplex [NTYPE]bool
+	IsDecimal [NTYPE]bool
 	IsSimple  [NTYPE]bool
 )
 
@@ -1819,6 +1829,8 @@ func IsReflexive(t *Type) bool {
 		TFLOAT64,
 		TCOMPLEX64,
 		TCOMPLEX128,
+		TDECIMAL64,
+		TDECIMAL128,
 		TINTER:
 		return false
 

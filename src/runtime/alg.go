@@ -143,6 +143,22 @@ func c128hash(p unsafe.Pointer, h uintptr) uintptr {
 	return f64hash(unsafe.Pointer(&x[1]), f64hash(unsafe.Pointer(&x[0]), h))
 }
 
+func d64hash(p unsafe.Pointer, h uintptr) uintptr {
+	x := *(*uint64)(p)
+	if bid64IsNaN(x) {
+		return c1 * (c0 ^ h ^ uintptr(rand())) // NaN: random hash
+	}
+	_, _, coeff := bid64Unpack(x)
+	if coeff == 0 {
+		return c1 * (c0 ^ h) // +0 == -0
+	}
+	return memhash(p, h, 8)
+}
+
+func d64equal(p, q unsafe.Pointer) bool {
+	return deq64(*(*decimal64)(p), *(*decimal64)(q))
+}
+
 func interhash(p unsafe.Pointer, h uintptr) uintptr {
 	a := (*iface)(p)
 	tab := a.tab
@@ -233,6 +249,8 @@ func typehash(t *_type, p unsafe.Pointer, h uintptr) uintptr {
 		return c64hash(p, h)
 	case abi.Complex128:
 		return c128hash(p, h)
+	case abi.Decimal64:
+		return d64hash(p, h)
 	case abi.String:
 		return strhash(p, h)
 	case abi.Interface:

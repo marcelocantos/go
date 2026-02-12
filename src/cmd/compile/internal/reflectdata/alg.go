@@ -80,6 +80,10 @@ func genhash(t *types.Type) *obj.LSym {
 		return sysClosure("c64hash")
 	case types.ACPLX128:
 		return sysClosure("c128hash")
+	case types.ADECIMAL64:
+		return sysClosure("d64hash")
+	case types.ADECIMAL128:
+		return sysClosure("d64hash") // TODO: implement d128hash
 	case types.AMEM:
 		// For other sizes of plain memory, we build a closure
 		// that calls memhash_varlen. The size of the memory is
@@ -271,6 +275,10 @@ func hashfor(t *types.Type) *ir.Name {
 		return runtimeHashFor("c64hash", t)
 	case types.ACPLX128:
 		return runtimeHashFor("c128hash", t)
+	case types.ADECIMAL64:
+		return runtimeHashFor("d64hash", t)
+	case types.ADECIMAL128:
+		return runtimeHashFor("d64hash", t) // TODO: implement d128hash
 	}
 
 	fn := hashFunc(t)
@@ -323,6 +331,10 @@ func geneq(t *types.Type) *obj.LSym {
 		return sysClosure("c64equal")
 	case types.ACPLX128:
 		return sysClosure("c128equal")
+	case types.ADECIMAL64:
+		return sysClosure("d64equal")
+	case types.ADECIMAL128:
+		return sysClosure("d64equal") // TODO: implement d128equal
 	case types.AMEM:
 		// make equality closure. The size of the type
 		// is encoded in the closure.
@@ -511,7 +523,7 @@ func eqFunc(t *types.Type) *ir.Func {
 				_, eqmem := compare.EqString(pi, qi)
 				return eqmem
 			})
-		case types.TFLOAT32, types.TFLOAT64:
+		case types.TFLOAT32, types.TFLOAT64, types.TDECIMAL64, types.TDECIMAL128:
 			checkAll(2, true, func(pi, qi ir.Node) ir.Node {
 				// p[i] == q[i]
 				return ir.NewBinaryExpr(base.Pos, ir.OEQ, pi, qi)

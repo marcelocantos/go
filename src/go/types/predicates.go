@@ -28,6 +28,7 @@ func isFloat(t Type) bool          { return isBasic(t, IsFloat) }
 func isComplex(t Type) bool        { return isBasic(t, IsComplex) }
 func isNumeric(t Type) bool        { return isBasic(t, IsNumeric) }
 func isString(t Type) bool         { return isBasic(t, IsString) }
+func isDecimal(t Type) bool        { return isBasic(t, IsDecimal) }
 func isIntegerOrFloat(t Type) bool { return isBasic(t, IsInteger|IsFloat) }
 func isConstType(t Type) bool      { return isBasic(t, IsConstType) }
 
