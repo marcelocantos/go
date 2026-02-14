@@ -539,13 +539,15 @@ func bid64CompareMagnitude(ae int, ac uint64, be int, bc uint64) int {
 		return -1
 	}
 
-	// Scale ac up by 10^diff
+	// Scale bc up by 10^diff to align at exponent ae.
+	// (bc has the larger exponent, so bc * 10^diff aligns it to ae.)
 	for i := 0; i < diff; i++ {
-		if ac > pow10_18/10 {
-			// ac is getting too large. Try scaling bc down instead.
+		if bc > pow10_18/10 {
+			// bc would overflow. Scale ac down instead (loses precision
+			// but difference is already large enough to determine order).
 			remaining := diff - i
 			for j := 0; j < remaining; j++ {
-				bc /= 10
+				ac /= 10
 			}
 			if ac > bc {
 				return 1
@@ -555,7 +557,7 @@ func bid64CompareMagnitude(ae int, ac uint64, be int, bc uint64) int {
 			}
 			return 0
 		}
-		ac *= 10
+		bc *= 10
 	}
 
 	if ac < bc {
@@ -932,4 +934,50 @@ func printdecimal64(x decimal64) {
 			gwrite(digits[:ndigits])
 		}
 	}
+}
+
+// dmin64 returns the minimum of two decimal64 values.
+// IEEE 754-2019 minimum semantics: NaN propagates, min(-0,+0) = -0.
+func dmin64(x, y decimal64) decimal64 {
+	xb := decimal64bits(x)
+	yb := decimal64bits(y)
+
+	if bid64IsNaN(xb) || bid64IsNaN(yb) {
+		return decimal64frombits(bid64NaN)
+	}
+
+	if dlt64(y, x) {
+		return y
+	}
+	if dlt64(x, y) {
+		return x
+	}
+	// x == y; prefer the one with sign bit set (i.e. -0 < +0)
+	if bid64Sign(xb) != 0 {
+		return x
+	}
+	return y
+}
+
+// dmax64 returns the maximum of two decimal64 values.
+// IEEE 754-2019 maximum semantics: NaN propagates, max(-0,+0) = +0.
+func dmax64(x, y decimal64) decimal64 {
+	xb := decimal64bits(x)
+	yb := decimal64bits(y)
+
+	if bid64IsNaN(xb) || bid64IsNaN(yb) {
+		return decimal64frombits(bid64NaN)
+	}
+
+	if dlt64(x, y) {
+		return y
+	}
+	if dlt64(y, x) {
+		return x
+	}
+	// x == y; prefer the one without sign bit (i.e. +0 > -0)
+	if bid64Sign(xb) == 0 {
+		return x
+	}
+	return y
 }

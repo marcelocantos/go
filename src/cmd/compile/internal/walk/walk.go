@@ -290,7 +290,7 @@ func mayCall(n ir.Node) bool {
 	}
 
 	isSoftFloat := func(typ *types.Type) bool {
-		return types.IsFloat[typ.Kind()] || types.IsComplex[typ.Kind()]
+		return types.IsFloat[typ.Kind()] || types.IsComplex[typ.Kind()] || types.IsDecimal[typ.Kind()]
 	}
 
 	return ir.Any(n, func(n ir.Node) bool {
@@ -325,18 +325,19 @@ func mayCall(n ir.Node) bool {
 
 		// When using soft-float, these ops might be rewritten to function calls
 		// so we ensure they are evaluated first.
+		// Decimal ops always use runtime calls (no hardware support).
 		case ir.OADD, ir.OSUB, ir.OMUL, ir.ONEG:
-			return ssagen.Arch.SoftFloat && isSoftFloat(n.Type())
+			return n.Type().IsDecimal() || ssagen.Arch.SoftFloat && isSoftFloat(n.Type())
 		case ir.OLT, ir.OEQ, ir.ONE, ir.OLE, ir.OGE, ir.OGT:
 			n := n.(*ir.BinaryExpr)
-			return ssagen.Arch.SoftFloat && isSoftFloat(n.X.Type())
+			return n.X.Type().IsDecimal() || ssagen.Arch.SoftFloat && isSoftFloat(n.X.Type())
 		case ir.OCONV:
 			n := n.(*ir.ConvExpr)
-			return ssagen.Arch.SoftFloat && (isSoftFloat(n.Type()) || isSoftFloat(n.X.Type()))
+			return n.Type().IsDecimal() || n.X.Type().IsDecimal() || ssagen.Arch.SoftFloat && (isSoftFloat(n.Type()) || isSoftFloat(n.X.Type()))
 
 		case ir.OMIN, ir.OMAX:
-			// string or float requires runtime call, see (*ssagen.state).minmax method.
-			return n.Type().IsString() || n.Type().IsFloat()
+			// string, float, or decimal requires runtime call, see (*ssagen.state).minmax method.
+			return n.Type().IsString() || n.Type().IsFloat() || n.Type().IsDecimal()
 
 		case ir.OLITERAL, ir.ONIL, ir.ONAME, ir.OLINKSYMOFFSET, ir.OMETHEXPR,
 			ir.OAND, ir.OANDNOT, ir.OLSH, ir.OOR, ir.ORSH, ir.OXOR, ir.OCOMPLEX, ir.OMAKEFACE,

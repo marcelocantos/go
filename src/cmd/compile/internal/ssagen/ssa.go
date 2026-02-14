@@ -4377,6 +4377,32 @@ func (s *state) minMax(n *ir.CallExpr) *ssa.Value {
 
 	typ := n.Type()
 
+	if typ.IsDecimal() {
+		// Decimal min/max has the same NaN/-0 concerns as float.
+		// No hardware support, so always call runtime.
+		var name string
+		switch typ.Kind() {
+		case types.TDECIMAL64:
+			switch n.Op() {
+			case ir.OMIN:
+				name = "dmin64"
+			case ir.OMAX:
+				name = "dmax64"
+			}
+		case types.TDECIMAL128:
+			switch n.Op() {
+			case ir.OMIN:
+				name = "dmin128"
+			case ir.OMAX:
+				name = "dmax128"
+			}
+		}
+		fn := typecheck.LookupRuntimeFunc(name)
+		return fold(func(x, a *ssa.Value) *ssa.Value {
+			return s.rtcall(fn, true, []*types.Type{typ}, x, a)[0]
+		})
+	}
+
 	if typ.IsFloat() || typ.IsString() {
 		// min/max semantics for floats are tricky because of NaNs and
 		// negative zero. Some architectures have instructions which

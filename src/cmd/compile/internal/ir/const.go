@@ -41,7 +41,7 @@ func NewZero(pos src.XPos, typ *types.Type) Node {
 		return NewNilExpr(pos, typ)
 	case typ.IsInteger():
 		return NewBasicLit(pos, typ, intZero)
-	case typ.IsFloat():
+	case typ.IsFloat() || typ.IsDecimal():
 		return NewBasicLit(pos, typ, floatZero)
 	case typ.IsComplex():
 		return NewBasicLit(pos, typ, complexZero)
@@ -70,7 +70,7 @@ func NewOne(pos src.XPos, typ *types.Type) Node {
 	switch {
 	case typ.IsInteger():
 		val = intOne
-	case typ.IsFloat():
+	case typ.IsFloat() || typ.IsDecimal():
 		val = floatOne
 	case typ.IsComplex():
 		val = complexOne
@@ -135,6 +135,12 @@ func ConstOverflow(v constant.Value, t *types.Type) bool {
 			f, _ := constant.Float64Val(v)
 			return math.IsInf(f, 0)
 		}
+	case t.IsDecimal():
+		// Decimal constants are represented as float constant values.
+		// decimal64 has ~16 significant digits, decimal128 has ~34.
+		// For now, check the same overflow condition as float64.
+		f, _ := constant.Float64Val(v)
+		return math.IsInf(f, 0)
 	case t.IsComplex():
 		ft := types.FloatForComplex(t)
 		return ConstOverflow(constant.Real(v), ft) || ConstOverflow(constant.Imag(v), ft)

@@ -922,7 +922,22 @@ func bid128CompareMagnitude(ae int, ac uint128, be int, bc uint128) int {
 		return -cmp
 	}
 
+	// ae < be. Scale bc up by 10^diff to align at exponent ae.
 	diff := be - ae
+
+	// Strip trailing zeros from ac to reduce diff.
+	for diff > 0 {
+		_, rem := u128Div64(ac, 10)
+		if rem != 0 {
+			break
+		}
+		ac, _ = u128Div64(ac, 10)
+		diff--
+	}
+	if diff == 0 {
+		return u128Cmp(ac, bc)
+	}
+
 	if diff > 40 {
 		if u128IsZero(bc) {
 			if u128IsZero(ac) {
@@ -934,18 +949,18 @@ func bid128CompareMagnitude(ae int, ac uint128, be int, bc uint128) int {
 	}
 
 	for i := 0; i < diff; i++ {
-		test := u128Mul64(ac, 10)
+		test := u128Mul64(bc, 10)
 		// Check for overflow
-		if test.hi < ac.hi || (test.hi == ac.hi && test.lo < ac.lo && ac.lo != 0) {
-			// ac overflowed, it's definitely bigger after full scaling
-			// Scale bc down instead
+		if test.hi < bc.hi || (test.hi == bc.hi && test.lo < bc.lo && bc.lo != 0) {
+			// bc overflowed, it's definitely bigger after full scaling
+			// Scale ac down instead
 			remaining := diff - i
 			for j := 0; j < remaining; j++ {
-				bc, _ = u128Div64(bc, 10)
+				ac, _ = u128Div64(ac, 10)
 			}
 			return u128Cmp(ac, bc)
 		}
-		ac = test
+		bc = test
 	}
 
 	return u128Cmp(ac, bc)
@@ -1366,4 +1381,50 @@ func d128equal(p, q unsafe.Pointer) bool {
 	pp := (*[2]uint64)(p)
 	qq := (*[2]uint64)(q)
 	return deq128(decimal128frombits(pp[1], pp[0]), decimal128frombits(qq[1], qq[0]))
+}
+
+// dmin128 returns the minimum of two decimal128 values.
+// IEEE 754-2019 minimum semantics: NaN propagates, min(-0,+0) = -0.
+func dmin128(x, y decimal128) decimal128 {
+	xhi, _ := decimal128bits(x)
+	yhi, _ := decimal128bits(y)
+
+	if bid128IsNaN(xhi) || bid128IsNaN(yhi) {
+		return decimal128frombits(bid128NaN, 0)
+	}
+
+	if dlt128(y, x) {
+		return y
+	}
+	if dlt128(x, y) {
+		return x
+	}
+	// x == y; prefer the one with sign bit set (i.e. -0 < +0)
+	if bid128Sign(xhi) != 0 {
+		return x
+	}
+	return y
+}
+
+// dmax128 returns the maximum of two decimal128 values.
+// IEEE 754-2019 maximum semantics: NaN propagates, max(-0,+0) = +0.
+func dmax128(x, y decimal128) decimal128 {
+	xhi, _ := decimal128bits(x)
+	yhi, _ := decimal128bits(y)
+
+	if bid128IsNaN(xhi) || bid128IsNaN(yhi) {
+		return decimal128frombits(bid128NaN, 0)
+	}
+
+	if dlt128(x, y) {
+		return y
+	}
+	if dlt128(y, x) {
+		return x
+	}
+	// x == y; prefer the one without sign bit (i.e. +0 > -0)
+	if bid128Sign(xhi) == 0 {
+		return x
+	}
+	return y
 }

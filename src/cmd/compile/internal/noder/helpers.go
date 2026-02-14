@@ -47,7 +47,7 @@ func FixValue(typ *types.Type, val constant.Value) constant.Value {
 	switch {
 	case typ.IsInteger():
 		val = constant.ToInt(val)
-	case typ.IsFloat():
+	case typ.IsFloat() || typ.IsDecimal():
 		val = constant.ToFloat(val)
 	case typ.IsComplex():
 		val = constant.ToComplex(val)
