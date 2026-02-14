@@ -401,14 +401,25 @@ func deq64(x, y decimal64) bool {
 // bid64CompareEqual compares two positive decimal values with
 // different exponents for equality.
 func bid64CompareEqual(xe int, xc uint64, ye int, yc uint64) bool {
-	// Make xe <= ye (so we scale xc up)
+	// Make xe <= ye (so we scale xc up to compare at exponent ye).
+	// xc * 10^xe == yc * 10^ye  iff  xc * 10^(ye-xe) == yc
 	if xe > ye {
 		xe, xc, ye, yc = ye, yc, xe, xc
 	}
 	diff := ye - xe
-	if diff > 17 {
-		return false // Exponent difference too large
+
+	// First try: strip trailing zeros from xc to reduce diff.
+	for diff > 0 && xc%10 == 0 {
+		xc /= 10
+		diff--
 	}
+	if diff == 0 {
+		return xc == yc
+	}
+	if diff > 17 {
+		return false // Exponent difference too large even after normalization
+	}
+
 	// Scale xc up by 10^diff
 	for i := 0; i < diff; i++ {
 		xc *= 10
@@ -502,6 +513,21 @@ func bid64CompareMagnitude(ae int, ac uint64, be int, bc uint64) int {
 	}
 
 	diff := be - ae
+
+	// Strip trailing zeros from ac to reduce diff.
+	for diff > 0 && ac%10 == 0 {
+		ac /= 10
+		diff--
+	}
+	if diff == 0 {
+		if ac < bc {
+			return -1
+		}
+		if ac > bc {
+			return 1
+		}
+		return 0
+	}
 	if diff > 17 {
 		// bc has much larger exponent, so |b| > |a| unless bc is 0
 		if bc == 0 {
@@ -516,11 +542,7 @@ func bid64CompareMagnitude(ae int, ac uint64, be int, bc uint64) int {
 	// Scale ac up by 10^diff
 	for i := 0; i < diff; i++ {
 		if ac > pow10_18/10 {
-			// ac is getting too large. This means ac * 10^remaining > bc,
-			// since ac already has more digits than bc can have.
-			// Actually we need to be more careful.
-			// If ac > bc after partial scaling, ac > bc.
-			// But we can't finish scaling. Let's try scaling bc down instead.
+			// ac is getting too large. Try scaling bc down instead.
 			remaining := diff - i
 			for j := 0; j < remaining; j++ {
 				bc /= 10
