@@ -83,7 +83,7 @@ func genhash(t *types.Type) *obj.LSym {
 	case types.ADECIMAL64:
 		return sysClosure("d64hash")
 	case types.ADECIMAL128:
-		return sysClosure("d64hash") // TODO: implement d128hash
+		return sysClosure("d128hash")
 	case types.AMEM:
 		// For other sizes of plain memory, we build a closure
 		// that calls memhash_varlen. The size of the memory is
@@ -278,7 +278,7 @@ func hashfor(t *types.Type) *ir.Name {
 	case types.ADECIMAL64:
 		return runtimeHashFor("d64hash", t)
 	case types.ADECIMAL128:
-		return runtimeHashFor("d64hash", t) // TODO: implement d128hash
+		return runtimeHashFor("d128hash", t)
 	}
 
 	fn := hashFunc(t)
@@ -334,7 +334,7 @@ func geneq(t *types.Type) *obj.LSym {
 	case types.ADECIMAL64:
 		return sysClosure("d64equal")
 	case types.ADECIMAL128:
-		return sysClosure("d64equal") // TODO: implement d128equal
+		return sysClosure("d128equal")
 	case types.AMEM:
 		// make equality closure. The size of the type
 		// is encoded in the closure.

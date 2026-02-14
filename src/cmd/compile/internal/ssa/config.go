@@ -87,6 +87,7 @@ type Types struct {
 	UintptrPtr *types.Type
 	Float32Ptr *types.Type
 	Float64Ptr *types.Type
+	UInt64Ptr  *types.Type
 	BytePtrPtr *types.Type
 	Vec128     *types.Type
 	Vec256     *types.Type
@@ -125,6 +126,7 @@ func (t *Types) SetTypPtrs() {
 	t.UintptrPtr = types.NewPtr(types.Types[types.TUINTPTR])
 	t.Float32Ptr = types.NewPtr(types.Types[types.TFLOAT32])
 	t.Float64Ptr = types.NewPtr(types.Types[types.TFLOAT64])
+	t.UInt64Ptr = types.NewPtr(types.Types[types.TUINT64])
 	t.BytePtrPtr = types.NewPtr(types.NewPtr(types.Types[types.TUINT8]))
 	t.Vec128 = types.TypeVec128
 	t.Vec256 = types.TypeVec256

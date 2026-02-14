@@ -174,6 +174,8 @@ var BasicTypeNames = []string{
 	TFLOAT64:    "float64",
 	TCOMPLEX64:  "complex64",
 	TCOMPLEX128: "complex128",
+	TDECIMAL64:  "decimal64",
+	TDECIMAL128: "decimal128",
 	TBOOL:       "bool",
 	TANY:        "any",
 	TSTRING:     "string",

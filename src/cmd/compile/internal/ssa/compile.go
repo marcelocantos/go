@@ -474,9 +474,9 @@ var passes = [...]pass{
 	{name: "middle opt", fn: opt, required: true},
 	{name: "early fuse", fn: fuseEarly},
 	{name: "expand calls", fn: expandCalls, required: true},
+	{name: "softdecimal", fn: softdecimal, required: true},
 	{name: "decompose builtin", fn: postExpandCallsDecompose, required: true},
 	{name: "softfloat", fn: softfloat, required: true},
-	{name: "softdecimal", fn: softdecimal, required: true},
 	{name: "branchelim", fn: branchelim},
 	{name: "late opt", fn: opt, required: true},
 	{name: "dead auto elim", fn: elimDeadAutosGeneric},
@@ -563,8 +563,10 @@ var passOrder = [...]constraint{
 	{"decompose builtin", "late opt"},
 	// decompose builtin is the last pass that may introduce new float ops, so run softfloat after it
 	{"decompose builtin", "softfloat"},
-	// softdecimal must run after decompose builtin, similar to softfloat
-	{"decompose builtin", "softdecimal"},
+	// softdecimal must run after expand calls (to see expanded args)
+	// and before decompose builtin (so new Decimal128Make ops get decomposed)
+	{"expand calls", "softdecimal"},
+	{"softdecimal", "decompose builtin"},
 	// tuple selectors must be tightened to generators and de-duplicated before scheduling
 	{"tighten tuple selectors", "schedule"},
 	// remove critical edges before phi tighten, so that phi args get better placement

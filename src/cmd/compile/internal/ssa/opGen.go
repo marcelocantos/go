@@ -5724,6 +5724,7 @@ const (
 	OpAdd32F
 	OpAdd64F
 	OpAdd64D
+	OpAdd128D
 	OpSub8
 	OpSub16
 	OpSub32
@@ -5732,6 +5733,7 @@ const (
 	OpSub32F
 	OpSub64F
 	OpSub64D
+	OpSub128D
 	OpMul8
 	OpMul16
 	OpMul32
@@ -5739,9 +5741,11 @@ const (
 	OpMul32F
 	OpMul64F
 	OpMul64D
+	OpMul128D
 	OpDiv32F
 	OpDiv64F
 	OpDiv64D
+	OpDiv128D
 	OpHmul32
 	OpHmul32u
 	OpHmul64
@@ -5839,6 +5843,7 @@ const (
 	OpEq32F
 	OpEq64F
 	OpEq64D
+	OpEq128D
 	OpNeq8
 	OpNeq16
 	OpNeq32
@@ -5849,6 +5854,7 @@ const (
 	OpNeq32F
 	OpNeq64F
 	OpNeq64D
+	OpNeq128D
 	OpLess8
 	OpLess8U
 	OpLess16
@@ -5860,6 +5866,7 @@ const (
 	OpLess32F
 	OpLess64F
 	OpLess64D
+	OpLess128D
 	OpLeq8
 	OpLeq8U
 	OpLeq16
@@ -5871,6 +5878,7 @@ const (
 	OpLeq32F
 	OpLeq64F
 	OpLeq64D
+	OpLeq128D
 	OpCondSelect
 	OpAndB
 	OpOrB
@@ -5884,6 +5892,7 @@ const (
 	OpNeg32F
 	OpNeg64F
 	OpNeg64D
+	OpNeg128D
 	OpCom8
 	OpCom16
 	OpCom32
@@ -6022,6 +6031,14 @@ const (
 	OpCvt64Dto64
 	OpCvt64Uto64D
 	OpCvt64Dto64U
+	OpCvt128Dto64F
+	OpCvt64Fto128D
+	OpCvt64to128D
+	OpCvt128Dto64
+	OpCvt64Uto128D
+	OpCvt128Dto64U
+	OpCvt64Dto128D
+	OpCvt128Dto64D
 	OpRound32F
 	OpRound64F
 	OpIsNonNil
@@ -6042,6 +6059,9 @@ const (
 	OpComplexMake
 	OpComplexReal
 	OpComplexImag
+	OpDecimal128Make
+	OpDecimal128Lo
+	OpDecimal128Hi
 	OpStringMake
 	OpStringPtr
 	OpStringLen
@@ -86499,6 +86519,12 @@ var opcodeTable = [...]opInfo{
 		generic:     true,
 	},
 	{
+		name:        "Add128D",
+		argLen:      2,
+		commutative: true,
+		generic:     true,
+	},
+	{
 		name:    "Sub8",
 		argLen:  2,
 		generic: true,
@@ -86535,6 +86561,11 @@ var opcodeTable = [...]opInfo{
 	},
 	{
 		name:    "Sub64D",
+		argLen:  2,
+		generic: true,
+	},
+	{
+		name:    "Sub128D",
 		argLen:  2,
 		generic: true,
 	},
@@ -86581,6 +86612,12 @@ var opcodeTable = [...]opInfo{
 		generic:     true,
 	},
 	{
+		name:        "Mul128D",
+		argLen:      2,
+		commutative: true,
+		generic:     true,
+	},
+	{
 		name:    "Div32F",
 		argLen:  2,
 		generic: true,
@@ -86592,6 +86629,11 @@ var opcodeTable = [...]opInfo{
 	},
 	{
 		name:    "Div64D",
+		argLen:  2,
+		generic: true,
+	},
+	{
+		name:    "Div128D",
 		argLen:  2,
 		generic: true,
 	},
@@ -87163,6 +87205,12 @@ var opcodeTable = [...]opInfo{
 		generic:     true,
 	},
 	{
+		name:        "Eq128D",
+		argLen:      2,
+		commutative: true,
+		generic:     true,
+	},
+	{
 		name:        "Neq8",
 		argLen:      2,
 		commutative: true,
@@ -87216,6 +87264,12 @@ var opcodeTable = [...]opInfo{
 	},
 	{
 		name:        "Neq64D",
+		argLen:      2,
+		commutative: true,
+		generic:     true,
+	},
+	{
+		name:        "Neq128D",
 		argLen:      2,
 		commutative: true,
 		generic:     true,
@@ -87276,6 +87330,11 @@ var opcodeTable = [...]opInfo{
 		generic: true,
 	},
 	{
+		name:    "Less128D",
+		argLen:  2,
+		generic: true,
+	},
+	{
 		name:    "Leq8",
 		argLen:  2,
 		generic: true,
@@ -87327,6 +87386,11 @@ var opcodeTable = [...]opInfo{
 	},
 	{
 		name:    "Leq64D",
+		argLen:  2,
+		generic: true,
+	},
+	{
+		name:    "Leq128D",
 		argLen:  2,
 		generic: true,
 	},
@@ -87396,6 +87460,11 @@ var opcodeTable = [...]opInfo{
 	},
 	{
 		name:    "Neg64D",
+		argLen:  1,
+		generic: true,
+	},
+	{
+		name:    "Neg128D",
 		argLen:  1,
 		generic: true,
 	},
@@ -88152,6 +88221,46 @@ var opcodeTable = [...]opInfo{
 		generic: true,
 	},
 	{
+		name:    "Cvt128Dto64F",
+		argLen:  1,
+		generic: true,
+	},
+	{
+		name:    "Cvt64Fto128D",
+		argLen:  1,
+		generic: true,
+	},
+	{
+		name:    "Cvt64to128D",
+		argLen:  1,
+		generic: true,
+	},
+	{
+		name:    "Cvt128Dto64",
+		argLen:  1,
+		generic: true,
+	},
+	{
+		name:    "Cvt64Uto128D",
+		argLen:  1,
+		generic: true,
+	},
+	{
+		name:    "Cvt128Dto64U",
+		argLen:  1,
+		generic: true,
+	},
+	{
+		name:    "Cvt64Dto128D",
+		argLen:  1,
+		generic: true,
+	},
+	{
+		name:    "Cvt128Dto64D",
+		argLen:  1,
+		generic: true,
+	},
+	{
 		name:    "Round32F",
 		argLen:  1,
 		generic: true,
@@ -88251,6 +88360,21 @@ var opcodeTable = [...]opInfo{
 	},
 	{
 		name:    "ComplexImag",
+		argLen:  1,
+		generic: true,
+	},
+	{
+		name:    "Decimal128Make",
+		argLen:  2,
+		generic: true,
+	},
+	{
+		name:    "Decimal128Lo",
+		argLen:  1,
+		generic: true,
+	},
+	{
+		name:    "Decimal128Hi",
 		argLen:  1,
 		generic: true,
 	},

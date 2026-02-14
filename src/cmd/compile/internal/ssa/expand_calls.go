@@ -445,6 +445,9 @@ func (x *expandState) decomposeAsNecessary(pos src.XPos, b *Block, a, m0 *Value,
 	case types.TCOMPLEX128:
 		return x.decomposePair(pos, b, a, mem, x.typs.Float64, x.typs.Float64, OpComplexReal, OpComplexImag, &rc)
 
+	case types.TDECIMAL128:
+		return x.decomposePair(pos, b, a, mem, x.typs.UInt64, x.typs.UInt64, OpDecimal128Lo, OpDecimal128Hi, &rc)
+
 	case types.TINT64:
 		if at.Size() > x.regSize {
 			return x.decomposePair(pos, b, a, mem, x.firstType, x.secondType, x.firstOp, x.secondOp, &rc)
@@ -611,6 +614,14 @@ func (x *expandState) rewriteSelectOrArg(pos src.XPos, b *Block, container, a, m
 		pos = pos.WithNotStmt()
 		addArg(x.rewriteSelectOrArg(pos, b, container, nil, m0, x.typs.Float64, rc.next(x.typs.Float64)))
 		a = makeOf(a, OpComplexMake, args)
+		x.commonSelectors[sk] = a
+		return a
+
+	case types.TDECIMAL128:
+		addArg(x.rewriteSelectOrArg(pos, b, container, nil, m0, x.typs.UInt64, rc.next(x.typs.UInt64)))
+		pos = pos.WithNotStmt()
+		addArg(x.rewriteSelectOrArg(pos, b, container, nil, m0, x.typs.UInt64, rc.next(x.typs.UInt64)))
+		a = makeOf(a, OpDecimal128Make, args)
 		x.commonSelectors[sk] = a
 		return a
 

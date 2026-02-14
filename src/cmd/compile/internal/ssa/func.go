@@ -236,6 +236,13 @@ func (f *Func) SplitComplex(name *LocalSlot) (*LocalSlot, *LocalSlot) {
 	return r, i
 }
 
+func (f *Func) SplitDecimal128(name *LocalSlot) (*LocalSlot, *LocalSlot) {
+	t := types.Types[types.TUINT64]
+	lo := f.SplitSlot(name, ".lo", 0, t)
+	hi := f.SplitSlot(name, ".hi", t.Size(), t)
+	return lo, hi
+}
+
 func (f *Func) SplitInt64(name *LocalSlot) (*LocalSlot, *LocalSlot) {
 	var t *types.Type
 	if name.Type.IsSigned() {

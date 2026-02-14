@@ -721,7 +721,7 @@ func walkPrint(nn *ir.CallExpr, init *ir.Nodes) ir.Node {
 		case types.TDECIMAL64:
 			on = typecheck.LookupRuntime("printdecimal64")
 		case types.TDECIMAL128:
-			on = typecheck.LookupRuntime("printdecimal64") // TODO: printdecimal128
+			on = typecheck.LookupRuntime("printdecimal128")
 		case types.TCOMPLEX64:
 			on = typecheck.LookupRuntime("printcomplex64")
 		case types.TCOMPLEX128:

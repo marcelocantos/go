@@ -251,6 +251,8 @@ func typehash(t *_type, p unsafe.Pointer, h uintptr) uintptr {
 		return c128hash(p, h)
 	case abi.Decimal64:
 		return d64hash(p, h)
+	case abi.Decimal128:
+		return d128hash(p, h)
 	case abi.String:
 		return strhash(p, h)
 	case abi.Interface:

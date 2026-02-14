@@ -98,6 +98,17 @@ func decomposeBuiltin(f *Func) {
 				f.NamedValues[*dataName] = append(f.NamedValues[*dataName], v.Args[1])
 				toDelete = append(toDelete, namedVal{i, j})
 			}
+		case t.IsDecimal() && t.Size() > f.Config.RegSize:
+			loName, hiName := f.SplitDecimal128(name)
+			newNames = maybeAppend2(f, newNames, loName, hiName)
+			for j, v := range f.NamedValues[*name] {
+				if v.Op != OpDecimal128Make {
+					continue
+				}
+				f.NamedValues[*loName] = append(f.NamedValues[*loName], v.Args[0])
+				f.NamedValues[*hiName] = append(f.NamedValues[*hiName], v.Args[1])
+				toDelete = append(toDelete, namedVal{i, j})
+			}
 		case t.IsFloat():
 			// floats are never decomposed, even ones bigger than RegSize
 		case t.Size() > f.Config.RegSize && !t.IsSIMD():
@@ -133,6 +144,8 @@ func decomposeBuiltinPhi(v *Value) {
 		decomposeSlicePhi(v)
 	case v.Type.IsInterface():
 		decomposeInterfacePhi(v)
+	case v.Type.IsDecimal() && v.Type.Size() > v.Block.Func.Config.RegSize:
+		decomposeDecimal128Phi(v)
 	case v.Type.IsFloat():
 		// floats are never decomposed, even ones bigger than RegSize
 	case v.Type.Size() > v.Block.Func.Config.RegSize && !v.Type.IsSIMD():
@@ -216,6 +229,20 @@ func decomposeComplexPhi(v *Value) {
 	v.reset(OpComplexMake)
 	v.AddArg(real)
 	v.AddArg(imag)
+}
+
+func decomposeDecimal128Phi(v *Value) {
+	cfgtypes := &v.Block.Func.Config.Types
+
+	lo := v.Block.NewValue0(v.Pos, OpPhi, cfgtypes.UInt64)
+	hi := v.Block.NewValue0(v.Pos, OpPhi, cfgtypes.UInt64)
+	for _, a := range v.Args {
+		lo.AddArg(a.Block.NewValue1(v.Pos, OpDecimal128Lo, cfgtypes.UInt64, a))
+		hi.AddArg(a.Block.NewValue1(v.Pos, OpDecimal128Hi, cfgtypes.UInt64, a))
+	}
+	v.reset(OpDecimal128Make)
+	v.AddArg(lo)
+	v.AddArg(hi)
 }
 
 func decomposeInterfacePhi(v *Value) {

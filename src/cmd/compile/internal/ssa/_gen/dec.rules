@@ -94,6 +94,28 @@
     data
     (Store {typ.Uintptr} dst itab mem))
 
+// decimal128 ops
+(Decimal128Lo (Decimal128Make lo _)) => lo
+(Decimal128Hi (Decimal128Make _ hi)) => hi
+
+(Load <t> ptr mem) && t.IsDecimal() && t.Size() == 16 =>
+  (Decimal128Make
+    (Load <typ.UInt64> ptr mem)
+    (Load <typ.UInt64>
+      (OffPtr <typ.UInt64Ptr> [8] ptr)
+      mem)
+    )
+(Store {t} dst (Decimal128Make lo hi) mem) && t.Size() == 16 =>
+  (Store {typ.UInt64}
+    (OffPtr <typ.UInt64Ptr> [8] dst)
+    hi
+    (Store {typ.UInt64} dst lo mem))
+
+(Decimal128Lo x:(Load <t> ptr mem)) && t.IsDecimal() && t.Size() == 16 => @x.Block (Load <typ.UInt64> ptr mem)
+(Decimal128Hi x:(Load <t> ptr mem)) && t.IsDecimal() && t.Size() == 16 => @x.Block (Load <typ.UInt64>
+      (OffPtr <typ.UInt64Ptr> [8] ptr)
+      mem)
+
 // Helpers for expand calls
 // Some of these are copied from generic.rules
 

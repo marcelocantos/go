@@ -321,6 +321,13 @@ func InitConst(n *ir.Name, noff int64, c ir.Node, wid int) {
 			s.WriteFloat32(base.Ctxt, noff, float32(f))
 		case types.TFLOAT64:
 			s.WriteFloat64(base.Ctxt, noff, f)
+		case types.TDECIMAL64:
+			bid := float64ToBID64(f)
+			s.WriteInt(base.Ctxt, noff, 8, int64(bid))
+		case types.TDECIMAL128:
+			hi, lo := float64ToBID128(f)
+			s.WriteInt(base.Ctxt, noff, 8, int64(lo))
+			s.WriteInt(base.Ctxt, noff+8, 8, int64(hi))
 		}
 
 	case constant.Complex:
@@ -344,4 +351,139 @@ func InitConst(n *ir.Name, noff int64, c ir.Node, wid int) {
 	default:
 		base.Fatalf("InitConst unhandled OLITERAL %v", c)
 	}
+}
+
+// float64ToBID64 converts a float64 value to BID64 (IEEE 754-2008 decimal64)
+// encoding at compile time for static data initialization.
+func float64ToBID64(f float64) uint64 {
+	const (
+		bid64Bias    = 398
+		bid64MaxCoef = uint64(9999999999999999)
+		bid64SignBit = uint64(1 << 63)
+		bid64Inf     = uint64(0x7800000000000000)
+		bid64NaN     = uint64(0x7C00000000000000)
+	)
+
+	if f != f {
+		return bid64NaN
+	}
+	var sign uint64
+	if f < 0 {
+		sign = bid64SignBit
+		f = -f
+	}
+	if f == 0 {
+		return sign
+	}
+	if f > 0 && f+f == f {
+		return sign | bid64Inf
+	}
+
+	var coeff uint64
+	dexp := 0
+	fval := f
+	for fval >= 10 {
+		dexp++
+		fval /= 10
+	}
+	for fval < 1 {
+		dexp--
+		fval *= 10
+	}
+	for i := 0; i < 16; i++ {
+		digit := uint64(fval)
+		coeff = coeff*10 + digit
+		fval -= float64(digit)
+		fval *= 10
+	}
+	dexp -= 15
+	if uint64(fval) >= 5 {
+		coeff++
+		if coeff > bid64MaxCoef {
+			coeff /= 10
+			dexp++
+		}
+	}
+	for coeff > bid64MaxCoef {
+		rem := coeff % 10
+		coeff /= 10
+		dexp++
+		if rem > 5 || (rem == 5 && coeff%2 != 0) {
+			coeff++
+		}
+	}
+	biasedExp := dexp + bid64Bias
+	if biasedExp < 0 || biasedExp > 767 {
+		if biasedExp > 767 {
+			return sign | bid64Inf
+		}
+		return sign
+	}
+	if coeff < (1 << 53) {
+		return sign | uint64(biasedExp)<<53 | coeff
+	}
+	return sign | (3 << 61) | uint64(biasedExp)<<51 | (coeff & ((1 << 51) - 1))
+}
+
+// float64ToBID128 converts a float64 value to BID128 (IEEE 754-2008 decimal128)
+// encoding at compile time for static data initialization.
+// Returns (hi, lo) words.
+func float64ToBID128(f float64) (uint64, uint64) {
+	const (
+		bid128Bias    = 6176
+		bid128SignBit = uint64(1 << 63)
+		bid128Inf     = uint64(0x7800000000000000)
+		bid128NaN     = uint64(0x7C00000000000000)
+	)
+
+	if f != f {
+		return bid128NaN, 0
+	}
+	var sign uint64
+	if f < 0 {
+		sign = bid128SignBit
+		f = -f
+	}
+	if f == 0 {
+		return sign, 0
+	}
+	if f > 0 && f+f == f {
+		return sign | bid128Inf, 0
+	}
+
+	// Extract 16 significant digits (float64 precision limit).
+	// BID128 supports 34 digits but we only have ~16 from float64.
+	var coeff uint64
+	dexp := 0
+	fval := f
+	for fval >= 10 {
+		dexp++
+		fval /= 10
+	}
+	for fval < 1 {
+		dexp--
+		fval *= 10
+	}
+	for i := 0; i < 16; i++ {
+		digit := uint64(fval)
+		coeff = coeff*10 + digit
+		fval -= float64(digit)
+		fval *= 10
+	}
+	dexp -= 15
+	if uint64(fval) >= 5 {
+		coeff++
+	}
+
+	// BID128 Form 1: hi[63]=sign, hi[62:49]=biased_exp, hi[48:0]=coeff_hi, lo=coeff_lo
+	// Since coeff fits in 64 bits, coeff_hi = 0 and lo = coeff.
+	biasedExp := dexp + bid128Bias
+	if biasedExp < 0 || biasedExp > 12287 {
+		if biasedExp > 12287 {
+			return sign | bid128Inf, 0
+		}
+		return sign, 0
+	}
+	hi := sign | uint64(biasedExp)<<49
+	return hi, coeff
 }

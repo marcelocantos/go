@@ -14,6 +14,10 @@ func rewriteValuedec(v *Value) bool {
 		return rewriteValuedec_OpComplexImag(v)
 	case OpComplexReal:
 		return rewriteValuedec_OpComplexReal(v)
+	case OpDecimal128Hi:
+		return rewriteValuedec_OpDecimal128Hi(v)
+	case OpDecimal128Lo:
+		return rewriteValuedec_OpDecimal128Lo(v)
 	case OpIData:
 		return rewriteValuedec_OpIData(v)
 	case OpIMake:
@@ -236,6 +240,81 @@ func rewriteValuedec_OpComplexReal(v *Value) bool {
 	}
 	return false
 }
+func rewriteValuedec_OpDecimal128Hi(v *Value) bool {
+	v_0 := v.Args[0]
+	b := v.Block
+	typ := &b.Func.Config.Types
+	// match: (Decimal128Hi (Decimal128Make _ hi))
+	// result: hi
+	for {
+		if v_0.Op != OpDecimal128Make {
+			break
+		}
+		hi := v_0.Args[1]
+		v.copyOf(hi)
+		return true
+	}
+	// match: (Decimal128Hi x:(Load <t> ptr mem))
+	// cond: t.IsDecimal() && t.Size() == 16
+	// result: @x.Block (Load <typ.UInt64> (OffPtr <typ.UInt64Ptr> [8] ptr) mem)
+	for {
+		x := v_0
+		if x.Op != OpLoad {
+			break
+		}
+		t := x.Type
+		mem := x.Args[1]
+		ptr := x.Args[0]
+		if !(t.IsDecimal() && t.Size() == 16) {
+			break
+		}
+		b = x.Block
+		v0 := b.NewValue0(v.Pos, OpLoad, typ.UInt64)
+		v.copyOf(v0)
+		v1 := b.NewValue0(v.Pos, OpOffPtr, typ.UInt64Ptr)
+		v1.AuxInt = int64ToAuxInt(8)
+		v1.AddArg(ptr)
+		v0.AddArg2(v1, mem)
+		return true
+	}
+	return false
+}
+func rewriteValuedec_OpDecimal128Lo(v *Value) bool {
+	v_0 := v.Args[0]
+	b := v.Block
+	typ := &b.Func.Config.Types
+	// match: (Decimal128Lo (Decimal128Make lo _))
+	// result: lo
+	for {
+		if v_0.Op != OpDecimal128Make {
+			break
+		}
+		lo := v_0.Args[0]
+		v.copyOf(lo)
+		return true
+	}
+	// match: (Decimal128Lo x:(Load <t> ptr mem))
+	// cond: t.IsDecimal() && t.Size() == 16
+	// result: @x.Block (Load <typ.UInt64> ptr mem)
+	for {
+		x := v_0
+		if x.Op != OpLoad {
+			break
+		}
+		t := x.Type
+		mem := x.Args[1]
+		ptr := x.Args[0]
+		if !(t.IsDecimal() && t.Size() == 16) {
+			break
+		}
+		b = x.Block
+		v0 := b.NewValue0(v.Pos, OpLoad, typ.UInt64)
+		v.copyOf(v0)
+		v0.AddArg2(ptr, mem)
+		return true
+	}
+	return false
+}
 func rewriteValuedec_OpIData(v *Value) bool {
 	v_0 := v.Args[0]
 	b := v.Block
@@ -449,6 +528,27 @@ func rewriteValuedec_OpLoad(v *Value) bool {
 		v1 := b.NewValue0(v.Pos, OpLoad, typ.BytePtr)
 		v2 := b.NewValue0(v.Pos, OpOffPtr, typ.BytePtrPtr)
 		v2.AuxInt = int64ToAuxInt(config.PtrSize)
+		v2.AddArg(ptr)
+		v1.AddArg2(v2, mem)
+		v.AddArg2(v0, v1)
+		return true
+	}
+	// match: (Load <t> ptr mem)
+	// cond: t.IsDecimal() && t.Size() == 16
+	// result: (Decimal128Make (Load <typ.UInt64> ptr mem) (Load <typ.UInt64> (OffPtr <typ.UInt64Ptr> [8] ptr) mem) )
+	for {
+		t := v.Type
+		ptr := v_0
+		mem := v_1
+		if !(t.IsDecimal() && t.Size() == 16) {
+			break
+		}
+		v.reset(OpDecimal128Make)
+		v0 := b.NewValue0(v.Pos, OpLoad, typ.UInt64)
+		v0.AddArg2(ptr, mem)
+		v1 := b.NewValue0(v.Pos, OpLoad, typ.UInt64)
+		v2 := b.NewValue0(v.Pos, OpOffPtr, typ.UInt64Ptr)
+		v2.AuxInt = int64ToAuxInt(8)
 		v2.AddArg(ptr)
 		v1.AddArg2(v2, mem)
 		v.AddArg2(v0, v1)
@@ -725,6 +825,32 @@ func rewriteValuedec_OpStore(v *Value) bool {
 		v1.Aux = typeToAux(typ.Uintptr)
 		v1.AddArg3(dst, itab, mem)
 		v.AddArg3(v0, data, v1)
+		return true
+	}
+	// match: (Store {t} dst (Decimal128Make lo hi) mem)
+	// cond: t.Size() == 16
+	// result: (Store {typ.UInt64} (OffPtr <typ.UInt64Ptr> [8] dst) hi (Store {typ.UInt64} dst lo mem))
+	for {
+		t := auxToType(v.Aux)
+		dst := v_0
+		if v_1.Op != OpDecimal128Make {
+			break
+		}
+		hi := v_1.Args[1]
+		lo := v_1.Args[0]
+		mem := v_2
+		if !(t.Size() == 16) {
+			break
+		}
+		v.reset(OpStore)
+		v.Aux = typeToAux(typ.UInt64)
+		v0 := b.NewValue0(v.Pos, OpOffPtr, typ.UInt64Ptr)
+		v0.AuxInt = int64ToAuxInt(8)
+		v0.AddArg(dst)
+		v1 := b.NewValue0(v.Pos, OpStore, types.TypeMem)
+		v1.Aux = typeToAux(typ.UInt64)
+		v1.AddArg3(dst, lo, mem)
+		v.AddArg3(v0, hi, v1)
 		return true
 	}
 	// match: (Store _ (StructMake ___) _)
