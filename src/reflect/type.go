@@ -2065,7 +2065,7 @@ func isReflexive(t *abi.Type) bool {
 	switch Kind(t.Kind()) {
 	case Bool, Int, Int8, Int16, Int32, Int64, Uint, Uint8, Uint16, Uint32, Uint64, Uintptr, Chan, Pointer, String, UnsafePointer:
 		return true
-	case Float32, Float64, Complex64, Complex128, Interface:
+	case Float32, Float64, Decimal64, Decimal128, Complex64, Complex128, Interface:
 		return false
 	case Array:
 		tt := (*arrayType)(unsafe.Pointer(t))
@@ -2089,10 +2089,10 @@ func needKeyUpdate(t *abi.Type) bool {
 	switch Kind(t.Kind()) {
 	case Bool, Int, Int8, Int16, Int32, Int64, Uint, Uint8, Uint16, Uint32, Uint64, Uintptr, Chan, Pointer, UnsafePointer:
 		return false
-	case Float32, Float64, Complex64, Complex128, Interface, String:
-		// Float keys can be updated from +0 to -0.
+	case Float32, Float64, Decimal64, Decimal128, Complex64, Complex128, Interface, String:
+		// Float/decimal keys can be updated from +0 to -0.
 		// String keys can be updated to use a smaller backing store.
-		// Interfaces might have floats or strings in them.
+		// Interfaces might have floats, decimals, or strings in them.
 		return true
 	case Array:
 		tt := (*arrayType)(unsafe.Pointer(t))

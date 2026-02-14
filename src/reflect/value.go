@@ -1669,6 +1669,10 @@ func (v Value) IsZero() bool {
 		return v.Uint() == 0
 	case Float32, Float64:
 		return v.Float() == 0
+	case Decimal64:
+		return *(*uint64)(v.ptr) == 0
+	case Decimal128:
+		return *(*[2]uint64)(v.ptr) == [2]uint64{}
 	case Complex64, Complex128:
 		return v.Complex() == 0
 	case Array:
@@ -1821,6 +1825,10 @@ func (v Value) SetZero() {
 		*(*complex64)(v.ptr) = 0
 	case Complex128:
 		*(*complex128)(v.ptr) = 0
+	case Decimal64:
+		*(*uint64)(v.ptr) = 0
+	case Decimal128:
+		*(*[2]uint64)(v.ptr) = [2]uint64{}
 	case String:
 		*(*string)(v.ptr) = ""
 	case Slice:
@@ -3328,6 +3336,8 @@ func (v Value) Equal(u Value) bool {
 		return v.Float() == u.Float()
 	case Complex64, Complex128:
 		return v.Complex() == u.Complex()
+	case Decimal64, Decimal128:
+		return v.typ().Equal(v.ptr, u.ptr)
 	case String:
 		return v.String() == u.String()
 	case Chan, Pointer, UnsafePointer:
