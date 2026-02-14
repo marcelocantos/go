@@ -13,6 +13,7 @@ import (
 	"math/bits"
 	"reflect"
 	"sync"
+	"unsafe"
 )
 
 const uint64Size = 8
@@ -232,6 +233,29 @@ func encComplex(i *encInstr, state *encoderState, v reflect.Value) {
 		state.update(i)
 		state.encodeUint(rpart)
 		state.encodeUint(ipart)
+	}
+}
+
+// encDecimal64 encodes a decimal64 value referenced by v.
+// decimal64 values are transmitted as their raw uint64 BID bits.
+func encDecimal64(i *encInstr, state *encoderState, v reflect.Value) {
+	d := v.Interface().(decimal64)
+	bits := *(*uint64)(unsafe.Pointer(&d))
+	if bits != 0 || state.sendZero {
+		state.update(i)
+		state.encodeUint(bits)
+	}
+}
+
+// encDecimal128 encodes a decimal128 value referenced by v.
+// decimal128 values are transmitted as two uint64 values (lo, hi) of the BID encoding.
+func encDecimal128(i *encInstr, state *encoderState, v reflect.Value) {
+	d := v.Interface().(decimal128)
+	p := (*[2]uint64)(unsafe.Pointer(&d))
+	if p[0] != 0 || p[1] != 0 || state.sendZero {
+		state.update(i)
+		state.encodeUint(p[0])
+		state.encodeUint(p[1])
 	}
 }
 
@@ -476,6 +500,8 @@ var encOpTable = [...]encOp{
 	reflect.Float64:    encFloat,
 	reflect.Complex64:  encComplex,
 	reflect.Complex128: encComplex,
+	reflect.Decimal64:  encDecimal64,
+	reflect.Decimal128: encDecimal128,
 	reflect.String:     encString,
 }
 

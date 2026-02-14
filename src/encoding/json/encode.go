@@ -357,6 +357,7 @@ func isEmptyValue(v reflect.Value) bool {
 		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
 		reflect.Float32, reflect.Float64,
+		reflect.Decimal64, reflect.Decimal128,
 		reflect.Interface, reflect.Pointer:
 		return v.IsZero()
 	}
@@ -447,6 +448,10 @@ func newTypeEncoder(t reflect.Type, allowAddr bool) encoderFunc {
 		return float32Encoder
 	case reflect.Float64:
 		return float64Encoder
+	case reflect.Decimal64:
+		return decimal64Encoder
+	case reflect.Decimal128:
+		return decimal128Encoder
 	case reflect.String:
 		return stringEncoder
 	case reflect.Interface:
@@ -606,6 +611,32 @@ var (
 	float32Encoder = (floatEncoder(32)).encode
 	float64Encoder = (floatEncoder(64)).encode
 )
+
+func decimal64Encoder(e *encodeState, v reflect.Value, opts encOpts) {
+	d := v.Interface().(decimal64)
+	s := strconv.FormatDecimal64(d, 'f', -1)
+	if s == "NaN" || s == "+Inf" || s == "-Inf" {
+		e.error(&UnsupportedValueError{v, s})
+	}
+	b := e.AvailableBuffer()
+	b = mayAppendQuote(b, opts.quoted)
+	b = append(b, s...)
+	b = mayAppendQuote(b, opts.quoted)
+	e.Write(b)
+}
+
+func decimal128Encoder(e *encodeState, v reflect.Value, opts encOpts) {
+	d := v.Interface().(decimal128)
+	s := strconv.FormatDecimal128(d, 'f', -1)
+	if s == "NaN" || s == "+Inf" || s == "-Inf" {
+		e.error(&UnsupportedValueError{v, s})
+	}
+	b := e.AvailableBuffer()
+	b = mayAppendQuote(b, opts.quoted)
+	b = append(b, s...)
+	b = mayAppendQuote(b, opts.quoted)
+	e.Write(b)
+}
 
 func stringEncoder(e *encodeState, v reflect.Value, opts encOpts) {
 	if v.Type() == numberType {
@@ -1153,7 +1184,7 @@ func typeFields(t reflect.Type) structFields {
 					ft = ft.Elem()
 				}
 
-				// Only strings, floats, integers, and booleans can be quoted.
+				// Only strings, floats, decimals, integers, and booleans can be quoted.
 				quoted := false
 				if opts.Contains("string") {
 					switch ft.Kind() {
@@ -1161,6 +1192,7 @@ func typeFields(t reflect.Type) structFields {
 						reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 						reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
 						reflect.Float32, reflect.Float64,
+						reflect.Decimal64, reflect.Decimal128,
 						reflect.String:
 						quoted = true
 					}

@@ -28,6 +28,7 @@ import (
 	"reflect"
 	"slices"
 	"sync"
+	"unsafe"
 )
 
 var errBufferTooSmall = errors.New("buffer too small")
@@ -351,6 +352,12 @@ func decodeFast(bs []byte, order ByteOrder, data any) bool {
 		*data = math.Float32frombits(order.Uint32(bs))
 	case *float64:
 		*data = math.Float64frombits(order.Uint64(bs))
+	case *decimal64:
+		bits := order.Uint64(bs)
+		*data = *(*decimal64)(unsafe.Pointer(&bits))
+	case *decimal128:
+		bits := [2]uint64{order.Uint64(bs), order.Uint64(bs[8:])}
+		*data = *(*decimal128)(unsafe.Pointer(&bits))
 	case []bool:
 		for i, x := range bs { // Easier to loop over the input for 8-bit values.
 			data[i] = x != 0
@@ -392,6 +399,16 @@ func decodeFast(bs []byte, order ByteOrder, data any) bool {
 	case []float64:
 		for i := range data {
 			data[i] = math.Float64frombits(order.Uint64(bs[8*i:]))
+		}
+	case []decimal64:
+		for i := range data {
+			bits := order.Uint64(bs[8*i:])
+			data[i] = *(*decimal64)(unsafe.Pointer(&bits))
+		}
+	case []decimal128:
+		for i := range data {
+			bits := [2]uint64{order.Uint64(bs[16*i:]), order.Uint64(bs[16*i+8:])}
+			data[i] = *(*decimal128)(unsafe.Pointer(&bits))
 		}
 	default:
 		return false
@@ -588,6 +605,28 @@ func encodeFast(bs []byte, order ByteOrder, data any) {
 		for i, x := range v {
 			order.PutUint64(bs[8*i:], math.Float64bits(x))
 		}
+	case *decimal64:
+		order.PutUint64(bs, *(*uint64)(unsafe.Pointer(v)))
+	case decimal64:
+		order.PutUint64(bs, *(*uint64)(unsafe.Pointer(&v)))
+	case []decimal64:
+		for i := range v {
+			order.PutUint64(bs[8*i:], *(*uint64)(unsafe.Pointer(&v[i])))
+		}
+	case *decimal128:
+		bits := *(*[2]uint64)(unsafe.Pointer(v))
+		order.PutUint64(bs, bits[0])
+		order.PutUint64(bs[8:], bits[1])
+	case decimal128:
+		bits := *(*[2]uint64)(unsafe.Pointer(&v))
+		order.PutUint64(bs, bits[0])
+		order.PutUint64(bs[8:], bits[1])
+	case []decimal128:
+		for i := range v {
+			bits := *(*[2]uint64)(unsafe.Pointer(&v[i]))
+			order.PutUint64(bs[16*i:], bits[0])
+			order.PutUint64(bs[16*i+8:], bits[1])
+		}
 	}
 }
 
@@ -685,6 +724,24 @@ func Size(v any) int {
 		return 4 * len(data)
 	case []float64:
 		return 8 * len(data)
+	case decimal64:
+		return 8
+	case *decimal64:
+		if data == nil {
+			return -1
+		}
+		return 8
+	case []decimal64:
+		return 8 * len(data)
+	case decimal128:
+		return 16
+	case *decimal128:
+		if data == nil {
+			return -1
+		}
+		return 16
+	case []decimal128:
+		return 16 * len(data)
 	}
 	return dataSize(reflect.Indirect(reflect.ValueOf(v)))
 }
@@ -751,7 +808,8 @@ func sizeof(t reflect.Type) int {
 	case reflect.Bool,
 		reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
 		reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Float32, reflect.Float64, reflect.Complex64, reflect.Complex128:
+		reflect.Float32, reflect.Float64, reflect.Complex64, reflect.Complex128,
+		reflect.Decimal64, reflect.Decimal128:
 		return int(t.Size())
 	}
 
@@ -898,6 +956,13 @@ func (d *decoder) value(v reflect.Value) {
 	case reflect.Float64:
 		v.SetFloat(math.Float64frombits(d.uint64()))
 
+	case reflect.Decimal64:
+		*(*uint64)(unsafe.Pointer(v.Addr().Pointer())) = d.uint64()
+	case reflect.Decimal128:
+		p := (*[2]uint64)(unsafe.Pointer(v.Addr().Pointer()))
+		p[0] = d.uint64()
+		p[1] = d.uint64()
+
 	case reflect.Complex64:
 		v.SetComplex(complex(
 			float64(math.Float32frombits(d.uint32())),
@@ -963,6 +1028,15 @@ func (e *encoder) value(v reflect.Value) {
 	case reflect.Float64:
 		e.uint64(math.Float64bits(v.Float()))
 
+	case reflect.Decimal64:
+		d := v.Interface().(decimal64)
+		e.uint64(*(*uint64)(unsafe.Pointer(&d)))
+	case reflect.Decimal128:
+		d := v.Interface().(decimal128)
+		p := (*[2]uint64)(unsafe.Pointer(&d))
+		e.uint64(p[0])
+		e.uint64(p[1])
+
 	case reflect.Complex64:
 		x := v.Complex()
 		e.uint32(math.Float32bits(float32(real(x))))
@@ -1023,6 +1097,14 @@ func intDataSize(data any) (int, []byte) {
 		return 4 * len(data), nil
 	case []float64:
 		return 8 * len(data), nil
+	case decimal64, *decimal64:
+		return 8, nil
+	case decimal128, *decimal128:
+		return 16, nil
+	case []decimal64:
+		return 8 * len(data), nil
+	case []decimal128:
+		return 16 * len(data), nil
 	}
 	return 0, nil
 }

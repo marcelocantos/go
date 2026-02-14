@@ -143,6 +143,10 @@ func TestJSValEscaper(t *testing.T) {
 		{float64(-0.5), " -0.5 ", false},
 		{float64(0), " 0 ", false},
 		{math.Copysign(0, -1), " -0 ", false},
+		{decimal64(1.0), " 1 ", false},
+		{decimal64(-1.0), " -1 ", false},
+		{decimal64(0.5), " 0.5 ", false},
+		{decimal64(0), " 0 ", false},
 		{"", `""`, false},
 		{"foo", `"foo"`, false},
 		// Newlines.

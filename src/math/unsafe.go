@@ -39,3 +39,13 @@ func Float64bits(f float64) uint64 { return *(*uint64)(unsafe.Pointer(&f)) }
 // and the result in the same bit position.
 // Float64frombits(Float64bits(x)) == x.
 func Float64frombits(b uint64) float64 { return *(*float64)(unsafe.Pointer(&b)) }
+
+// Decimal64bits returns the IEEE 754-2008 BID (Binary Integer Decimal)
+// representation of d as a uint64.
+// Decimal64bits(Decimal64frombits(x)) == x.
+func Decimal64bits(d decimal64) uint64 { return *(*uint64)(unsafe.Pointer(&d)) }
+
+// Decimal64frombits returns the decimal64 value corresponding to the
+// IEEE 754-2008 BID encoding b.
+// Decimal64frombits(Decimal64bits(x)) == x.
+func Decimal64frombits(b uint64) decimal64 { return *(*decimal64)(unsafe.Pointer(&b)) }

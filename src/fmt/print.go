@@ -7,137 +7,12 @@ package fmt
 import (
 	"internal/fmtsort"
 	"io"
-	"math"
 	"os"
 	"reflect"
 	"strconv"
 	"sync"
 	"unicode/utf8"
-	"unsafe"
 )
-
-// decimal64ToFloat64 converts a decimal64 (BID encoding) to float64.
-// This is a self-contained conversion so fmt doesn't need to linkname
-// into the runtime.
-func decimal64ToFloat64(d decimal64) float64 {
-	b := *(*uint64)(unsafe.Pointer(&d))
-
-	// NaN
-	if b&0x7c00000000000000 == 0x7c00000000000000 {
-		return math.NaN()
-	}
-	// Infinity
-	if b&0x7800000000000000 == 0x7800000000000000 {
-		if b&0x8000000000000000 != 0 {
-			return math.Inf(-1)
-		}
-		return math.Inf(1)
-	}
-
-	sign := b >> 63
-	var exp int
-	var coeff uint64
-	if b&0x6000000000000000 == 0x6000000000000000 {
-		// Large coefficient: top 2 bits of significand are implicit 100
-		exp = int((b >> 51) & 0x3FF)
-		coeff = (b & 0x0007FFFFFFFFFFFF) | 0x0020000000000000
-	} else {
-		exp = int((b >> 53) & 0x3FF)
-		coeff = b & 0x001FFFFFFFFFFFFF
-	}
-	exp -= 398 // bias
-
-	if coeff == 0 {
-		if sign != 0 {
-			return math.Copysign(0, -1)
-		}
-		return 0
-	}
-
-	f := float64(coeff)
-	if exp > 0 {
-		for i := 0; i < exp; i++ {
-			f *= 10
-		}
-	} else if exp < 0 {
-		for i := 0; i < -exp; i++ {
-			f /= 10
-		}
-	}
-	if sign != 0 {
-		f = -f
-	}
-	return f
-}
-
-func decimal128ToFloat64(d decimal128) float64 {
-	p := (*[2]uint64)(unsafe.Pointer(&d))
-	lo := p[0]
-	hi := p[1]
-
-	// NaN
-	if hi&0x7c00000000000000 == 0x7c00000000000000 {
-		return math.NaN()
-	}
-	// Infinity
-	if hi&0x7c00000000000000 == 0x7800000000000000 {
-		if hi&0x8000000000000000 != 0 {
-			return math.Inf(-1)
-		}
-		return math.Inf(1)
-	}
-
-	sign := hi >> 63
-	var exp int
-	var coeffHi, coeffLo uint64
-	if hi&0x6000000000000000 == 0x6000000000000000 {
-		// Form 2: implicit prefix
-		exp = int((hi >> 47) & 0x3FFF)
-		coeffHi = (1 << 49) | (hi & ((1 << 47) - 1))
-		coeffLo = lo
-	} else {
-		// Form 1
-		exp = int((hi >> 49) & 0x3FFF)
-		coeffHi = hi & ((1 << 49) - 1)
-		coeffLo = lo
-	}
-	exp -= 6176 // bias
-
-	if coeffHi == 0 && coeffLo == 0 {
-		if sign != 0 {
-			return math.Copysign(0, -1)
-		}
-		return 0
-	}
-
-	// Convert 128-bit coefficient to float64
-	f := float64(coeffHi)*float64(uint64(1)<<32)*float64(uint64(1)<<32) + float64(coeffLo)
-	if exp > 0 {
-		for exp > 0 {
-			if exp >= 16 {
-				f *= 1e16
-				exp -= 16
-			} else {
-				f *= 10
-				exp--
-			}
-		}
-	} else if exp < 0 {
-		for exp < 0 {
-			if exp <= -16 {
-				f /= 1e16
-				exp += 16
-			} else {
-				f /= 10
-				exp++
-			}
-		}
-	}
-	if sign != 0 {
-		f = -f
-	}
-	return f
-}
 
 // Strings for use with buffer.WriteString.
 // This is less overhead than using buffer.Write with byte arrays.
@@ -590,6 +465,23 @@ func (p *pp) fmtFloat(v float64, size int, verb rune) {
 	}
 }
 
+// fmtDecimal formats a decimal. It mirrors fmtFloat but uses
+// strconv.AppendDecimal. Verbs b, x, X are not supported for decimals.
+func (p *pp) fmtDecimal(d decimal128, size int, verb rune) {
+	switch verb {
+	case 'v':
+		p.fmt.fmtDecimal(d, size, 'g', -1)
+	case 'g', 'G':
+		p.fmt.fmtDecimal(d, size, verb, -1)
+	case 'f', 'e', 'E':
+		p.fmt.fmtDecimal(d, size, verb, 6)
+	case 'F':
+		p.fmt.fmtDecimal(d, size, 'f', 6)
+	default:
+		p.badVerb(verb)
+	}
+}
+
 // fmtComplex formats a complex number v with
 // r = real(v) and j = imag(v) as (r+ji) using
 // fmtFloat for r and j formatting.
@@ -838,9 +730,9 @@ func (p *pp) printArg(arg any, verb rune) {
 	case float64:
 		p.fmtFloat(f, 64, verb)
 	case decimal64:
-		p.fmtFloat(decimal64ToFloat64(f), 64, verb)
+		p.fmtDecimal(decimal128(f), 64, verb)
 	case decimal128:
-		p.fmtFloat(decimal128ToFloat64(f), 64, verb)
+		p.fmtDecimal(f, 128, verb)
 	case complex64:
 		p.fmtComplex(complex128(f), 64, verb)
 	case complex128:
@@ -931,11 +823,9 @@ func (p *pp) printValue(value reflect.Value, verb rune, depth int) {
 	case reflect.Complex128:
 		p.fmtComplex(f.Complex(), 128, verb)
 	case reflect.Decimal64:
-		d := f.Interface().(decimal64)
-		p.fmtFloat(decimal64ToFloat64(d), 64, verb)
+		p.fmtDecimal(decimal128(f.Interface().(decimal64)), 64, verb)
 	case reflect.Decimal128:
-		d := f.Interface().(decimal128)
-		p.fmtFloat(decimal128ToFloat64(d), 64, verb)
+		p.fmtDecimal(f.Interface().(decimal128), 128, verb)
 	case reflect.String:
 		p.fmtString(f.String(), verb)
 	case reflect.Map:

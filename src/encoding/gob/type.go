@@ -263,9 +263,9 @@ var (
 	tString    = bootstrapType("string", (*string)(nil))
 	tComplex   = bootstrapType("complex", (*complex128)(nil))
 	tInterface = bootstrapType("interface", (*any)(nil))
+	tDecimal64  = bootstrapType("decimal64", (*decimal64)(nil))
+	tDecimal128 = bootstrapType("decimal128", (*decimal128)(nil))
 	// Reserve some Ids for compatible expansion
-	tReserved7 = bootstrapType("_reserved1", (*struct{ r7 int })(nil))
-	tReserved6 = bootstrapType("_reserved1", (*struct{ r6 int })(nil))
 	tReserved5 = bootstrapType("_reserved1", (*struct{ r5 int })(nil))
 	tReserved4 = bootstrapType("_reserved1", (*struct{ r4 int })(nil))
 	tReserved3 = bootstrapType("_reserved1", (*struct{ r3 int })(nil))
@@ -480,6 +480,12 @@ func newTypeObject(name string, ut *userTypeInfo, rt reflect.Type) (gobType, err
 
 	case reflect.Complex64, reflect.Complex128:
 		return tComplex.gobType(), nil
+
+	case reflect.Decimal64:
+		return tDecimal64.gobType(), nil
+
+	case reflect.Decimal128:
+		return tDecimal128.gobType(), nil
 
 	case reflect.String:
 		return tString.gobType(), nil
@@ -914,6 +920,8 @@ func registerBasics() {
 	Register(float64(0))
 	Register(complex64(0i))
 	Register(complex128(0i))
+	Register(decimal64(0))
+	Register(decimal128(0))
 	Register(uintptr(0))
 	Register(false)
 	Register("")
@@ -932,6 +940,8 @@ func registerBasics() {
 	Register([]float64(nil))
 	Register([]complex64(nil))
 	Register([]complex128(nil))
+	Register([]decimal64(nil))
+	Register([]decimal128(nil))
 	Register([]uintptr(nil))
 	Register([]bool(nil))
 	Register([]string(nil))

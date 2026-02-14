@@ -76,6 +76,10 @@ func sizedValue(t reflect.Type, rand *rand.Rand, size int) (value reflect.Value,
 		v.SetFloat(float64(randFloat32(rand)))
 	case reflect.Float64:
 		v.SetFloat(randFloat64(rand))
+	case reflect.Decimal64:
+		v.Set(reflect.ValueOf(decimal64(randFloat64(rand))))
+	case reflect.Decimal128:
+		v.Set(reflect.ValueOf(decimal128(randFloat64(rand))))
 	case reflect.Complex64:
 		v.SetComplex(complex(float64(randFloat32(rand)), float64(randFloat32(rand))))
 	case reflect.Complex128:

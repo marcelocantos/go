@@ -1022,6 +1022,22 @@ func (d *decodeState) literalStore(item []byte, v reflect.Value, fromQuoted bool
 				break
 			}
 			v.SetFloat(n)
+
+		case reflect.Decimal64:
+			n, err := strconv.ParseDecimal64(string(item))
+			if err != nil {
+				d.saveError(&UnmarshalTypeError{Value: "number " + string(item), Type: v.Type(), Offset: int64(d.readIndex())})
+				break
+			}
+			v.Set(reflect.ValueOf(n))
+
+		case reflect.Decimal128:
+			n, err := strconv.ParseDecimal128(string(item))
+			if err != nil {
+				d.saveError(&UnmarshalTypeError{Value: "number " + string(item), Type: v.Type(), Offset: int64(d.readIndex())})
+				break
+			}
+			v.Set(reflect.ValueOf(n))
 		}
 	}
 	return nil

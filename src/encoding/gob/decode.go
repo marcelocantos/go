@@ -14,6 +14,7 @@ import (
 	"math"
 	"math/bits"
 	"reflect"
+	"unsafe"
 )
 
 var (
@@ -359,6 +360,21 @@ func decComplex128(i *decInstr, state *decoderState, value reflect.Value) {
 	real := float64FromBits(state.decodeUint())
 	imag := float64FromBits(state.decodeUint())
 	value.SetComplex(complex(real, imag))
+}
+
+// decDecimal64 decodes a uint64 and stores it as a decimal64 in value.
+func decDecimal64(i *decInstr, state *decoderState, value reflect.Value) {
+	bits := state.decodeUint()
+	*(*uint64)(unsafe.Pointer(value.Addr().Pointer())) = bits
+}
+
+// decDecimal128 decodes two uint64 values and stores them as a decimal128 in value.
+func decDecimal128(i *decInstr, state *decoderState, value reflect.Value) {
+	lo := state.decodeUint()
+	hi := state.decodeUint()
+	p := (*[2]uint64)(unsafe.Pointer(value.Addr().Pointer()))
+	p[0] = lo
+	p[1] = hi
 }
 
 // decUint8Slice decodes a byte slice and stores in value a slice header
@@ -811,18 +827,22 @@ var decOpTable = [...]decOp{
 	reflect.Float64:    decFloat64,
 	reflect.Complex64:  decComplex64,
 	reflect.Complex128: decComplex128,
+	reflect.Decimal64:  decDecimal64,
+	reflect.Decimal128: decDecimal128,
 	reflect.String:     decString,
 }
 
 // Indexed by gob types.  tComplex will be added during type.init().
 var decIgnoreOpMap = map[typeId]decOp{
-	tBool:    ignoreUint,
-	tInt:     ignoreUint,
-	tUint:    ignoreUint,
-	tFloat:   ignoreUint,
-	tBytes:   ignoreUint8Array,
-	tString:  ignoreUint8Array,
-	tComplex: ignoreTwoUints,
+	tBool:       ignoreUint,
+	tInt:        ignoreUint,
+	tUint:       ignoreUint,
+	tFloat:      ignoreUint,
+	tBytes:      ignoreUint8Array,
+	tString:     ignoreUint8Array,
+	tComplex:    ignoreTwoUints,
+	tDecimal64:  ignoreUint,
+	tDecimal128: ignoreTwoUints,
 }
 
 // decOpFor returns the decoding op for the base type under rt and
@@ -1049,6 +1069,10 @@ func (dec *Decoder) compatibleType(fr reflect.Type, fw typeId, inProgress map[re
 		return fw == tFloat
 	case reflect.Complex64, reflect.Complex128:
 		return fw == tComplex
+	case reflect.Decimal64:
+		return fw == tDecimal64
+	case reflect.Decimal128:
+		return fw == tDecimal128
 	case reflect.String:
 		return fw == tString
 	case reflect.Interface:

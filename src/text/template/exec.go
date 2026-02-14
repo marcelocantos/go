@@ -339,6 +339,8 @@ func isTrue(val reflect.Value) (truth, ok bool) {
 		truth = val.Int() != 0
 	case reflect.Float32, reflect.Float64:
 		truth = val.Float() != 0
+	case reflect.Decimal64, reflect.Decimal128:
+		truth = !val.IsZero()
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 		truth = val.Uint() != 0
 	case reflect.Struct:
@@ -959,6 +961,8 @@ func (s *state) evalArg(dot reflect.Value, typ reflect.Type, n parse.Node) refle
 		return s.evalComplex(typ, n)
 	case reflect.Float32, reflect.Float64:
 		return s.evalFloat(typ, n)
+	case reflect.Decimal64, reflect.Decimal128:
+		return s.evalDecimal(typ, n)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		return s.evalInteger(typ, n)
 	case reflect.Interface:
@@ -1030,6 +1034,33 @@ func (s *state) evalFloat(typ reflect.Type, n parse.Node) reflect.Value {
 		return value
 	}
 	s.errorf("expected float; found %s", n)
+	panic("not reached")
+}
+
+func (s *state) evalDecimal(typ reflect.Type, n parse.Node) reflect.Value {
+	s.at(n)
+	if n, ok := n.(*parse.NumberNode); ok && n.IsFloat {
+		// Convert float64 literal to the target decimal type.
+		value := reflect.New(typ).Elem()
+		switch typ.Kind() {
+		case reflect.Decimal64:
+			value.Set(reflect.ValueOf(decimal64(n.Float64)))
+		case reflect.Decimal128:
+			value.Set(reflect.ValueOf(decimal128(n.Float64)))
+		}
+		return value
+	}
+	if n, ok := n.(*parse.NumberNode); ok && n.IsInt {
+		value := reflect.New(typ).Elem()
+		switch typ.Kind() {
+		case reflect.Decimal64:
+			value.Set(reflect.ValueOf(decimal64(n.Int64)))
+		case reflect.Decimal128:
+			value.Set(reflect.ValueOf(decimal128(n.Int64)))
+		}
+		return value
+	}
+	s.errorf("expected number; found %s", n)
 	panic("not reached")
 }
 

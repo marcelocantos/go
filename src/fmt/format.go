@@ -593,3 +593,97 @@ func (f *fmt) fmtFloat(v float64, size int, verb rune, prec int) {
 	// No sign to show and the number is positive; just print the unsigned number.
 	f.pad(num[1:])
 }
+
+// fmtDecimal formats a decimal128. It mirrors fmtFloat but uses
+// strconv.AppendDecimal instead of strconv.AppendFloat.
+func (f *fmt) fmtDecimal(d decimal128, size int, verb rune, prec int) {
+	// Explicit precision in format specifier overrules default precision.
+	if f.precPresent {
+		prec = f.prec
+	}
+	// Format number, reserving space for leading + sign if needed.
+	num := strconv.AppendDecimal(f.intbuf[:1], d, byte(verb), prec, size)
+	if num[1] == '-' || num[1] == '+' {
+		num = num[1:]
+	} else {
+		num[0] = '+'
+	}
+	// f.space means to add a leading space instead of a "+" sign unless
+	// the sign is explicitly asked for by f.plus.
+	if f.space && num[0] == '+' && !f.plus {
+		num[0] = ' '
+	}
+	// Special handling for infinities and NaN,
+	// which don't look like a number so shouldn't be padded with zeros.
+	if num[1] == 'I' || num[1] == 'N' {
+		oldZero := f.zero
+		f.zero = false
+		// Remove sign before NaN if not asked for.
+		if num[1] == 'N' && !f.space && !f.plus {
+			num = num[1:]
+		}
+		f.pad(num)
+		f.zero = oldZero
+		return
+	}
+	// The sharp flag forces printing a decimal point
+	// and retains trailing zeros, which we may need to restore.
+	if f.sharp {
+		digits := 0
+		switch verb {
+		case 'v', 'g', 'G':
+			digits = prec
+			// If no precision is set explicitly use a precision of 6.
+			if digits == -1 {
+				digits = 6
+			}
+		}
+
+		var tailBuf [6]byte
+		tail := tailBuf[:0]
+
+		hasDecimalPoint := false
+		sawNonzeroDigit := false
+		// Starting from i = 1 to skip sign at num[0].
+		for i := 1; i < len(num); i++ {
+			switch num[i] {
+			case '.':
+				hasDecimalPoint = true
+			case 'e', 'E':
+				tail = append(tail, num[i:]...)
+				num = num[:i]
+			default:
+				if num[i] != '0' {
+					sawNonzeroDigit = true
+				}
+				if sawNonzeroDigit {
+					digits--
+				}
+			}
+		}
+		if !hasDecimalPoint {
+			if len(num) == 2 && num[1] == '0' {
+				digits--
+			}
+			num = append(num, '.')
+		}
+		for digits > 0 {
+			num = append(num, '0')
+			digits--
+		}
+		num = append(num, tail...)
+	}
+	// We want a sign if asked for and if the sign is not positive.
+	if f.plus || num[0] != '+' {
+		if f.zero && !f.minus && f.widPresent && f.wid > len(num) {
+			f.buf.writeByte(num[0])
+			f.writePadding(f.wid - len(num))
+			f.buf.write(num[1:])
+			return
+		}
+		f.pad(num)
+		return
+	}
+	// No sign to show and the number is positive; just print the unsigned number.
+	f.pad(num[1:])
+}

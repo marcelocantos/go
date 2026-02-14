@@ -363,7 +363,8 @@ func convertAssignRows(dest, src any, rows *Rows) error {
 		case reflect.Bool,
 			reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-			reflect.Float32, reflect.Float64:
+			reflect.Float32, reflect.Float64,
+			reflect.Decimal64, reflect.Decimal128:
 			*d = asString(src)
 			return nil
 		}
@@ -470,6 +471,30 @@ func convertAssignRows(dest, src any, rows *Rows) error {
 			return fmt.Errorf("converting driver.Value type %T (%q) to a %s: %v", src, s, dv.Kind(), err)
 		}
 		dv.SetFloat(f64)
+		return nil
+	case reflect.Decimal64:
+		if src == nil {
+			return fmt.Errorf("converting NULL to %s is unsupported", dv.Kind())
+		}
+		s := asString(src)
+		d64, err := strconv.ParseDecimal64(s)
+		if err != nil {
+			err = strconvErr(err)
+			return fmt.Errorf("converting driver.Value type %T (%q) to a %s: %v", src, s, dv.Kind(), err)
+		}
+		dv.Set(reflect.ValueOf(d64))
+		return nil
+	case reflect.Decimal128:
+		if src == nil {
+			return fmt.Errorf("converting NULL to %s is unsupported", dv.Kind())
+		}
+		s := asString(src)
+		d128, err := strconv.ParseDecimal128(s)
+		if err != nil {
+			err = strconvErr(err)
+			return fmt.Errorf("converting driver.Value type %T (%q) to a %s: %v", src, s, dv.Kind(), err)
+		}
+		dv.Set(reflect.ValueOf(d128))
 		return nil
 	case reflect.String:
 		if src == nil {

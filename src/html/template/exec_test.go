@@ -30,6 +30,7 @@ type T struct {
 	X, S        string
 	FloatZero   float64
 	ComplexZero complex128
+	DecimalZero decimal64
 	// Nested structs.
 	U *U
 	// Struct with String method.
@@ -304,6 +305,7 @@ var execTests = []execTest{
 	{"dot int", "<{{.}}>", "&lt;13>", 13, true},
 	{"dot uint", "<{{.}}>", "&lt;14>", uint(14), true},
 	{"dot float", "<{{.}}>", "&lt;15.1>", 15.1, true},
+	{"dot decimal64", "<{{.}}>", "&lt;15.1>", decimal64(15.1), true},
 	{"dot bool", "<{{.}}>", "&lt;true>", true, true},
 	{"dot complex", "<{{.}}>", "&lt;(16.2-17i)>", 16.2 - 17i, true},
 	{"dot string", "<{{.}}>", "&lt;hello>", "hello", true},
@@ -434,6 +436,7 @@ var execTests = []execTest{
 	{"if 0", "{{if 0}}NON-ZERO{{else}}ZERO{{end}}", "ZERO", tVal, true},
 	{"if 1.5", "{{if 1.5}}NON-ZERO{{else}}ZERO{{end}}", "NON-ZERO", tVal, true},
 	{"if 0.0", "{{if .FloatZero}}NON-ZERO{{else}}ZERO{{end}}", "ZERO", tVal, true},
+	{"if decimal64 zero", "{{if .DecimalZero}}NON-ZERO{{else}}ZERO{{end}}", "ZERO", tVal, true},
 	{"if 1.5i", "{{if 1.5i}}NON-ZERO{{else}}ZERO{{end}}", "NON-ZERO", tVal, true},
 	{"if 0.0i", "{{if .ComplexZero}}NON-ZERO{{else}}ZERO{{end}}", "ZERO", tVal, true},
 	{"if emptystring", "{{if ``}}NON-EMPTY{{else}}EMPTY{{end}}", "EMPTY", tVal, true},

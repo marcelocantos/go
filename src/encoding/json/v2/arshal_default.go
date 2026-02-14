@@ -98,6 +98,10 @@ func makeDefaultArshaler(t reflect.Type) *arshaler {
 		return makeUintArshaler(t)
 	case reflect.Float32, reflect.Float64:
 		return makeFloatArshaler(t)
+	case reflect.Decimal64:
+		return makeDecimal64Arshaler(t)
+	case reflect.Decimal128:
+		return makeDecimal128Arshaler(t)
 	case reflect.Map:
 		return makeMapArshaler(t)
 	case reflect.Struct:
@@ -723,6 +727,162 @@ func makeFloatArshaler(t reflect.Type) *arshaler {
 			if !ok {
 				return newUnmarshalErrorAfterWithValue(dec, t, strconv.ErrRange)
 			}
+			return nil
+		}
+		return newUnmarshalErrorAfter(dec, t, nil)
+	}
+	return &fncs
+}
+
+func makeDecimal64Arshaler(t reflect.Type) *arshaler {
+	var fncs arshaler
+	fncs.marshal = func(enc *jsontext.Encoder, va addressableValue, mo *jsonopts.Struct) error {
+		xe := export.Encoder(enc)
+		if mo.Format != "" && mo.FormatDepth == xe.Tokens.Depth() {
+			return newInvalidFormatError(enc, t)
+		}
+
+		d := va.Interface().(decimal64)
+		s := strconv.FormatDecimal64(d, 'f', -1)
+		if s == "NaN" || s == "+Inf" || s == "-Inf" {
+			err := fmt.Errorf("unsupported value: %s", s)
+			return newMarshalErrorBefore(enc, t, err)
+		}
+
+		// Optimize for marshaling without preceding whitespace or string escaping.
+		if optimizeCommon && !mo.Flags.Get(jsonflags.AnyWhitespace|jsonflags.StringifyNumbers) && !xe.Tokens.Last.NeedObjectName() {
+			xe.Buf = append(xe.Tokens.MayAppendDelim(xe.Buf, '0'), s...)
+			xe.Tokens.Last.Increment()
+			if xe.NeedFlush() {
+				return xe.Flush()
+			}
+			return nil
+		}
+
+		k := stringOrNumberKind(xe.Tokens.Last.NeedObjectName() || mo.Flags.Get(jsonflags.StringifyNumbers))
+		return xe.AppendRaw(k, true, func(b []byte) ([]byte, error) {
+			return append(b, s...), nil
+		})
+	}
+	fncs.unmarshal = func(dec *jsontext.Decoder, va addressableValue, uo *jsonopts.Struct) error {
+		xd := export.Decoder(dec)
+		if uo.Format != "" && uo.FormatDepth == xd.Tokens.Depth() {
+			return newInvalidFormatError(dec, t)
+		}
+		stringify := xd.Tokens.Last.NeedObjectName() || uo.Flags.Get(jsonflags.StringifyNumbers)
+		var flags jsonwire.ValueFlags
+		val, err := xd.ReadValue(&flags)
+		if err != nil {
+			return err
+		}
+		k := val.Kind()
+		switch k {
+		case 'n':
+			if !uo.Flags.Get(jsonflags.MergeWithLegacySemantics) {
+				va.Set(reflect.ValueOf(decimal64(0)))
+			}
+			return nil
+		case '"':
+			if !stringify {
+				break
+			}
+			val = jsonwire.UnquoteMayCopy(val, flags.IsVerbatim())
+			if uo.Flags.Get(jsonflags.StringifyWithLegacySemantics) {
+				if string(val) == "null" {
+					if !uo.Flags.Get(jsonflags.MergeWithLegacySemantics) {
+						va.Set(reflect.ValueOf(decimal64(0)))
+					}
+					return nil
+				}
+			}
+			fallthrough
+		case '0':
+			if stringify && k == '0' {
+				break
+			}
+			d, parseErr := strconv.ParseDecimal64(string(val))
+			if parseErr != nil {
+				return newUnmarshalErrorAfterWithValue(dec, t, strconv.ErrSyntax)
+			}
+			va.Set(reflect.ValueOf(d))
+			return nil
+		}
+		return newUnmarshalErrorAfter(dec, t, nil)
+	}
+	return &fncs
+}
+
+func makeDecimal128Arshaler(t reflect.Type) *arshaler {
+	var fncs arshaler
+	fncs.marshal = func(enc *jsontext.Encoder, va addressableValue, mo *jsonopts.Struct) error {
+		xe := export.Encoder(enc)
+		if mo.Format != "" && mo.FormatDepth == xe.Tokens.Depth() {
+			return newInvalidFormatError(enc, t)
+		}
+
+		d := va.Interface().(decimal128)
+		s := strconv.FormatDecimal128(d, 'f', -1)
+		if s == "NaN" || s == "+Inf" || s == "-Inf" {
+			err := fmt.Errorf("unsupported value: %s", s)
+			return newMarshalErrorBefore(enc, t, err)
+		}
+
+		// Optimize for marshaling without preceding whitespace or string escaping.
+		if optimizeCommon && !mo.Flags.Get(jsonflags.AnyWhitespace|jsonflags.StringifyNumbers) && !xe.Tokens.Last.NeedObjectName() {
+			xe.Buf = append(xe.Tokens.MayAppendDelim(xe.Buf, '0'), s...)
+			xe.Tokens.Last.Increment()
+			if xe.NeedFlush() {
+				return xe.Flush()
+			}
+			return nil
+		}
+
+		k := stringOrNumberKind(xe.Tokens.Last.NeedObjectName() || mo.Flags.Get(jsonflags.StringifyNumbers))
+		return xe.AppendRaw(k, true, func(b []byte) ([]byte, error) {
+			return append(b, s...), nil
+		})
+	}
+	fncs.unmarshal = func(dec *jsontext.Decoder, va addressableValue, uo *jsonopts.Struct) error {
+		xd := export.Decoder(dec)
+		if uo.Format != "" && uo.FormatDepth == xd.Tokens.Depth() {
+			return newInvalidFormatError(dec, t)
+		}
+		stringify := xd.Tokens.Last.NeedObjectName() || uo.Flags.Get(jsonflags.StringifyNumbers)
+		var flags jsonwire.ValueFlags
+		val, err := xd.ReadValue(&flags)
+		if err != nil {
+			return err
+		}
+		k := val.Kind()
+		switch k {
+		case 'n':
+			if !uo.Flags.Get(jsonflags.MergeWithLegacySemantics) {
+				va.Set(reflect.ValueOf(decimal128(0)))
+			}
+			return nil
+		case '"':
+			if !stringify {
+				break
+			}
+			val = jsonwire.UnquoteMayCopy(val, flags.IsVerbatim())
+			if uo.Flags.Get(jsonflags.StringifyWithLegacySemantics) {
+				if string(val) == "null" {
+					if !uo.Flags.Get(jsonflags.MergeWithLegacySemantics) {
+						va.Set(reflect.ValueOf(decimal128(0)))
+					}
+					return nil
+				}
+			}
+			fallthrough
+		case '0':
+			if stringify && k == '0' {
+				break
+			}
+			d, parseErr := strconv.ParseDecimal128(string(val))
+			if parseErr != nil {
+				return newUnmarshalErrorAfterWithValue(dec, t, strconv.ErrSyntax)
+			}
+			va.Set(reflect.ValueOf(d))
 			return nil
 		}
 		return newUnmarshalErrorAfter(dec, t, nil)
@@ -1391,6 +1551,8 @@ func isLegacyEmpty(v addressableValue) bool {
 		return v.Uint() == 0
 	case reflect.Float32, reflect.Float64:
 		return v.Float() == 0
+	case reflect.Decimal64, reflect.Decimal128:
+		return v.IsZero()
 	case reflect.String, reflect.Map, reflect.Slice, reflect.Array:
 		return v.Len() == 0
 	case reflect.Pointer, reflect.Interface:
@@ -1412,7 +1574,8 @@ func canLegacyStringify(t reflect.Type) bool {
 	case reflect.Bool, reflect.String,
 		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
-		reflect.Float32, reflect.Float64:
+		reflect.Float32, reflect.Float64,
+		reflect.Decimal64, reflect.Decimal128:
 		return true
 	}
 	return false

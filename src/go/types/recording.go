@@ -66,7 +66,9 @@ func (check *Checker) recordTypeAndValue(x ast.Expr, mode operandMode, typ Type,
 		assert(val != nil)
 		// We check allBasic(typ, IsConstType) here as constant expressions may be
 		// recorded as type parameters.
-		assert(!isValid(typ) || allBasic(typ, IsConstType))
+		if isValid(typ) && !allBasic(typ, IsConstType) {
+			panic("constant type not IsConstType: " + typ.String())
+		}
 	}
 	if m := check.Types; m != nil {
 		m[x] = TypeAndValue{mode, typ, val}
