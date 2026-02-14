@@ -626,9 +626,11 @@ func (f *fmt) fmtDecimal(d decimal128, size int, verb rune, prec int) {
 		f.zero = oldZero
 		return
 	}
-	// The sharp flag forces printing a decimal point
-	// and retains trailing zeros, which we may need to restore.
-	if f.sharp {
+	// With explicit precision, the sharp flag forces a decimal point
+	// and retains trailing zeros (float-style behavior).
+	// Without explicit precision, quantum-preserving mode was already
+	// handled by strconv via the prec == -2 sentinel.
+	if f.sharp && f.precPresent {
 		digits := 0
 		switch verb {
 		case 'v', 'g', 'G':

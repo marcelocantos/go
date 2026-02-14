@@ -468,15 +468,35 @@ func (p *pp) fmtFloat(v float64, size int, verb rune) {
 // fmtDecimal formats a decimal. It mirrors fmtFloat but uses
 // strconv.AppendDecimal. Verbs b, x, X are not supported for decimals.
 func (p *pp) fmtDecimal(d decimal128, size int, verb rune) {
+	// The # flag without explicit precision activates quantum-preserving
+	// mode (prec -2): the coefficient's trailing zeros are kept, reflecting
+	// the stored precision of the decimal value.
+	quantum := p.fmt.sharp && !p.fmt.precPresent
 	switch verb {
 	case 'v':
-		p.fmt.fmtDecimal(d, size, 'g', -1)
+		prec := -1
+		if quantum {
+			prec = -2
+		}
+		p.fmt.fmtDecimal(d, size, 'g', prec)
 	case 'g', 'G':
-		p.fmt.fmtDecimal(d, size, verb, -1)
+		prec := -1
+		if quantum {
+			prec = -2
+		}
+		p.fmt.fmtDecimal(d, size, verb, prec)
 	case 'f', 'e', 'E':
-		p.fmt.fmtDecimal(d, size, verb, 6)
+		prec := 6
+		if quantum {
+			prec = -2
+		}
+		p.fmt.fmtDecimal(d, size, verb, prec)
 	case 'F':
-		p.fmt.fmtDecimal(d, size, 'f', 6)
+		prec := 6
+		if quantum {
+			prec = -2
+		}
+		p.fmt.fmtDecimal(d, size, 'f', prec)
 	default:
 		p.badVerb(verb)
 	}

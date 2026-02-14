@@ -281,7 +281,7 @@ func roundDigits(digits []byte, n int) ([]byte, int) {
 func formatDigits(dst []byte, sign int, exp int, digits []byte, format byte, prec int) []byte {
 	ndigits := len(digits)
 
-	if prec < 0 {
+	if prec == -1 {
 		// Shortest representation: strip trailing zeros.
 		for ndigits > 0 && digits[ndigits-1] == '0' {
 			ndigits--
@@ -332,10 +332,18 @@ func formatDigits(dst []byte, sign int, exp int, digits []byte, format byte, pre
 				}
 				useSci = sciLen < fixedLen
 			}
-			if useSci {
-				return stripTrailingZeros(appendExp(dst, digits, exp, ef, -1))
+			if prec == -1 {
+				// Normalized shortest: strip trailing zeros from result.
+				if useSci {
+					return stripTrailingZeros(appendExp(dst, digits, exp, ef, -1))
+				}
+				return stripTrailingZeros(appendFixed(dst, digits, exp, -1))
 			}
-			return stripTrailingZeros(appendFixed(dst, digits, exp, -1))
+			// Quantum-preserving (prec == -2): keep coefficient's trailing zeros.
+			if useSci {
+				return appendExp(dst, digits, exp, ef, -1)
+			}
+			return appendFixed(dst, digits, exp, -1)
 		}
 		p := prec
 		if p == 0 {
