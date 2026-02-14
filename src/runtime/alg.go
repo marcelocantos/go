@@ -146,13 +146,38 @@ func c128hash(p unsafe.Pointer, h uintptr) uintptr {
 func d64hash(p unsafe.Pointer, h uintptr) uintptr {
 	x := *(*uint64)(p)
 	if bid64IsNaN(x) {
-		return c1 * (c0 ^ h ^ uintptr(rand())) // NaN: random hash
+		return trimHash(c1 * (c0 ^ h ^ uintptr(rand()))) // NaN != NaN
 	}
-	_, _, coeff := bid64Unpack(x)
+	if bid64IsInf(x) {
+		// +Inf == +Inf, -Inf == -Inf, but +Inf != -Inf
+		return trimHash(c1 * (c0 ^ h ^ uintptr(x>>63) ^ 0xdec1))
+	}
+	sign, exp, coeff := bid64Unpack(x)
 	if coeff == 0 {
-		return c1 * (c0 ^ h) // +0 == -0
+		return trimHash(c1 * (c0 ^ h)) // +0 == -0
 	}
-	return memhash(p, h, 8)
+	// Normalize: strip trailing zeros so semantically equal values
+	// with different BID encodings hash identically.
+	for coeff%10 == 0 {
+		coeff /= 10
+		exp++
+	}
+	// Hash normalized components.
+	var buf [13]byte
+	buf[0] = byte(sign)
+	buf[1] = byte(exp)
+	buf[2] = byte(exp >> 8)
+	buf[3] = byte(exp >> 16)
+	buf[4] = byte(exp >> 24)
+	buf[5] = byte(coeff)
+	buf[6] = byte(coeff >> 8)
+	buf[7] = byte(coeff >> 16)
+	buf[8] = byte(coeff >> 24)
+	buf[9] = byte(coeff >> 32)
+	buf[10] = byte(coeff >> 40)
+	buf[11] = byte(coeff >> 48)
+	buf[12] = byte(coeff >> 56)
+	return memhash(noescape(unsafe.Pointer(&buf)), h, 13)
 }
 
 func d64equal(p, q unsafe.Pointer) bool {

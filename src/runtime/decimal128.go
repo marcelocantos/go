@@ -845,7 +845,9 @@ func deq128(x, y decimal128) bool {
 
 // bid128CompareEqual compares two positive decimal128 values with
 // different exponents for equality.
+// xc * 10^xe == yc * 10^ye  iff  xc == yc * 10^(ye-xe).
 func bid128CompareEqual(xe int, xc uint128, ye int, yc uint128) bool {
+	// Make xe <= ye so diff >= 0.
 	if xe > ye {
 		xe, xc, ye, yc = ye, yc, xe, xc
 	}
@@ -853,9 +855,12 @@ func bid128CompareEqual(xe int, xc uint128, ye int, yc uint128) bool {
 	if diff > 40 {
 		return false
 	}
+
+	// Scale yc up by 10^diff (yc has the larger exponent,
+	// so its coefficient is typically smaller).
 	for i := 0; i < diff; i++ {
-		xc = u128Mul64(xc, 10)
-		if u128Cmp(xc, uint128{0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF}) > 0 {
+		yc = u128Mul64(yc, 10)
+		if u128Cmp(yc, xc) > 0 {
 			return false
 		}
 	}
@@ -1368,13 +1373,50 @@ func d128hash(p unsafe.Pointer, h uintptr) uintptr {
 	hi := x[1]
 	lo := x[0]
 	if bid128IsNaN(hi) {
-		return c1 * (c0 ^ h ^ uintptr(rand()))
+		return trimHash(c1 * (c0 ^ h ^ uintptr(rand()))) // NaN != NaN
 	}
-	_, _, coeff := bid128Unpack(hi, lo)
+	if bid128IsInf(hi) {
+		// +Inf == +Inf, -Inf == -Inf, but +Inf != -Inf
+		return trimHash(c1 * (c0 ^ h ^ uintptr(hi>>63) ^ 0xdec1))
+	}
+	sign, exp, coeff := bid128Unpack(hi, lo)
 	if u128IsZero(coeff) {
-		return c1 * (c0 ^ h) // +0 == -0
+		return trimHash(c1 * (c0 ^ h)) // +0 == -0
 	}
-	return memhash(p, h, 16)
+	// Normalize: strip trailing zeros so that semantically equal
+	// values with different BID encodings hash identically.
+	for {
+		_, rem := u128Div64(coeff, 10)
+		if rem != 0 {
+			break
+		}
+		coeff, _ = u128Div64(coeff, 10)
+		exp++
+	}
+	// Hash normalized components.
+	var buf [21]byte
+	buf[0] = byte(sign)
+	buf[1] = byte(exp)
+	buf[2] = byte(exp >> 8)
+	buf[3] = byte(exp >> 16)
+	buf[4] = byte(exp >> 24)
+	buf[5] = byte(coeff.lo)
+	buf[6] = byte(coeff.lo >> 8)
+	buf[7] = byte(coeff.lo >> 16)
+	buf[8] = byte(coeff.lo >> 24)
+	buf[9] = byte(coeff.lo >> 32)
+	buf[10] = byte(coeff.lo >> 40)
+	buf[11] = byte(coeff.lo >> 48)
+	buf[12] = byte(coeff.lo >> 56)
+	buf[13] = byte(coeff.hi)
+	buf[14] = byte(coeff.hi >> 8)
+	buf[15] = byte(coeff.hi >> 16)
+	buf[16] = byte(coeff.hi >> 24)
+	buf[17] = byte(coeff.hi >> 32)
+	buf[18] = byte(coeff.hi >> 40)
+	buf[19] = byte(coeff.hi >> 48)
+	buf[20] = byte(coeff.hi >> 56)
+	return memhash(noescape(unsafe.Pointer(&buf)), h, 21)
 }
 
 func d128equal(p, q unsafe.Pointer) bool {

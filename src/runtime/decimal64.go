@@ -400,31 +400,23 @@ func deq64(x, y decimal64) bool {
 
 // bid64CompareEqual compares two positive decimal values with
 // different exponents for equality.
+// xc * 10^xe == yc * 10^ye  iff  xc == yc * 10^(ye-xe).
 func bid64CompareEqual(xe int, xc uint64, ye int, yc uint64) bool {
-	// Make xe <= ye (so we scale xc up to compare at exponent ye).
-	// xc * 10^xe == yc * 10^ye  iff  xc * 10^(ye-xe) == yc
+	// Make xe <= ye so diff >= 0.
 	if xe > ye {
 		xe, xc, ye, yc = ye, yc, xe, xc
 	}
 	diff := ye - xe
-
-	// First try: strip trailing zeros from xc to reduce diff.
-	for diff > 0 && xc%10 == 0 {
-		xc /= 10
-		diff--
-	}
-	if diff == 0 {
-		return xc == yc
-	}
 	if diff > 17 {
-		return false // Exponent difference too large even after normalization
+		return false
 	}
 
-	// Scale xc up by 10^diff
+	// Scale yc up by 10^diff (yc has the larger exponent,
+	// so its coefficient is typically smaller).
 	for i := 0; i < diff; i++ {
-		xc *= 10
-		if xc > pow10_18 {
-			return false // Overflow means not equal
+		yc *= 10
+		if yc > xc {
+			return false
 		}
 	}
 	return xc == yc
