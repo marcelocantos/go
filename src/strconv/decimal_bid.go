@@ -4,7 +4,10 @@
 
 package strconv
 
-import "unsafe"
+import (
+	"math/bits"
+	"unsafe"
+)
 
 // FormatDecimal converts a decimal128 value to a string.
 // The format fmt and precision prec follow the same rules as [FormatFloat].
@@ -631,6 +634,7 @@ func parseDecimal64(s string) (decimal64, error) {
 	var coeff uint64
 	exp := 0
 	sawDot := false
+	sawDigit := false
 	ndigits := 0
 	fracDigits := 0
 
@@ -676,6 +680,7 @@ func parseDecimal64(s string) (decimal64, error) {
 		if c < '0' || c > '9' {
 			return 0, ErrSyntax
 		}
+		sawDigit = true
 		if ndigits < 16 { // max 16 significant digits for BID64
 			coeff = coeff*10 + uint64(c-'0')
 			if coeff > 0 || ndigits > 0 {
@@ -689,7 +694,7 @@ func parseDecimal64(s string) (decimal64, error) {
 		}
 	}
 
-	if ndigits == 0 && !sawDot {
+	if !sawDigit {
 		return 0, ErrSyntax
 	}
 
@@ -699,13 +704,137 @@ func parseDecimal64(s string) (decimal64, error) {
 }
 
 func parseDecimal128(s string) (decimal128, error) {
-	// For now, parse via decimal64 and widen.
-	// This limits precision to ~16 digits but is correct for the prototype.
-	d64, err := parseDecimal64(s)
-	if err != nil {
-		return 0, err
+	if len(s) == 0 {
+		return 0, ErrSyntax
 	}
-	return decimal128(d64), nil
+
+	// Handle special values.
+	if hasPrefix(s, "NaN") || hasPrefix(s, "nan") {
+		hi := uint64(0x7c00000000000000)
+		return *(*decimal128)(unsafe.Pointer(&[2]uint64{0, hi})), nil
+	}
+
+	neg := false
+	if s[0] == '+' {
+		s = s[1:]
+	} else if s[0] == '-' {
+		neg = true
+		s = s[1:]
+	}
+
+	if hasPrefix(s, "Inf") || hasPrefix(s, "inf") || hasPrefix(s, "Infinity") || hasPrefix(s, "infinity") {
+		hi := uint64(0x7800000000000000)
+		if neg {
+			hi |= 0x8000000000000000
+		}
+		return *(*decimal128)(unsafe.Pointer(&[2]uint64{0, hi})), nil
+	}
+
+	// Parse decimal digits into a uint128 coefficient [coeffHi:coeffLo].
+	var coeffHi, coeffLo uint64
+	exp := 0
+	sawDot := false
+	sawDigit := false
+	ndigits := 0
+	fracDigits := 0
+
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '.' {
+			if sawDot {
+				return 0, ErrSyntax
+			}
+			sawDot = true
+			continue
+		}
+		if c == 'e' || c == 'E' {
+			i++
+			if i >= len(s) {
+				return 0, ErrSyntax
+			}
+			eneg := false
+			if s[i] == '+' {
+				i++
+			} else if s[i] == '-' {
+				eneg = true
+				i++
+			}
+			if i >= len(s) {
+				return 0, ErrSyntax
+			}
+			eexp := 0
+			for i < len(s) {
+				if s[i] < '0' || s[i] > '9' {
+					return 0, ErrSyntax
+				}
+				eexp = eexp*10 + int(s[i]-'0')
+				i++
+			}
+			if eneg {
+				eexp = -eexp
+			}
+			exp += eexp
+			break
+		}
+		if c < '0' || c > '9' {
+			return 0, ErrSyntax
+		}
+		sawDigit = true
+		if ndigits < 34 { // max 34 significant digits for BID128
+			// [coeffHi:coeffLo] = [coeffHi:coeffLo] * 10 + digit
+			mulHi, mulLo := bits.Mul64(coeffLo, 10)
+			coeffHi = coeffHi*10 + mulHi
+			d := uint64(c - '0')
+			newLo := mulLo + d
+			if newLo < mulLo {
+				coeffHi++
+			}
+			coeffLo = newLo
+			if coeffHi > 0 || coeffLo > 0 || ndigits > 0 {
+				ndigits++
+			}
+		} else {
+			exp++
+		}
+		if sawDot {
+			fracDigits++
+		}
+	}
+
+	if !sawDigit {
+		return 0, ErrSyntax
+	}
+
+	exp -= fracDigits
+
+	return bid128Pack128(neg, exp, coeffHi, coeffLo), nil
+}
+
+// bid128Pack128 encodes a decimal128 value from sign, exponent, and uint128 coefficient.
+func bid128Pack128(neg bool, exp int, coeffHi, coeffLo uint64) decimal128 {
+	const bias = 6176
+	biasedExp := exp + bias
+	if biasedExp < 0 {
+		biasedExp = 0
+	}
+	if biasedExp > 0x3FFF {
+		biasedExp = 0x3FFF
+	}
+
+	var hi uint64
+	if neg {
+		hi |= 1 << 63
+	}
+
+	if coeffHi < (1 << 49) {
+		// Form 1: coefficient high word fits in 49 bits.
+		hi |= uint64(biasedExp)<<49 | coeffHi
+	} else {
+		// Form 2: coefficient high word >= 2^49.
+		hi |= (3 << 61) | uint64(biasedExp)<<47 | (coeffHi & ((1 << 47) - 1))
+	}
+
+	return *(*decimal128)(unsafe.Pointer(&[2]uint64{coeffLo, hi}))
 }
 
 // bid64Pack encodes a decimal64 value from sign, exponent, and coefficient.
