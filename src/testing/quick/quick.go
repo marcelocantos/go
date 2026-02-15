@@ -44,6 +44,82 @@ func randFloat64(rand *rand.Rand) float64 {
 	return f
 }
 
+// randDecimal64 generates a random decimal64 taking the full range of values,
+// including NaN, infinities, negative zero, and varying quantum (exponent).
+func randDecimal64(rand *rand.Rand) decimal64 {
+	// 10% chance of special value.
+	if rand.Intn(10) == 0 {
+		switch rand.Intn(4) {
+		case 0:
+			return math.Decimal64NaN()
+		case 1:
+			return math.Decimal64Inf(1)
+		case 2:
+			return math.Decimal64Inf(-1)
+		case 3:
+			return -decimal64(0)
+		}
+	}
+	// Random sign.
+	var sign uint64
+	if rand.Intn(2) == 1 {
+		sign = 1 << 63
+	}
+	// Random coefficient: 0 to 9999999999999999 (10^16 - 1).
+	coeff := uint64(rand.Int63n(10_000_000_000_000_000))
+	// Random biased exponent: 0 to 767.
+	biasedExp := uint64(rand.Intn(768))
+	// BID64 packing.
+	var bits uint64
+	if coeff < (1 << 53) {
+		bits = sign | biasedExp<<53 | coeff
+	} else {
+		bits = sign | (3 << 61) | biasedExp<<51 | (coeff & ((1 << 51) - 1))
+	}
+	return math.Decimal64frombits(bits)
+}
+
+// randDecimal128 generates a random decimal128 taking the full range of values,
+// including NaN, infinities, negative zero, and varying quantum (exponent).
+func randDecimal128(rand *rand.Rand) decimal128 {
+	// 10% chance of special value.
+	if rand.Intn(10) == 0 {
+		switch rand.Intn(4) {
+		case 0:
+			return decimal128(math.Decimal64NaN())
+		case 1:
+			return decimal128(math.Decimal64Inf(1))
+		case 2:
+			return decimal128(math.Decimal64Inf(-1))
+		case 3:
+			return -decimal128(0)
+		}
+	}
+	// Random sign.
+	var sign uint64
+	if rand.Intn(2) == 1 {
+		sign = 1 << 63
+	}
+	// Random coefficient: 0 to 10^34-1.
+	// Generate as lo (full 64-bit range) and hi (0 to 0x0001ED09BEAD87C0).
+	// The max coefficient 10^34-1 = {0x0001ED09BEAD87C0, 0x378D8E63FFFFFFFF}.
+	coeffLo := rand.Uint64()
+	coeffHi := uint64(rand.Int63n(0x0001ED09BEAD87C1)) // [0, maxHi]
+	if coeffHi == 0x0001ED09BEAD87C0 && coeffLo > 0x378D8E63FFFFFFFF {
+		coeffLo = uint64(rand.Int63n(0x378D8E64)) // clamp
+	}
+	// Random biased exponent: 0 to 12287 (14 bits).
+	biasedExp := uint64(rand.Intn(12288))
+	// BID128 packing.
+	var hi uint64
+	if coeffHi < (1 << 49) {
+		hi = sign | biasedExp<<49 | coeffHi
+	} else {
+		hi = sign | (3 << 61) | biasedExp<<47 | (coeffHi & ((1 << 47) - 1))
+	}
+	return math.Decimal128frombits(hi, coeffLo)
+}
+
 // randInt64 returns a random int64.
 func randInt64(rand *rand.Rand) int64 {
 	return int64(rand.Uint64())
@@ -77,9 +153,9 @@ func sizedValue(t reflect.Type, rand *rand.Rand, size int) (value reflect.Value,
 	case reflect.Float64:
 		v.SetFloat(randFloat64(rand))
 	case reflect.Decimal64:
-		v.Set(reflect.ValueOf(decimal64(randFloat64(rand))))
+		v.Set(reflect.ValueOf(randDecimal64(rand)))
 	case reflect.Decimal128:
-		v.Set(reflect.ValueOf(decimal128(randFloat64(rand))))
+		v.Set(reflect.ValueOf(randDecimal128(rand)))
 	case reflect.Complex64:
 		v.SetComplex(complex(float64(randFloat32(rand)), float64(randFloat32(rand))))
 	case reflect.Complex128:
