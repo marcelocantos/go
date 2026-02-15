@@ -79,6 +79,55 @@ func TestIsDecimal64Inf(t *testing.T) {
 	}
 }
 
+func TestIsDecimal128NaN(t *testing.T) {
+	if !IsDecimal128NaN(Decimal128NaN()) {
+		t.Error("IsDecimal128NaN(Decimal128NaN()) = false")
+	}
+	if IsDecimal128NaN(decimal128(0)) {
+		t.Error("IsDecimal128NaN(0) = true")
+	}
+	if IsDecimal128NaN(decimal128(1)) {
+		t.Error("IsDecimal128NaN(1) = true")
+	}
+	if IsDecimal128NaN(Decimal128Inf(1)) {
+		t.Error("IsDecimal128NaN(+Inf) = true")
+	}
+	if IsDecimal128NaN(Decimal128Inf(-1)) {
+		t.Error("IsDecimal128NaN(-Inf) = true")
+	}
+}
+
+func TestIsDecimal128Inf(t *testing.T) {
+	pinf := Decimal128Inf(1)
+	ninf := Decimal128Inf(-1)
+	nan := Decimal128NaN()
+	zero := decimal128(0)
+	one := decimal128(1)
+
+	tests := []struct {
+		d    decimal128
+		sign int
+		want bool
+		name string
+	}{
+		{pinf, 0, true, "+Inf sign=0"},
+		{pinf, 1, true, "+Inf sign=1"},
+		{pinf, -1, false, "+Inf sign=-1"},
+		{ninf, 0, true, "-Inf sign=0"},
+		{ninf, 1, false, "-Inf sign=1"},
+		{ninf, -1, true, "-Inf sign=-1"},
+		{nan, 0, false, "NaN sign=0"},
+		{zero, 0, false, "0 sign=0"},
+		{one, 0, false, "1 sign=0"},
+	}
+	for _, tt := range tests {
+		got := IsDecimal128Inf(tt.d, tt.sign)
+		if got != tt.want {
+			t.Errorf("IsDecimal128Inf(%s) = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
 // --- Abs, Copysign, Signbit, Dim ---
 
 func TestDecimal64Abs(t *testing.T) {

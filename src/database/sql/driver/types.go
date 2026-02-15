@@ -280,6 +280,10 @@ func (defaultConverter) ConvertValue(v any) (Value, error) {
 		return int64(u64), nil
 	case reflect.Float32, reflect.Float64:
 		return rv.Float(), nil
+	case reflect.Decimal64:
+		return strconv.FormatDecimal(rv.Decimal(), 'f', -1, 64), nil
+	case reflect.Decimal128:
+		return strconv.FormatDecimal(rv.Decimal(), 'f', -1, 128), nil
 	case reflect.Bool:
 		return rv.Bool(), nil
 	case reflect.Slice:

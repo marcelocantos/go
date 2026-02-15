@@ -407,56 +407,56 @@ func TestCanIntUintFloatComplex(t *testing.T) {
 	type float float64
 	type complex complex128
 
-	var ops = [...]string{"CanInt", "CanUint", "CanFloat", "CanComplex"}
+	var ops = [...]string{"CanInt", "CanUint", "CanFloat", "CanComplex", "CanDecimal"}
 
 	var testCases = []struct {
 		i    any
-		want [4]bool
+		want [5]bool
 	}{
 		// signed integer
-		{132, [...]bool{true, false, false, false}},
-		{int8(8), [...]bool{true, false, false, false}},
-		{int16(16), [...]bool{true, false, false, false}},
-		{int32(32), [...]bool{true, false, false, false}},
-		{int64(64), [...]bool{true, false, false, false}},
+		{132, [...]bool{true, false, false, false, false}},
+		{int8(8), [...]bool{true, false, false, false, false}},
+		{int16(16), [...]bool{true, false, false, false, false}},
+		{int32(32), [...]bool{true, false, false, false, false}},
+		{int64(64), [...]bool{true, false, false, false, false}},
 		// unsigned integer
-		{uint(132), [...]bool{false, true, false, false}},
-		{uint8(8), [...]bool{false, true, false, false}},
-		{uint16(16), [...]bool{false, true, false, false}},
-		{uint32(32), [...]bool{false, true, false, false}},
-		{uint64(64), [...]bool{false, true, false, false}},
-		{uintptr(0xABCD), [...]bool{false, true, false, false}},
+		{uint(132), [...]bool{false, true, false, false, false}},
+		{uint8(8), [...]bool{false, true, false, false, false}},
+		{uint16(16), [...]bool{false, true, false, false, false}},
+		{uint32(32), [...]bool{false, true, false, false, false}},
+		{uint64(64), [...]bool{false, true, false, false, false}},
+		{uintptr(0xABCD), [...]bool{false, true, false, false, false}},
 		// floating-point
-		{float32(256.25), [...]bool{false, false, true, false}},
-		{float64(512.125), [...]bool{false, false, true, false}},
+		{float32(256.25), [...]bool{false, false, true, false, false}},
+		{float64(512.125), [...]bool{false, false, true, false, false}},
 		// decimal
-		{decimal64(256.25), [...]bool{false, false, false, false}},
-		{decimal128(512.125), [...]bool{false, false, false, false}},
+		{decimal64(256.25), [...]bool{false, false, false, false, true}},
+		{decimal128(512.125), [...]bool{false, false, false, false, true}},
 		// complex
-		{complex64(532.125 + 10i), [...]bool{false, false, false, true}},
-		{complex128(564.25 + 1i), [...]bool{false, false, false, true}},
+		{complex64(532.125 + 10i), [...]bool{false, false, false, true, false}},
+		{complex128(564.25 + 1i), [...]bool{false, false, false, true, false}},
 		// underlying
-		{integer(-132), [...]bool{true, false, false, false}},
-		{uinteger(132), [...]bool{false, true, false, false}},
-		{float(256.25), [...]bool{false, false, true, false}},
-		{complex(532.125 + 10i), [...]bool{false, false, false, true}},
+		{integer(-132), [...]bool{true, false, false, false, false}},
+		{uinteger(132), [...]bool{false, true, false, false, false}},
+		{float(256.25), [...]bool{false, false, true, false, false}},
+		{complex(532.125 + 10i), [...]bool{false, false, false, true, false}},
 		// not-acceptable
-		{"hello world", [...]bool{false, false, false, false}},
-		{new(int), [...]bool{false, false, false, false}},
-		{new(uint), [...]bool{false, false, false, false}},
-		{new(float64), [...]bool{false, false, false, false}},
-		{new(complex64), [...]bool{false, false, false, false}},
-		{new([5]int), [...]bool{false, false, false, false}},
-		{new(integer), [...]bool{false, false, false, false}},
-		{new(map[int]int), [...]bool{false, false, false, false}},
-		{new(chan<- int), [...]bool{false, false, false, false}},
-		{new(func(a int8)), [...]bool{false, false, false, false}},
-		{new(struct{ i int }), [...]bool{false, false, false, false}},
+		{"hello world", [...]bool{false, false, false, false, false}},
+		{new(int), [...]bool{false, false, false, false, false}},
+		{new(uint), [...]bool{false, false, false, false, false}},
+		{new(float64), [...]bool{false, false, false, false, false}},
+		{new(complex64), [...]bool{false, false, false, false, false}},
+		{new([5]int), [...]bool{false, false, false, false, false}},
+		{new(integer), [...]bool{false, false, false, false, false}},
+		{new(map[int]int), [...]bool{false, false, false, false, false}},
+		{new(chan<- int), [...]bool{false, false, false, false, false}},
+		{new(func(a int8)), [...]bool{false, false, false, false, false}},
+		{new(struct{ i int }), [...]bool{false, false, false, false, false}},
 	}
 
 	for i, tc := range testCases {
 		v := ValueOf(tc.i)
-		got := [...]bool{v.CanInt(), v.CanUint(), v.CanFloat(), v.CanComplex()}
+		got := [...]bool{v.CanInt(), v.CanUint(), v.CanFloat(), v.CanComplex(), v.CanDecimal()}
 
 		for j := range tc.want {
 			if got[j] != tc.want[j] {

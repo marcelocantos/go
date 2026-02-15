@@ -1213,6 +1213,16 @@ func (v Value) Complex() complex128 {
 	panic(&ValueError{"reflect.Value.Complex", v.kind()})
 }
 
+// CanDecimal reports whether [Value.Decimal] can be used without panicking.
+func (v Value) CanDecimal() bool {
+	switch v.kind() {
+	case Decimal64, Decimal128:
+		return true
+	default:
+		return false
+	}
+}
+
 // Decimal returns v's underlying value, as a decimal128.
 // It panics if v's Kind is not [Decimal64] or [Decimal128].
 func (v Value) Decimal() decimal128 {

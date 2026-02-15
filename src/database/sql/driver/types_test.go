@@ -21,13 +21,15 @@ var now = time.Now()
 var answer int64 = 42
 
 type (
-	i  int64
-	f  float64
-	b  bool
-	bs []byte
-	s  string
-	t  time.Time
-	is []int
+	i    int64
+	f    float64
+	b    bool
+	bs   []byte
+	s    string
+	t    time.Time
+	is   []int
+	d64  decimal64
+	d128 decimal128
 )
 
 var valueConverterTests = []valueConverterTest{
@@ -59,6 +61,10 @@ var valueConverterTests = []valueConverterTest{
 	{DefaultParameterConverter, t(now), nil, "unsupported type driver.t, a struct"},
 	{DefaultParameterConverter, is{1}, nil, "unsupported type driver.is, a slice of int"},
 	{DefaultParameterConverter, dec{exponent: -6}, dec{exponent: -6}, ""},
+	{DefaultParameterConverter, decimal64(1.25), "1.25", ""},
+	{DefaultParameterConverter, decimal128(3.14), "3.14", ""},
+	{DefaultParameterConverter, d64(1.25), "1.25", ""},
+	{DefaultParameterConverter, d128(3.14), "3.14", ""},
 }
 
 func TestValueConverters(t *testing.T) {
