@@ -934,6 +934,10 @@ type WhitespaceValuesParent struct {
 	F32Neg float32
 	F64    float64
 	F64Neg float64
+	D64    decimal64
+	D64Neg decimal64
+	D128   decimal128
+	D128Neg decimal128
 }
 
 const whitespaceValuesXML = `
@@ -959,6 +963,10 @@ const whitespaceValuesXML = `
     <F32Neg>  -266.703  </F32Neg>
     <F64>  266.703  </F64>
     <F64Neg>  -266.703  </F64Neg>
+    <D64>  266.703  </D64>
+    <D64Neg>  -266.703  </D64Neg>
+    <D128>  266.703  </D128>
+    <D128Neg>  -266.703  </D128Neg>
 </WhitespaceValuesParent>
 `
 
@@ -991,6 +999,10 @@ func TestUnmarshalWhitespaceValues(t *testing.T) {
 		F32Neg: -266.703,
 		F64:    266.703,
 		F64Neg: -266.703,
+		D64:    266.703,
+		D64Neg: -266.703,
+		D128:   266.703,
+		D128Neg: -266.703,
 	}
 	if v != want {
 		t.Fatalf("whitespace values: Unmarshal:\nhave: %#+v\nwant: %#+v", v, want)
@@ -1015,10 +1027,14 @@ type WhitespaceAttrsParent struct {
 	UI16   uint16  `xml:",attr"`
 	UI32   uint32  `xml:",attr"`
 	UI64   uint64  `xml:",attr"`
-	F32    float32 `xml:",attr"`
-	F32Neg float32 `xml:",attr"`
-	F64    float64 `xml:",attr"`
-	F64Neg float64 `xml:",attr"`
+	F32     float32    `xml:",attr"`
+	F32Neg  float32    `xml:",attr"`
+	F64     float64    `xml:",attr"`
+	F64Neg  float64    `xml:",attr"`
+	D64     decimal64  `xml:",attr"`
+	D64Neg  decimal64  `xml:",attr"`
+	D128    decimal128 `xml:",attr"`
+	D128Neg decimal128 `xml:",attr"`
 }
 
 const whitespaceAttrsXML = `
@@ -1044,6 +1060,10 @@ const whitespaceAttrsXML = `
     F32Neg="  -266.703  "
     F64="  266.703  "
     F64Neg="  -266.703  "
+    D64="  266.703  "
+    D64Neg="  -266.703  "
+    D128="  266.703  "
+    D128Neg="  -266.703  "
 >
 </WhitespaceAttrsParent>
 `
@@ -1056,27 +1076,31 @@ func TestUnmarshalWhitespaceAttrs(t *testing.T) {
 	}
 
 	want := WhitespaceAttrsParent{
-		BFalse: false,
-		BTrue:  true,
-		I:      266703,
-		INeg:   -266703,
-		I8:     112,
-		I8Neg:  -112,
-		I16:    6703,
-		I16Neg: -6703,
-		I32:    266703,
-		I32Neg: -266703,
-		I64:    266703,
-		I64Neg: -266703,
-		UI:     266703,
-		UI8:    112,
-		UI16:   6703,
-		UI32:   266703,
-		UI64:   266703,
-		F32:    266.703,
-		F32Neg: -266.703,
-		F64:    266.703,
-		F64Neg: -266.703,
+		BFalse:  false,
+		BTrue:   true,
+		I:       266703,
+		INeg:    -266703,
+		I8:      112,
+		I8Neg:   -112,
+		I16:     6703,
+		I16Neg:  -6703,
+		I32:     266703,
+		I32Neg:  -266703,
+		I64:     266703,
+		I64Neg:  -266703,
+		UI:      266703,
+		UI8:     112,
+		UI16:    6703,
+		UI32:    266703,
+		UI64:    266703,
+		F32:     266.703,
+		F32Neg:  -266.703,
+		F64:     266.703,
+		F64Neg:  -266.703,
+		D64:     266.703,
+		D64Neg:  -266.703,
+		D128:    266.703,
+		D128Neg: -266.703,
 	}
 	if v != want {
 		t.Fatalf("whitespace attrs: Unmarshal:\nhave: %#+v\nwant: %#+v", v, want)

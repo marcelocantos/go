@@ -803,6 +803,24 @@ func (s *ss) convertFloat(str string, n int) float64 {
 	return f
 }
 
+// convertDecimal64 converts the string to a decimal64 value.
+func (s *ss) convertDecimal64(str string) decimal64 {
+	d, err := strconv.ParseDecimal64(str)
+	if err != nil {
+		s.error(err)
+	}
+	return d
+}
+
+// convertDecimal128 converts the string to a decimal128 value.
+func (s *ss) convertDecimal128(str string) decimal128 {
+	d, err := strconv.ParseDecimal128(str)
+	if err != nil {
+		s.error(err)
+	}
+	return d
+}
+
 // scanComplex converts the next token to a complex128 value.
 // The atof argument is a type-specific reader for the underlying type.
 // If we're reading complex64, atof will parse float32s and convert them
@@ -1008,6 +1026,18 @@ func (s *ss) scanOne(verb rune, arg any) {
 			s.notEOF()
 			*v = s.convertFloat(s.floatToken(), 64)
 		}
+	case *decimal64:
+		if s.okVerb(verb, floatVerbs, "decimal64") {
+			s.SkipSpace()
+			s.notEOF()
+			*v = s.convertDecimal64(s.floatToken())
+		}
+	case *decimal128:
+		if s.okVerb(verb, floatVerbs, "decimal128") {
+			s.SkipSpace()
+			s.notEOF()
+			*v = s.convertDecimal128(s.floatToken())
+		}
 	case *string:
 		*v = s.convertString(verb)
 	case *[]byte:
@@ -1047,6 +1077,17 @@ func (s *ss) scanOne(verb rune, arg any) {
 			v.SetFloat(s.convertFloat(s.floatToken(), v.Type().Bits()))
 		case reflect.Complex64, reflect.Complex128:
 			v.SetComplex(s.scanComplex(verb, v.Type().Bits()))
+		case reflect.Decimal64, reflect.Decimal128:
+			if s.okVerb(verb, floatVerbs, "decimal") {
+				s.SkipSpace()
+				s.notEOF()
+				tok := s.floatToken()
+				d, err := strconv.ParseDecimal128(tok)
+				if err != nil {
+					s.error(err)
+				}
+				v.SetDecimal(d)
+			}
 		default:
 			s.errorString("can't scan type: " + val.Type().String())
 		}

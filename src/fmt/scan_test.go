@@ -55,6 +55,8 @@ var (
 	uintptrVal           uintptr
 	float32Val           float32
 	float64Val           float64
+	decimal64Val         decimal64
+	decimal128Val        decimal128
 	stringVal            string
 	bytesVal             []byte
 	runeVal              rune
@@ -175,6 +177,12 @@ var scanTests = []ScanTest{
 	{"2.3p-66\n", &float64Val, 2.3 / (1 << 66)},
 	{"0x2.3p-66\n", &float64Val, float64(0x23) / (1 << 70)},
 	{"2_3.4_5\n", &float64Val, 23.45},
+	// Decimals
+	{"2.3\n", &decimal64Val, decimal64(2.3)},
+	{"2.3e1\n", &decimal128Val, decimal128(2.3e1)},
+	{"-1.5\n", &decimal64Val, decimal64(-1.5)},
+	{"0\n", &decimal64Val, decimal64(0)},
+	{"123.456\n", &decimal128Val, decimal128(123.456)},
 	{"2.35\n", &stringVal, "2.35"},
 	{"2345678\n", &bytesVal, []byte("2345678")},
 	{"(3.4e1-2i)\n", &complex128Val, 3.4e1 - 2i},
@@ -269,6 +277,13 @@ var scanfTests = []ScanfTest{
 	{"%f", "2.3p-66\n", &float64Val, 2.3 / (1 << 66)},
 	{"%G", "0x2.3p-66\n", &float64Val, float64(0x23) / (1 << 70)},
 	{"%E", "2_3.4_5\n", &float64Val, 23.45},
+
+	// Decimals
+	{"%f", "2.3\n", &decimal64Val, decimal64(2.3)},
+	{"%e", "2.3e1\n", &decimal128Val, decimal128(2.3e1)},
+	{"%g", "123.456\n", &decimal64Val, decimal64(123.456)},
+	{"%v", "-1.5\n", &decimal128Val, decimal128(-1.5)},
+	{"%E", "0\n", &decimal64Val, decimal64(0)},
 
 	// Strings
 	{"%s", "using-%s\n", &stringVal, "using-%s"},
@@ -850,6 +865,8 @@ var eofTests = []struct {
 	{"%v", &uintVal},
 	{"%v", &boolVal},
 	{"%v", &float32Val},
+	{"%v", &decimal64Val},
+	{"%v", &decimal128Val},
 	{"%v", &complex64Val},
 	{"%v", &renamedStringVal},
 	{"%v", &renamedBytesVal},

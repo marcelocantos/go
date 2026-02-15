@@ -799,6 +799,10 @@ func (p *printer) marshalSimple(typ reflect.Type, val reflect.Value) (string, []
 		return strconv.FormatUint(val.Uint(), 10), nil, nil
 	case reflect.Float32, reflect.Float64:
 		return strconv.FormatFloat(val.Float(), 'g', -1, val.Type().Bits()), nil, nil
+	case reflect.Decimal64:
+		return strconv.FormatDecimal64(val.Interface().(decimal64), 'g', -1), nil, nil
+	case reflect.Decimal128:
+		return strconv.FormatDecimal128(val.Interface().(decimal128), 'g', -1), nil, nil
 	case reflect.String:
 		return val.String(), nil, nil
 	case reflect.Bool:
@@ -906,6 +910,14 @@ func (p *printer) marshalStruct(tinfo *typeInfo, val reflect.Value) error {
 				}
 			case reflect.Float32, reflect.Float64:
 				if err := emit(p, strconv.AppendFloat(scratch[:0], vf.Float(), 'g', -1, vf.Type().Bits())); err != nil {
+					return err
+				}
+			case reflect.Decimal64:
+				if err := emit(p, []byte(strconv.FormatDecimal64(vf.Interface().(decimal64), 'g', -1))); err != nil {
+					return err
+				}
+			case reflect.Decimal128:
+				if err := emit(p, []byte(strconv.FormatDecimal128(vf.Interface().(decimal128), 'g', -1))); err != nil {
 					return err
 				}
 			case reflect.Bool:
@@ -1141,6 +1153,7 @@ func isEmptyValue(v reflect.Value) bool {
 		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
 		reflect.Float32, reflect.Float64,
+		reflect.Decimal64, reflect.Decimal128,
 		reflect.Interface, reflect.Pointer:
 		return v.IsZero()
 	}

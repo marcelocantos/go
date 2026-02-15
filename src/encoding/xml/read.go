@@ -432,7 +432,7 @@ func (d *Decoder) unmarshal(val reflect.Value, start *StartElement, depth int) e
 		}
 		return nil
 
-	case reflect.Bool, reflect.Float32, reflect.Float64, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.String:
+	case reflect.Bool, reflect.Float32, reflect.Float64, reflect.Decimal64, reflect.Decimal128, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.String:
 		saveData = v
 
 	case reflect.Struct:
@@ -679,6 +679,26 @@ func copyValue(dst reflect.Value, src []byte) (err error) {
 			return err
 		}
 		dst.SetFloat(ftmp)
+	case reflect.Decimal64:
+		if len(src) == 0 {
+			dst.Set(reflect.ValueOf(decimal64(0)))
+			return nil
+		}
+		dtmp, err := strconv.ParseDecimal64(strings.TrimSpace(string(src)))
+		if err != nil {
+			return err
+		}
+		dst.Set(reflect.ValueOf(dtmp))
+	case reflect.Decimal128:
+		if len(src) == 0 {
+			dst.Set(reflect.ValueOf(decimal128(0)))
+			return nil
+		}
+		dtmp, err := strconv.ParseDecimal128(strings.TrimSpace(string(src)))
+		if err != nil {
+			return err
+		}
+		dst.Set(reflect.ValueOf(dtmp))
 	case reflect.Bool:
 		if len(src) == 0 {
 			dst.SetBool(false)

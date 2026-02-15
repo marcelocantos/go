@@ -81,6 +81,16 @@ type Universe struct {
 	Visible float64  `xml:",chardata"`
 }
 
+type Price struct {
+	XMLName struct{}  `xml:"price"`
+	Amount  decimal64 `xml:",chardata"`
+}
+
+type BigPrice struct {
+	XMLName struct{}   `xml:"bigprice"`
+	Amount  decimal128 `xml:",chardata"`
+}
+
 type Particle struct {
 	XMLName struct{} `xml:"particle"`
 	HasMass bool     `xml:",chardata"`
@@ -564,6 +574,8 @@ var marshalTests = []struct {
 	{Value: &Plain{uint32(42)}, ExpectXML: `<Plain><V>42</V></Plain>`},
 	{Value: &Plain{float32(1.25)}, ExpectXML: `<Plain><V>1.25</V></Plain>`},
 	{Value: &Plain{float64(1.25)}, ExpectXML: `<Plain><V>1.25</V></Plain>`},
+	{Value: &Plain{decimal64(1.25)}, ExpectXML: `<Plain><V>1.25</V></Plain>`},
+	{Value: &Plain{decimal128(1.25)}, ExpectXML: `<Plain><V>1.25</V></Plain>`},
 	{Value: &Plain{uintptr(0xFFDD)}, ExpectXML: `<Plain><V>65501</V></Plain>`},
 	{Value: &Plain{"gopher"}, ExpectXML: `<Plain><V>gopher</V></Plain>`},
 	{Value: &Plain{[]byte("gopher")}, ExpectXML: `<Plain><V>gopher</V></Plain>`},
@@ -642,6 +654,8 @@ var marshalTests = []struct {
 	{Value: &Movie{Length: 13440}, ExpectXML: `<movie>13440</movie>`},
 	{Value: &Pi{Approximation: 3.14159265}, ExpectXML: `<pi>3.1415927</pi>`},
 	{Value: &Universe{Visible: 9.3e13}, ExpectXML: `<universe>9.3e+13</universe>`},
+	{Value: &Price{Amount: 19.99}, ExpectXML: `<price>19.99</price>`},
+	{Value: &BigPrice{Amount: 123456.789}, ExpectXML: `<bigprice>123456.789</bigprice>`},
 	{Value: &Particle{HasMass: true}, ExpectXML: `<particle>true</particle>`},
 	{Value: &Departure{When: ParseTime("2013-01-09T00:15:00-09:00")}, ExpectXML: `<departure>2013-01-09T00:15:00-09:00</departure>`},
 	{Value: atomValue, ExpectXML: atomXML},

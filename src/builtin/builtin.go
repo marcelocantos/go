@@ -67,6 +67,12 @@ type complex64 complex64
 // imaginary parts.
 type complex128 complex128
 
+// decimal64 is the set of all IEEE 754-2008 64-bit decimal floating-point numbers.
+type decimal64 decimal64
+
+// decimal128 is the set of all IEEE 754-2008 128-bit decimal floating-point numbers.
+type decimal128 decimal128
+
 // string is the set of all strings of 8-bit bytes, conventionally but not
 // necessarily representing UTF-8-encoded text. A string may be empty, but
 // not nil. Values of string type are immutable.
