@@ -1213,6 +1213,19 @@ func (v Value) Complex() complex128 {
 	panic(&ValueError{"reflect.Value.Complex", v.kind()})
 }
 
+// Decimal returns v's underlying value, as a decimal128.
+// It panics if v's Kind is not [Decimal64] or [Decimal128].
+func (v Value) Decimal() decimal128 {
+	k := v.kind()
+	switch k {
+	case Decimal64:
+		return decimal128(*(*decimal64)(v.ptr))
+	case Decimal128:
+		return *(*decimal128)(v.ptr)
+	}
+	panic(&ValueError{"reflect.Value.Decimal", v.kind()})
+}
+
 // Elem returns the value that the interface v contains
 // or that the pointer v points to.
 // It panics if v's Kind is not [Interface] or [Pointer].
@@ -2218,6 +2231,21 @@ func (v Value) SetComplex(x complex128) {
 		*(*complex64)(v.ptr) = complex64(x)
 	case Complex128:
 		*(*complex128)(v.ptr) = x
+	}
+}
+
+// SetDecimal sets v's underlying value to x.
+// It panics if v's Kind is not [Decimal64] or [Decimal128],
+// or if [Value.CanSet] returns false.
+func (v Value) SetDecimal(x decimal128) {
+	v.mustBeAssignable()
+	switch k := v.kind(); k {
+	default:
+		panic(&ValueError{"reflect.Value.SetDecimal", v.kind()})
+	case Decimal64:
+		*(*decimal64)(v.ptr) = decimal64(x)
+	case Decimal128:
+		*(*decimal128)(v.ptr) = x
 	}
 }
 
