@@ -49,3 +49,22 @@ func Decimal64bits(d decimal64) uint64 { return *(*uint64)(unsafe.Pointer(&d)) }
 // IEEE 754-2008 BID encoding b.
 // Decimal64frombits(Decimal64bits(x)) == x.
 func Decimal64frombits(b uint64) decimal64 { return *(*decimal64)(unsafe.Pointer(&b)) }
+
+// Decimal128bits returns the IEEE 754-2008 BID (Binary Integer Decimal)
+// representation of d as two uint64 values (hi, lo).
+// Decimal128frombits(Decimal128bits(x)) == x.
+func Decimal128bits(d decimal128) (hi, lo uint64) {
+	p := (*[2]uint64)(unsafe.Pointer(&d))
+	return p[1], p[0] // stored as [lo, hi] in little-endian memory
+}
+
+// Decimal128frombits returns the decimal128 value corresponding to the
+// IEEE 754-2008 BID encoding given by hi and lo.
+// Decimal128bits(Decimal128frombits(hi, lo)) == (hi, lo).
+func Decimal128frombits(hi, lo uint64) decimal128 {
+	var d decimal128
+	p := (*[2]uint64)(unsafe.Pointer(&d))
+	p[0] = lo
+	p[1] = hi
+	return d
+}
