@@ -5064,6 +5064,7 @@ occurs is implementation-specific.
 An implementation may combine multiple floating-point operations into a single
 fused operation, possibly across statements, and produce a result that differs
 from the value obtained by executing and rounding the instructions individually.
+This applies to both binary and decimal floating-point types.
 An explicit <a href="#Numeric_types">floating-point type</a> <a href="#Conversions">conversion</a> rounds to
 the precision of the target type, preventing fusion that would discard that rounding.
 </p>

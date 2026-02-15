@@ -33,6 +33,8 @@ func valueToStringImpl(val reflect.Value) string {
 		return strconv.FormatUint(val.Uint(), 10)
 	case reflect.Float32, reflect.Float64:
 		return strconv.FormatFloat(val.Float(), 'g', -1, 64)
+	case reflect.Decimal64, reflect.Decimal128:
+		return strconv.FormatDecimal(val.Decimal(), 'g', -1, 128)
 	case reflect.Complex64, reflect.Complex128:
 		c := val.Complex()
 		return strconv.FormatFloat(real(c), 'g', -1, 64) + "+" + strconv.FormatFloat(imag(c), 'g', -1, 64) + "i"

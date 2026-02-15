@@ -212,7 +212,7 @@ func deepValueEqual(v1, v2 Value, visited map[visit]bool) bool {
 // However, this idea is impossible to implement without some inconsistency.
 // Specifically, it is possible for a value to be unequal to itself,
 // either because it is of func type (uncomparable in general)
-// or because it is a floating-point NaN value (not equal to itself in floating-point comparison),
+// or because it is a floating-point or decimal floating-point NaN value (not equal to itself),
 // or because it is an array, struct, or interface containing
 // such a value.
 // On the other hand, pointer values are always equal to themselves,
