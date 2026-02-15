@@ -861,6 +861,9 @@ int64       the set of all signed 64-bit integers (-9223372036854775808 to 92233
 float32     the set of all IEEE 754 32-bit floating-point numbers
 float64     the set of all IEEE 754 64-bit floating-point numbers
 
+decimal64   the set of all IEEE 754-2008 64-bit decimal floating-point numbers
+decimal128  the set of all IEEE 754-2008 128-bit decimal floating-point numbers
+
 complex64   the set of all complex numbers with float32 real and imaginary parts
 complex128  the set of all complex numbers with float64 real and imaginary parts
 
@@ -871,6 +874,17 @@ rune        alias for int32
 <p>
 The value of an <i>n</i>-bit integer is <i>n</i> bits wide and represented using
 <a href="https://en.wikipedia.org/wiki/Two's_complement">two's complement arithmetic</a>.
+</p>
+
+<p>
+The types <code>float32</code> and <code>float64</code> are binary floating-point types
+that use a base-2 representation.
+The types <code>decimal64</code> and <code>decimal128</code> are decimal floating-point types
+that use a base-10 representation (Binary Integer Decimal encoding) as defined by
+<a href="https://en.wikipedia.org/wiki/IEEE_754-2008">IEEE 754-2008</a>.
+Decimal floating-point types can represent decimal fractions exactly, unlike binary
+floating-point types where values such as 0.1 have no exact representation.
+Both binary and decimal floating-point types support the same arithmetic and comparison operators.
 </p>
 
 <p>
@@ -2064,6 +2078,7 @@ x                   T           x is representable by a value of T because
 1e10                uint64      10000000000 is in the set of unsigned 64-bit integers
 2.718281828459045   float32     2.718281828459045 rounds to 2.7182817 which is in the set of float32 values
 -1e-1000            float64     -1e-1000 rounds to IEEE -0.0 which is further simplified to 0.0
+1.23                decimal64   1.23 is in the set of decimal64 values
 0i                  int         0 is an integer value
 (42 + 0i)           float32     42.0 (with zero imaginary part) is in the set of float32 values
 </pre>
@@ -2276,7 +2291,7 @@ The following identifiers are implicitly declared in the
 <pre class="grammar">
 Types:
 	any bool byte comparable
-	complex64 complex128 error float32 float64
+	complex64 complex128 decimal64 decimal128 error float32 float64
 	int int8 int16 int32 int64 rune string
 	uint uint8 uint16 uint32 uint64 uintptr
 
@@ -5135,6 +5150,11 @@ These terms and the result of the comparisons are defined as follows:
 	</li>
 
 	<li>
+	Decimal floating-point types are comparable and ordered.
+	Two decimal floating-point values are compared as defined by the IEEE 754-2008 standard.
+	</li>
+
+	<li>
 	Complex types are comparable.
 	Two complex values <code>u</code> and <code>v</code> are
 	equal if both <code>real(u) == real(v)</code> and
@@ -5571,6 +5591,13 @@ may be stored using additional precision beyond that of an IEEE 754 32-bit numbe
 but float32(x) represents the result of rounding <code>x</code>'s value to
 32-bit precision. Similarly, <code>x + 0.1</code> may use more than 32 bits
 of precision, but <code>float32(x + 0.1)</code> does not.
+</li>
+<li>
+When converting between binary floating-point types (<code>float32</code>, <code>float64</code>)
+and decimal floating-point types (<code>decimal64</code>, <code>decimal128</code>),
+the result is rounded to the precision of the destination type.
+Such conversions may lose precision due to differences in radix representation;
+for example, the decimal value 0.1 has no exact binary floating-point representation.
 </li>
 </ol>
 
@@ -8606,9 +8633,9 @@ type                                 size in bytes
 
 byte, uint8, int8                     1
 uint16, int16                         2
-uint32, int32, float32                4
-uint64, int64, float64, complex64     8
-complex128                           16
+uint32, int32, float32                         4
+uint64, int64, float64, complex64, decimal64   8
+complex128, decimal128                        16
 </pre>
 
 <p>
