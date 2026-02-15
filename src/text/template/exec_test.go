@@ -748,6 +748,18 @@ var execTests = []execTest{
 
 	{"issue56490", "{{$i := 0}}{{$x := 0}}{{range $i = .AI}}{{end}}{{$i}}", "5", tVal, true},
 	{"issue60801", "{{$k := 0}}{{$v := 0}}{{range $k, $v = .AI}}{{$k}}={{$v}} {{end}}", "0=3 1=4 2=5 ", tVal, true},
+
+	// Decimal types.
+	{"decimal64 print", "<{{.}}>", "<3.14>", decimal64(3.14), true},
+	{"decimal128 print", "<{{.}}>", "<2.718>", decimal128(2.718), true},
+	{"decimal64 printf %v", `{{printf "%v" .}}`, "3.14", decimal64(3.14), true},
+	{"decimal64 printf %f", `{{printf "%f" .}}`, "3.140000", decimal64(3.14), true},
+	{"decimal64 printf %g", `{{printf "%g" .}}`, "3.14", decimal64(3.14), true},
+	{"decimal64 printf %e", `{{printf "%e" .}}`, "3.140000e+00", decimal64(3.14), true},
+	{"if decimal64 nonzero", "{{if .}}NON-ZERO{{else}}ZERO{{end}}", "NON-ZERO", decimal64(1.0), true},
+	{"if decimal64 zero", "{{if .}}NON-ZERO{{else}}ZERO{{end}}", "ZERO", decimal64(0), true},
+	{"if decimal128 nonzero", "{{if .}}NON-ZERO{{else}}ZERO{{end}}", "NON-ZERO", decimal128(42), true},
+	{"if decimal128 zero", "{{if .}}NON-ZERO{{else}}ZERO{{end}}", "ZERO", decimal128(0), true},
 }
 
 func fVal1(i int) iter.Seq[int] {
@@ -1310,6 +1322,16 @@ var cmpTests = []cmpTest{
 	{"eq .Map nil", "true", true},         // Uncomparable types but nil is OK.
 	{"eq nil .Map", "true", true},         // Uncomparable types but nil is OK.
 	{"eq .Map .NonNilMap", "false", true}, // Uncomparable types but nil is OK.
+	// Decimal comparisons.
+	{"eq .D64a .D64a", "true", true},
+	{"eq .D64a .D64b", "false", true},
+	{"ne .D64a .D64b", "true", true},
+	{"lt .D64a .D64b", "true", true},
+	{"le .D64a .D64a", "true", true},
+	{"le .D64a .D64b", "true", true},
+	{"gt .D64b .D64a", "true", true},
+	{"ge .D64a .D64a", "true", true},
+	{"ge .D64b .D64a", "true", true},
 	// Errors
 	{"eq `xy` 1", "", false},                // Different types.
 	{"eq 2 2.0", "", false},                 // Different types.
@@ -1331,6 +1353,7 @@ func TestComparison(t *testing.T) {
 		Map              map[int]int
 		V1, V2           V
 		Iface1, NilIface fmt.Stringer
+		D64a, D64b       decimal64
 	}{
 		Uthree:    3,
 		Ufour:     4,
@@ -1339,6 +1362,8 @@ func TestComparison(t *testing.T) {
 		Ptr:       new(int),
 		NonNilMap: make(map[int]int),
 		Iface1:    b,
+		D64a:      decimal64(1.5),
+		D64b:      decimal64(2.5),
 	}
 	for _, test := range cmpTests {
 		text := fmt.Sprintf("{{if %s}}true{{else}}false{{end}}", test.expr)

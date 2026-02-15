@@ -1077,8 +1077,19 @@ func (s *ss) scanOne(verb rune, arg any) {
 			v.SetFloat(s.convertFloat(s.floatToken(), v.Type().Bits()))
 		case reflect.Complex64, reflect.Complex128:
 			v.SetComplex(s.scanComplex(verb, v.Type().Bits()))
-		case reflect.Decimal64, reflect.Decimal128:
-			if s.okVerb(verb, floatVerbs, "decimal") {
+		case reflect.Decimal64:
+			if s.okVerb(verb, floatVerbs, "decimal64") {
+				s.SkipSpace()
+				s.notEOF()
+				tok := s.floatToken()
+				d, err := strconv.ParseDecimal64(tok)
+				if err != nil {
+					s.error(err)
+				}
+				v.SetDecimal(decimal128(d))
+			}
+		case reflect.Decimal128:
+			if s.okVerb(verb, floatVerbs, "decimal128") {
 				s.SkipSpace()
 				s.notEOF()
 				tok := s.floatToken()

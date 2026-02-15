@@ -562,6 +562,99 @@ func testInterface() {
 	}
 }
 
+// --- Overflow / underflow ---
+
+func testOverflowUnderflow() {
+	// decimal64 overflow: max coefficient is 9999999999999999 * 10^369
+	// Multiplying large values should produce +Inf.
+	big64 := decimal64(9e384)
+	result64 := big64 * decimal64(2)
+	if !math.IsDecimal64Inf(result64, 1) {
+		fail("decimal64 overflow: 9e384 * 2 should be +Inf")
+	}
+
+	// decimal64 negative overflow
+	negbig64 := decimal64(-9e384)
+	result64neg := negbig64 * decimal64(2)
+	if !math.IsDecimal64Inf(result64neg, -1) {
+		fail("decimal64 overflow: -9e384 * 2 should be -Inf")
+	}
+
+	// decimal64 underflow: very small values multiplied should produce zero
+	// decimal64 min subnormal is ~1e-398; multiplying two tiny values below that range gives zero.
+	tiny64 := decimal64(1e-398)
+	result64tiny := tiny64 * tiny64
+	if result64tiny != decimal64(0) {
+		fail("decimal64 underflow: 1e-398 * 1e-398 should be 0")
+	}
+
+	// decimal128 overflow: max exponent is ~6144
+	big128 := decimal128(9e6144)
+	result128 := big128 * decimal128(2)
+	if !math.IsDecimal128Inf(result128, 1) {
+		fail("decimal128 overflow: 9e6144 * 2 should be +Inf")
+	}
+
+	// decimal128 negative overflow
+	negbig128 := decimal128(-9e6144)
+	result128neg := negbig128 * decimal128(2)
+	if !math.IsDecimal128Inf(result128neg, -1) {
+		fail("decimal128 overflow: -9e6144 * 2 should be -Inf")
+	}
+}
+
+// --- Decimal128 Infinity ---
+
+func testInfinity128() {
+	inf := math.Decimal128Inf(1)
+	ninf := math.Decimal128Inf(-1)
+
+	// Construction checks
+	if !math.IsDecimal128Inf(inf, 1) {
+		fail("decimal128 Decimal128Inf(1) not detected as +Inf")
+	}
+	if !math.IsDecimal128Inf(ninf, -1) {
+		fail("decimal128 Decimal128Inf(-1) not detected as -Inf")
+	}
+	if !math.IsDecimal128Inf(inf, 0) {
+		fail("decimal128 Decimal128Inf(1) not detected as Inf (either sign)")
+	}
+
+	// Inf comparisons
+	if !(inf > decimal128(999999)) {
+		fail("decimal128 +Inf > 999999 failed")
+	}
+	if !(ninf < decimal128(-999999)) {
+		fail("decimal128 -Inf < -999999 failed")
+	}
+	if inf != inf {
+		fail("decimal128 +Inf == +Inf failed")
+	}
+	if !(ninf < inf) {
+		fail("decimal128 -Inf < +Inf failed")
+	}
+
+	// Inf arithmetic
+	if inf+decimal128(1) != inf {
+		fail("decimal128 Inf + 1 != Inf")
+	}
+	if inf*decimal128(2) != inf {
+		fail("decimal128 Inf * 2 != Inf")
+	}
+	if !math.IsDecimal128NaN(inf + ninf) {
+		fail("decimal128 +Inf + -Inf should be NaN")
+	}
+
+	// NaN propagation with infinity
+	nan128 := math.Decimal128NaN()
+	if !math.IsDecimal128NaN(inf + nan128) {
+		fail("decimal128 Inf + NaN should be NaN")
+	}
+	if !math.IsDecimal128NaN(nan128 * inf) {
+		fail("decimal128 NaN * Inf should be NaN")
+	}
+}
+
 func main() {
 	testLiterals()
 	testArithmetic()
@@ -575,6 +668,8 @@ func main() {
 	testMapKeys()
 	testConstants()
 	testInfinity()
+	testOverflowUnderflow()
+	testInfinity128()
 	testNamedTypes()
 	testStructs()
 	testSliceArray()

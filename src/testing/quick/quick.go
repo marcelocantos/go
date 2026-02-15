@@ -153,9 +153,9 @@ func sizedValue(t reflect.Type, rand *rand.Rand, size int) (value reflect.Value,
 	case reflect.Float64:
 		v.SetFloat(randFloat64(rand))
 	case reflect.Decimal64:
-		v.Set(reflect.ValueOf(randDecimal64(rand)))
+		v.Set(reflect.ValueOf(randDecimal64(rand)).Convert(t))
 	case reflect.Decimal128:
-		v.Set(reflect.ValueOf(randDecimal128(rand)))
+		v.Set(reflect.ValueOf(randDecimal128(rand)).Convert(t))
 	case reflect.Complex64:
 		v.SetComplex(complex(float64(randFloat32(rand)), float64(randFloat32(rand))))
 	case reflect.Complex128:

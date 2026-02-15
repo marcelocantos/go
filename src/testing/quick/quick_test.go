@@ -308,6 +308,78 @@ func TestNonZeroSliceAndMap(t *testing.T) {
 	}
 }
 
+func TestDecimalValue(t *testing.T) {
+	r := rand.New(rand.NewSource(0))
+
+	// Test that quick.Value generates valid decimal64 values.
+	v64, ok := Value(reflect.TypeFor[decimal64](), r)
+	if !ok {
+		t.Fatal("Value failed for decimal64")
+	}
+	if v64.Kind() != reflect.Decimal64 {
+		t.Fatalf("Value returned kind %v, want Decimal64", v64.Kind())
+	}
+
+	// Test that quick.Value generates valid decimal128 values.
+	v128, ok := Value(reflect.TypeFor[decimal128](), r)
+	if !ok {
+		t.Fatal("Value failed for decimal128")
+	}
+	if v128.Kind() != reflect.Decimal128 {
+		t.Fatalf("Value returned kind %v, want Decimal128", v128.Kind())
+	}
+
+	// Generate multiple decimal64 values and verify they're not all identical.
+	seen64 := make(map[decimal64]bool)
+	for i := 0; i < 100; i++ {
+		v, ok := Value(reflect.TypeFor[decimal64](), r)
+		if !ok {
+			t.Fatal("Value failed for decimal64")
+		}
+		seen64[v.Interface().(decimal64)] = true
+	}
+	if len(seen64) < 2 {
+		t.Error("decimal64: all 100 generated values were identical")
+	}
+
+	// Generate multiple decimal128 values and verify they're not all identical.
+	seen128 := make(map[decimal128]bool)
+	for i := 0; i < 100; i++ {
+		v, ok := Value(reflect.TypeFor[decimal128](), r)
+		if !ok {
+			t.Fatal("Value failed for decimal128")
+		}
+		seen128[v.Interface().(decimal128)] = true
+	}
+	if len(seen128) < 2 {
+		t.Error("decimal128: all 100 generated values were identical")
+	}
+}
+
+func TestDecimalGenerate(t *testing.T) {
+	r := rand.New(rand.NewSource(42))
+
+	// Verify that generated decimal64 values include aliases.
+	type D64Alias decimal64
+	v, ok := Value(reflect.TypeFor[D64Alias](), r)
+	if !ok {
+		t.Fatal("Value failed for D64Alias")
+	}
+	if v.Type() != reflect.TypeFor[D64Alias]() {
+		t.Errorf("Value returned type %v, want %v", v.Type(), reflect.TypeFor[D64Alias]())
+	}
+
+	// Verify that generated decimal128 values include aliases.
+	type D128Alias decimal128
+	v, ok = Value(reflect.TypeFor[D128Alias](), r)
+	if !ok {
+		t.Fatal("Value failed for D128Alias")
+	}
+	if v.Type() != reflect.TypeFor[D128Alias]() {
+		t.Errorf("Value returned type %v, want %v", v.Type(), reflect.TypeFor[D128Alias]())
+	}
+}
+
 func TestInt64(t *testing.T) {
 	var lo, hi int64
 	f := func(x int64) bool {

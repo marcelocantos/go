@@ -572,6 +572,87 @@ func (d *decFinite) Compose(form byte, negative bool, coefficient []byte, expone
 	return nil
 }
 
+func TestDecimalConversions(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     any
+		wantD64 decimal64
+		wantErr bool
+	}{
+		{"int64 to decimal64", int64(42), decimal64(42), false},
+		{"float64 to decimal64", float64(1.5), decimal64(1.5), false},
+		{"string to decimal64", "3.14", decimal64(3.14), false},
+		{"[]byte to decimal64", []byte("2.718"), decimal64(2.718), false},
+		{"invalid string to decimal64", "notanumber", 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got decimal64
+			err := convertAssign(&got, tt.src)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.wantD64 {
+				t.Errorf("got %v, want %v", got, tt.wantD64)
+			}
+		})
+	}
+
+	// decimal128 tests
+	tests128 := []struct {
+		name     string
+		src      any
+		wantD128 decimal128
+		wantErr  bool
+	}{
+		{"string to decimal128", "3.14", decimal128(3.14), false},
+		{"[]byte to decimal128", []byte("1.25"), decimal128(1.25), false},
+		{"int64 to decimal128", int64(100), decimal128(100), false},
+		{"float64 to decimal128", float64(2.5), decimal128(2.5), false},
+	}
+	for _, tt := range tests128 {
+		t.Run(tt.name, func(t *testing.T) {
+			var got decimal128
+			err := convertAssign(&got, tt.src)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.wantD128 {
+				t.Errorf("got %v, want %v", got, tt.wantD128)
+			}
+		})
+	}
+
+	// Test decimal64 to string conversion
+	var s string
+	err := convertAssign(&s, decimal64(3.14))
+	if err != nil {
+		t.Fatalf("decimal64 to string: %v", err)
+	}
+	if s != "3.14" {
+		t.Errorf("decimal64 to string: got %q, want %q", s, "3.14")
+	}
+
+	// Test NULL to decimal
+	var d64 decimal64
+	err = convertAssign(&d64, nil)
+	if err == nil {
+		t.Fatal("expected error converting NULL to decimal64")
+	}
+}
+
 func TestDecimal(t *testing.T) {
 	list := []struct {
 		name string
