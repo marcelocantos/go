@@ -2688,6 +2688,24 @@ type twoOpsAndType struct {
 	intermediateType types.Kind
 }
 
+// decSext, decZext, and decTrunc map byte sizes to widening/narrowing ops
+// used when converting between small integers and decimal types.
+var decSext = [5]ssa.Op{
+	1: ssa.OpSignExt8to64,
+	2: ssa.OpSignExt16to64,
+	4: ssa.OpSignExt32to64,
+}
+var decZext = [5]ssa.Op{
+	1: ssa.OpZeroExt8to64,
+	2: ssa.OpZeroExt16to64,
+	4: ssa.OpZeroExt32to64,
+}
+var decTrunc = [5]ssa.Op{
+	1: ssa.OpTrunc64to8,
+	2: ssa.OpTrunc64to16,
+	4: ssa.OpTrunc64to32,
+}
+
 var fpConvOpToSSA = map[twoTypes]twoOpsAndType{
 
 	{types.TINT8, types.TFLOAT32}:  {ssa.OpSignExt8to32, ssa.OpCvt32to32F, types.TINT32},
@@ -2965,43 +2983,69 @@ func (s *state) conv(n ir.Node, v *ssa.Value, ft, tt *types.Type) *ssa.Value {
 		}
 		// decimal -> float
 		if ft.IsDecimal() && tt.IsFloat() {
-			if ftIs64 {
-				return s.newValueOrSfCall1(ssa.OpCvt64Dto64F, tt, v)
+			op := ssa.OpCvt64Dto64F
+			if ftIs128 {
+				op = ssa.OpCvt128Dto64F
 			}
-			return s.newValueOrSfCall1(ssa.OpCvt128Dto64F, tt, v)
+			v = s.newValueOrSfCall1(op, types.Types[types.TFLOAT64], v)
+			if tt.Size() == 4 {
+				v = s.newValue1(ssa.OpCvt64Fto32F, tt, v)
+			}
+			return v
 		}
 		// float -> decimal
 		if ft.IsFloat() && tt.IsDecimal() {
-			if ttIs64 {
-				return s.newValueOrSfCall1(ssa.OpCvt64Fto64D, tt, v)
+			if ft.Size() == 4 {
+				v = s.newValue1(ssa.OpCvt32Fto64F, types.Types[types.TFLOAT64], v)
 			}
-			return s.newValueOrSfCall1(ssa.OpCvt64Fto128D, tt, v)
+			op := ssa.OpCvt64Fto64D
+			if ttIs128 {
+				op = ssa.OpCvt64Fto128D
+			}
+			return s.newValueOrSfCall1(op, tt, v)
 		}
 		// decimal -> integer
 		if ft.IsDecimal() && tt.IsInteger() {
-			if ftIs64 {
-				if tt.IsSigned() {
-					return s.newValueOrSfCall1(ssa.OpCvt64Dto64, tt, v)
+			op := ssa.OpCvt64Dto64
+			if !tt.IsSigned() {
+				op = ssa.OpCvt64Dto64U
+			}
+			if ftIs128 {
+				op = ssa.OpCvt128Dto64
+				if !tt.IsSigned() {
+					op = ssa.OpCvt128Dto64U
 				}
-				return s.newValueOrSfCall1(ssa.OpCvt64Dto64U, tt, v)
 			}
-			if tt.IsSigned() {
-				return s.newValueOrSfCall1(ssa.OpCvt128Dto64, tt, v)
+			rt := types.Types[types.TINT64]
+			if !tt.IsSigned() {
+				rt = types.Types[types.TUINT64]
 			}
-			return s.newValueOrSfCall1(ssa.OpCvt128Dto64U, tt, v)
+			v = s.newValueOrSfCall1(op, rt, v)
+			if tt.Size() < 8 {
+				v = s.newValue1(decTrunc[tt.Size()], tt, v)
+			}
+			return v
 		}
 		// integer -> decimal
 		if ft.IsInteger() && tt.IsDecimal() {
-			if ttIs64 {
+			if ft.Size() < 8 {
 				if ft.IsSigned() {
-					return s.newValueOrSfCall1(ssa.OpCvt64to64D, tt, v)
+					v = s.newValue1(decSext[ft.Size()], types.Types[types.TINT64], v)
+				} else {
+					v = s.newValue1(decZext[ft.Size()], types.Types[types.TUINT64], v)
 				}
-				return s.newValueOrSfCall1(ssa.OpCvt64Uto64D, tt, v)
 			}
-			if ft.IsSigned() {
-				return s.newValueOrSfCall1(ssa.OpCvt64to128D, tt, v)
+			op := ssa.OpCvt64to64D
+			if !ft.IsSigned() {
+				op = ssa.OpCvt64Uto64D
 			}
-			return s.newValueOrSfCall1(ssa.OpCvt64Uto128D, tt, v)
+			if ttIs128 {
+				op = ssa.OpCvt64to128D
+				if !ft.IsSigned() {
+					op = ssa.OpCvt64Uto128D
+				}
+			}
+			return s.newValueOrSfCall1(op, tt, v)
 		}
 		s.Fatalf("unhandled decimal conversion %v -> %v", ft, tt)
 	}
