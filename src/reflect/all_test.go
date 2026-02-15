@@ -207,6 +207,8 @@ var valueTests = []pair{
 	{new(uint64), "64"},
 	{new(float32), "256.25"},
 	{new(float64), "512.125"},
+	{new(decimal64), "256.25"},
+	{new(decimal128), "512.125"},
 	{new(complex64), "532.125+10i"},
 	{new(complex128), "564.25+1i"},
 	{new(string), "stringy cheese"},
@@ -284,6 +286,10 @@ func TestSet(t *testing.T) {
 			v.SetFloat(256.25)
 		case Float64:
 			v.SetFloat(512.125)
+		case Decimal64:
+			v.SetDecimal(256.25)
+		case Decimal128:
+			v.SetDecimal(512.125)
 		case Complex64:
 			v.SetComplex(532.125 + 10i)
 		case Complex128:
@@ -328,6 +334,10 @@ func TestSetValue(t *testing.T) {
 			v.Set(ValueOf(float32(256.25)))
 		case Float64:
 			v.Set(ValueOf(512.125))
+		case Decimal64:
+			v.Set(ValueOf(decimal64(256.25)))
+		case Decimal128:
+			v.Set(ValueOf(decimal128(512.125)))
 		case Complex64:
 			v.Set(ValueOf(complex64(532.125 + 10i)))
 		case Complex128:
@@ -419,6 +429,9 @@ func TestCanIntUintFloatComplex(t *testing.T) {
 		// floating-point
 		{float32(256.25), [...]bool{false, false, true, false}},
 		{float64(512.125), [...]bool{false, false, true, false}},
+		// decimal
+		{decimal64(256.25), [...]bool{false, false, false, false}},
+		{decimal128(512.125), [...]bool{false, false, false, false}},
 		// complex
 		{complex64(532.125 + 10i), [...]bool{false, false, false, true}},
 		{complex128(564.25 + 1i), [...]bool{false, false, false, true}},
@@ -458,6 +471,77 @@ func TestCanIntUintFloatComplex(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestDecimalReflect(t *testing.T) {
+	// decimal64 round-trip through Decimal/SetDecimal
+	var d64 decimal64 = 3.14
+	v64 := ValueOf(&d64).Elem()
+	if v64.Kind() != Decimal64 {
+		t.Errorf("Kind = %v, want Decimal64", v64.Kind())
+	}
+	got64 := v64.Decimal()
+	if got64 != decimal128(d64) {
+		t.Errorf("Decimal() = %v, want %v", got64, decimal128(d64))
+	}
+	v64.SetDecimal(99.5)
+	if d64 != 99.5 {
+		t.Errorf("after SetDecimal(99.5), d64 = %v", d64)
+	}
+
+	// decimal128 round-trip through Decimal/SetDecimal
+	var d128 decimal128 = 123456.789
+	v128 := ValueOf(&d128).Elem()
+	if v128.Kind() != Decimal128 {
+		t.Errorf("Kind = %v, want Decimal128", v128.Kind())
+	}
+	got128 := v128.Decimal()
+	if got128 != d128 {
+		t.Errorf("Decimal() = %v, want %v", got128, d128)
+	}
+	v128.SetDecimal(42.0)
+	if d128 != 42.0 {
+		t.Errorf("after SetDecimal(42.0), d128 = %v", d128)
+	}
+
+	// Cross-type: set decimal64 from decimal128 value
+	v64.SetDecimal(decimal128(77.25))
+	if d64 != 77.25 {
+		t.Errorf("after SetDecimal(decimal128(77.25)), d64 = %v", d64)
+	}
+}
+
+func TestDecimalPanics(t *testing.T) {
+	// Decimal() on non-decimal should panic
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Decimal() on float64 did not panic")
+			}
+		}()
+		ValueOf(float64(1.0)).Decimal()
+	}()
+
+	// SetDecimal() on non-decimal should panic
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("SetDecimal() on float64 did not panic")
+			}
+		}()
+		var f float64 = 1.0
+		ValueOf(&f).Elem().SetDecimal(1.0)
+	}()
+
+	// SetDecimal() on non-addressable should panic
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("SetDecimal() on non-addressable did not panic")
+			}
+		}()
+		ValueOf(decimal64(1.0)).SetDecimal(2.0)
+	}()
 }
 
 func TestCanSetField(t *testing.T) {

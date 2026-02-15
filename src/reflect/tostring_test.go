@@ -9,6 +9,7 @@
 package reflect_test
 
 import (
+	"fmt"
 	. "reflect"
 	"strconv"
 )
@@ -28,6 +29,8 @@ func valueToString(val Value) string {
 		return strconv.FormatUint(val.Uint(), 10)
 	case Float32, Float64:
 		return strconv.FormatFloat(val.Float(), 'g', -1, 64)
+	case Decimal64, Decimal128:
+		return fmt.Sprintf("%g", val.Interface())
 	case Complex64, Complex128:
 		c := val.Complex()
 		return strconv.FormatFloat(real(c), 'g', -1, 64) + "+" + strconv.FormatFloat(imag(c), 'g', -1, 64) + "i"
