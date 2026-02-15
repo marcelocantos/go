@@ -5,6 +5,7 @@
 package math_test
 
 import (
+	"fmt"
 	. "math"
 	"testing"
 )
@@ -666,9 +667,87 @@ func TestDecimal128FMA(t *testing.T) {
 	}
 }
 
-// Note: Decimal64Quantize, Decimal128Quantize, Decimal64SameQuantum, and
-// Decimal128SameQuantum are implemented but not tested here because the
-// compiler currently normalizes all decimal literals to maximum precision,
-// making it impossible to construct values with specific quanta from
-// literals. These functions will be testable once the compiler preserves
-// quantum information from source literals.
+func TestDecimal64SameQuantum(t *testing.T) {
+	tests := []struct {
+		x, y decimal64
+		want bool
+	}{
+		{1, 2, true},           // both exp=0
+		{1.0, 2.0, true},      // both exp=-1
+		{1.00, 2.00, true},    // both exp=-2
+		{1, 1.0, false},       // exp=0 vs exp=-1
+		{1.0, 1.00, false},    // exp=-1 vs exp=-2
+		{3.14, 2.71, true},    // both exp=-2
+		{100, 200, true},      // both exp=0
+		{0.01, 0.02, true},    // both exp=-2
+		{1, 0.1, false},       // exp=0 vs exp=-1
+	}
+	for _, tt := range tests {
+		got := Decimal64SameQuantum(tt.x, tt.y)
+		if got != tt.want {
+			t.Errorf("Decimal64SameQuantum(%#g, %#g) = %v, want %v", tt.x, tt.y, got, tt.want)
+		}
+	}
+}
+
+func TestDecimal128SameQuantum(t *testing.T) {
+	tests := []struct {
+		x, y decimal128
+		want bool
+	}{
+		{1, 2, true},           // both exp=0
+		{1.0, 2.0, true},      // both exp=-1
+		{1.00, 2.00, true},    // both exp=-2
+		{1, 1.0, false},       // exp=0 vs exp=-1
+		{1.0, 1.00, false},    // exp=-1 vs exp=-2
+		{3.14, 2.71, true},    // both exp=-2
+	}
+	for _, tt := range tests {
+		got := Decimal128SameQuantum(tt.x, tt.y)
+		if got != tt.want {
+			t.Errorf("Decimal128SameQuantum(%#g, %#g) = %v, want %v", tt.x, tt.y, got, tt.want)
+		}
+	}
+}
+
+func TestDecimal64Quantize(t *testing.T) {
+	tests := []struct {
+		x, y decimal64
+		want string // expected %#g output
+	}{
+		{3.14, 1.0, "3.1"},    // quantize 3.14 to 1 decimal place
+		{3.14, 1.00, "3.14"},  // quantize to 2 decimal places (no change)
+		{3.14, 1, "3"},        // quantize to integer
+		{2.71, 1.0, "2.7"},   // round down
+		{2.75, 1.0, "2.8"},   // round-half-to-even: .75 rounds to .8
+		{1, 0.01, "1.00"},    // add trailing zeros
+		{100, 1.0, "100.0"},  // integer with 1 decimal place
+	}
+	for _, tt := range tests {
+		got := Decimal64Quantize(tt.x, tt.y)
+		s := fmt.Sprintf("%#g", got)
+		if s != tt.want {
+			t.Errorf("Decimal64Quantize(%#g, %#g) = %s, want %s", tt.x, tt.y, s, tt.want)
+		}
+	}
+}
+
+func TestDecimal128Quantize(t *testing.T) {
+	tests := []struct {
+		x, y decimal128
+		want string // expected %#g output
+	}{
+		{3.14, 1.0, "3.1"},
+		{3.14, 1.00, "3.14"},
+		{3.14, 1, "3"},
+		{2.71, 1.0, "2.7"},
+		{1, 0.01, "1.00"},
+	}
+	for _, tt := range tests {
+		got := Decimal128Quantize(tt.x, tt.y)
+		s := fmt.Sprintf("%#g", got)
+		if s != tt.want {
+			t.Errorf("Decimal128Quantize(%#g, %#g) = %s, want %s", tt.x, tt.y, s, tt.want)
+		}
+	}
+}

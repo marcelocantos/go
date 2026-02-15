@@ -322,12 +322,30 @@ func InitConst(n *ir.Name, noff int64, c ir.Node, wid int) {
 		case types.TFLOAT64:
 			s.WriteFloat64(base.Ctxt, noff, f)
 		case types.TDECIMAL64:
-			bid := float64ToBID64(f)
-			s.WriteInt(base.Ctxt, noff, 8, int64(bid))
+			if lit, ok := c.(*ir.BasicLit); ok && lit.OrigLit() != "" {
+				bid := literalToBID64(lit.OrigLit())
+				if f < 0 {
+					bid |= 1 << 63
+				}
+				s.WriteInt(base.Ctxt, noff, 8, int64(bid))
+			} else {
+				bid := float64ToBID64(f)
+				s.WriteInt(base.Ctxt, noff, 8, int64(bid))
+			}
 		case types.TDECIMAL128:
-			hi, lo := float64ToBID128(f)
-			s.WriteInt(base.Ctxt, noff, 8, int64(lo))
-			s.WriteInt(base.Ctxt, noff+8, 8, int64(hi))
+			if lit, ok := c.(*ir.BasicLit); ok && lit.OrigLit() != "" {
+				bid := literalToBID64(lit.OrigLit())
+				if f < 0 {
+					bid |= 1 << 63
+				}
+				hi, lo := bid64ToBID128(bid)
+				s.WriteInt(base.Ctxt, noff, 8, int64(lo))
+				s.WriteInt(base.Ctxt, noff+8, 8, int64(hi))
+			} else {
+				hi, lo := float64ToBID128(f)
+				s.WriteInt(base.Ctxt, noff, 8, int64(lo))
+				s.WriteInt(base.Ctxt, noff+8, 8, int64(hi))
+			}
 		}
 
 	case constant.Complex:
@@ -478,6 +496,197 @@ func float64ToBID128(f float64) (uint64, uint64) {
 	// BID128 Form 1: hi[63]=sign, hi[62:49]=biased_exp, hi[48:0]=coeff_hi, lo=coeff_lo
 	// Since coeff fits in 64 bits, coeff_hi = 0 and lo = coeff.
 	biasedExp := dexp + bid128Bias
+	if biasedExp < 0 || biasedExp > 12287 {
+		if biasedExp > 12287 {
+			return sign | bid128Inf, 0
+		}
+		return sign, 0
+	}
+	hi := sign | uint64(biasedExp)<<49
+	return hi, coeff
+}
+
+// literalToBID64 parses a Go numeric literal string and returns BID64 bits
+// with quantum preserved. For example, "3.14" → coeff=314, exp=-2.
+func literalToBID64(s string) uint64 {
+	const (
+		bid64MaxCoef = uint64(9999999999999999)
+		bid64SignBit = uint64(1 << 63)
+	)
+
+	// Remove underscores (Go literal syntax allows them).
+	clean := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] != '_' {
+			clean = append(clean, s[i])
+		}
+	}
+	s = string(clean)
+
+	// Handle sign.
+	var sign uint64
+	if len(s) > 0 && s[0] == '-' {
+		sign = bid64SignBit
+		s = s[1:]
+	} else if len(s) > 0 && s[0] == '+' {
+		s = s[1:]
+	}
+
+	if len(s) == 0 {
+		return sign // zero
+	}
+
+	// Handle non-decimal bases → integer with exp=0.
+	if len(s) >= 2 && s[0] == '0' {
+		switch s[1] {
+		case 'x', 'X':
+			var n uint64
+			for _, c := range s[2:] {
+				switch {
+				case c >= '0' && c <= '9':
+					n = n*16 + uint64(c-'0')
+				case c >= 'a' && c <= 'f':
+					n = n*16 + uint64(c-'a'+10)
+				case c >= 'A' && c <= 'F':
+					n = n*16 + uint64(c-'A'+10)
+				}
+			}
+			return sign | packBID64(0, n)
+		case 'o', 'O':
+			var n uint64
+			for _, c := range s[2:] {
+				n = n*8 + uint64(c-'0')
+			}
+			return sign | packBID64(0, n)
+		case 'b', 'B':
+			var n uint64
+			for _, c := range s[2:] {
+				n = n*2 + uint64(c-'0')
+			}
+			return sign | packBID64(0, n)
+		}
+	}
+
+	// Parse decimal literal: collect digits, track decimal point.
+	var coeff uint64
+	exp := 0
+	sawDot := false
+	fracDigits := 0
+	eIdx := -1
+
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '.' {
+			sawDot = true
+			continue
+		}
+		if c == 'e' || c == 'E' {
+			eIdx = i
+			break
+		}
+		if c >= '0' && c <= '9' {
+			coeff = coeff*10 + uint64(c-'0')
+			if sawDot {
+				fracDigits++
+			}
+		}
+	}
+
+	exp = -fracDigits
+
+	// Handle exponent notation.
+	if eIdx >= 0 {
+		eStr := s[eIdx+1:]
+		eNeg := false
+		if len(eStr) > 0 && eStr[0] == '-' {
+			eNeg = true
+			eStr = eStr[1:]
+		} else if len(eStr) > 0 && eStr[0] == '+' {
+			eStr = eStr[1:]
+		}
+		var eVal int
+		for _, c := range eStr {
+			eVal = eVal*10 + int(c-'0')
+		}
+		if eNeg {
+			eVal = -eVal
+		}
+		exp += eVal
+	}
+
+	// Handle zero.
+	if coeff == 0 {
+		return sign | packBID64(exp, 0)
+	}
+
+	// If coefficient exceeds 16 digits, divide and round.
+	for coeff > bid64MaxCoef {
+		rem := coeff % 10
+		coeff /= 10
+		exp++
+		if rem > 5 || (rem == 5 && coeff%2 != 0) {
+			coeff++
+		}
+	}
+
+	return sign | packBID64(exp, coeff)
+}
+
+// packBID64 packs an exponent and coefficient into BID64 format.
+func packBID64(exp int, coeff uint64) uint64 {
+	const (
+		bid64Bias = 398
+		bid64Inf  = uint64(0x7800000000000000)
+	)
+
+	biasedExp := exp + bid64Bias
+	if biasedExp < 0 {
+		return 0 // underflow to zero
+	}
+	if biasedExp > 767 {
+		return bid64Inf
+	}
+	if coeff < (1 << 53) {
+		return uint64(biasedExp)<<53 | coeff
+	}
+	return (3 << 61) | uint64(biasedExp)<<51 | (coeff & ((1 << 51) - 1))
+}
+
+// bid64ToBID128 converts a BID64 encoding to BID128 encoding,
+// preserving the quantum (exponent and coefficient).
+func bid64ToBID128(bid uint64) (uint64, uint64) {
+	const (
+		bid64Bias    = 398
+		bid128Bias   = 6176
+		bid64SignBit = uint64(1 << 63)
+		bid128Inf    = uint64(0x7800000000000000)
+		bid128NaN    = uint64(0x7C00000000000000)
+	)
+
+	sign := bid & bid64SignBit
+
+	// Check for special values.
+	if bid&0x7C00000000000000 == 0x7C00000000000000 {
+		return sign | bid128NaN, 0 // NaN
+	}
+	if bid&0x7800000000000000 == 0x7800000000000000 {
+		return sign | bid128Inf, 0 // Inf
+	}
+
+	// Extract exponent and coefficient from BID64.
+	var exp int
+	var coeff uint64
+	if bid&(3<<61) == (3 << 61) {
+		// Large coefficient form.
+		exp = int((bid>>51)&0x3FF) - bid64Bias
+		coeff = bid & ((1 << 51) - 1) | (1 << 53)
+	} else {
+		exp = int((bid>>53)&0x3FF) - bid64Bias
+		coeff = bid & ((1 << 53) - 1)
+	}
+
+	// Repack as BID128.
+	biasedExp := exp + bid128Bias
 	if biasedExp < 0 || biasedExp > 12287 {
 		if biasedExp > 12287 {
 			return sign | bid128Inf, 0

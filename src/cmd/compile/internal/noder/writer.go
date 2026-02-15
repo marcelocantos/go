@@ -84,6 +84,10 @@ type pkgWriter struct {
 	funDecls map[*types2.Func]*syntax.FuncDecl
 	typDecls map[*types2.TypeName]typeDeclGen
 
+	// constLits maps const objects to their original literal string,
+	// for quantum-preserving decimal constant encoding.
+	constLits map[*types2.Const]string
+
 	// linknames maps package-scope objects to their linker symbol name,
 	// if specified by a //go:linkname directive.
 	linknames map[types2.Object]string
@@ -115,6 +119,7 @@ func newPkgWriter(m posMap, pkg *types2.Package, info *types2.Info, otherInfo ma
 		funDecls: make(map[*types2.Func]*syntax.FuncDecl),
 		typDecls: make(map[*types2.TypeName]typeDeclGen),
 
+		constLits: make(map[*types2.Const]string),
 		linknames: make(map[types2.Object]string),
 	}
 }
@@ -1824,6 +1829,8 @@ func (w *writer) expr(expr syntax.Expr) {
 			assert(typ != nil)
 			w.typ(typ)
 			w.Value(tv.Value)
+			// Write original literal string for quantum-preserving decimal encoding.
+			w.String(constOrigLit(w.p, expr, obj))
 			return
 		}
 
@@ -2596,6 +2603,12 @@ func (c *declCollector) Visit(n syntax.Node) syntax.Visitor {
 
 	case *syntax.ConstDecl:
 		pw.checkPragmas(n.Pragma, 0, false)
+		// Record original literal string for quantum-preserving decimal encoding.
+		if lit, ok := n.Values.(*syntax.BasicLit); ok && len(n.NameList) == 1 {
+			if obj, ok := pw.info.Defs[n.NameList[0]].(*types2.Const); ok {
+				pw.constLits[obj] = lit.Value
+			}
+		}
 
 	case *syntax.FuncDecl:
 		pw.checkPragmas(n.Pragma, funcPragmas, false)
@@ -2818,6 +2831,50 @@ func (w *writer) pkgObjs(names ...*syntax.Name) {
 		w.Sync(pkgbits.SyncDeclName)
 		w.obj(obj, nil)
 	}
+}
+
+// constOrigLit extracts the original literal string from a constant expression
+// for quantum-preserving decimal encoding. It handles:
+//   - Direct literals: 3.14
+//   - Named const references: pi (looked up in constLits)
+//   - Type conversions: decimal64(3.14) or decimal64(pi)
+func constOrigLit(pw *pkgWriter, expr syntax.Expr, obj types2.Object) string {
+	// Direct literal.
+	if lit, ok := expr.(*syntax.BasicLit); ok {
+		return lit.Value
+	}
+	// Named const reference.
+	if obj != nil {
+		if c, ok := obj.(*types2.Const); ok {
+			if s := pw.constLits[c]; s != "" {
+				return s
+			}
+		}
+	}
+	// Unary operation (e.g. -3.14, +5): look inside the operand.
+	// The sign is tracked by the constant.Value; the literal string
+	// provides only the magnitude and quantum.
+	if op, ok := expr.(*syntax.Operation); ok && op.Y == nil {
+		return constOrigLit(pw, op.X, nil)
+	}
+	// Type conversion: T(x) — look inside the argument.
+	if call, ok := expr.(*syntax.CallExpr); ok && !call.HasDots && len(call.ArgList) == 1 {
+		inner := syntax.Unparen(call.ArgList[0])
+		if lit, ok := inner.(*syntax.BasicLit); ok {
+			return lit.Value
+		}
+		// Inner is a named const.
+		if name, ok := inner.(*syntax.Name); ok {
+			if obj := pw.info.Uses[name]; obj != nil {
+				if c, ok := obj.(*types2.Const); ok {
+					return pw.constLits[c]
+				}
+			}
+		}
+		// Inner could be a unary operation like T(-3.14) or T(-pi).
+		return constOrigLit(pw, inner, nil)
+	}
+	return ""
 }
 
 // @@@ Helpers

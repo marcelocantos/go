@@ -129,7 +129,8 @@ func (n *AddrExpr) SetOp(op Op) {
 // A BasicLit is a literal of basic type.
 type BasicLit struct {
 	miniExpr
-	val constant.Value
+	val     constant.Value
+	origLit string // original source literal (e.g. "3.14"), empty if computed
 }
 
 // NewBasicLit returns an OLITERAL representing val with the given type.
@@ -146,11 +147,17 @@ func NewBasicLit(pos src.XPos, typ *types.Type, val constant.Value) Node {
 
 func (n *BasicLit) Val() constant.Value       { return n.val }
 func (n *BasicLit) SetVal(val constant.Value) { n.val = val }
+func (n *BasicLit) OrigLit() string            { return n.origLit }
+func (n *BasicLit) SetOrigLit(s string)        { n.origLit = s }
 
 // NewConstExpr returns an OLITERAL representing val, copying the
 // position and type from orig.
 func NewConstExpr(val constant.Value, orig Node) Node {
-	return NewBasicLit(orig.Pos(), orig.Type(), val)
+	n := NewBasicLit(orig.Pos(), orig.Type(), val)
+	if lit, ok := orig.(*BasicLit); ok {
+		n.(*BasicLit).origLit = lit.origLit
+	}
+	return n
 }
 
 // A BinaryExpr is a binary expression X Op Y,

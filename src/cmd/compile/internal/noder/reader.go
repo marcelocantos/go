@@ -2144,7 +2144,12 @@ func (r *reader) expr() (res ir.Node) {
 		pos := r.pos()
 		typ := r.typ()
 		val := FixValue(typ, r.Value())
-		return ir.NewBasicLit(pos, typ, val)
+		origLit := r.String()
+		n := ir.NewBasicLit(pos, typ, val)
+		if origLit != "" {
+			n.(*ir.BasicLit).SetOrigLit(origLit)
+		}
+		return n
 
 	case exprZero:
 		pos := r.pos()
