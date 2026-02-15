@@ -72,11 +72,64 @@ func TestDecimalMarshal(t *testing.T) {
 	}
 }
 
-func TestDecimalMarshalNaN(t *testing.T) {
-	d64, _ := strconv.ParseDecimal64("NaN")
-	_, err := Marshal(struct{ V decimal64 }{V: d64})
-	if err == nil {
-		t.Error("Marshal(NaN decimal64) should return error")
+func TestDecimalMarshalErrors(t *testing.T) {
+	d64NaN, _ := strconv.ParseDecimal64("NaN")
+	d64Inf, _ := strconv.ParseDecimal64("Inf")
+	d64NegInf, _ := strconv.ParseDecimal64("-Inf")
+	d128NaN, _ := strconv.ParseDecimal128("NaN")
+	d128Inf, _ := strconv.ParseDecimal128("Inf")
+	d128NegInf, _ := strconv.ParseDecimal128("-Inf")
+
+	tests := []struct {
+		name string
+		in   any
+	}{
+		{"decimal64 NaN", struct{ V decimal64 }{V: d64NaN}},
+		{"decimal64 +Inf", struct{ V decimal64 }{V: d64Inf}},
+		{"decimal64 -Inf", struct{ V decimal64 }{V: d64NegInf}},
+		{"decimal128 NaN", struct{ V decimal128 }{V: d128NaN}},
+		{"decimal128 +Inf", struct{ V decimal128 }{V: d128Inf}},
+		{"decimal128 -Inf", struct{ V decimal128 }{V: d128NegInf}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Marshal(tt.in)
+			if err == nil {
+				t.Errorf("Marshal(%v) should return error", tt.in)
+			}
+		})
+	}
+}
+
+type decimalStringTagStruct struct {
+	D64  decimal64  `json:"d64,string"`
+	D128 decimal128 `json:"d128,string"`
+}
+
+func TestDecimalMarshalStringTag(t *testing.T) {
+	v := decimalStringTagStruct{D64: 3.14, D128: 2.718}
+	got, err := Marshal(v)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+	want := `{"d64":"3.14","d128":"2.718"}`
+	if string(got) != want {
+		t.Errorf("Marshal = %s, want %s", got, want)
+	}
+}
+
+func TestDecimalUnmarshalStringTag(t *testing.T) {
+	in := `{"d64":"3.14","d128":"2.718"}`
+	var got decimalStringTagStruct
+	err := Unmarshal([]byte(in), &got)
+	if err != nil {
+		t.Fatalf("Unmarshal(%s) error: %v", in, err)
+	}
+	if strconv.FormatDecimal64(got.D64, 'f', -1) != "3.14" {
+		t.Errorf("D64 = %v, want 3.14", got.D64)
+	}
+	if strconv.FormatDecimal128(got.D128, 'f', -1) != "2.718" {
+		t.Errorf("D128 = %v, want 2.718", got.D128)
 	}
 }
 
