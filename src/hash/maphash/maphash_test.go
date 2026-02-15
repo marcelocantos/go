@@ -260,6 +260,10 @@ func TestComparable(t *testing.T) {
 	testComparable(t, chan struct{}(nil))
 	testComparable(t, float32(0), negativeZero[float32]())
 	testComparable(t, float64(0), negativeZero[float64]())
+	testComparable(t, decimal64(9))
+	testComparable(t, decimal128(42))
+	testComparable(t, decimal64(0), math.Decimal64frombits(1<<63))  // +0 == -0
+	testComparableNoEqual(t, math.Decimal64NaN(), math.Decimal64NaN())
 	testComparableNoEqual(t, math.NaN(), math.NaN())
 	testComparableNoEqual(t, [2]string{"a", ""}, [2]string{"", "a"})
 	testComparableNoEqual(t, struct{ a, b string }{"foo", ""}, struct{ a, b string }{"", "foo"})
@@ -348,6 +352,10 @@ func TestWriteComparable(t *testing.T) {
 	testWriteComparable(t, s1.s, s2.s)
 	testWriteComparable(t, float32(0), negativeZero[float32]())
 	testWriteComparable(t, float64(0), negativeZero[float64]())
+	testWriteComparable(t, decimal64(9))
+	testWriteComparable(t, decimal128(42))
+	testWriteComparable(t, decimal64(0), math.Decimal64frombits(1<<63))  // +0 == -0
+	testWriteComparableNoEqual(t, math.Decimal64NaN(), math.Decimal64NaN())
 	testWriteComparableNoEqual(t, math.NaN(), math.NaN())
 	testWriteComparableNoEqual(t, [2]string{"a", ""}, [2]string{"", "a"})
 	testWriteComparableNoEqual(t, struct{ a, b string }{"foo", ""}, struct{ a, b string }{"", "foo"})

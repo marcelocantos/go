@@ -83,6 +83,8 @@ func compare(aVal, bVal reflect.Value) int {
 		return cmp.Compare(aVal.String(), bVal.String())
 	case reflect.Float32, reflect.Float64:
 		return cmp.Compare(aVal.Float(), bVal.Float())
+	case reflect.Decimal64, reflect.Decimal128:
+		return compareDecimal(aVal.Decimal(), bVal.Decimal())
 	case reflect.Complex64, reflect.Complex128:
 		a, b := aVal.Complex(), bVal.Complex()
 		if c := cmp.Compare(real(a), real(b)); c != 0 {
@@ -133,6 +135,29 @@ func compare(aVal, bVal reflect.Value) int {
 		// Certain types cannot appear as keys (maps, funcs, slices), but be explicit.
 		panic("bad type in compare: " + aType.String())
 	}
+}
+
+// compareDecimal compares two decimal128 values.
+// NaN is considered less than any non-NaN, and two NaNs are equal.
+func compareDecimal(a, b decimal128) int {
+	aNaN := a != a
+	bNaN := b != b
+	if aNaN {
+		if bNaN {
+			return 0
+		}
+		return -1
+	}
+	if bNaN {
+		return +1
+	}
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return +1
+	}
+	return 0
 }
 
 // nilCompare checks whether either value is nil. If not, the boolean is false.

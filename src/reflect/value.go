@@ -3411,6 +3411,8 @@ func convertOp(dst, src *abi.Type) func(Value, Type) Value {
 			return cvtInt
 		case Float32, Float64:
 			return cvtIntFloat
+		case Decimal64, Decimal128:
+			return cvtIntDecimal
 		case String:
 			return cvtIntString
 		}
@@ -3421,6 +3423,8 @@ func convertOp(dst, src *abi.Type) func(Value, Type) Value {
 			return cvtUint
 		case Float32, Float64:
 			return cvtUintFloat
+		case Decimal64, Decimal128:
+			return cvtUintDecimal
 		case String:
 			return cvtUintString
 		}
@@ -3433,6 +3437,20 @@ func convertOp(dst, src *abi.Type) func(Value, Type) Value {
 			return cvtFloatUint
 		case Float32, Float64:
 			return cvtFloat
+		case Decimal64, Decimal128:
+			return cvtFloatDecimal
+		}
+
+	case Decimal64, Decimal128:
+		switch Kind(dst.Kind()) {
+		case Int, Int8, Int16, Int32, Int64:
+			return cvtDecimalInt
+		case Uint, Uint8, Uint16, Uint32, Uint64, Uintptr:
+			return cvtDecimalUint
+		case Float32, Float64:
+			return cvtDecimalFloat
+		case Decimal64, Decimal128:
+			return cvtDecimal
 		}
 
 	case Complex64, Complex128:
@@ -3553,6 +3571,20 @@ func makeComplex(f flag, v complex128, t Type) Value {
 	return Value{typ, ptr, f | flagIndir | flag(typ.Kind())}
 }
 
+// makeDecimal returns a Value of type t equal to v (possibly truncated to decimal64),
+// where t is a decimal64 or decimal128 type.
+func makeDecimal(f flag, v decimal128, t Type) Value {
+	typ := t.common()
+	ptr := unsafe_New(typ)
+	switch typ.Size() {
+	case 8:
+		*(*decimal64)(ptr) = decimal64(v)
+	case 16:
+		*(*decimal128)(ptr) = v
+	}
+	return Value{typ, ptr, f | flagIndir | flag(typ.Kind())}
+}
+
 func makeString(f flag, v string, t Type) Value {
 	ret := New(t).Elem()
 	ret.SetString(v)
@@ -3623,6 +3655,41 @@ func cvtFloat(v Value, t Type) Value {
 // convertOp: complexXX -> complexXX
 func cvtComplex(v Value, t Type) Value {
 	return makeComplex(v.flag.ro(), v.Complex(), t)
+}
+
+// convertOp: intXX -> decimalXX
+func cvtIntDecimal(v Value, t Type) Value {
+	return makeDecimal(v.flag.ro(), decimal128(v.Int()), t)
+}
+
+// convertOp: uintXX -> decimalXX
+func cvtUintDecimal(v Value, t Type) Value {
+	return makeDecimal(v.flag.ro(), decimal128(v.Uint()), t)
+}
+
+// convertOp: floatXX -> decimalXX
+func cvtFloatDecimal(v Value, t Type) Value {
+	return makeDecimal(v.flag.ro(), decimal128(v.Float()), t)
+}
+
+// convertOp: decimalXX -> decimalXX
+func cvtDecimal(v Value, t Type) Value {
+	return makeDecimal(v.flag.ro(), v.Decimal(), t)
+}
+
+// convertOp: decimalXX -> intXX
+func cvtDecimalInt(v Value, t Type) Value {
+	return makeInt(v.flag.ro(), uint64(int64(v.Decimal())), t)
+}
+
+// convertOp: decimalXX -> uintXX
+func cvtDecimalUint(v Value, t Type) Value {
+	return makeInt(v.flag.ro(), uint64(v.Decimal()), t)
+}
+
+// convertOp: decimalXX -> floatXX
+func cvtDecimalFloat(v Value, t Type) Value {
+	return makeFloat(v.flag.ro(), float64(v.Decimal()), t)
 }
 
 // convertOp: intXX -> string

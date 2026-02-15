@@ -159,6 +159,10 @@ func appendT(h *Hash, v reflect.Value) {
 	case reflect.Float32, reflect.Float64:
 		h.float64(v.Float())
 		return
+	case reflect.Decimal64, reflect.Decimal128:
+		hi, lo := math.Decimal128bits(v.Decimal())
+		h.decimal(hi, lo)
+		return
 	case reflect.Bool:
 		h.WriteByte(btoi(v.Bool()))
 		return
@@ -189,6 +193,104 @@ func (h *Hash) float64(f float64) {
 		return
 	}
 	byteorder.LEPutUint64(buf[:], math.Float64bits(f))
+	h.Write(buf[:])
+}
+
+// decimal hashes a decimal128 BID value given as (hi, lo) uint64 words.
+// Both decimal64 and decimal128 values are passed as decimal128 (decimal64
+// is widened by reflect.Value.Decimal).
+// Like float64 hashing, NaN gets a random hash and +0/-0 hash identically.
+// Values with different BID encodings but the same numeric value (e.g. 1.0
+// and 1.00) are normalized by stripping trailing zeros before hashing.
+func (h *Hash) decimal(hi, lo uint64) {
+	const (
+		nanMask = uint64(0x7C00000000000000)
+		infMask = uint64(0x7800000000000000)
+		signBit = uint64(1) << 63
+		bias    = 6176
+	)
+
+	// NaN: each NaN is unique, like float NaN.
+	if hi&nanMask == nanMask {
+		var buf [8]byte
+		byteorder.LEPutUint64(buf[:], randUint64())
+		h.Write(buf[:])
+		return
+	}
+
+	// Infinity: +Inf == +Inf, -Inf == -Inf.
+	if hi&nanMask == infMask {
+		h.WriteByte(byte(hi >> 63))
+		h.WriteByte(0xde)
+		return
+	}
+
+	// Unpack BID128 to get sign, exponent, and coefficient.
+	sign := hi & signBit
+	var exp int
+	var coeffHi, coeffLo uint64
+
+	if hi&(3<<61) == (3 << 61) {
+		// Form 2
+		exp = int((hi>>47)&0x3FFF) - bias
+		coeffHi = (uint64(1) << 49) | (hi & ((1 << 47) - 1))
+		coeffLo = lo
+		// Coefficient must not exceed 10^34 - 1.
+		if coeffHi > 0x0001ED09BEAD87C0 || (coeffHi == 0x0001ED09BEAD87C0 && coeffLo > 0x378D8E63FFFFFFFF) {
+			coeffHi = 0
+			coeffLo = 0
+		}
+	} else {
+		// Form 1
+		exp = int((hi>>49)&0x3FFF) - bias
+		coeffHi = hi & ((1 << 49) - 1)
+		coeffLo = lo
+	}
+
+	// Zero: +0 == -0.
+	if coeffHi == 0 && coeffLo == 0 {
+		h.WriteByte(0)
+		return
+	}
+
+	// Normalize: strip trailing zeros so semantically equal values
+	// (e.g. 1.0 and 1.00) hash identically.
+	// Uses 128-bit division via bits.Div64.
+	for {
+		qHi := coeffHi / 10
+		remHi := coeffHi % 10
+		qLo, rem := bits.Div64(remHi, coeffLo, 10)
+		if rem != 0 {
+			break
+		}
+		coeffHi = qHi
+		coeffLo = qLo
+		exp++
+	}
+
+	// Hash normalized components.
+	var buf [21]byte
+	buf[0] = byte(sign >> 63)
+	buf[1] = byte(exp)
+	buf[2] = byte(exp >> 8)
+	buf[3] = byte(exp >> 16)
+	buf[4] = byte(exp >> 24)
+	buf[5] = byte(coeffLo)
+	buf[6] = byte(coeffLo >> 8)
+	buf[7] = byte(coeffLo >> 16)
+	buf[8] = byte(coeffLo >> 24)
+	buf[9] = byte(coeffLo >> 32)
+	buf[10] = byte(coeffLo >> 40)
+	buf[11] = byte(coeffLo >> 48)
+	buf[12] = byte(coeffLo >> 56)
+	buf[13] = byte(coeffHi)
+	buf[14] = byte(coeffHi >> 8)
+	buf[15] = byte(coeffHi >> 16)
+	buf[16] = byte(coeffHi >> 24)
+	buf[17] = byte(coeffHi >> 32)
+	buf[18] = byte(coeffHi >> 40)
+	buf[19] = byte(coeffHi >> 48)
+	buf[20] = byte(coeffHi >> 56)
 	h.Write(buf[:])
 }
 
