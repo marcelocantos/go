@@ -304,6 +304,7 @@ func ddiv64(x, y decimal64) decimal64 {
 	// We want to find the largest power of 10 we can multiply xc by
 	// while keeping the 128-bit result's hi part < yc (requirement of divlu).
 	re := xe - ye
+	preferredExp := xe + ye // preferred quantum for the quotient
 
 	// First try: scale xc by 10^16 and reduce if needed.
 	// We need scaledHi < yc for divlu.
@@ -338,6 +339,12 @@ func ddiv64(x, y decimal64) decimal64 {
 		if doubleRem > yc || (doubleRem == yc && q%2 != 0) {
 			q++
 		}
+
+		// Strip trailing zeros to preferred quantum.
+		for re < preferredExp && q > 0 && q%10 == 0 {
+			q /= 10
+			re++
+		}
 		return decimal64frombits(bid64Normalize(rs, re, q))
 	}
 
@@ -347,6 +354,12 @@ func ddiv64(x, y decimal64) decimal64 {
 	doubleRem := rem * 2
 	if doubleRem > yc || (doubleRem == yc && q%2 != 0) {
 		q++
+	}
+
+	// Strip trailing zeros to preferred quantum.
+	for re < preferredExp && q > 0 && q%10 == 0 {
+		q /= 10
+		re++
 	}
 
 	return decimal64frombits(bid64Normalize(rs, re, q))

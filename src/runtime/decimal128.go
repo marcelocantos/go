@@ -736,6 +736,7 @@ func ddiv128(x, y decimal128) decimal128 {
 	}
 
 	re := xe - ye
+	preferredExp := xe + ye // preferred quantum for the quotient
 
 	// Scale xc up by 10^34 for precision, then divide by yc.
 	// xc * 10^34 can be up to ~34+34 = 68 digits (~226 bits).
@@ -750,6 +751,16 @@ func ddiv128(x, y decimal128) decimal128 {
 	doubleRem := u128Shl(rem, 1)
 	if u128Cmp(doubleRem, yc) > 0 || (u128Cmp(doubleRem, yc) == 0 && q.lo%2 != 0) {
 		q = u128Add(q, uint128From64(1))
+	}
+
+	// Strip trailing zeros to preferred quantum.
+	for re < preferredExp && !u128IsZero(q) {
+		qn, r := u128Div64(q, 10)
+		if r != 0 {
+			break
+		}
+		q = qn
+		re++
 	}
 
 	return decimal128frombits(bid128Normalize(rs, re, q))
