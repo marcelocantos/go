@@ -857,6 +857,14 @@ func (check *Checker) binary(x *operand, e syntax.Expr, lhs, rhs syntax.Expr, op
 	}
 
 	if x.mode == constant_ && y.mode == constant_ {
+		// Don't constant-fold typed decimal arithmetic. Go constants use
+		// binary floating-point internally, which destroys the decimal
+		// quantum (trailing-zero significance). Deferring to runtime
+		// preserves quantum through BID arithmetic.
+		if isDecimal(x.typ) {
+			x.mode = value
+			return
+		}
 		// if either x or y has an unknown value, the result is unknown
 		if x.val.Kind() == constant.Unknown || y.val.Kind() == constant.Unknown {
 			x.val = constant.MakeUnknown()

@@ -624,7 +624,11 @@ func (b *batch) rewriteWithLiterals(n ir.Node, fn *ir.Func) {
 				// Preserve any side effects of the original expression, then replace it.
 				assignTemp(conv.Pos(), conv.X, conv.PtrInit())
 				v := v.(*ir.BasicLit)
-				conv.X = ir.NewBasicLit(conv.Pos(), conv.X.Type(), v.Val())
+				newLit := ir.NewBasicLit(conv.Pos(), conv.X.Type(), v.Val())
+				if v.OrigLit() != "" {
+					newLit.(*ir.BasicLit).SetOrigLit(v.OrigLit())
+				}
+				conv.X = newLit
 				typecheck.Expr(conv)
 			}
 		}
