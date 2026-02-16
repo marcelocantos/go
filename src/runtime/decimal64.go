@@ -53,10 +53,20 @@ func dadd64(x, y decimal64) decimal64 {
 		return decimal64frombits(bid64Pack(0, min(xe, ye), 0))
 	}
 	if xc == 0 {
-		return y
+		// Pad y with trailing zeros to adopt x's more precise quantum.
+		for ye > xe && yc <= bid64MaxCoeff/10 {
+			yc *= 10
+			ye--
+		}
+		return decimal64frombits(bid64Pack(ys, ye, yc))
 	}
 	if yc == 0 {
-		return x
+		// Pad x with trailing zeros to adopt y's more precise quantum.
+		for xe > ye && xc <= bid64MaxCoeff/10 {
+			xc *= 10
+			xe--
+		}
+		return decimal64frombits(bid64Pack(xs, xe, xc))
 	}
 
 	// Align exponents: shift the coefficient of the number with

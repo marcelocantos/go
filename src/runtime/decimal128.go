@@ -517,10 +517,28 @@ func dadd128(x, y decimal128) decimal128 {
 		return decimal128frombits(bid128Pack(0, e, uint128Zero))
 	}
 	if u128IsZero(xc) {
-		return y
+		// Pad y with trailing zeros to adopt x's more precise quantum.
+		for ye > xe {
+			test := u128Mul64(yc, 10)
+			if u128Cmp(test, bid128MaxCoeff) > 0 {
+				break
+			}
+			yc = test
+			ye--
+		}
+		return decimal128frombits(bid128Pack(ys, ye, yc))
 	}
 	if u128IsZero(yc) {
-		return x
+		// Pad x with trailing zeros to adopt y's more precise quantum.
+		for xe > ye {
+			test := u128Mul64(xc, 10)
+			if u128Cmp(test, bid128MaxCoeff) > 0 {
+				break
+			}
+			xc = test
+			xe--
+		}
+		return decimal128frombits(bid128Pack(xs, xe, xc))
 	}
 
 	// Align exponents
