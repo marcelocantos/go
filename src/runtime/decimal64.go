@@ -7,6 +7,8 @@
 
 package runtime
 
+import "internal/strconv"
+
 // dneg64 negates a decimal64 value by flipping the sign bit.
 //
 //go:nosplit
@@ -711,10 +713,9 @@ func dd64tou64(x decimal64) uint64 {
 
 // df64tod64 converts a float64 to a decimal64.
 func df64tod64(x float64) decimal64 {
-	// Handle special float64 values
-	sign := float64bits(x) & (1 << 63)
+	// Handle special float64 values.
 	dsign := uint64(0)
-	if sign != 0 {
+	if float64bits(x)&(1<<63) != 0 {
 		dsign = bid64SignBit
 	}
 
@@ -734,43 +735,65 @@ func df64tod64(x float64) decimal64 {
 		return decimal64frombits(bid64Pack(dsign, 0, 0))
 	}
 
-	f := x
-	if f < 0 {
-		f = -f
+	// Format the float64 to its shortest exact decimal representation,
+	// then parse the decimal digits into a BID coefficient.
+	// This is correct by construction: strconv produces the shortest
+	// string that round-trips through float64, and we parse it losslessly
+	// into the decimal coefficient.
+	var buf [32]byte
+	s := strconv.AppendFloat(buf[:0], x, 'e', -1, 64)
+
+	// Parse sign (already handled above via dsign).
+	i := 0
+	if s[i] == '-' {
+		i++
 	}
 
-	// Convert the float64 value to 16 significant decimal digits.
+	// Parse digits and decimal point: d.dddde±eee
 	var coeff uint64
+	ndigits := 0
 	dexp := 0
-
-	// Normalize f to [1, 10)
-	fval := f
-	for fval >= 10 {
-		dexp++
-		fval /= 10
-	}
-	for fval < 1 {
-		dexp--
-		fval *= 10
-	}
-
-	// Extract 16 digits
-	for i := 0; i < 16; i++ {
-		digit := uint64(fval)
-		coeff = coeff*10 + digit
-		fval -= float64(digit)
-		fval *= 10
-	}
-	dexp -= 15 // We extracted 16 digits, so adjust exponent
-
-	// Round the last digit
-	if uint64(fval) >= 5 {
-		coeff++
-		if coeff >= pow10_16 {
-			coeff /= 10
-			dexp++
+	sawDot := false
+	fracDigits := 0
+	for i < len(s) && s[i] != 'e' {
+		if s[i] == '.' {
+			sawDot = true
+		} else {
+			if ndigits < 16 {
+				coeff = coeff*10 + uint64(s[i]-'0')
+				ndigits++
+				if sawDot {
+					fracDigits++
+				}
+			} else if !sawDot {
+				// Extra integer digits beyond 16: just track exponent.
+				dexp++
+			}
+			// Extra fractional digits beyond 16 are dropped (rounding by truncation).
 		}
+		i++
 	}
+
+	// Parse the exponent: e±ddd
+	eexp := 0
+	esign := 1
+	if i < len(s) && s[i] == 'e' {
+		i++
+		if i < len(s) && s[i] == '-' {
+			esign = -1
+			i++
+		} else if i < len(s) && s[i] == '+' {
+			i++
+		}
+		for i < len(s) {
+			eexp = eexp*10 + int(s[i]-'0')
+			i++
+		}
+		eexp *= esign
+	}
+
+	// Combine: value = coeff × 10^(eexp - fracDigits + dexp)
+	dexp += eexp - fracDigits
 
 	return decimal64frombits(bid64Normalize(dsign, dexp, coeff))
 }

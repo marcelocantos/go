@@ -317,6 +317,22 @@ func testFloatConversions() {
 		fail("decimal64->float64 conversion of 100 failed")
 	}
 
+	// float64 -> decimal64 for exact integers.
+	// These are all exactly representable in float64,
+	// so the conversion to decimal64 must be exact.
+	var f83 float64 = 83
+	if decimal64(f83) != decimal64(83) {
+		fail("float64->decimal64 conversion of 83 is not exact")
+	}
+	var f97 float64 = 97
+	if decimal64(f97) != decimal64(97) {
+		fail("float64->decimal64 conversion of 97 is not exact")
+	}
+	var f1000 float64 = 1000
+	if decimal64(f1000) != decimal64(1000) {
+		fail("float64->decimal64 conversion of 1000 is not exact")
+	}
+
 	// float32 -> decimal64
 	var f32 float32 = 1.5
 	var d32 decimal64 = decimal64(f32)

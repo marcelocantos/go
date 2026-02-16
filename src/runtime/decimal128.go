@@ -7,7 +7,10 @@
 
 package runtime
 
-import "unsafe"
+import (
+	"internal/strconv"
+	"unsafe"
+)
 
 // --- uint128 arithmetic helpers ---
 
@@ -1118,9 +1121,8 @@ func dd128tou64(x decimal128) uint64 {
 
 // df64tod128 converts a float64 to a decimal128.
 func df64tod128(x float64) decimal128 {
-	sign := float64bits(x) & (1 << 63)
 	dsign := uint64(0)
-	if sign != 0 {
+	if float64bits(x)&(1<<63) != 0 {
 		dsign = bid128SignBit
 	}
 
@@ -1137,37 +1139,52 @@ func df64tod128(x float64) decimal128 {
 		return decimal128frombits(bid128Pack(dsign, 0, uint128Zero))
 	}
 
-	f := x
-	if f < 0 {
-		f = -f
+	// Format the float64 to its shortest exact decimal representation,
+	// then parse the decimal digits into a BID coefficient.
+	var buf [32]byte
+	s := strconv.AppendFloat(buf[:0], x, 'e', -1, 64)
+
+	i := 0
+	if s[i] == '-' {
+		i++
 	}
 
-	// Convert to 17 significant decimal digits (float64 precision)
 	var coeff uint64
+	ndigits := 0
 	dexp := 0
-
-	fval := f
-	for fval >= 10 {
-		dexp++
-		fval /= 10
-	}
-	for fval < 1 {
-		dexp--
-		fval *= 10
-	}
-
-	for i := 0; i < 17; i++ {
-		digit := uint64(fval)
-		coeff = coeff*10 + digit
-		fval -= float64(digit)
-		fval *= 10
-	}
-	dexp -= 16
-
-	if uint64(fval) >= 5 {
-		coeff++
+	sawDot := false
+	fracDigits := 0
+	for i < len(s) && s[i] != 'e' {
+		if s[i] == '.' {
+			sawDot = true
+		} else {
+			coeff = coeff*10 + uint64(s[i]-'0')
+			ndigits++
+			if sawDot {
+				fracDigits++
+			}
+		}
+		i++
 	}
 
+	eexp := 0
+	esign := 1
+	if i < len(s) && s[i] == 'e' {
+		i++
+		if i < len(s) && s[i] == '-' {
+			esign = -1
+			i++
+		} else if i < len(s) && s[i] == '+' {
+			i++
+		}
+		for i < len(s) {
+			eexp = eexp*10 + int(s[i]-'0')
+			i++
+		}
+		eexp *= esign
+	}
+
+	dexp = eexp - fracDigits
 	return decimal128frombits(bid128Normalize(dsign, dexp, uint128From64(coeff)))
 }
 
