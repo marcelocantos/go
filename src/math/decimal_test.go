@@ -8,6 +8,7 @@ import (
 	"fmt"
 	. "math"
 	"testing"
+	"unsafe"
 )
 
 func TestDecimal64BitsRoundTrip(t *testing.T) {
@@ -776,7 +777,14 @@ func TestDecimal64Quantize(t *testing.T) {
 		got := Decimal64Quantize(tt.x, tt.y)
 		s := fmt.Sprintf("%#g", got)
 		if s != tt.want {
-			t.Errorf("Decimal64Quantize(%#g, %#g) = %s, want %s", tt.x, tt.y, s, tt.want)
+			// Dump raw BID bits for diagnosis.
+			d64bits := Decimal64bits(got)
+			d128 := decimal128(got)
+			p := (*[2]uint64)(unsafe.Pointer(&d128))
+			t.Errorf("Decimal64Quantize(%#g, %#g) = %s, want %s\n"+
+				"  d64 bits: %#016x\n"+
+				"  d128 lo:  %#016x  hi: %#016x",
+				tt.x, tt.y, s, tt.want, d64bits, p[0], p[1])
 		}
 	}
 }
@@ -796,7 +804,10 @@ func TestDecimal128Quantize(t *testing.T) {
 		got := Decimal128Quantize(tt.x, tt.y)
 		s := fmt.Sprintf("%#g", got)
 		if s != tt.want {
-			t.Errorf("Decimal128Quantize(%#g, %#g) = %s, want %s", tt.x, tt.y, s, tt.want)
+			p := (*[2]uint64)(unsafe.Pointer(&got))
+			t.Errorf("Decimal128Quantize(%#g, %#g) = %s, want %s\n"+
+				"  d128 lo: %#016x  hi: %#016x",
+				tt.x, tt.y, s, tt.want, p[0], p[1])
 		}
 	}
 }

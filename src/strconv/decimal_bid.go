@@ -536,8 +536,12 @@ func appendExp(dst []byte, digits []byte, exp int, format byte, prec int) []byte
 	} else {
 		dst = append(dst, '+')
 	}
+	// BID128 exponents can reach ~6176, requiring up to 4 digits.
+	if e >= 1000 {
+		dst = append(dst, byte(e/1000)+'0')
+	}
 	if e >= 100 {
-		dst = append(dst, byte(e/100)+'0')
+		dst = append(dst, byte(e/100%10)+'0')
 	}
 	if e >= 10 {
 		dst = append(dst, byte(e/10%10)+'0')

@@ -167,6 +167,14 @@ func init() {
 		mustParseD128("1234567890123456789012345678901234"),
 		'g', -1, "1234567890123456789012345678901234",
 	})
+
+	// Extreme exponents (BID128 can reach ~6176 digits in the exponent).
+	dtoa128Tests = append(dtoa128Tests,
+		dtoa128Test{mustParseD128("1e+6000"), 'e', 0, "1e+6000"},
+		dtoa128Test{mustParseD128("1e-6000"), 'e', 0, "1e-6000"},
+		dtoa128Test{mustParseD128("1e+6111"), 'e', 0, "1e+6111"},
+		dtoa128Test{mustParseD128("1e-6176"), 'e', 0, "1e-6176"},
+	)
 }
 
 func TestFormatDecimal128(t *testing.T) {

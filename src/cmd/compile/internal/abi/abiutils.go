@@ -154,6 +154,9 @@ func appendParamTypes(rts []*types.Type, t *types.Type) []*types.Type {
 		if t.IsComplex() {
 			c := types.FloatForComplex(t)
 			return append(rts, c, c)
+		} else if t.IsDecimal() && t.Size() == 16 {
+			// decimal128: two uint64 halves (lo, hi).
+			return append(rts, types.Types[types.TUINT64], types.Types[types.TUINT64])
 		} else {
 			if int(t.Size()) <= types.RegSize || t.IsSIMD() {
 				return append(rts, t)
