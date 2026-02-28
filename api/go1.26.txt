@@ -178,3 +178,104 @@ pkg testing, method (*F) ArtifactDir() string #71287
 pkg testing, method (*T) ArtifactDir() string #71287
 pkg testing, type TB interface, ArtifactDir() string #71287
 pkg testing/cryptotest, func SetGlobalRandom(*testing.T, uint64) #70942
+pkg debug/dwarf, method (*DecimalFloatType) Basic() *BasicType #0
+pkg debug/dwarf, method (*DecimalFloatType) Common() *CommonType #0
+pkg debug/dwarf, method (*DecimalFloatType) Size() int64 #0
+pkg debug/dwarf, method (*DecimalFloatType) String() string #0
+pkg debug/dwarf, type DecimalFloatType struct #0
+pkg debug/dwarf, type DecimalFloatType struct, embedded BasicType #0
+pkg go/types, const Decimal128 = 18 #0
+pkg go/types, const Decimal128 BasicKind #0
+pkg go/types, const Decimal64 = 17 #0
+pkg go/types, const Decimal64 BasicKind #0
+pkg go/types, const IsConstType = 187 #0
+pkg go/types, const IsDecimal = 128 #0
+pkg go/types, const IsDecimal BasicInfo #0
+pkg go/types, const IsNumeric = 154 #0
+pkg go/types, const IsOrdered = 170 #0
+pkg go/types, const String = 19 #0
+pkg go/types, const UnsafePointer = 20 #0
+pkg go/types, const UntypedBool = 21 #0
+pkg go/types, const UntypedComplex = 25 #0
+pkg go/types, const UntypedFloat = 24 #0
+pkg go/types, const UntypedInt = 22 #0
+pkg go/types, const UntypedNil = 27 #0
+pkg go/types, const UntypedRune = 23 #0
+pkg go/types, const UntypedString = 26 #0
+pkg math, func Decimal128Abs(decimal128) decimal128 #0
+pkg math, func Decimal128bits(decimal128) (uint64, uint64) #0
+pkg math, func Decimal128Ceil(decimal128) decimal128 #0
+pkg math, func Decimal128Copysign(decimal128, decimal128) decimal128 #0
+pkg math, func Decimal128Dim(decimal128, decimal128) decimal128 #0
+pkg math, func Decimal128Floor(decimal128) decimal128 #0
+pkg math, func Decimal128FMA(decimal128, decimal128, decimal128) decimal128 #0
+pkg math, func Decimal128frombits(uint64, uint64) decimal128 #0
+pkg math, func Decimal128Inf(int) decimal128 #0
+pkg math, func Decimal128Mod(decimal128, decimal128) decimal128 #0
+pkg math, func Decimal128NaN() decimal128 #0
+pkg math, func Decimal128Quantize(decimal128, decimal128) decimal128 #0
+pkg math, func Decimal128Remainder(decimal128, decimal128) decimal128 #0
+pkg math, func Decimal128Round(decimal128) decimal128 #0
+pkg math, func Decimal128RoundToEven(decimal128) decimal128 #0
+pkg math, func Decimal128SameQuantum(decimal128, decimal128) bool #0
+pkg math, func Decimal128Signbit(decimal128) bool #0
+pkg math, func Decimal128Trunc(decimal128) decimal128 #0
+pkg math, func Decimal64Abs(decimal64) decimal64 #0
+pkg math, func Decimal64bits(decimal64) uint64 #0
+pkg math, func Decimal64Ceil(decimal64) decimal64 #0
+pkg math, func Decimal64Copysign(decimal64, decimal64) decimal64 #0
+pkg math, func Decimal64Dim(decimal64, decimal64) decimal64 #0
+pkg math, func Decimal64Floor(decimal64) decimal64 #0
+pkg math, func Decimal64FMA(decimal64, decimal64, decimal64) decimal64 #0
+pkg math, func Decimal64frombits(uint64) decimal64 #0
+pkg math, func Decimal64Inf(int) decimal64 #0
+pkg math, func Decimal64Mod(decimal64, decimal64) decimal64 #0
+pkg math, func Decimal64NaN() decimal64 #0
+pkg math, func Decimal64Quantize(decimal64, decimal64) decimal64 #0
+pkg math, func Decimal64Remainder(decimal64, decimal64) decimal64 #0
+pkg math, func Decimal64Round(decimal64) decimal64 #0
+pkg math, func Decimal64RoundToEven(decimal64) decimal64 #0
+pkg math, func Decimal64SameQuantum(decimal64, decimal64) bool #0
+pkg math, func Decimal64Signbit(decimal64) bool #0
+pkg math, func Decimal64Trunc(decimal64) decimal64 #0
+pkg math, func IsDecimal128Inf(decimal128, int) bool #0
+pkg math, func IsDecimal128NaN(decimal128) bool #0
+pkg math, func IsDecimal64Inf(decimal64, int) bool #0
+pkg math, func IsDecimal64NaN(decimal64) bool #0
+pkg reflect, const Array = 19 #0
+pkg reflect, const Chan = 20 #0
+pkg reflect, const Complex128 = 18 #0
+pkg reflect, const Complex64 = 17 #0
+pkg reflect, const Decimal128 = 16 #0
+pkg reflect, const Decimal128 Kind #0
+pkg reflect, const Decimal64 = 15 #0
+pkg reflect, const Decimal64 Kind #0
+pkg reflect, const Func = 21 #0
+pkg reflect, const Interface = 22 #0
+pkg reflect, const Map = 23 #0
+pkg reflect, const Pointer = 24 #0
+pkg reflect, const Ptr = 24 #0
+pkg reflect, const Slice = 25 #0
+pkg reflect, const String = 26 #0
+pkg reflect, const Struct = 27 #0
+pkg reflect, const UnsafePointer = 28 #0
+pkg reflect, method (Value) CanDecimal() bool #0
+pkg reflect, method (Value) Decimal() decimal128 #0
+pkg reflect, method (Value) SetDecimal(decimal128) #0
+pkg sort, func Decimal128s([]decimal128) #0
+pkg sort, func Decimal128sAreSorted([]decimal128) bool #0
+pkg sort, func SearchDecimal128s([]decimal128, decimal128) int #0
+pkg sort, method (Decimal128Slice) Len() int #0
+pkg sort, method (Decimal128Slice) Less(int, int) bool #0
+pkg sort, method (Decimal128Slice) Search(decimal128) int #0
+pkg sort, method (Decimal128Slice) Sort() #0
+pkg sort, method (Decimal128Slice) Swap(int, int) #0
+pkg sort, type Decimal128Slice []decimal128 #0
+pkg strconv, func AppendDecimal([]uint8, decimal128, uint8, int, int) []uint8 #0
+pkg strconv, func AppendDecimal128([]uint8, decimal128, uint8, int) []uint8 #0
+pkg strconv, func AppendDecimal64([]uint8, decimal64, uint8, int) []uint8 #0
+pkg strconv, func FormatDecimal(decimal128, uint8, int, int) string #0
+pkg strconv, func FormatDecimal128(decimal128, uint8, int) string #0
+pkg strconv, func FormatDecimal64(decimal64, uint8, int) string #0
+pkg strconv, func ParseDecimal128(string) (decimal128, error) #0
+pkg strconv, func ParseDecimal64(string) (decimal64, error) #0

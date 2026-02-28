@@ -82,6 +82,11 @@ type ComplexType struct {
 	BasicType
 }
 
+// A DecimalFloatType represents a decimal floating point type.
+type DecimalFloatType struct {
+	BasicType
+}
+
 // A BoolType represents a boolean type.
 type BoolType struct {
 	BasicType
@@ -589,6 +594,8 @@ func (d *Data) readType(name string, r typeReader, off Offset, typeCache map[Off
 			}
 		case encFloat:
 			typ = new(FloatType)
+		case encDecimalFloat:
+			typ = new(DecimalFloatType)
 		case encSigned:
 			typ = new(IntType)
 		case encUnsigned:
