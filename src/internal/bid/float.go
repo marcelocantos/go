@@ -9,9 +9,8 @@ package bid
 // Conversions between the decimal formats and the binary formats float32
 // and float64 (IEEE 754-2008 clause 5.4.2, convertFormat between radices).
 // Each is correctly rounded from the exact value of its operand (language
-// proposal design decision 5): a float64 holding the nearest binary value to
-// 0.1 converts to the decimal128 0.1000000000000000055511151231257827, and
-// a decimal converts to the binary value nearest its exact decimal value.
+// proposal design decision 5); the exponent and special-value rules are in
+// "Binary floating-point conversions" in the package documentation.
 //
 // This file is excluded from the compiler bootstrap build. The compiler
 // never converts between binary and decimal at run time: constants are
@@ -26,8 +25,7 @@ package bid
 // compiler_bootstrap constraint.
 
 // Float64To64 returns f converted to decimal64, rounded in mode from the
-// exact binary value of f. Infinities and NaN convert to the corresponding
-// decimal special values; -0 converts to -0 with exponent 0.
+// exact binary value of f, with preferred exponent 0.
 func Float64To64(f float64, mode Mode) uint64 {
 	panic(notImplemented)
 }
@@ -53,11 +51,9 @@ func Float32To128(f float32, mode Mode) Uint128 {
 }
 
 // Float64From64 returns x converted to float64, rounded in mode from the
-// exact decimal value of x. Infinities, zeros and NaN convert to the
-// corresponding binary special values; a NaN result is the canonical quiet
-// float64 NaN with the sign bit clear. Values too large for float64
-// become an infinity or the largest finite float64 as the mode selects;
-// values too small become zero or a subnormal.
+// exact decimal value of x, with float64's overflow, gradual underflow and
+// signed zeros. A NaN result is the quiet float64 NaN with the sign bit
+// clear.
 func Float64From64(x uint64, mode Mode) float64 {
 	panic(notImplemented)
 }

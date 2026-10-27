@@ -5,7 +5,8 @@
 package bid
 
 // Comparisons compare values, not encodings: 1.0 and 1.00 are equal, +0
-// and -0 are equal, and every member of a cohort compares the same.
+// and -0 are equal, and every member of a cohort compares the same. See
+// "Comparisons and ordering" in the package documentation.
 
 // Equal64 reports whether x == y (IEEE 754-2008 clause 5.6.1 and 5.11,
 // compareQuietEqual). It is false if either operand is a NaN. It is the
@@ -60,9 +61,12 @@ func Compare128(x, y Uint128) (c int, ok bool) {
 // IEEE 754-2008 clause 5.10 (totalOrder): -NaN < -∞ < negative finite
 // values < -0 < +0 < positive finite values < +∞ < +NaN, with members of a
 // cohort ordered by exponent (the smaller exponent first for positive
-// values and last for negative ones) and NaNs ordered by payload. Unlike
-// the other comparisons it is defined on every pair of operands, so it can
-// sort a slice of bit patterns.
+// values and last for negative ones). A NaN is ordered by its sign bit
+// alone: its payload and whether it is signaling are ignored, so all NaNs
+// of one sign are equal in the order (a divergence from clause 5.10,
+// which orders them by payload; see "Comparisons and ordering" in the
+// package documentation). Unlike the other comparisons it is defined on
+// every pair of operands, so it can sort a slice of bit patterns.
 func TotalOrder64(x, y uint64) bool {
 	panic(notImplemented)
 }

@@ -8,9 +8,11 @@ package bid
 // homogeneous operations of clause 5.3, for both widths. Each computes its
 // result exactly and rounds it once in the given mode; each returns the
 // clause 7 default result for every exception and signals nothing. The
-// preferred exponent of each result and the sign of each exact zero are
-// fixed by the per-operation contract that a later target adds to the
-// package documentation.
+// exponent of each result, the sign of each zero, the overflow and
+// underflow behaviour and the NaN and infinity cases are fixed by the
+// package documentation ("Exponent of a result", "Sign of a result",
+// "Overflow", "Underflow and subnormal results", "NaN and infinity
+// operands"); the comments below say only what each function computes.
 
 // Add64 returns x + y rounded in mode (IEEE 754-2008 clause 5.4.1,
 // addition).
@@ -48,8 +50,8 @@ func Mul128(x, y Uint128, mode Mode) Uint128 {
 }
 
 // Div64 returns x / y rounded in mode (IEEE 754-2008 clause 5.4.1,
-// division). A finite non-zero x divided by a zero is the infinity with
-// the exclusive-or of the signs (clause 7.3); 0 / 0 and ∞ / ∞ are NaN.
+// division), including the signed infinity for a finite non-zero x and a
+// zero y (clause 7.3).
 func Div64(x, y uint64, mode Mode) uint64 {
 	panic(notImplemented)
 }
@@ -74,9 +76,8 @@ func FMA128(x, y, z Uint128, mode Mode) Uint128 {
 // Rem64 returns the IEEE remainder x - y × n, where n is the integer
 // nearest the exact quotient x / y, with n even when the quotient is
 // halfway between two integers (IEEE 754-2008 clause 5.3.1, remainder).
-// The result is always exact, so Rem64 takes no mode. If the result is
-// zero its sign is that of x. Rem64(x, ±∞) is x for finite x; Rem64(±∞, y)
-// and Rem64(x, 0) are NaN.
+// The result is exact for every quotient, so Rem64 takes no mode; see
+// "Remainder and modulo" in the package documentation.
 func Rem64(x, y uint64) uint64 {
 	panic(notImplemented)
 }
@@ -87,11 +88,11 @@ func Rem128(x, y Uint128) Uint128 {
 }
 
 // Mod64 returns the truncated modulo x - y × trunc(x / y), the decimal
-// analogue of the Go % operator and of math.Mod. The result is exact and
-// has the sign of x; its magnitude is below |y|. Mod64 is not an IEEE
-// 754-2008 operation; it is the remainder operation of the General Decimal
-// Arithmetic specification. Mod64(x, ±∞) is x for finite x; Mod64(±∞, y)
-// and Mod64(x, 0) are NaN.
+// analogue of the Go % operator and of math.Mod. The result is exact for
+// every quotient and has the sign of x; its magnitude is below |y|. Mod64
+// is not an IEEE 754-2008 operation; it is the remainder operation of the
+// General Decimal Arithmetic specification, and its special cases are
+// those of Rem64. See "Remainder and modulo" in the package documentation.
 func Mod64(x, y uint64) uint64 {
 	panic(notImplemented)
 }
@@ -103,12 +104,10 @@ func Mod128(x, y Uint128) Uint128 {
 
 // RoundToIntegral64 rounds x to an integral value in mode (IEEE 754-2008
 // clause 5.3.1 and 5.9, roundToIntegral). The result has exponent
-// max(exponent of x, 0), so the quantum of a value that is already
-// integral is preserved. A zero keeps its sign and takes that exponent too,
-// so 0.00 rounds to 0. Infinities are returned unchanged. The
-// standard's roundToIntegralExact variant differs only by signaling
-// inexact, which this package does not expose; a caller that needs to know
-// compares the result with x.
+// max(Q(x), 0), so the quantum of a value that is already integral is
+// preserved and 0.00 rounds to 0. The standard's roundToIntegralExact
+// variant differs only by signaling inexact, which this package does not
+// expose; a caller that needs to know compares the result with x.
 func RoundToIntegral64(x uint64, mode Mode) uint64 {
 	panic(notImplemented)
 }
@@ -119,11 +118,10 @@ func RoundToIntegral128(x Uint128, mode Mode) Uint128 {
 }
 
 // Quantize64 returns x with the exponent of y, rounded in mode
-// (IEEE 754-2008 clause 5.3.2, quantize). The result is NaN when either
-// operand is NaN, when exactly one is an infinity, or when the coefficient
-// of the result would exceed MaxCoeff64; two infinities quantize to an
-// infinity with the sign of x. The exponent of the result is always that
-// of y, so Quantize64 never adjusts an exponent out of range.
+// (IEEE 754-2008 clause 5.3.2, quantize). The sign and coefficient of y
+// are ignored. The exponent of a finite result is always that of y, so
+// Quantize64 never adjusts an exponent out of range; when the result
+// coefficient would not fit, the result is NaN.
 func Quantize64(x, y uint64, mode Mode) uint64 {
 	panic(notImplemented)
 }
@@ -138,7 +136,8 @@ func Quantize128(x, y Uint128, mode Mode) Uint128 {
 // raised to match, as far as MaxExp64 allows (the reduce operation of the
 // General Decimal Arithmetic specification, which IEEE 754-2008 does not
 // define). The value is unchanged, so Reduce64 takes no mode. A zero
-// reduces to a zero with exponent 0; infinities and NaN are canonicalized.
+// reduces to a zero of its sign with exponent 0; infinities and NaN are
+// canonicalized.
 func Reduce64(x uint64) uint64 {
 	panic(notImplemented)
 }
@@ -163,8 +162,8 @@ func SameQuantum128(x, y Uint128) bool {
 // Min64 implements the Go min built-in for decimal64: if either operand is
 // a NaN the result is NaN; otherwise it is the lesser operand, with -0
 // less than +0, and x when the operands are equal. This is the language's
-// semantics for floating-point min, not IEEE 754-2008 minNum, which
-// ignores a NaN operand.
+// semantics for floating-point min, not IEEE 754-2008 minNum; see
+// "Minimum and maximum" in the package documentation.
 func Min64(x, y uint64) uint64 {
 	panic(notImplemented)
 }
@@ -176,7 +175,8 @@ func Min128(x, y Uint128) Uint128 {
 
 // Max64 implements the Go max built-in for decimal64: if either operand is
 // a NaN the result is NaN; otherwise it is the greater operand, with +0
-// greater than -0, and x when the operands are equal.
+// greater than -0, and x when the operands are equal. See "Minimum and
+// maximum" in the package documentation.
 func Max64(x, y uint64) uint64 {
 	panic(notImplemented)
 }

@@ -222,7 +222,9 @@ func IsSubnormal128(x Uint128) bool {
 // clause 5.7.2, isCanonical): a finite value whose coefficient field is at
 // most MaxCoeff64, an infinity with zero reserved and coefficient bits, or
 // a NaN with zero reserved bits and a payload below 10^(Precision64-1).
-// Every result of this package is canonical.
+// Every result of this package is canonical except those of the sign
+// operations Neg64, Abs64 and CopySign64, which copy the bits of their
+// operand (see "Sign operations" in the package documentation).
 func IsCanonical64(x uint64) bool {
 	panic(notImplemented)
 }
@@ -245,8 +247,9 @@ func Signbit128(x Uint128) bool {
 }
 
 // Neg64 returns x with its sign bit inverted (IEEE 754-2008 clause 5.5.1,
-// negate). It is a bit operation: it does not canonicalize and it does not
-// quiet a NaN.
+// negate). It is a bit operation, as are Abs64 and CopySign64: it does not
+// canonicalize and it does not quiet a NaN (see "Sign operations" in the
+// package documentation).
 func Neg64(x uint64) uint64 {
 	panic(notImplemented)
 }
