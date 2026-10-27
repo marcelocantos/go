@@ -815,6 +815,9 @@
 //	RoundToIntegral64(-1E-398, TowardPositive) = -0
 //	Quantize64(-0.1, 1, ToNearestEven) = -0
 //	Quantize64(-0, 1E+5, ToNearestEven) = -0E+5
+//	Quantize64(0, 1E-17, ToNearestEven) = 0E-17
+//	Quantize64(-0, 1E-20, TowardZero) = -0E-20
+//	Quantize64(0E+369, 1E-398, ToNearestEven) = 0E-398
 //	Quantize64(-0.001, 0.01, TowardPositive) = -0.00
 //	Quantize64(0.001, 0.01, ToNearestEven) = 0.00
 //	Reduce64(-0.00) = -0
