@@ -167,12 +167,12 @@ func SameQuantum128(x, y Uint128) bool {
 // semantics for floating-point min, not IEEE 754-2008 minNum; see
 // "Minimum and maximum" in the package documentation.
 func Min64(x, y uint64) uint64 {
-	panic(notImplemented)
+	return min64(x, y)
 }
 
 // Min128 is Min64 for decimal128.
 func Min128(x, y Uint128) Uint128 {
-	panic(notImplemented)
+	return min128(x, y)
 }
 
 // Max64 implements the Go max built-in for decimal64: if either operand is
@@ -180,10 +180,10 @@ func Min128(x, y Uint128) Uint128 {
 // greater than -0, and x when the operands are equal. See "Minimum and
 // maximum" in the package documentation.
 func Max64(x, y uint64) uint64 {
-	panic(notImplemented)
+	return max64(x, y)
 }
 
 // Max128 is Max64 for decimal128.
 func Max128(x, y Uint128) Uint128 {
-	panic(notImplemented)
+	return max128(x, y)
 }
