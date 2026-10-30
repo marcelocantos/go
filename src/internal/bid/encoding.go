@@ -432,6 +432,7 @@ func pow10u64(n int) uint64 {
 	return p
 }
 
+// u128GePow10 reports whether c >= 10^n.
 func u128GePow10(c Uint128, n int) bool {
 	p := Uint128{Lo: 1}
 	for i := 0; i < n; i++ {
@@ -439,12 +440,12 @@ func u128GePow10(c Uint128, n int) bool {
 		carry, p.Lo = bits.Mul64(p.Lo, 10)
 		overflow, hi := bits.Mul64(p.Hi, 10)
 		if overflow != 0 {
-			return true
+			return false // 10^n exceeds every Uint128
 		}
 		var c2 uint64
 		p.Hi, c2 = bits.Add64(hi, carry, 0)
 		if c2 != 0 {
-			return true
+			return false
 		}
 	}
 	if c.Hi != p.Hi {
