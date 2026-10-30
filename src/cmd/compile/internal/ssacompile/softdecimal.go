@@ -6,6 +6,7 @@ package ssacompile
 
 import (
 	"cmd/compile/internal/ssa"
+	"cmd/compile/internal/ssa/rewrite/dec64"
 	"cmd/compile/internal/ssa/ssaop"
 	"cmd/compile/internal/types"
 )
@@ -63,5 +64,13 @@ func softdecimal(f *ssa.Func) {
 				v.Aux = f.Config.Types.UInt64
 			}
 		}
+	}
+
+	if f.Config.RegSize == 4 {
+		// On 32-bit architectures, decompose the uint64 values introduced
+		// above, as softfloat does. This has to run now: the dec64 rule for
+		// Arg does not fire during the decompose builtin pass.
+		decomposeBuiltin(f)
+		applyRewrite(f, dec64.RewriteBlock, dec64.RewriteValue, ssa.RemoveDeadValues)
 	}
 }
