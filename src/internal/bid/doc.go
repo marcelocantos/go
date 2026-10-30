@@ -1326,6 +1326,193 @@
 // coefficients. A Uint128 is a value, not a memory image: it has no
 // defined relationship to the byte order of a decimal128 in memory.
 //
+// # Width parameterisation
+//
+// The two widths share one implementation of every algorithm through code
+// generation: each width-dependent algorithm is written once, in a
+// template, and a generator instantiates it for decimal64 and for
+// decimal128. The alternatives, generics over a width type and one core
+// over a 128-bit intermediate with the format parameters as run-time
+// values, were rejected on measurement. This section records the spike
+// that decided it (2026-10-30, target T1.1.2) and the rules that the
+// shared core must follow. The spike code was discarded; the numbers and
+// the decision are what remain.
+//
+// The spike implemented addition and multiplication for both widths four
+// times over one algorithm: unpack; align exponents by scaling the
+// coefficient with the larger exponent up to Precision+3 digits and
+// truncating the other with a sticky bit; add or subtract; for
+// multiplication take the full double-width product and reduce it by a
+// power of ten to Precision+1 digits with a sticky bit; round once in the
+// given mode with exponent clamping, overflow and subnormal handling;
+// pack. The four forms were hand-written per width (the baseline),
+// generated from a template, generic over a width type whose arithmetic is
+// reached through methods of the type parameter (the format parameters
+// passed by pointer, so the dictionary carried only the methods), and a
+// single core over Uint128 coefficients and a 256-bit product with the
+// format parameters passed by pointer. All four agreed bit for bit with
+// each other in all five rounding modes, and with a math/big reference in
+// ToNearestEven, on 4096 random operand pairs per width (70% with
+// exponents within 4 of each other, 20% spread over ±(Precision+10),
+// 10% equal) and on the special values. The strawman is the runtime of
+// this tree's decimal64 and decimal128 operators, timed through the
+// operators; float64 is the hardware operation.
+//
+// Timings are benchstat medians of 20 interleaved passes of 300000
+// iterations each on one CPU; ± is the spread. Apple M4 Max, macOS 26.6.2,
+// this tree at 7807ba793d (go1.26 development), 2026-10-30, with a load
+// average near 40 from concurrent toolchain builds. Fixed iteration counts
+// and interleaving keep the comparison fair under that load; the absolute
+// numbers may be pessimistic.
+//
+// darwin/arm64, native:
+//
+//	        hand       generated   generic    wide core   strawman    float64
+//	Add64   10.2n ±6%  10.6n ±4%   22.7n ±1%  17.3n ±2%   10.8n ±7%   0.71n ±3%
+//	Mul64   10.6n ±4%  11.1n ±4%   23.4n ±2%  15.0n ±3%   44.6n ±1%   0.91n ±1%
+//	Add128  15.8n ±4%  15.5n ±4%   27.9n ±1%  18.4n ±5%   29.4n ±2%
+//	Mul128  21.5n ±2%  22.5n ±3%   35.3n ±1%  23.8n ±3%    266n ±2%
+//
+// Relative to hand-written (benchstat, n=20, ~ means no significant
+// difference): generated ~ (p=0.08), ~ (p=0.09), ~ (p=0.13), +4.8%
+// (p=0.001); generic +122%, +120%, +77%, +64%; wide core +69%, +41%,
+// +16%, +11%.
+//
+// darwin/amd64 under Rosetta 2 on the same machine:
+//
+//	        hand       generated   generic    wide core   strawman    float64
+//	Add64   11.7n ±4%  12.8n ±4%   37.9n ±3%  19.3n ±6%   11.2n ±4%   0.70n ±2%
+//	Mul64   43.3n ±1%  43.8n ±1%   64.0n ±3%  43.9n ±1%   48.2n ±0%   0.70n ±2%
+//	Add128  37.4n ±1%  37.3n ±3%   60.3n ±4%  39.3n ±1%   33.2n ±3%
+//	Mul128   148n ±1%   148n ±1%    165n ±1%   149n ±1%    304n ±1%
+//
+// Relative to hand-written: generated +9.8% (p=0.000), +1.1%, ~ (p=0.67),
+// ~ (p=0.49); generic +225%, +48%, +61%, +11%; wide core +66%, +1.4%,
+// +5.1%, +1.2%. Rosetta's translation of the 64-bit divide dominates every
+// multiply and flattens the differences there; the Add64 row is the
+// informative one.
+//
+// linux/amd64 is unmeasured: no Linux host was reachable when the spike
+// ran. The Rosetta numbers stand in only for the relative ordering of the
+// candidates and are not linux/amd64 timings. The 10% gap between
+// generated and hand-written Add64 under Rosetta, absent natively, is
+// unexplained; the first implementation target should repeat the Add64
+// and Mul64 rows on real linux/amd64 hardware before tuning anything for
+// it.
+//
+// Why generation. The generated code is the hand-written code. Every
+// coefficient helper of the decimal64 instantiation inlines (the compiler
+// reports "inlining call to" for all twenty and "cannot inline" for none),
+// the generated add64 is 264 instructions against 256 hand-written and
+// mul64 108 against 120, the stack frames are the same size, there are no
+// indirect calls, nothing allocates, and the timings are within noise
+// natively at both widths. One template is one source of truth for each
+// algorithm, which is the proposal's claim that decimal64 is nearly free
+// once decimal128 exists.
+//
+// Why not generics. A method call on a value of type-parameter type
+// compiles to a load from the dictionary and an indirect call, in every
+// shape instantiation including go.shape.uint64, and the inliner cannot
+// see through it: the generic add had 23 indirect calls and the multiply
+// 14, with half again as much code. The compiler devirtualizes such calls
+// only after inlining the whole generic function into its caller, which a
+// 250-instruction arithmetic routine never is. A constraint whose type set
+// unites uint64 and Uint128 has no core type, so the operators are
+// unavailable on the type parameter and methods are the only way to reach
+// the arithmetic; a traits type parameter (a zero-size struct carrying the
+// operations) makes the same indirect calls. The runtime can call generic
+// code in an imported package (it instantiates
+// internal/runtime/atomic.Pointer[T]; the dictionary is a static read-only
+// symbol and nothing allocates), so the objection is cost, not
+// possibility: 2.2× on decimal64 natively, 3.3× under Rosetta.
+//
+// Why not one core over a wide intermediate. It is the simplest form and
+// needs no generator, and for decimal128 it is the hand-written code with
+// the format parameters loaded from memory (+11% to +16% natively). But
+// decimal64 then pays two-word arithmetic for every coefficient operation
+// and a 128-by-64 division where a 64-by-64 one would do: +69% on addition
+// and +41% on multiplication natively, +66% on addition under Rosetta
+// (320 instructions in the core add against 256). That fails the
+// requirement that decimal64 stay within noise of a width-specific
+// implementation.
+//
+// Runtime and bootstrap constraints checked by the spike:
+//
+//   - The package is absent from runtimePkgs in
+//     cmd/internal/objabi/pkgspecial.go (internal/strconv is present), so
+//     it is compiled as an ordinary package: implicit allocation is not
+//     diagnosed, and under -race, -msan or -asan it is instrumented although
+//     the runtime calls it. Adding it to that list is a prerequisite of the
+//     runtime import whatever the width strategy; the generated form needs
+//     nothing else from that list.
+//   - No function needs //go:nosplit; the strawman's dadd64 is not nosplit
+//     either. Generated frames: add64 0x48 bytes of locals, mul64 0x48,
+//     add128 0xc8, mul128 0x78, the same as hand-written.
+//   - Uint128 is passed and returned in two registers under the register
+//     ABI on arm64 and amd64 in every candidate, including the
+//     go.shape.struct instantiation; the two-word struct costs nothing over
+//     (hi, lo) pairs, as "Representation of decimal128" assumes.
+//   - The generated files are ordinary Go that the minimum bootstrap
+//     toolchain compiles. The template and the generator carry
+//     //go:build ignore, which the bootstrap build honours; no go:generate
+//     step runs in any build.
+//   - No candidate allocates (0 B/op in every benchmark).
+//
+// Rules for the shared core. These bind the 128/256-bit arithmetic target
+// (T1.3.1) and every operation implemented after it.
+//
+//  1. Source of truth. Every width-dependent algorithm lives in
+//     arith_tmpl.go (//go:build ignore), written once in the template
+//     vocabulary below. gen_arith.go (//go:build ignore, run by
+//     "//go:generate go run gen_arith.go" in arith.go) writes zarith64.go
+//     and zarith128.go, which are committed. Nobody edits a z*.go file. A
+//     test, TestGenerated, guarded by testenv.MustHaveGoRun, regenerates
+//     into memory and fails on any difference from the committed files.
+//  2. The width suffix rule. In the template every width-dependent
+//     identifier ends in a capital W and no other identifier does. The
+//     generator replaces that final W with 64 or 128 and does nothing
+//     else: PrecisionW, MaxExpW, MinExpW, BiasW, UnpackW, digitsW, addW,
+//     roundW. The package's existing width-suffixed names (Precision64,
+//     Unpack64, digits64, ...) are therefore usable from the template as
+//     they are, and the template reads as Go. No text/template syntax, no
+//     other substitution.
+//  3. Types. coefW is the coefficient type, declared as the aliases
+//     "type coef64 = uint64" in coef64.go and "type coef128 = Uint128" in
+//     coef128.go, so generated signatures are the API's own types. wideW
+//     is the double-width product: "type wide64 = Uint128" and
+//     "type wide128 = Uint256", where Uint256 is {Hi, Lo Uint128} and
+//     belongs to T1.3.1. Bit patterns and coefficients share coefW, as
+//     uint64 and Uint128 already do in the API.
+//  4. Helpers. The width-specific arithmetic is a fixed vocabulary of
+//     functions over coefW and wideW, defined with identical signatures in
+//     coef64.go and coef128.go (one file per width, nothing else in them):
+//     cIsZeroW, cCmpW, cAddW, cSubW, cOddW, cDigitsW, cMulPow10W(c, k),
+//     cDivPow10W(c, k) (q, r coefW), cHalfW(k) (5×10^(k-1)), cGtMaxW,
+//     cPow10W(k), cMulFullW(a, b) wideW, cReduceW(p wideW, k) (q coefW,
+//     sticky bool) and cLenFullW(p wideW) int, extended as division and
+//     the other operations need. Every coef64.go helper must inline;
+//     check with -gcflags=-m after changing one (no "cannot inline c…64").
+//     coef128.go is where T1.3.1's 128- and 256-bit arithmetic goes; it
+//     may call unexported Uint128 and Uint256 functions freely.
+//  5. The generated functions are unexported (add64, add128, round64,
+//     round128, ...). The exported, documented functions in arith.go,
+//     round.go and the other API files stay where they are and become
+//     one-line wrappers, which the inliner removes; the API files do not
+//     change shape as operations are implemented.
+//  6. Width constants are compile-time constants in each instantiation
+//     (PrecisionW becomes Precision64), never fields of a format value
+//     passed at run time, and the package has no generic code. The two
+//     rejected forms are not to be reintroduced piecemeal.
+//  7. Width-independent code (the rounding-direction decision, the digit
+//     estimate from a bit length, the Mode and Status types) is ordinary Go
+//     in ordinary files. The template holds only what mentions a
+//     coefficient, a product or a format constant.
+//  8. The numbers above are the ratchet. A decimal64 operation whose
+//     generated form falls more than noise behind the hand-written row on
+//     the same machine has a helper that stopped inlining or an algorithm
+//     that grew a width-independent cost; fix that, do not special-case the
+//     width.
+//
 // # Dependencies
 //
 // The files that cmd/dist copies for the compiler bootstrap import only
