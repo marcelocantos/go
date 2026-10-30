@@ -213,3 +213,181 @@ func key128(x coef128) (kind Kind, neg bool, c coef128, exp int) {
 	}
 	return kind, neg, c, exp
 }
+
+// round128 is the rounding routine of the package: the one function that
+// turns an exact result into an encoding, under each of the five modes,
+// and the only way any operation produces a rounded result. Every rule of
+// "Exponent of a result", "Overflow", "Underflow and subnormal results"
+// and "Sign of a result" (for zeros) in the package documentation is
+// implemented here and nowhere else. The width-independent direction
+// decision is roundUp in round.go; the rest is this function.
+//
+// The input is the exact value
+//
+//	v = (-1)^neg × (p + f) × 10^exp
+//
+// with p a wide integer (the full product of two coefficients fits it) and
+// f a fraction, 0 <= f < 1, described only by class: classZero for f = 0,
+// otherwise where f lies relative to one half. floor is the least exponent
+// the result may take: MinExp128 for every operation with a preferred
+// exponent (exp is then that preferred exponent), and the fixed exponent
+// itself, equal to exp, for Quantize and RoundToIntegral, whose result
+// exponent is fixed by the operation rather than by the precision; such a
+// caller treats a result whose exponent is not exp as not fitting
+// (Quantize returns NaN, RoundToIntegral keeps the carried value).
+//
+// What a caller must supply for the result to be correctly rounded:
+//
+//   - p and class together describe v exactly. A caller holding more
+//     digits than p can carry (FMA, a quotient generated beyond the
+//     precision, a sum whose operands are far apart) reduces them with the
+//     digit primitives, cShiftFull128 or cReduceClass128, and passes the class
+//     they return as class; two reductions compose as digits.go says.
+//   - If class is not classZero and stands for a fraction of unknown size,
+//     p must have more than Precision128 digits. round128 then discards at
+//     least one digit of p itself, and withSticky combines the two
+//     discarded parts exactly. A caller meets this by keeping Precision128+1
+//     digits or more (mulReduce128 keeps exactly that), or by scaling its
+//     exact part up to that many digits before truncating the rest.
+//   - If class is not classZero and p has Precision128 digits or fewer,
+//     the result is that of rounding p + ε for an arbitrarily small ε > 0
+//     ("Rounding from exact parts"): the fraction is taken to be below
+//     every rounding boundary, whatever class says beyond being non-zero.
+//     Only Round128 and Round128's callers mean this; an operation never does.
+//     A p of zero with a non-zero class is such a value below 10^exp, and
+//     a caller meaning "arbitrarily small" passes exp <= MinExp128 with it,
+//     as roundParts128 does, so that it rounds at MinExp128.
+//
+// The result exponent x is exp for an exact value, raised when p has more
+// than Precision128 digits, when exp is below floor, or when exp is above
+// MaxExp128 and the coefficient can be padded with zeros to make up the
+// difference (fold-down); if it cannot, the value overflows. An inexact
+// value is encoded at the least exponent at or above floor at which its
+// rounded coefficient has at most Precision128 digits, so p is padded or
+// shifted to that place before the increment, and a coefficient that
+// carries out to 10^Precision128 becomes 10^(Precision128-1) one place up. An
+// exact zero takes exp clamped into [floor, MaxExp128] and keeps the sign.
+//
+// Status: Exact when the result is v, including an exact subnormal, an
+// exact fold-down and a zero; Inexact otherwise; Inexact|Underflow when,
+// in addition, v is non-zero and below 10^Emin128 (tininess before
+// rounding); Inexact|Overflow when the rounded value is above the largest
+// finite one, in which case the result is the infinity or the largest
+// finite value of sign neg that overflowsToInf selects. The arithmetic
+// wrappers discard the Status; it is meaningful to Round128, to the parser
+// and to the integer conversions, which report it.
+//
+// Exact fast paths. Pack128 is the raw encoder; it rounds nothing and
+// refuses what does not fit. No function other than round128 may call it,
+// unless it re-encodes a coefficient and exponent already known to be
+// representable because Unpack128 returned them, possibly with another
+// sign, and is named both here and in the allowlist of
+// TestRoundIsTheOnlyPacker, which parses the package source. At present
+// there is no such function.
+func round128(neg bool, p wide128, exp int, class digitClass, mode Mode, floor int) (coef128, Status) {
+	if p == (wide128{}) && class == classZero {
+		var zero coef128
+		return pack128(neg, zero, min(max(exp, floor), MaxExp128)), Exact
+	}
+	// Far outside the format every exponent rounds alike: overflow in every
+	// mode above, a value below a tenth of the smallest subnormal below.
+	// Clamping keeps the exponent arithmetic below in range and the shift
+	// counts within what the digit primitives are specified for.
+	exp = min(max(exp, MinExp128-maxWideDigits-2), MaxExp128+Precision128+2)
+
+	// a is the adjusted exponent of v, the power of ten of its leading
+	// digit, and tiny whether v is below 10^Emin128. For p = 0, v is below
+	// 10^exp, which is what a = exp - 1 says.
+	d := cLenFull128(p)
+	a := d - 1 + exp
+	tiny := a < Emin128
+
+	// x is the exponent of an inexact result: the least, at or above floor,
+	// at which Precision128 digits hold the value. s is the number of places
+	// p moves to reach it: left (padding) when positive, right (dropping
+	// digits, which can make an exact value inexact) when negative.
+	x := max(a-(Precision128-1), floor)
+	s := exp - x
+	var q coef128
+	if s < 0 {
+		var dropped digitClass
+		q, dropped = cReduceClass128(p, -s)
+		class = dropped.withSticky(class != classZero)
+	} else {
+		q = cLo128(p)
+	}
+
+	if class == classZero {
+		// Exact: the member of the cohort whose exponent is closest to exp.
+		// Dropping digits raised it to x; otherwise it is exp, folded down
+		// to MaxExp128 if the coefficient has room for the zeros.
+		if s < 0 {
+			exp = x
+		}
+		if exp > MaxExp128 {
+			padded, overflow := cScale128(q, exp-MaxExp128)
+			if overflow || cGtMax128(padded) {
+				return overflow128(neg, mode)
+			}
+			q, exp = padded, MaxExp128
+		}
+		return pack128(neg, q, exp), Exact
+	}
+
+	// Inexact: pad to the result's place, then increment or not.
+	if s > 0 {
+		q = cMulPow10128(q, s)
+	}
+	if roundUp(class, mode, neg, cOdd128(q)) {
+		q = cInc128(q)
+		if cGtMax128(q) {
+			q, x = cPow10128(Precision128-1), x+1
+		}
+	}
+	if x > MaxExp128 {
+		return overflow128(neg, mode)
+	}
+	st := Inexact
+	if tiny {
+		st |= Underflow
+	}
+	return pack128(neg, q, x), st
+}
+
+// overflow128 returns the default result of an overflow of sign neg in mode
+// and its Status (IEEE 754-2008 clause 7.4; "Overflow" in the package
+// documentation).
+func overflow128(neg bool, mode Mode) (coef128, Status) {
+	if overflowsToInf(mode, neg) {
+		return cInf128(neg), Inexact | Overflow
+	}
+	return pack128(neg, cMax128(), MaxExp128), Inexact | Overflow
+}
+
+// pack128 is Pack128 for a coefficient and exponent that round128 has brought
+// within the format. Pack128 refusing them is a bug in round128, not an input
+// condition, and panics rather than yielding a NaN.
+func pack128(neg bool, c coef128, exp int) coef128 {
+	x, ok := Pack128(neg, c, exp)
+	if !ok {
+		panic(errRoundRange)
+	}
+	return x
+}
+
+// roundParts128 is Round128: the sticky bit stands for an arbitrarily small
+// fraction, which is classBelowHalf when p has Precision128 digits or fewer
+// and acts as a sticky bit when round128 drops digits of p (see round128). A
+// zero p with the bit set is a value below every subnormal, so it is
+// placed at MinExp128, where it rounds to the zero or the smallest
+// subnormal of its sign.
+func roundParts128(neg bool, p wide128, exp int, sticky bool, mode Mode) (coef128, Status) {
+	class := classZero
+	if sticky {
+		class = classBelowHalf
+		if p == (wide128{}) {
+			exp = min(exp, MinExp128)
+		}
+	}
+	return round128(neg, p, exp, class, mode, MinExp128)
+}

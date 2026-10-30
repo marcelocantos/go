@@ -180,3 +180,32 @@ func cScale64(c coef64, k int) (r coef64, overflow bool) {
 func cScaleFull64(p wide64, k int) (r wide64, overflow bool) {
 	return cScale128(p, k)
 }
+
+// cLo64 returns the coefficient held in the low word of p. Precondition:
+// the high word is zero, that is, p fits a coefficient; a p that does not
+// panics rather than truncates.
+func cLo64(p wide64) coef64 {
+	if p.Hi != 0 {
+		panic(errQuotientOverflow)
+	}
+	return p.Lo
+}
+
+// cInc64 returns c + 1. Precondition: c is below the largest value of the
+// type, which holds for every coefficient of at most Precision64 digits.
+func cInc64(c coef64) coef64 {
+	return c + 1
+}
+
+// cMax64 returns the largest decimal64 coefficient, 10^Precision64 - 1.
+func cMax64() coef64 {
+	return MaxCoeff64
+}
+
+// cInf64 returns the canonical encoding of the infinity of sign neg.
+func cInf64(neg bool) coef64 {
+	if neg {
+		return Inf64 | SignMask64
+	}
+	return Inf64
+}

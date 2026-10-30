@@ -208,3 +208,33 @@ func cScaleFull128(p wide128, k int) (r wide128, overflow bool) {
 	}
 	return r, false
 }
+
+// cLo128 returns the coefficient held in the low half of p. Precondition:
+// the high half is zero, that is, p fits a coefficient; a p that does not
+// panics rather than truncates.
+func cLo128(p wide128) coef128 {
+	if p.Hi != (Uint128{}) {
+		panic(errQuotientOverflow)
+	}
+	return p.Lo
+}
+
+// cInc128 returns c + 1. Precondition: c is below the largest value of the
+// type, which holds for every coefficient of at most Precision128 digits.
+func cInc128(c coef128) coef128 {
+	s, _ := u128Add(c, Uint128{Lo: 1})
+	return s
+}
+
+// cMax128 returns the largest decimal128 coefficient, 10^Precision128 - 1.
+func cMax128() coef128 {
+	return Uint128{Hi: MaxCoeff128Hi, Lo: MaxCoeff128Lo}
+}
+
+// cInf128 returns the canonical encoding of the infinity of sign neg.
+func cInf128(neg bool) coef128 {
+	if neg {
+		return Uint128{Hi: Inf128Hi | SignMask128Hi}
+	}
+	return Uint128{Hi: Inf128Hi}
+}

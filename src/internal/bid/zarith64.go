@@ -213,3 +213,181 @@ func key64(x coef64) (kind Kind, neg bool, c coef64, exp int) {
 	}
 	return kind, neg, c, exp
 }
+
+// round64 is the rounding routine of the package: the one function that
+// turns an exact result into an encoding, under each of the five modes,
+// and the only way any operation produces a rounded result. Every rule of
+// "Exponent of a result", "Overflow", "Underflow and subnormal results"
+// and "Sign of a result" (for zeros) in the package documentation is
+// implemented here and nowhere else. The width-independent direction
+// decision is roundUp in round.go; the rest is this function.
+//
+// The input is the exact value
+//
+//	v = (-1)^neg × (p + f) × 10^exp
+//
+// with p a wide integer (the full product of two coefficients fits it) and
+// f a fraction, 0 <= f < 1, described only by class: classZero for f = 0,
+// otherwise where f lies relative to one half. floor is the least exponent
+// the result may take: MinExp64 for every operation with a preferred
+// exponent (exp is then that preferred exponent), and the fixed exponent
+// itself, equal to exp, for Quantize and RoundToIntegral, whose result
+// exponent is fixed by the operation rather than by the precision; such a
+// caller treats a result whose exponent is not exp as not fitting
+// (Quantize returns NaN, RoundToIntegral keeps the carried value).
+//
+// What a caller must supply for the result to be correctly rounded:
+//
+//   - p and class together describe v exactly. A caller holding more
+//     digits than p can carry (FMA, a quotient generated beyond the
+//     precision, a sum whose operands are far apart) reduces them with the
+//     digit primitives, cShiftFull64 or cReduceClass64, and passes the class
+//     they return as class; two reductions compose as digits.go says.
+//   - If class is not classZero and stands for a fraction of unknown size,
+//     p must have more than Precision64 digits. round64 then discards at
+//     least one digit of p itself, and withSticky combines the two
+//     discarded parts exactly. A caller meets this by keeping Precision64+1
+//     digits or more (mulReduce64 keeps exactly that), or by scaling its
+//     exact part up to that many digits before truncating the rest.
+//   - If class is not classZero and p has Precision64 digits or fewer,
+//     the result is that of rounding p + ε for an arbitrarily small ε > 0
+//     ("Rounding from exact parts"): the fraction is taken to be below
+//     every rounding boundary, whatever class says beyond being non-zero.
+//     Only Round64 and Round64's callers mean this; an operation never does.
+//     A p of zero with a non-zero class is such a value below 10^exp, and
+//     a caller meaning "arbitrarily small" passes exp <= MinExp64 with it,
+//     as roundParts64 does, so that it rounds at MinExp64.
+//
+// The result exponent x is exp for an exact value, raised when p has more
+// than Precision64 digits, when exp is below floor, or when exp is above
+// MaxExp64 and the coefficient can be padded with zeros to make up the
+// difference (fold-down); if it cannot, the value overflows. An inexact
+// value is encoded at the least exponent at or above floor at which its
+// rounded coefficient has at most Precision64 digits, so p is padded or
+// shifted to that place before the increment, and a coefficient that
+// carries out to 10^Precision64 becomes 10^(Precision64-1) one place up. An
+// exact zero takes exp clamped into [floor, MaxExp64] and keeps the sign.
+//
+// Status: Exact when the result is v, including an exact subnormal, an
+// exact fold-down and a zero; Inexact otherwise; Inexact|Underflow when,
+// in addition, v is non-zero and below 10^Emin64 (tininess before
+// rounding); Inexact|Overflow when the rounded value is above the largest
+// finite one, in which case the result is the infinity or the largest
+// finite value of sign neg that overflowsToInf selects. The arithmetic
+// wrappers discard the Status; it is meaningful to Round64, to the parser
+// and to the integer conversions, which report it.
+//
+// Exact fast paths. Pack64 is the raw encoder; it rounds nothing and
+// refuses what does not fit. No function other than round64 may call it,
+// unless it re-encodes a coefficient and exponent already known to be
+// representable because Unpack64 returned them, possibly with another
+// sign, and is named both here and in the allowlist of
+// TestRoundIsTheOnlyPacker, which parses the package source. At present
+// there is no such function.
+func round64(neg bool, p wide64, exp int, class digitClass, mode Mode, floor int) (coef64, Status) {
+	if p == (wide64{}) && class == classZero {
+		var zero coef64
+		return pack64(neg, zero, min(max(exp, floor), MaxExp64)), Exact
+	}
+	// Far outside the format every exponent rounds alike: overflow in every
+	// mode above, a value below a tenth of the smallest subnormal below.
+	// Clamping keeps the exponent arithmetic below in range and the shift
+	// counts within what the digit primitives are specified for.
+	exp = min(max(exp, MinExp64-maxWideDigits-2), MaxExp64+Precision64+2)
+
+	// a is the adjusted exponent of v, the power of ten of its leading
+	// digit, and tiny whether v is below 10^Emin64. For p = 0, v is below
+	// 10^exp, which is what a = exp - 1 says.
+	d := cLenFull64(p)
+	a := d - 1 + exp
+	tiny := a < Emin64
+
+	// x is the exponent of an inexact result: the least, at or above floor,
+	// at which Precision64 digits hold the value. s is the number of places
+	// p moves to reach it: left (padding) when positive, right (dropping
+	// digits, which can make an exact value inexact) when negative.
+	x := max(a-(Precision64-1), floor)
+	s := exp - x
+	var q coef64
+	if s < 0 {
+		var dropped digitClass
+		q, dropped = cReduceClass64(p, -s)
+		class = dropped.withSticky(class != classZero)
+	} else {
+		q = cLo64(p)
+	}
+
+	if class == classZero {
+		// Exact: the member of the cohort whose exponent is closest to exp.
+		// Dropping digits raised it to x; otherwise it is exp, folded down
+		// to MaxExp64 if the coefficient has room for the zeros.
+		if s < 0 {
+			exp = x
+		}
+		if exp > MaxExp64 {
+			padded, overflow := cScale64(q, exp-MaxExp64)
+			if overflow || cGtMax64(padded) {
+				return overflow64(neg, mode)
+			}
+			q, exp = padded, MaxExp64
+		}
+		return pack64(neg, q, exp), Exact
+	}
+
+	// Inexact: pad to the result's place, then increment or not.
+	if s > 0 {
+		q = cMulPow1064(q, s)
+	}
+	if roundUp(class, mode, neg, cOdd64(q)) {
+		q = cInc64(q)
+		if cGtMax64(q) {
+			q, x = cPow1064(Precision64-1), x+1
+		}
+	}
+	if x > MaxExp64 {
+		return overflow64(neg, mode)
+	}
+	st := Inexact
+	if tiny {
+		st |= Underflow
+	}
+	return pack64(neg, q, x), st
+}
+
+// overflow64 returns the default result of an overflow of sign neg in mode
+// and its Status (IEEE 754-2008 clause 7.4; "Overflow" in the package
+// documentation).
+func overflow64(neg bool, mode Mode) (coef64, Status) {
+	if overflowsToInf(mode, neg) {
+		return cInf64(neg), Inexact | Overflow
+	}
+	return pack64(neg, cMax64(), MaxExp64), Inexact | Overflow
+}
+
+// pack64 is Pack64 for a coefficient and exponent that round64 has brought
+// within the format. Pack64 refusing them is a bug in round64, not an input
+// condition, and panics rather than yielding a NaN.
+func pack64(neg bool, c coef64, exp int) coef64 {
+	x, ok := Pack64(neg, c, exp)
+	if !ok {
+		panic(errRoundRange)
+	}
+	return x
+}
+
+// roundParts64 is Round64: the sticky bit stands for an arbitrarily small
+// fraction, which is classBelowHalf when p has Precision64 digits or fewer
+// and acts as a sticky bit when round64 drops digits of p (see round64). A
+// zero p with the bit set is a value below every subnormal, so it is
+// placed at MinExp64, where it rounds to the zero or the smallest
+// subnormal of its sign.
+func roundParts64(neg bool, p wide64, exp int, sticky bool, mode Mode) (coef64, Status) {
+	class := classZero
+	if sticky {
+		class = classBelowHalf
+		if p == (wide64{}) {
+			exp = min(exp, MinExp64)
+		}
+	}
+	return round64(neg, p, exp, class, mode, MinExp64)
+}
