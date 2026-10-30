@@ -55,7 +55,8 @@ import "math/bits"
 // exponent gap: it scales the operand with the larger exponent as far as the
 // width allows and shifts the other right by the rest of the gap. If that
 // exceeds the digits of the other operand, its quotient is zero and its class
-// acts as a sticky bit.
+// acts as a sticky bit. A fused multiply-add is the same addition over the wide
+// type, which it scales to no more than 10^71.
 //
 // cScaleW multiplies by 10^k and reports overflow instead of wrapping. On
 // overflow r is zero, so no wrapped value can be mistaken for a result. Zero

@@ -135,6 +135,27 @@ func cLenFull64(p wide64) int {
 	return cDigits128(p)
 }
 
+// cAddFull64 returns a + b modulo 2^128 and whether the sum carried out of
+// the type, in which case the true sum is 2^128 + sum.
+func cAddFull64(a, b wide64) (sum wide64, carry bool) {
+	sum, c := u128Add(a, b)
+	return sum, c != 0
+}
+
+// cSubFull64 returns a - b modulo 2^128 and whether b exceeded a, in which
+// case the true difference is diff - 2^128.
+func cSubFull64(a, b wide64) (diff wide64, borrow bool) {
+	diff, b2 := u128Sub(a, b)
+	return diff, b2 != 0
+}
+
+// cIncFull64 returns p + 1. Precondition: p is below the largest value of the
+// type, which holds for a value of at most 38 digits.
+func cIncFull64(p wide64) wide64 {
+	s, _ := u128Add(p, wide64{Lo: 1})
+	return s
+}
+
 // cShift64 returns ⌊c / 10^k⌋ and the class of the discarded part. Any
 // k >= 0 is allowed; see "Decimal-digit primitives" in digits.go for what
 // the caller may assume.

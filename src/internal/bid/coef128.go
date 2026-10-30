@@ -116,6 +116,27 @@ func cLenFull128(p wide128) int {
 	return t + 1
 }
 
+// cAddFull128 returns a + b modulo 2^256 and whether the sum carried out of
+// the type, in which case the true sum is 2^256 + sum.
+func cAddFull128(a, b wide128) (sum wide128, carry bool) {
+	sum, c := u256Add(a, b)
+	return sum, c != 0
+}
+
+// cSubFull128 returns a - b modulo 2^256 and whether b exceeded a, in which
+// case the true difference is diff - 2^256.
+func cSubFull128(a, b wide128) (diff wide128, borrow bool) {
+	diff, b2 := u256Sub(a, b)
+	return diff, b2 != 0
+}
+
+// cIncFull128 returns p + 1. Precondition: p is below the largest value of the
+// type, which holds for a value of at most 77 digits.
+func cIncFull128(p wide128) wide128 {
+	s, _ := u256Add(p, wide128{Lo: Uint128{Lo: 1}})
+	return s
+}
+
 // cShift128 returns ⌊c / 10^k⌋ and the class of the discarded part. Any
 // k >= 0 is allowed; see "Decimal-digit primitives" in digits.go for what
 // the caller may assume.
