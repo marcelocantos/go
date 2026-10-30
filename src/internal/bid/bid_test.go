@@ -90,7 +90,7 @@ func TestExponentRange(t *testing.T) {
 }
 
 func TestSpecialEncodings(t *testing.T) {
-	const wantZero64, wantZero128Hi = 0x31C0000000000000, 0x3040000000000000
+	const wantZero64, wantZero128Hi uint64 = 0x31C0000000000000, 0x3040000000000000
 	if bid.Zero64 != uint64(bid.Bias64)<<bid.ExpShift64 {
 		t.Errorf("Zero64 = %#x, want Bias64 << ExpShift64", bid.Zero64)
 	}
