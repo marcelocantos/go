@@ -181,6 +181,35 @@ func cScaleFull64(p wide64, k int) (r wide64, overflow bool) {
 	return cScale128(p, k)
 }
 
+// cMulPow10Full64 returns c × 10^k as a double-width value. Precondition:
+// 0 <= k <= 38 and the product fits 128 bits, which holds for a coefficient
+// scaled by at most 2×Precision64 places (33 digits); a product that does
+// not panics rather than wrap. The power comes from the 128-bit table so
+// that one 128-by-64 multiply, whose third word is the overflow check,
+// serves every k; a branch on k and a second path cost more than the
+// inlining budget allows.
+func cMulPow10Full64(c coef64, k int) wide64 {
+	p, hi := u128Mul64(pow10tab128[k], c)
+	if hi != 0 {
+		panic("internal/bid: coefficient overflow")
+	}
+	return p
+}
+
+// cDivFull64 returns the quotient and remainder of n / d, so that
+// n = q × d + r with 0 <= r < d. Precondition: d is non-zero and the
+// quotient fits 64 bits, that is, n.Hi < d; bits.Div64 panics on either
+// violation rather than truncate. The quotient of a decimal64 division
+// scaled to Precision64+2 digits at most always fits.
+func cDivFull64(n wide64, d coef64) (q, r coef64) {
+	return bits.Div64(n.Hi, n.Lo, d)
+}
+
+// cNaN64 returns the canonical quiet NaN.
+func cNaN64() coef64 {
+	return NaN64
+}
+
 // cLo64 returns the coefficient held in the low word of p. Precondition:
 // the high word is zero, that is, p fits a coefficient; a p that does not
 // panics rather than truncates.
@@ -208,11 +237,6 @@ func cInf64(neg bool) coef64 {
 		return Inf64 | SignMask64
 	}
 	return Inf64
-}
-
-// cNaN64 returns the canonical quiet NaN.
-func cNaN64() coef64 {
-	return NaN64
 }
 
 // cFromU6464 returns the coefficient with the value m.

@@ -55,12 +55,12 @@ func Mul128(x, y Uint128, mode Mode) Uint128 {
 // division), including the signed infinity for a finite non-zero x and a
 // zero y (clause 7.3).
 func Div64(x, y uint64, mode Mode) uint64 {
-	panic(notImplemented)
+	return div64(x, y, mode)
 }
 
 // Div128 is Div64 for decimal128.
 func Div128(x, y Uint128, mode Mode) Uint128 {
-	panic(notImplemented)
+	return div128(x, y, mode)
 }
 
 // FMA64 returns x × y + z with a single rounding in mode (IEEE 754-2008

@@ -1494,8 +1494,12 @@
 //     sticky bool) and cLenFullW(p wideW) int, with the decimal-digit
 //     primitives cShiftW, cShiftFullW, cReduceClassW, cScaleW and cScaleFullW
 //     (digits.go says what a caller may assume of them) and the rounding
-//     routine's cLoW(p wideW) coefW, cIncW, cMaxW(), cInfW(neg) and cNaNW(),
-//     extended as division and the other operations need. Every coef64.go helper must
+//     routine's cLoW(p wideW) coefW, cIncW, cMaxW() and cInfW(neg), the
+//     division's cMulPow10FullW(c, k) wideW (a coefficient scaled into the
+//     double width), cDivFullW(n wideW, d coefW) (q, r coefW) (the 128-by-64
+//     or 256-by-128 division whose quotient fits a coefficient) and cNaNW()
+//     (the canonical quiet NaN), extended
+//     as the other operations need. Every coef64.go helper must
 //     inline;
 //     check with -gcflags=-m=2 after changing one (no "cannot inline
 //     c…64"; plain -m does not print "cannot inline" lines).

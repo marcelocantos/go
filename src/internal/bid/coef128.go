@@ -212,6 +212,43 @@ func cScaleFull128(p wide128, k int) (r wide128, overflow bool) {
 	return r, false
 }
 
+// cMulPow10Full128 returns c × 10^k as a 256-bit value. Precondition: the
+// product fits 256 bits, which holds for a coefficient scaled by at most
+// 2×Precision128 places (69 digits, below 10^77); a product that does not
+// panics rather than wrap. A k within the 128-bit table is one 128-by-128
+// multiply, whose 256-bit product is exact by construction.
+func cMulPow10Full128(c coef128, k int) wide128 {
+	if k < len(pow10tab128) {
+		return u128Mul(c, pow10tab128[k])
+	}
+	r, overflow := cScaleFull128(wide128{Lo: c}, k)
+	if overflow {
+		panic("internal/bid: coefficient overflow")
+	}
+	return r
+}
+
+// cDivFull128 returns the quotient and remainder of n / d, so that
+// n = q × d + r with 0 <= r < d, by the 256-by-128 division. Precondition:
+// d is non-zero and the quotient fits 128 bits, that is, n.Hi < d; a
+// violation panics rather than truncates. The quotient of a decimal128
+// division scaled to Precision128+2 digits at most always fits.
+func cDivFull128(n wide128, d coef128) (q, r coef128) {
+	if d == (coef128{}) {
+		panic(errDivideByZero)
+	}
+	q, r, ok := u256Div128(n, d)
+	if !ok {
+		panic(errQuotientOverflow)
+	}
+	return q, r
+}
+
+// cNaN128 returns the canonical quiet NaN.
+func cNaN128() coef128 {
+	return Uint128{Hi: NaN128Hi}
+}
+
 // cLo128 returns the coefficient held in the low half of p. Precondition:
 // the high half is zero, that is, p fits a coefficient; a p that does not
 // panics rather than truncates.
@@ -240,11 +277,6 @@ func cInf128(neg bool) coef128 {
 		return Uint128{Hi: Inf128Hi | SignMask128Hi}
 	}
 	return Uint128{Hi: Inf128Hi}
-}
-
-// cNaN128 returns the canonical quiet NaN.
-func cNaN128() coef128 {
-	return Uint128{Hi: NaN128Hi}
 }
 
 // cFromU64128 returns the coefficient with the value m.
