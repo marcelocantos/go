@@ -214,3 +214,14 @@ func cInf64(neg bool) coef64 {
 func cNaN64() coef64 {
 	return NaN64
 }
+
+// cFromU6464 returns the coefficient with the value m.
+func cFromU6464(m uint64) coef64 {
+	return m
+}
+
+// cToU6464 returns the value of c as a uint64, and whether it fits one,
+// which every decimal64 coefficient does.
+func cToU6464(c coef64) (m uint64, ok bool) {
+	return c, true
+}

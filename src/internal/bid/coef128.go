@@ -243,3 +243,13 @@ func cInf128(neg bool) coef128 {
 func cNaN128() coef128 {
 	return Uint128{Hi: NaN128Hi}
 }
+
+// cFromU64128 returns the coefficient with the value m.
+func cFromU64128(m uint64) coef128 {
+	return Uint128{Lo: m}
+}
+
+// cToU64128 returns the value of c as a uint64, and whether it fits one.
+func cToU64128(c coef128) (m uint64, ok bool) {
+	return c.Lo, c.Hi == 0
+}

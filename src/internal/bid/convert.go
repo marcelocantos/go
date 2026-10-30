@@ -55,25 +55,25 @@ func Narrow(x Uint128, mode Mode) uint64 {
 // Int64To64 returns x converted to decimal64, rounded in mode
 // (IEEE 754-2008 clause 5.4.1, convertFromInt), with preferred exponent 0.
 func Int64To64(x int64, mode Mode) uint64 {
-	panic(notImplemented)
+	return int64To64(x, mode)
 }
 
 // Int64To128 returns x converted to decimal128 with exponent 0. Every int64
 // is exactly representable, so it takes no mode.
 func Int64To128(x int64) Uint128 {
-	panic(notImplemented)
+	return int64To128(x, ToNearestEven)
 }
 
 // Uint64To64 returns x converted to decimal64, rounded in mode, with
 // preferred exponent 0.
 func Uint64To64(x uint64, mode Mode) uint64 {
-	panic(notImplemented)
+	return uint64To64(x, mode)
 }
 
 // Uint64To128 returns x converted to decimal128 with exponent 0. Every
 // uint64 is exactly representable, so it takes no mode.
 func Uint64To128(x uint64) Uint128 {
-	panic(notImplemented)
+	return uint64To128(x, ToNearestEven)
 }
 
 // Int64From64 returns x rounded to an integer in mode and converted to
@@ -82,12 +82,12 @@ func Uint64To128(x uint64) Uint128 {
 // Inexact, Inexact|Overflow with a saturated result, or Invalid for a NaN
 // or an infinity. The language conversion uses TowardZero.
 func Int64From64(x uint64, mode Mode) (int64, Status) {
-	panic(notImplemented)
+	return int64From64(x, mode)
 }
 
 // Int64From128 is Int64From64 for decimal128.
 func Int64From128(x Uint128, mode Mode) (int64, Status) {
-	panic(notImplemented)
+	return int64From128(x, mode)
 }
 
 // Uint64From64 is Int64From64 with a uint64 result, whose range is
@@ -96,10 +96,10 @@ func Int64From128(x Uint128, mode Mode) (int64, Status) {
 // negative value that rounds to zero, such as -0.5 toward zero, is in
 // range and gives 0 with Inexact.
 func Uint64From64(x uint64, mode Mode) (uint64, Status) {
-	panic(notImplemented)
+	return uint64From64(x, mode)
 }
 
 // Uint64From128 is Uint64From64 for decimal128.
 func Uint64From128(x Uint128, mode Mode) (uint64, Status) {
-	panic(notImplemented)
+	return uint64From128(x, mode)
 }
