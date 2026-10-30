@@ -255,3 +255,11 @@ func cFromU6464(m uint64) coef64 {
 func cToU6464(c coef64) (m uint64, ok bool) {
 	return c, true
 }
+
+// cFromU12864 returns a 128-bit value as a wide64, which is the value
+// itself: the binary-to-decimal conversion generates its digits into a
+// Uint128 at both widths and hands them to the rounding routine through
+// this function.
+func cFromU12864(q Uint128) wide64 {
+	return q
+}

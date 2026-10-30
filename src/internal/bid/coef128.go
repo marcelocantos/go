@@ -299,3 +299,9 @@ func cFromU64128(m uint64) coef128 {
 func cToU64128(c coef128) (m uint64, ok bool) {
 	return c.Lo, c.Hi == 0
 }
+
+// cFromU128128 returns a 128-bit value as a wide128, in its low half. See
+// cFromU12864.
+func cFromU128128(q Uint128) wide128 {
+	return wide128{Lo: q}
+}
