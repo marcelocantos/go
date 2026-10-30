@@ -308,7 +308,8 @@ loop:
 // decimal power of ten to binary power of two.
 var powtab = []int{1, 3, 6, 9, 13, 16, 19, 23, 26}
 
-func (d *decimal) floatBits(flt *floatInfo) (b uint64, overflow bool) {
+// floatBits returns the bits of d rounded in direction r to the format flt.
+func (d *decimal) floatBits(flt *floatInfo, r Rounding) (b uint64, overflow bool) {
 	var exp int
 	var mant uint64
 
@@ -326,8 +327,11 @@ func (d *decimal) floatBits(flt *floatInfo) (b uint64, overflow bool) {
 		goto overflow
 	}
 	if d.dp < -330 {
-		// zero
+		// zero, or the smallest subnormal when rounding away from it
 		mant = 0
+		if r == RoundAwayFromZero {
+			mant = 1
+		}
 		exp = flt.bias
 		goto out
 	}
@@ -373,7 +377,7 @@ func (d *decimal) floatBits(flt *floatInfo) (b uint64, overflow bool) {
 
 	// Extract 1+flt.mantbits bits.
 	d.Shift(int(1 + flt.mantbits))
-	mant = d.RoundedInteger()
+	mant = d.roundedInteger(r)
 
 	// Rounding might have added a bit; shift down.
 	if mant == 2<<flt.mantbits {
@@ -391,9 +395,13 @@ func (d *decimal) floatBits(flt *floatInfo) (b uint64, overflow bool) {
 	goto out
 
 overflow:
-	// ±Inf
+	// ±Inf, or the largest finite magnitude when rounding toward zero
 	mant = 0
 	exp = 1<<flt.expbits - 1 + flt.bias
+	if r == RoundTowardZero {
+		mant = 1<<flt.mantbits - 1
+		exp--
+	}
 	overflow = true
 
 out:
@@ -603,7 +611,7 @@ func atof32(s string) (f float32, n int, err error) {
 	if !d.set(s[:n]) {
 		return 0, n, ErrSyntax
 	}
-	b, ovf := d.floatBits(&float32info)
+	b, ovf := d.floatBits(&float32info, RoundNearestEven)
 	f = float32frombits(uint32(b))
 	if ovf {
 		err = ErrRange
@@ -654,7 +662,7 @@ func atof64(s string) (f float64, n int, err error) {
 	if !d.set(s[:n]) {
 		return 0, n, ErrSyntax
 	}
-	b, ovf := d.floatBits(&float64info)
+	b, ovf := d.floatBits(&float64info, RoundNearestEven)
 	f = float64frombits(b)
 	if ovf {
 		err = ErrRange

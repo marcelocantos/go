@@ -34,3 +34,16 @@ func SetOptimize(b bool) bool {
 	optimize = b
 	return old
 }
+
+// CoeffDecimalExact reports whether the decimal of the exact path holds
+// (hi×2^64 + lo) × 10^exp10 without truncation through floatBits.
+func CoeffDecimalExact(hi, lo uint64, exp10 int, bitSize int) bool {
+	flt := &float64info
+	if bitSize == 32 {
+		flt = &float32info
+	}
+	var d decimal
+	d.assignCoeff(hi, lo, exp10, false)
+	d.floatBits(flt, RoundTowardZero)
+	return !d.trunc
+}

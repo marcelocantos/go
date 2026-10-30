@@ -397,6 +397,11 @@ func (a *decimal) RoundUp(nd int) {
 // Extract integer part, rounded appropriately.
 // No guarantees about overflow.
 func (a *decimal) RoundedInteger() uint64 {
+	return a.roundedInteger(RoundNearestEven)
+}
+
+// roundedInteger is RoundedInteger with the rounding direction r.
+func (a *decimal) roundedInteger(r Rounding) uint64 {
 	if a.dp > 20 {
 		return 0xFFFFFFFFFFFFFFFF
 	}
@@ -408,7 +413,19 @@ func (a *decimal) RoundedInteger() uint64 {
 	for ; i < a.dp; i++ {
 		n *= 10
 	}
-	if shouldRoundUp(a, a.dp) {
+	var up bool
+	switch r {
+	case RoundNearestAway:
+		up = 0 <= a.dp && a.dp < a.nd && a.d[a.dp] >= '5'
+	case RoundTowardZero:
+		up = false
+	case RoundAwayFromZero:
+		// a is trimmed, so a digit past the point is a non-zero fraction.
+		up = a.dp < a.nd || a.trunc
+	default:
+		up = shouldRoundUp(a, a.dp)
+	}
+	if up {
 		n++
 	}
 	return n
