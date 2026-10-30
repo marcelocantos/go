@@ -84,7 +84,7 @@ func coeffPrefix(hi, lo uint64) (man uint64, k int, sticky bool) {
 	}
 	// c < 2^(64+n) ≤ 2^64 × 10^k, so the quotient fits and hi < 10^k.
 	n := bits.Len64(hi)
-	k = mulLog10_2(n) + 1
+	k = log10Pow2(n) + 1
 	man, rem := bits.Div64(hi, lo, uint64pow10[k])
 	return man, k, rem != 0
 }
@@ -115,7 +115,7 @@ func coeffFloatBits(hi, lo uint64, exp10 int, neg bool, r Rounding, flt *floatIn
 		return sign
 	}
 
-	// With n the bit length of c, 10^mulLog10_2(n-1) ≤ c < 10^(mulLog10_2(n)+1).
+	// With n the bit length of c, 10^log10Pow2(n-1) ≤ c < 10^(log10Pow2(n)+1).
 	n := bits.Len64(lo)
 	if hi != 0 {
 		n = 64 + bits.Len64(hi)
@@ -123,7 +123,7 @@ func coeffFloatBits(hi, lo uint64, exp10 int, neg bool, r Rounding, flt *floatIn
 
 	// The value is at least the power of ten above 2^(2^(expbits-1)), which
 	// is the first magnitude beyond every finite value of the format.
-	if mulLog10_2(n-1)+exp10 > mulLog10_2(1<<(flt.expbits-1)) {
+	if log10Pow2(n-1)+exp10 > log10Pow2(1<<(flt.expbits-1)) {
 		if r == RoundTowardZero {
 			return sign | (1<<flt.expbits-2)<<flt.mantbits | (1<<flt.mantbits - 1)
 		}
@@ -131,7 +131,7 @@ func coeffFloatBits(hi, lo uint64, exp10 int, neg bool, r Rounding, flt *floatIn
 	}
 	// The value is below the power of ten under 2^(bias-mantbits), which is
 	// half the smallest subnormal.
-	if mulLog10_2(n)+1+exp10 <= mulLog10_2(flt.bias-int(flt.mantbits)) {
+	if log10Pow2(n)+1+exp10 <= log10Pow2(flt.bias-int(flt.mantbits)) {
 		if r == RoundAwayFromZero {
 			return sign | 1
 		}
