@@ -4,6 +4,8 @@
 
 package bid
 
+import "math/bits"
+
 // notImplemented is the panic value of every operation that has been
 // declared but not yet implemented. It is temporary: when the package is
 // complete no function panics on any input.
@@ -127,12 +129,49 @@ const (
 // infinity or a NaN, coeff and exp are zero; neg is the sign bit, which
 // for a NaN carries no meaning.
 func Unpack64(x uint64) (kind Kind, neg bool, coeff uint64, exp int) {
-	panic(notImplemented)
+	neg = x>>63 != 0
+	if x>>59&0xF == 0xF {
+		if x>>58&1 == 0 {
+			return KindInf, neg, 0, 0
+		}
+		return KindNaN, neg, 0, 0
+	}
+	var biased uint64
+	if x>>61&3 == 3 {
+		biased = x >> Form2ExpShift64 & ExpMask64
+		coeff = 1<<53 | x&(1<<Form2CoeffBits64-1)
+	} else {
+		biased = x >> ExpShift64 & ExpMask64
+		coeff = x & (1<<CoeffBits64 - 1)
+	}
+	if coeff > MaxCoeff64 {
+		coeff = 0
+	}
+	return KindFinite, neg, coeff, int(biased) - Bias64
 }
 
 // Unpack128 is Unpack64 for decimal128.
 func Unpack128(x Uint128) (kind Kind, neg bool, coeff Uint128, exp int) {
-	panic(notImplemented)
+	t := x.Hi
+	neg = t>>63 != 0
+	if t>>59&0xF == 0xF {
+		if t>>58&1 == 0 {
+			return KindInf, neg, Uint128{}, 0
+		}
+		return KindNaN, neg, Uint128{}, 0
+	}
+	var biased uint64
+	if t>>61&3 == 3 {
+		biased = t >> Form2ExpShift128 & ExpMask128
+		// Second-form decimal128 coefficients are always ≥ 2^113 > 10^34-1.
+		return KindFinite, neg, Uint128{}, int(biased) - Bias128
+	}
+	biased = t >> ExpShift128 & ExpMask128
+	coeff = Uint128{Hi: t & CoeffMask128Hi, Lo: x.Lo}
+	if u128GtMaxCoeff(coeff) {
+		coeff = Uint128{}
+	}
+	return KindFinite, neg, coeff, int(biased) - Bias128
 }
 
 // Pack64 encodes the finite value (-1)^neg × coeff × 10^exp exactly in
@@ -142,80 +181,113 @@ func Unpack128(x Uint128) (kind Kind, neg bool, coeff Uint128, exp int) {
 // that may need rounding or exponent adjustment, use Round64. Pack64 is
 // the inverse of Unpack64 on finite values.
 func Pack64(neg bool, coeff uint64, exp int) (x uint64, ok bool) {
-	panic(notImplemented)
+	if coeff > MaxCoeff64 || exp < MinExp64 || exp > MaxExp64 {
+		return NaN64, false
+	}
+	sign := uint64(0)
+	if neg {
+		sign = SignMask64
+	}
+	biased := uint64(exp + Bias64)
+	if coeff < 1<<CoeffBits64 {
+		return sign | biased<<ExpShift64 | coeff, true
+	}
+	return sign | Form2Mask64 | biased<<Form2ExpShift64 | coeff&(1<<Form2CoeffBits64-1), true
 }
 
 // Pack128 is Pack64 for decimal128.
 func Pack128(neg bool, coeff Uint128, exp int) (x Uint128, ok bool) {
-	panic(notImplemented)
+	if u128GtMaxCoeff(coeff) || exp < MinExp128 || exp > MaxExp128 {
+		return Uint128{Hi: NaN128Hi}, false
+	}
+	sign := uint64(0)
+	if neg {
+		sign = SignMask128Hi
+	}
+	biased := uint64(exp + Bias128)
+	hi := coeff.Hi & CoeffMask128Hi
+	return Uint128{
+		Hi: sign | biased<<ExpShift128 | hi,
+		Lo: coeff.Lo,
+	}, true
 }
 
 // IsNaN64 reports whether x is a NaN, quiet or signaling (IEEE 754-2008
 // clause 5.7.2, isNaN).
 func IsNaN64(x uint64) bool {
-	panic(notImplemented)
+	return x&SpecialMask64 == SpecialMask64 && x&NaNBit64 != 0
 }
 
 // IsNaN128 is IsNaN64 for decimal128.
 func IsNaN128(x Uint128) bool {
-	panic(notImplemented)
+	return IsNaN64(x.Hi)
 }
 
 // IsSignaling64 reports whether x is a signaling NaN (IEEE 754-2008 clause
 // 5.7.2, isSignaling).
 func IsSignaling64(x uint64) bool {
-	panic(notImplemented)
+	return IsNaN64(x) && x&SignalingBit64 != 0
 }
 
 // IsSignaling128 is IsSignaling64 for decimal128.
 func IsSignaling128(x Uint128) bool {
-	panic(notImplemented)
+	return IsSignaling64(x.Hi)
 }
 
 // IsInf64 reports whether x is an infinity of either sign (IEEE 754-2008
 // clause 5.7.2, isInfinite).
 func IsInf64(x uint64) bool {
-	panic(notImplemented)
+	return x&SpecialMask64 == SpecialMask64 && x&NaNBit64 == 0
 }
 
 // IsInf128 is IsInf64 for decimal128.
 func IsInf128(x Uint128) bool {
-	panic(notImplemented)
+	return IsInf64(x.Hi)
 }
 
 // IsFinite64 reports whether x is neither an infinity nor a NaN
 // (IEEE 754-2008 clause 5.7.2, isFinite).
 func IsFinite64(x uint64) bool {
-	panic(notImplemented)
+	return x&SpecialMask64 != SpecialMask64
 }
 
 // IsFinite128 is IsFinite64 for decimal128.
 func IsFinite128(x Uint128) bool {
-	panic(notImplemented)
+	return IsFinite64(x.Hi)
 }
 
 // IsZero64 reports whether x is a zero of either sign, including a
 // non-canonical encoding that reads as zero (IEEE 754-2008 clause 5.7.2,
 // isZero).
 func IsZero64(x uint64) bool {
-	panic(notImplemented)
+	k, _, c, _ := Unpack64(x)
+	return k == KindFinite && c == 0
 }
 
 // IsZero128 is IsZero64 for decimal128.
 func IsZero128(x Uint128) bool {
-	panic(notImplemented)
+	k, _, c, _ := Unpack128(x)
+	return k == KindFinite && c.Hi == 0 && c.Lo == 0
 }
 
 // IsSubnormal64 reports whether x is finite, non-zero and below the
 // smallest normal magnitude 10^Emin64 (IEEE 754-2008 clause 5.7.2,
 // isSubnormal).
 func IsSubnormal64(x uint64) bool {
-	panic(notImplemented)
+	k, _, c, exp := Unpack64(x)
+	if k != KindFinite || c == 0 {
+		return false
+	}
+	return digits64(c)-1+exp < Emin64
 }
 
 // IsSubnormal128 is IsSubnormal64 for decimal128.
 func IsSubnormal128(x Uint128) bool {
-	panic(notImplemented)
+	k, _, c, exp := Unpack128(x)
+	if k != KindFinite || (c.Hi|c.Lo) == 0 {
+		return false
+	}
+	return digits128(c)-1+exp < Emin128
 }
 
 // IsCanonical64 reports whether x is a canonical encoding (IEEE 754-2008
@@ -226,24 +298,51 @@ func IsSubnormal128(x Uint128) bool {
 // operations Neg64, Abs64 and CopySign64, which copy the bits of their
 // operand (see "Sign operations" in the package documentation).
 func IsCanonical64(x uint64) bool {
-	panic(notImplemented)
+	if x>>59&0xF == 0xF {
+		if x>>58&1 == 0 {
+			return x&(1<<58-1) == 0
+		}
+		if x>>50&(1<<7-1) != 0 {
+			return false
+		}
+		return x&(1<<50-1) < maxNaNPayload64
+	}
+	if x>>61&3 == 3 {
+		return 1<<53|x&(1<<Form2CoeffBits64-1) <= MaxCoeff64
+	}
+	return x&(1<<CoeffBits64-1) <= MaxCoeff64
 }
 
 // IsCanonical128 is IsCanonical64 for decimal128.
 func IsCanonical128(x Uint128) bool {
-	panic(notImplemented)
+	t := x.Hi
+	if t>>59&0xF == 0xF {
+		if t>>58&1 == 0 {
+			return t&(1<<58-1) == 0 && x.Lo == 0
+		}
+		if t>>46&(1<<11-1) != 0 {
+			return false
+		}
+		payload := Uint128{Hi: t & (1<<46 - 1), Lo: x.Lo}
+		return u128Lt(payload, maxNaNPayload128)
+	}
+	if t>>61&3 == 3 {
+		return false
+	}
+	c := Uint128{Hi: t & CoeffMask128Hi, Lo: x.Lo}
+	return !u128GtMaxCoeff(c)
 }
 
 // Signbit64 reports whether the sign bit of x is set (IEEE 754-2008 clause
 // 5.7.2, isSignMinus). It is true for -0 and for a NaN whose sign bit is
 // set.
 func Signbit64(x uint64) bool {
-	panic(notImplemented)
+	return x&SignMask64 != 0
 }
 
 // Signbit128 is Signbit64 for decimal128.
 func Signbit128(x Uint128) bool {
-	panic(notImplemented)
+	return Signbit64(x.Hi)
 }
 
 // Neg64 returns x with its sign bit inverted (IEEE 754-2008 clause 5.5.1,
@@ -251,32 +350,105 @@ func Signbit128(x Uint128) bool {
 // canonicalize and it does not quiet a NaN (see "Sign operations" in the
 // package documentation).
 func Neg64(x uint64) uint64 {
-	panic(notImplemented)
+	return x ^ SignMask64
 }
 
 // Neg128 is Neg64 for decimal128.
 func Neg128(x Uint128) Uint128 {
-	panic(notImplemented)
+	return Uint128{Hi: x.Hi ^ SignMask128Hi, Lo: x.Lo}
 }
 
 // Abs64 returns x with its sign bit cleared (IEEE 754-2008 clause 5.5.1,
 // abs). It is a bit operation.
 func Abs64(x uint64) uint64 {
-	panic(notImplemented)
+	return x &^ SignMask64
 }
 
 // Abs128 is Abs64 for decimal128.
 func Abs128(x Uint128) Uint128 {
-	panic(notImplemented)
+	return Uint128{Hi: x.Hi &^ SignMask128Hi, Lo: x.Lo}
 }
 
 // CopySign64 returns x with the sign bit of sign (IEEE 754-2008 clause
 // 5.5.1, copySign). It is a bit operation.
 func CopySign64(x, sign uint64) uint64 {
-	panic(notImplemented)
+	return x&^SignMask64 | sign&SignMask64
 }
 
 // CopySign128 is CopySign64 for decimal128.
 func CopySign128(x, sign Uint128) Uint128 {
-	panic(notImplemented)
+	return Uint128{Hi: x.Hi&^SignMask128Hi | sign.Hi&SignMask128Hi, Lo: x.Lo}
+}
+
+const maxNaNPayload64 = 1_000_000_000_000_000 // 10^15
+
+var maxNaNPayload128 = Uint128{Hi: 0x0000314DC6448D93, Lo: 0x38C15B0A00000000} // 10^33
+
+func u128GtMaxCoeff(c Uint128) bool {
+	if c.Hi > MaxCoeff128Hi {
+		return true
+	}
+	if c.Hi < MaxCoeff128Hi {
+		return false
+	}
+	return c.Lo > MaxCoeff128Lo
+}
+
+func u128Lt(a, b Uint128) bool {
+	if a.Hi != b.Hi {
+		return a.Hi < b.Hi
+	}
+	return a.Lo < b.Lo
+}
+
+func digits64(c uint64) int {
+	if c == 0 {
+		return 0
+	}
+	d := int(float64(bits.Len64(c)-1)*0.3010299956639812) + 1
+	if c >= pow10u64(d) {
+		d++
+	}
+	return d
+}
+
+func digits128(c Uint128) int {
+	if c.Hi == 0 {
+		return digits64(c.Lo)
+	}
+	bitLen := bits.Len64(c.Hi) + 64
+	d := int(float64(bitLen-1)*0.3010299956639812) + 1
+	for u128GePow10(c, d) {
+		d++
+	}
+	return d
+}
+
+func pow10u64(n int) uint64 {
+	p := uint64(1)
+	for i := 0; i < n; i++ {
+		p *= 10
+	}
+	return p
+}
+
+func u128GePow10(c Uint128, n int) bool {
+	p := Uint128{Lo: 1}
+	for i := 0; i < n; i++ {
+		var carry uint64
+		carry, p.Lo = bits.Mul64(p.Lo, 10)
+		overflow, hi := bits.Mul64(p.Hi, 10)
+		if overflow != 0 {
+			return true
+		}
+		var c2 uint64
+		p.Hi, c2 = bits.Add64(hi, carry, 0)
+		if c2 != 0 {
+			return true
+		}
+	}
+	if c.Hi != p.Hi {
+		return c.Hi > p.Hi
+	}
+	return c.Lo >= p.Lo
 }
