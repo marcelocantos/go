@@ -133,6 +133,13 @@ func checkCoef64(t *testing.T, a, b uint64, k int) {
 		t.Errorf("cLenFull64(%d × %d) = %d, want %d", a, b, got, want)
 	}
 
+	if b != 0 {
+		p := cMulFull64(a, a)
+		if got, want := cModFull64(p, b), new(big.Int).Mod(bigOf(p), B); big64(got).Cmp(want) != 0 {
+			t.Errorf("cModFull64(%d × %d, %d) = %d, want %v", a, a, b, got, want)
+		}
+	}
+
 	k %= len(pow10tab64) // 0 <= k <= 19
 	P := bigPow10(k)
 	if got := cPow1064(k); big64(got).Cmp(P) != 0 {
@@ -266,6 +273,10 @@ func checkCoef128(t *testing.T, a, b Uint128, k int) {
 		mustPanic(t, "cMulPow10128 overflow", func() { cMulPow10128(a, k1) })
 	}
 
+	if m, _ := u128Add(b, Uint128{Lo: 1}); m != (Uint128{}) {
+		eq128(t, "cModFull128", cModFull128(p, m), new(big.Int).Mod(prod, bigOf(m)))
+	}
+
 	// cReduce128 over its whole range of k, including the multi-step
 	// divisions above 10^38 and the zero quotient above 10^77.
 	k2 := k % 90
@@ -325,12 +336,14 @@ func TestCoefZeroAllocs(t *testing.T) {
 		{"cMulFull64", func() { sinkU128 = cMulFull64(a64, b64) }},
 		{"cReduce64", func() { sinkU64, sinkBool = cReduce64(cMulFull64(a64, b64), 15) }},
 		{"cLenFull64", func() { sinkInt = cLenFull64(cMulFull64(a64, b64)) }},
+		{"cModFull64", func() { sinkU64 = cModFull64(cMulFull64(a64, b64), 7) }},
 		{"cDigits128", func() { sinkInt = cDigits128(a) }},
 		{"cMulPow10128", func() { sinkU128 = cMulPow10128(Uint128{Lo: 123}, 30) }},
 		{"cDivPow10128", func() { sinkU128, sinkU128 = cDivPow10128(a, 30) }},
 		{"cMulFull128", func() { sinkU256 = cMulFull128(a, b) }},
 		{"cReduce128", func() { sinkU128, sinkBool = cReduce128(p, 40) }},
 		{"cLenFull128", func() { sinkInt = cLenFull128(p) }},
+		{"cModFull128", func() { sinkU128 = cModFull128(p, b) }},
 	}
 	for _, tt := range tests {
 		if got := testing.AllocsPerRun(100, tt.f); got != 0 {

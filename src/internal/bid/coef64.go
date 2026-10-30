@@ -210,6 +210,12 @@ func cNaN64() coef64 {
 	return NaN64
 }
 
+// cModFull64 returns p mod m. Precondition: m is not zero; a zero m panics
+// with the math/bits divide error.
+func cModFull64(p wide64, m coef64) coef64 {
+	return bits.Rem64(p.Hi, p.Lo, m)
+}
+
 // cLo64 returns the coefficient held in the low word of p. Precondition:
 // the high word is zero, that is, p fits a coefficient; a p that does not
 // panics rather than truncates.

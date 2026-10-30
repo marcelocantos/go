@@ -81,12 +81,12 @@ func FMA128(x, y, z Uint128, mode Mode) Uint128 {
 // The result is exact for every quotient, so Rem64 takes no mode; see
 // "Remainder and modulo" in the package documentation.
 func Rem64(x, y uint64) uint64 {
-	panic(notImplemented)
+	return rem64(x, y)
 }
 
 // Rem128 is Rem64 for decimal128.
 func Rem128(x, y Uint128) Uint128 {
-	panic(notImplemented)
+	return rem128(x, y)
 }
 
 // Mod64 returns the truncated modulo x - y × trunc(x / y), the decimal
@@ -96,12 +96,12 @@ func Rem128(x, y Uint128) Uint128 {
 // General Decimal Arithmetic specification, and its special cases are
 // those of Rem64. See "Remainder and modulo" in the package documentation.
 func Mod64(x, y uint64) uint64 {
-	panic(notImplemented)
+	return mod64(x, y)
 }
 
 // Mod128 is Mod64 for decimal128.
 func Mod128(x, y Uint128) Uint128 {
-	panic(notImplemented)
+	return mod128(x, y)
 }
 
 // RoundToIntegral64 rounds x to an integral value in mode (IEEE 754-2008

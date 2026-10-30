@@ -445,6 +445,17 @@ func (g *gen) remCase(fn func(im impl, f *format, x, y bits) bits) testCase {
 		// refuses and the contract computes exactly.
 		x = f.encode(value{kind: finite, neg: g.r.IntN(2) == 0, coeff: g.randDigits(f.prec), exp: f.maxExp - g.r.IntN(20)})
 		y = f.encode(value{kind: finite, neg: g.r.IntN(2) == 0, coeff: g.randDigits(1 + g.r.IntN(f.prec)), exp: f.minExp + g.r.IntN(20)})
+	} else if g.regime == boundary && g.r.IntN(3) == 0 {
+		// An exact tie at a gap of k digits: c × 10^k / 2^(k+1) = c × 5^k / 2
+		// for an odd c. Only the parity of a quotient far wider than any word
+		// decides Rem here, and a tie needs 2^(k+1) to divide the divisor, so
+		// these are the largest gaps at which the parity is visible at all.
+		k := g.r.IntN(f.maxCoeff.BitLen() - 1)
+		ye := f.minExp + g.r.IntN(f.maxExp-f.minExp+1-k)
+		c := g.randDigits(1 + g.r.IntN(3))
+		c.SetBit(c, 0, 1)
+		x = f.encode(value{kind: finite, neg: g.r.IntN(2) == 0, coeff: c, exp: ye + k})
+		y = f.encode(value{kind: finite, neg: g.r.IntN(2) == 0, coeff: new(big.Int).Lsh(bigOne, uint(k+1)), exp: ye})
 	}
 	return testCase{
 		args: fmt.Sprintf("%s, %s", display(f, x), display(f, y)),

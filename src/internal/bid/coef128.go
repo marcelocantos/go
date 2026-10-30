@@ -249,6 +249,17 @@ func cNaN128() coef128 {
 	return Uint128{Hi: NaN128Hi}
 }
 
+// cModFull128 returns p mod m. Precondition: m is not zero; a zero m panics
+// with errDivideByZero. A p with p.Hi < m, which is every product of two
+// values below m, takes half the division steps of the general case.
+func cModFull128(p wide128, m coef128) coef128 {
+	if _, r, ok := u256Div128(p, m); ok {
+		return r
+	}
+	_, r := u256DivMod128(p, m)
+	return r
+}
+
 // cLo128 returns the coefficient held in the low half of p. Precondition:
 // the high half is zero, that is, p fits a coefficient; a p that does not
 // panics rather than truncates.
