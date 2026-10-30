@@ -21,3 +21,195 @@ func mulReduce128(a, b coef128) (q coef128, k int, sticky bool) {
 	q, sticky = cReduce128(p, k)
 	return q, k, sticky
 }
+
+// magCmp128 compares the magnitudes of two non-zero finite values, returning
+// -1, 0 or +1. The values are decided by adjusted exponent first: a value
+// whose leading digit lies in a higher decimal place is the larger, whatever
+// the coefficients, so values whose exponents differ by thousands of places
+// are compared without scaling anything. Only when the adjusted exponents
+// are equal are the coefficients aligned, and then the coefficient with the
+// larger exponent has fewer digits than the other by exactly the difference
+// of the exponents; scaling it up gives it the digit count of the other,
+// which is at most Precision128, so the product cannot overflow and the
+// difference of the exponents is below the table of powers of ten.
+//
+// Precondition: xc and yc are non-zero and at most MaxCoeff128.
+func magCmp128(xc coef128, xe int, yc coef128, ye int) int {
+	if xe == ye {
+		return cCmp128(xc, yc)
+	}
+	// xa and ya are one more than the adjusted exponents.
+	xa, ya := cDigits128(xc)+xe, cDigits128(yc)+ye
+	switch {
+	case xa < ya:
+		return -1
+	case xa > ya:
+		return 1
+	case xe > ye:
+		return cCmp128(cMulPow10128(xc, xe-ye), yc)
+	}
+	return cCmp128(xc, cMulPow10128(yc, ye-xe))
+}
+
+// finiteCmp128 compares two finite values, returning -1, 0 or +1: a zero of
+// either sign is below every positive value and above every negative one,
+// and equal to every zero.
+func finiteCmp128(xneg bool, xc coef128, xe int, yneg bool, yc coef128, ye int) int {
+	xz, yz := cIsZero128(xc), cIsZero128(yc)
+	switch {
+	case xz && yz:
+		return 0
+	case xz:
+		if yneg {
+			return 1
+		}
+		return -1
+	case yz:
+		if xneg {
+			return -1
+		}
+		return 1
+	case xneg != yneg:
+		if xneg {
+			return -1
+		}
+		return 1
+	case xneg:
+		return -magCmp128(xc, xe, yc, ye)
+	}
+	return magCmp128(xc, xe, yc, ye)
+}
+
+// quietCmp128 returns the ordering of x and y as -1, 0 or +1 with ok = true,
+// or 0 and ok = false when either is a NaN.
+func quietCmp128(x, y coef128) (c int, ok bool) {
+	xk, xneg, xc, xe := Unpack128(x)
+	yk, yneg, yc, ye := Unpack128(y)
+	switch {
+	case xk == KindNaN || yk == KindNaN:
+		return 0, false
+	case xk == KindFinite && yk == KindFinite:
+		return finiteCmp128(xneg, xc, xe, yneg, yc, ye), true
+	case xk == KindInf && yk == KindInf:
+		// Two infinities: equal if of one sign, else the negative is the lesser.
+		if xneg == yneg {
+			return 0, true
+		}
+		if xneg {
+			return -1, true
+		}
+		return 1, true
+	case xk == KindInf:
+		// An infinity against a finite value, finite zero included.
+		if xneg {
+			return -1, true
+		}
+		return 1, true
+	}
+	if yneg {
+		return 1, true
+	}
+	return -1, true
+}
+
+// equal128 reports whether x == y by value; it is false if either is a NaN.
+func equal128(x, y coef128) bool {
+	c, ok := quietCmp128(x, y)
+	return ok && c == 0
+}
+
+// less128 reports whether x < y; it is false if either is a NaN.
+func less128(x, y coef128) bool {
+	c, ok := quietCmp128(x, y)
+	return ok && c < 0
+}
+
+// lessEqual128 reports whether x <= y; it is false if either is a NaN.
+func lessEqual128(x, y coef128) bool {
+	c, ok := quietCmp128(x, y)
+	return ok && c <= 0
+}
+
+// totalOrder128 reports whether x precedes or equals y in the total order of
+// IEEE 754-2008 clause 5.10 as the package defines it: by sign first
+// (negative operands, NaNs included, precede positive ones), then, within
+// one sign, finite values by value, then infinities, then NaNs; two finite
+// values of equal value, zeros included, by exponent. For negative operands
+// everything within the sign reverses. All NaNs of one sign are equal.
+func totalOrder128(x, y coef128) bool {
+	xk, xneg, xc, xe := Unpack128(x)
+	yk, yneg, yc, ye := Unpack128(y)
+	if xneg != yneg {
+		return xneg
+	}
+	// Order the magnitudes: c is -1, 0 or +1 as |x| precedes, equals or
+	// follows |y|, which for positive operands is the order of the values.
+	c := 0
+	switch {
+	case xk != yk:
+		// Kind orders finite, infinity, NaN.
+		c = -1
+		if xk > yk {
+			c = 1
+		}
+	case xk != KindFinite:
+		// Infinities of one sign are equal, as are NaNs.
+	default:
+		xz, yz := cIsZero128(xc), cIsZero128(yc)
+		switch {
+		case xz && yz:
+		case xz:
+			c = -1
+		case yz:
+			c = 1
+		default:
+			c = magCmp128(xc, xe, yc, ye)
+		}
+		if c == 0 {
+			// One value, two quanta: the smaller exponent first.
+			switch {
+			case xe < ye:
+				c = -1
+			case xe > ye:
+				c = 1
+			}
+		}
+	}
+	if xneg {
+		return c >= 0
+	}
+	return c <= 0
+}
+
+// key128 returns the fields of the hash key of x. See Key.
+func key128(x coef128) (kind Kind, neg bool, c coef128, exp int) {
+	kind, neg, c, exp = Unpack128(x)
+	if kind == KindNaN {
+		return KindNaN, false, c, 0
+	}
+	if kind == KindInf {
+		return KindInf, neg, c, 0
+	}
+	if cIsZero128(c) {
+		return KindFinite, false, c, 0
+	}
+	// Strip the trailing zeros of the coefficient by binary search on their
+	// number: at most Precision128-1 of them, so steps of the powers of two
+	// from the largest one not above Precision128 down to 1 can remove any
+	// count. Most coefficients have none, which one division settles.
+	q, r := cDivPow10128(c, 1)
+	if !cIsZero128(r) {
+		return kind, neg, c, exp
+	}
+	c, exp = q, exp+1
+	step := 1
+	for step*2 <= Precision128 {
+		step *= 2
+	}
+	for ; step > 0; step /= 2 {
+		if q, r := cDivPow10128(c, step); cIsZero128(r) {
+			c, exp = q, exp+step
+		}
+	}
+	return kind, neg, c, exp
+}

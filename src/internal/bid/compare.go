@@ -13,34 +13,34 @@ package bid
 // == operator of the language and the equality the runtime uses for map
 // keys.
 func Equal64(x, y uint64) bool {
-	panic(notImplemented)
+	return equal64(x, y)
 }
 
 // Equal128 is Equal64 for decimal128.
 func Equal128(x, y Uint128) bool {
-	panic(notImplemented)
+	return equal128(x, y)
 }
 
 // Less64 reports whether x < y (IEEE 754-2008 clause 5.6.1 and 5.11,
 // compareQuietLess). It is false if either operand is a NaN.
 func Less64(x, y uint64) bool {
-	panic(notImplemented)
+	return less64(x, y)
 }
 
 // Less128 is Less64 for decimal128.
 func Less128(x, y Uint128) bool {
-	panic(notImplemented)
+	return less128(x, y)
 }
 
 // LessEqual64 reports whether x <= y (IEEE 754-2008 clause 5.6.1 and
 // 5.11, compareQuietLessEqual). It is false if either operand is a NaN.
 func LessEqual64(x, y uint64) bool {
-	panic(notImplemented)
+	return lessEqual64(x, y)
 }
 
 // LessEqual128 is LessEqual64 for decimal128.
 func LessEqual128(x, y Uint128) bool {
-	panic(notImplemented)
+	return lessEqual128(x, y)
 }
 
 // Compare64 returns the ordering of x and y as -1, 0 or +1 with ok = true,
@@ -49,12 +49,12 @@ func LessEqual128(x, y Uint128) bool {
 // signaling variants of the standard differ only in the exception they
 // raise, which this package does not expose.
 func Compare64(x, y uint64) (c int, ok bool) {
-	panic(notImplemented)
+	return quietCmp64(x, y)
 }
 
 // Compare128 is Compare64 for decimal128.
 func Compare128(x, y Uint128) (c int, ok bool) {
-	panic(notImplemented)
+	return quietCmp128(x, y)
 }
 
 // TotalOrder64 reports whether x precedes or equals y in the total order of
@@ -68,12 +68,12 @@ func Compare128(x, y Uint128) (c int, ok bool) {
 // package documentation). Unlike the other comparisons it is defined on
 // every pair of operands, so it can sort a slice of bit patterns.
 func TotalOrder64(x, y uint64) bool {
-	panic(notImplemented)
+	return totalOrder64(x, y)
 }
 
 // TotalOrder128 is TotalOrder64 for decimal128.
 func TotalOrder128(x, y Uint128) bool {
-	panic(notImplemented)
+	return totalOrder128(x, y)
 }
 
 // Key is the canonical hash key of a decimal value. Two values have equal
@@ -97,11 +97,13 @@ type Key struct {
 
 // Key64 returns the hash key of x.
 func Key64(x uint64) Key {
-	panic(notImplemented)
+	kind, neg, c, exp := key64(x)
+	return Key{Coeff: Uint128{Lo: c}, Exp: int32(exp), Kind: kind, Neg: neg}
 }
 
 // Key128 returns the hash key of x. Key128(Widen(x)) == Key64(x) for every
 // decimal64 bit pattern x.
 func Key128(x Uint128) Key {
-	panic(notImplemented)
+	kind, neg, c, exp := key128(x)
+	return Key{Coeff: c, Exp: int32(exp), Kind: kind, Neg: neg}
 }
