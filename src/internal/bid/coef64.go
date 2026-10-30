@@ -134,3 +134,49 @@ func cReduce64(p wide64, k int) (q coef64, sticky bool) {
 func cLenFull64(p wide64) int {
 	return cDigits128(p)
 }
+
+// cShift64 returns ⌊c / 10^k⌋ and the class of the discarded part. Any
+// k >= 0 is allowed; see "Decimal-digit primitives" in digits.go for what
+// the caller may assume.
+func cShift64(c coef64, k int) (q coef64, class digitClass) {
+	if k >= len(pow10tab64) {
+		if c == 0 {
+			return 0, classZero
+		}
+		return 0, classBelowHalf
+	}
+	d := pow10tab64[k]
+	q = c / d
+	return q, class64(c-q*d, d>>1)
+}
+
+// cShiftFull64 is cShift64 for a double-width value, which may keep a
+// quotient too large for a coefficient.
+func cShiftFull64(p wide64, k int) (q wide64, class digitClass) {
+	return cShift128(p, k)
+}
+
+// cReduceClass64 is cShiftFull64 for a quotient known to fit a coefficient.
+// A quotient that does not fit panics rather than truncates. It holds
+// whenever the caller chose k to leave at most 19 digits of p.
+func cReduceClass64(p wide64, k int) (q coef64, class digitClass) {
+	return reduceClass64(p, k)
+}
+
+// cScale64 returns c × 10^k, or zero and true if that does not fit a
+// coefficient. Any k >= 0 is allowed; a negative k panics.
+func cScale64(c coef64, k int) (r coef64, overflow bool) {
+	if k >= len(pow10tab64) {
+		return 0, c != 0
+	}
+	hi, lo := bits.Mul64(c, pow10tab64[k])
+	if hi != 0 {
+		return 0, true
+	}
+	return lo, false
+}
+
+// cScaleFull64 is cScale64 for a double-width value.
+func cScaleFull64(p wide64, k int) (r wide64, overflow bool) {
+	return cScale128(p, k)
+}

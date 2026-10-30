@@ -1491,8 +1491,11 @@
 //     cIsZeroW, cCmpW, cAddW, cSubW, cOddW, cDigitsW, cMulPow10W(c, k),
 //     cDivPow10W(c, k) (q, r coefW), cHalfW(k) (5×10^(k-1)), cGtMaxW,
 //     cPow10W(k), cMulFullW(a, b) wideW, cReduceW(p wideW, k) (q coefW,
-//     sticky bool) and cLenFullW(p wideW) int, extended as division and
-//     the other operations need. Every coef64.go helper must inline;
+//     sticky bool) and cLenFullW(p wideW) int, with the decimal-digit
+//     primitives cShiftW, cShiftFullW, cReduceClassW, cScaleW and cScaleFullW
+//     (digits.go says what a caller may assume of them), extended as
+//     division and the other operations need. Every coef64.go helper must
+//     inline;
 //     check with -gcflags=-m=2 after changing one (no "cannot inline
 //     c…64"; plain -m does not print "cannot inline" lines).
 //     coef128.go is where T1.3.1's 128- and 256-bit arithmetic goes; it

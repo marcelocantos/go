@@ -100,28 +100,9 @@ func cMulFull128(a, b coef128) wide128 {
 // quotient fits 128 bits; a quotient that does not panics rather than
 // truncate. Both hold for the product of two decimal128 coefficients
 // reduced to PrecisionW+1 digits.
-//
-// 10^k has no 128-bit representation above k = 38, so a larger k divides in
-// steps of at most 10^38; the intermediate quotients may need more than 128
-// bits, which is why each step is the full 256-bit division. Any k above 77
-// exceeds every 256-bit p, which then divides to zero with a remainder
-// unless it is zero.
 func cReduce128(p wide128, k int) (q coef128, sticky bool) {
-	const maxK = len(pow10tab256) - 1 // 10^77, the last power below 2^256
-	if k > maxK {
-		return coef128{}, p != (wide128{})
-	}
-	for k > 0 {
-		k1 := min(k, len(pow10tab128)-1)
-		var r Uint128
-		p, r = u256DivMod128(p, pow10tab128[k1])
-		sticky = sticky || r != (Uint128{})
-		k -= k1
-	}
-	if p.Hi != (Uint128{}) {
-		panic("internal/bid: quotient overflow")
-	}
-	return p.Lo, sticky
+	q, class := cReduceClass128(p, k)
+	return q, class != classZero
 }
 
 // cLenFull128 returns the number of decimal digits of p: 0 for zero. The
@@ -133,4 +114,97 @@ func cLenFull128(p wide128) int {
 		return t
 	}
 	return t + 1
+}
+
+// cShift128 returns ⌊c / 10^k⌋ and the class of the discarded part. Any
+// k >= 0 is allowed; see "Decimal-digit primitives" in digits.go for what
+// the caller may assume.
+func cShift128(c coef128, k int) (q coef128, class digitClass) {
+	if k >= len(pow10tab128) {
+		if c == (coef128{}) {
+			return coef128{}, classZero
+		}
+		return coef128{}, classBelowHalf
+	}
+	d := pow10tab128[k]
+	q, r := u128Div(c, d)
+	return q, class128(r, u128Shr(d, 1))
+}
+
+// cShiftFull128 is cShift128 for a 256-bit value.
+//
+// Only 10^k up to k = 38 has a 128-bit divisor, so a larger k first removes
+// the low digits 10^38 at a time, at most twice since k < 78. Those steps
+// are exact and can only contribute a sticky bit, because the half point of
+// the whole shift lies in the digits that remain. The last step, whose k is
+// at least 1 if an earlier step ran, classifies, and withSticky applies the
+// earlier remainders to that class. An intermediate quotient may need more
+// than 128 bits, which is why each step is the full 256-bit division.
+func cShiftFull128(p wide128, k int) (q wide128, class digitClass) {
+	if k >= len(pow10tab256) {
+		if p == (wide128{}) {
+			return wide128{}, classZero
+		}
+		return wide128{}, classBelowHalf
+	}
+	const maxStep = len(pow10tab128) - 1 // 10^38, the last power below 2^128
+	sticky := false
+	for k > maxStep {
+		var r Uint128
+		p, r = u256DivMod128(p, pow10tab128[maxStep])
+		sticky = sticky || r != (Uint128{})
+		k -= maxStep
+	}
+	d := pow10tab128[k]
+	q, r := u256DivMod128(p, d)
+	return q, class128(r, u128Shr(d, 1)).withSticky(sticky)
+}
+
+// cReduceClass128 is cShiftFull128 for a quotient known to fit a
+// coefficient. A quotient that does not fit panics rather than truncates. It
+// holds whenever the caller chose k to leave at most 38 digits of p.
+func cReduceClass128(p wide128, k int) (q coef128, class digitClass) {
+	wq, class := cShiftFull128(p, k)
+	if wq.Hi != (Uint128{}) {
+		panic(errQuotientOverflow)
+	}
+	return wq.Lo, class
+}
+
+// cScale128 returns c × 10^k, or zero and true if that does not fit a
+// coefficient. Any k >= 0 is allowed; a negative k panics.
+func cScale128(c coef128, k int) (r coef128, overflow bool) {
+	if k >= len(pow10tab128) {
+		return coef128{}, c != coef128{}
+	}
+	w := u128Mul(c, pow10tab128[k])
+	if w.Hi != (Uint128{}) {
+		return coef128{}, true
+	}
+	return w.Lo, false
+}
+
+// cScaleFull128 is cScale128 for a 256-bit value. If both factors exceed
+// 128 bits the product is at least 2^256, so otherwise one of them fits 128
+// bits and the product is one 256-by-128 multiply.
+func cScaleFull128(p wide128, k int) (r wide128, overflow bool) {
+	if k >= len(pow10tab256) {
+		return wide128{}, p != wide128{}
+	}
+	m := pow10tab256[k]
+	if m.Hi != (Uint128{}) {
+		if p.Hi != (Uint128{}) {
+			return wide128{}, true
+		}
+		p, m = m, p
+	}
+	lo := u128Mul(p.Lo, m.Lo)
+	hi := u128Mul(p.Hi, m.Lo)
+	r.Lo = lo.Lo
+	var c uint64
+	r.Hi, c = u128Add(lo.Hi, hi.Lo)
+	if c != 0 || hi.Hi != (Uint128{}) {
+		return wide128{}, true
+	}
+	return r, false
 }
