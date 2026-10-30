@@ -26,7 +26,7 @@
 //
 // Due to the Go Backwards Compatibility promise (https://go.dev/doc/go1compat)
 // there are a number of behaviors this package exhibits that may cause
-// interopability issues, but cannot be changed. In particular the following
+// interoperability issues, but cannot be changed. In particular the following
 // parsing behaviors may cause issues:
 //
 //   - If a JSON object contains duplicate keys, keys are processed in the order
@@ -58,7 +58,6 @@ import (
 	"sync"
 	"unicode"
 	"unicode/utf8"
-	_ "unsafe" // for linkname
 )
 
 // Marshal returns the JSON encoding of v.
@@ -158,9 +157,9 @@ import (
 // Embedded struct fields are usually marshaled as if their inner exported fields
 // were fields in the outer struct, subject to the usual Go visibility rules amended
 // as described in the next paragraph.
-// An anonymous struct field with a name given in its JSON tag is treated as
+// An embedded struct field with a name given in its JSON tag is treated as
 // having that name, rather than being anonymous.
-// An anonymous struct field of interface type is treated the same as having
+// An embedded struct field of interface type is treated the same as having
 // that type as its name, rather than being anonymous.
 //
 // The Go visibility rules for struct fields are amended for JSON when
@@ -175,11 +174,6 @@ import (
 // 2) If there is exactly one field (tagged or not according to the first rule), that is selected.
 //
 // 3) Otherwise there are multiple fields, and all are ignored; no error occurs.
-//
-// Handling of anonymous struct fields is new in Go 1.1.
-// Prior to Go 1.1, anonymous struct fields were ignored. To force ignoring of
-// an anonymous struct field in both current and earlier versions, give the field
-// a JSON tag of "-".
 //
 // Map values encode as JSON objects. The map's key type must either be a
 // string, an integer type, or implement [encoding.TextMarshaler]. The map keys
@@ -1265,7 +1259,7 @@ func typeFields(t reflect.Type) structFields {
 					continue
 				}
 
-				// Record new anonymous struct to explore in next round.
+				// Record new embedded struct to explore in next round.
 				nextCount[ft]++
 				if nextCount[ft] == 1 {
 					next = append(next, field{name: ft.Name(), index: index, typ: ft})

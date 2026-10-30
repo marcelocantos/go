@@ -30,6 +30,8 @@ func cmdtest() {
 
 	var t tester
 
+	t.asmflags = os.Getenv("GO_TEST_ASMFLAGS")
+
 	var noRebuild bool
 	flag.BoolVar(&t.listMode, "list", false, "list available tests")
 	flag.BoolVar(&t.rebuild, "rebuild", false, "rebuild everything first")
@@ -44,9 +46,12 @@ func cmdtest() {
 	flag.BoolVar(&t.msan, "msan", false, "run in memory sanitizer builder mode")
 	flag.BoolVar(&t.asan, "asan", false, "run in address sanitizer builder mode")
 	flag.BoolVar(&t.json, "json", false, "report test results in JSON")
+	flag.StringVar(&t.artifactsDir, "artifacts-dir", "", "save test artifacts in the specified directory")
+	flag.StringVar(&debugTrace, "debug-trace", debugTrace, "write a merged trace of the test run to `file`")
 
 	xflagparse(-1) // any number of args
 	if noRebuild {
+		debugTraceAppend = true
 		t.rebuild = false
 	}
 
@@ -55,28 +60,29 @@ func cmdtest() {
 
 // tester executes cmdtest.
 type tester struct {
-	race        bool
-	msan        bool
-	asan        bool
-	listMode    bool
-	rebuild     bool
-	failed      bool
-	keepGoing   bool
-	compileOnly bool // just try to compile all tests, but no need to run
-	runRxStr    string
-	runRx       *regexp.Regexp
-	runRxWant   bool     // want runRx to match (true) or not match (false)
-	runNames    []string // tests to run, exclusive with runRx; empty means all
-	banner      string   // prefix, or "" for none
-	lastHeading string   // last dir heading printed
-
-	short      bool
-	cgoEnabled bool
-	json       bool
+	race         bool
+	msan         bool
+	asan         bool
+	listMode     bool
+	rebuild      bool
+	failed       bool
+	keepGoing    bool
+	compileOnly  bool // just try to compile all tests, but no need to run
+	short        bool
+	cgoEnabled   bool
+	asmflags     string
+	json         bool
+	artifactsDir string
+	runRxStr     string
+	runRx        *regexp.Regexp
+	runRxWant    bool     // want runRx to match (true) or not match (false)
+	runNames     []string // tests to run, exclusive with runRx; empty means all
+	banner       string   // prefix, or "" for none
+	lastHeading  string   // last dir heading printed
 
 	tests        []distTest // use addTest to extend
 	testNames    map[string]bool
-	timeoutScale int
+	timeoutScale int // a non-negative integer factor to scale test timeout by; defaults to 1
 
 	worklist []*work
 }
@@ -111,6 +117,7 @@ type distTest struct {
 
 func (t *tester) run() {
 	timelog("start", "dist test")
+	distSpan := startSpan("dist test")
 
 	os.Setenv("PATH", fmt.Sprintf("%s%c%s", gorootBin, os.PathListSeparator, os.Getenv("PATH")))
 
@@ -159,7 +166,9 @@ func (t *tester) run() {
 	if t.rebuild {
 		t.out("Building packages and commands.")
 		// Force rebuild the whole toolchain.
-		goInstall(toolenv(), gorootBinGo, append([]string{"-a"}, toolchain...)...)
+		rebuildSpan := startSpan("rebuild toolchain")
+		goInstall(toolenv(), gorootBinGo, append(append(maybeTraceFlag("rebuildToolchain"), "-a"), toolchain...)...)
+		rebuildSpan.done()
 	}
 
 	if !t.listMode {
@@ -176,9 +185,15 @@ func (t *tester) run() {
 			// and virtualization we usually start with a clean GOCACHE, so we would
 			// end up rebuilding large parts of the standard library that aren't
 			// otherwise relevant to the actual set of packages under test.
-			goInstall(toolenv(), gorootBinGo, toolchain...)
-			goInstall(toolenv(), gorootBinGo, toolchain...)
-			goInstall(toolenv(), gorootBinGo, toolsToInstall...)
+			toolchain1Span := startSpan("toolchain1")
+			goInstall(toolenv(), gorootBinGo, append(maybeTraceFlag("toolchain1"), toolchain...)...)
+			toolchain1Span.done()
+			toolchain2Span := startSpan("toolchain2")
+			goInstall(toolenv(), gorootBinGo, append(maybeTraceFlag("toolchain2"), toolchain...)...)
+			toolchain2Span.done()
+			toolsSpan := startSpan("tools")
+			goInstall(toolenv(), gorootBinGo, append(maybeTraceFlag("tools"), toolsToInstall...)...)
+			toolsSpan.done()
 		}
 	}
 
@@ -255,6 +270,10 @@ func (t *tester) run() {
 	}
 	t.runPending(nil)
 	timelog("end", "dist test")
+	distSpan.done()
+	if debugTrace != "" {
+		writeTrace()
+	}
 
 	if !t.json {
 		if t.failed {
@@ -312,14 +331,13 @@ func testName(pkg, variant string) string {
 // goTest represents all options to a "go test" command. The final command will
 // combine configuration from goTest and tester flags.
 type goTest struct {
-	timeout  time.Duration // If non-zero, override timeout
-	short    bool          // If true, force -short
-	tags     []string      // Build tags
-	race     bool          // Force -race
-	bench    bool          // Run benchmarks (briefly), not tests.
-	runTests string        // Regexp of tests to run
-	cpu      string        // If non-empty, -cpu flag
-	skip     string        // If non-empty, -skip flag
+	short    bool     // If true, force -short
+	tags     []string // Build tags
+	race     bool     // Force -race
+	bench    bool     // Run benchmarks (briefly), not tests.
+	runTests string   // Regexp of tests to run
+	cpu      string   // If non-empty, -cpu flag
+	skip     string   // If non-empty, -skip flag
 
 	gcflags   string // If non-empty, build with -gcflags=all=X
 	ldflags   string // If non-empty, build with -ldflags=X
@@ -327,20 +345,22 @@ type goTest struct {
 
 	env []string // Environment variables to add, as KEY=VAL. KEY= unsets a variable
 
+	// timeout optionally raises the per-package test timeout to be at least this long.
+	// The zero value means to stay with the default test timeout.
+	// When adding new tests, this field generally doesn't need to be set, not unless
+	// the go commmand's default test timeout proves to be insufficient.
+	//
+	// In either case, the per-package test timeout get scaled by a multiplier,
+	// and applied only if the end result is longer than the go command's default
+	// test timeout.
+	timeout time.Duration
+
 	runOnHost bool // When cross-compiling, run this test on the host instead of guest
 
 	// variant, if non-empty, is a name used to distinguish different
-	// configurations of the same test package(s). If set and omitVariant is false,
-	// the Package field in test2json output is rewritten to pkg:variant.
+	// configurations of the same test package(s). If set, the Package field
+	// in test2json output is rewritten to pkg:variant.
 	variant string
-	// omitVariant indicates that variant is used solely for the dist test name and
-	// that the set of test names run by each variant (including empty) of a package
-	// is non-overlapping.
-	//
-	// TODO(mknyszek): Consider removing omitVariant as it is no longer set to true
-	// by any test. It's too valuable to have timing information in ResultDB that
-	// corresponds directly with dist names for tests.
-	omitVariant bool
 
 	// We have both pkg and pkgs as a convenience. Both may be set, in which
 	// case they will be combined. At least one must be set.
@@ -348,6 +368,7 @@ type goTest struct {
 	pkg  string   // A single package to test
 
 	testFlags []string // Additional flags accepted by this test
+	trace     string   // If non-empty, write go test -debug-trace output to <workdir>/<trace>.trace
 }
 
 // compileOnly reports whether this test is only for compiling,
@@ -355,6 +376,18 @@ type goTest struct {
 func (opts *goTest) compileOnly() bool {
 	return opts.runTests == "^$" && !opts.bench
 }
+
+// scaledTimeout reports the per-package test timeout scaled by t.timeoutScale.
+func (opts *goTest) scaledTimeout(t *tester) time.Duration {
+	d := goTestDefaultTimeout
+	if opts.timeout != 0 {
+		d = opts.timeout
+	}
+	d *= time.Duration(t.timeoutScale)
+	return d
+}
+
+const goTestDefaultTimeout = 10 * time.Minute // Default value of go test -timeout flag.
 
 // bgCommand returns a go test Cmd and a post-Run flush function. The result
 // will write its output to stdout and stderr. If stdout==stderr, bgCommand
@@ -376,10 +409,8 @@ func (opts *goTest) bgCommand(t *tester, stdout, stderr io.Writer) (cmd *exec.Cm
 
 	cmd = exec.Command(gorootBinGo, args...)
 	setupCmd(cmd)
-	if t.json && opts.variant != "" && !opts.omitVariant {
-		// Rewrite Package in the JSON output to be pkg:variant. When omitVariant
-		// is true, pkg.TestName is already unambiguous, so we don't need to
-		// rewrite the Package field.
+	if t.json && opts.variant != "" {
+		// Rewrite Package in the JSON output to be pkg:variant.
 		//
 		// We only want to process JSON on the child's stdout. Ideally if
 		// stdout==stderr, we would also use the same testJSONFilter for
@@ -423,21 +454,14 @@ func (opts *goTest) run(t *tester) error {
 // The caller must call setupCmd on the resulting exec.Cmd to set its directory
 // and environment.
 func (opts *goTest) buildArgs(t *tester) (build, run, pkgs, testFlags []string, setupCmd func(*exec.Cmd)) {
-	run = append(run, "-count=1") // Disallow caching
-	if opts.timeout != 0 {
-		d := opts.timeout * time.Duration(t.timeoutScale)
+	run = append(run, "-count=1") // Disallow caching.
+	if d := opts.scaledTimeout(t); d > goTestDefaultTimeout {
 		run = append(run, "-timeout="+d.String())
-	} else if t.timeoutScale != 1 {
-		const goTestDefaultTimeout = 10 * time.Minute // Default value of go test -timeout flag.
-		run = append(run, "-timeout="+(goTestDefaultTimeout*time.Duration(t.timeoutScale)).String())
 	}
 	if opts.short || t.short {
 		run = append(run, "-short")
 	}
 	var tags []string
-	if t.iOS() {
-		tags = append(tags, "lldb")
-	}
 	if noOpt {
 		tags = append(tags, "noopt")
 	}
@@ -469,7 +493,10 @@ func (opts *goTest) buildArgs(t *tester) (build, run, pkgs, testFlags []string, 
 		run = append(run, "-skip="+opts.skip)
 	}
 	if t.json {
-		run = append(run, "-json")
+		build = append(build, "-json")
+	}
+	if t.artifactsDir != "" {
+		run = append(run, "-artifacts", "-outputdir="+t.artifactsDir)
 	}
 
 	if opts.gcflags != "" {
@@ -478,8 +505,14 @@ func (opts *goTest) buildArgs(t *tester) (build, run, pkgs, testFlags []string, 
 	if opts.ldflags != "" {
 		build = append(build, "-ldflags="+opts.ldflags)
 	}
+	if t.asmflags != "" {
+		build = append(build, "-asmflags="+t.asmflags)
+	}
 	if opts.buildmode != "" {
 		build = append(build, "-buildmode="+opts.buildmode)
+	}
+	if opts.trace != "" {
+		build = append(build, maybeTraceFlag(opts.trace)...)
 	}
 
 	pkgs = opts.packages()
@@ -569,17 +602,13 @@ func (t *tester) registerStdTest(pkg string) {
 		defer timelog("end", dt.name)
 		ranGoTest = true
 
-		timeoutSec := 180 * time.Second
-		for _, pkg := range stdMatches {
-			if pkg == "cmd/go" {
-				timeoutSec *= 3
-				break
-			}
-		}
+		stdSpan := startSpan("go test std cmd")
+		defer stdSpan.done()
+
 		return (&goTest{
-			timeout: timeoutSec,
 			gcflags: gcflags,
 			pkgs:    stdMatches,
+			trace:   "std",
 		}).run(t)
 	})
 }
@@ -599,36 +628,20 @@ func (t *tester) registerRaceBenchTest(pkg string) {
 		defer timelog("end", dt.name)
 		ranGoBench = true
 		return (&goTest{
-			variant: "racebench",
 			// Include the variant even though there's no overlap in test names.
 			// This makes the test targets distinct, allowing our build system to record
 			// elapsed time for each one, which is useful for load-balancing test shards.
-			omitVariant: false,
-			timeout:     1200 * time.Second, // longer timeout for race with benchmarks
-			race:        true,
-			bench:       true,
-			cpu:         "4",
-			pkgs:        benchMatches,
+			variant: "racebench",
+			timeout: 20 * time.Minute, // longer timeout for race with benchmarks
+			race:    true,
+			bench:   true,
+			cpu:     "4",
+			pkgs:    benchMatches,
 		}).run(t)
 	})
 }
 
 func (t *tester) registerTests() {
-	// registerStdTestSpecially tracks import paths in the standard library
-	// whose test registration happens in a special way.
-	//
-	// These tests *must* be able to run normally as part of "go test std cmd",
-	// even if they are also registered separately by dist, because users often
-	// run go test directly. Use skips or build tags in preference to expanding
-	// this list.
-	registerStdTestSpecially := map[string]bool{
-		// testdir can run normally as part of "go test std cmd", but because
-		// it's a very large test, we register is specially as several shards to
-		// enable better load balancing on sharded builders. Ideally the build
-		// system would know how to shard any large test package.
-		"cmd/internal/testdir": true,
-	}
-
 	// Fast path to avoid the ~1 second of `go list std cmd` when
 	// the caller lists specific tests to run. (as the continuous
 	// build coordinator does).
@@ -666,9 +679,6 @@ func (t *tester) registerTests() {
 		}
 		pkgs := strings.Fields(string(all))
 		for _, pkg := range pkgs {
-			if registerStdTestSpecially[pkg] {
-				continue
-			}
 			if t.short && (strings.HasPrefix(pkg, "vendor/") || strings.HasPrefix(pkg, "cmd/vendor/")) {
 				// Vendored code has no tests, and we don't care too much about vet errors
 				// since we can't modify the code, so skip the tests in short mode.
@@ -695,18 +705,19 @@ func (t *tester) registerTests() {
 		t.registerTest("os/user with tag osusergo",
 			&goTest{
 				variant: "osusergo",
-				timeout: 300 * time.Second,
 				tags:    []string{"osusergo"},
 				pkg:     "os/user",
 			})
-		t.registerTest("hash/maphash purego implementation",
-			&goTest{
-				variant: "purego",
-				timeout: 300 * time.Second,
-				tags:    []string{"purego"},
-				pkg:     "hash/maphash",
-				env:     []string{"GODEBUG=fips140=off"}, // FIPS 140-3 mode is incompatible with purego
-			})
+	}
+
+	// Tests that the nethttpomithttp2* build tags don't rot too much,
+	// even if there's not a regular builder on them.
+	for _, tag := range []string{"nethttpomithttp2", "nethttpomithttp2server", "nethttpomithttp2client"} {
+		t.registerTest("net/http with tag "+tag, &goTest{
+			variant: tag,
+			tags:    []string{tag},
+			pkg:     "net/http",
+		})
 	}
 
 	// Check that all crypto packages compile with the purego build tag.
@@ -718,7 +729,7 @@ func (t *tester) registerTests() {
 	})
 
 	// Check that all crypto packages compile (and test correctly, in longmode) with fips.
-	if t.fipsSupported() {
+	if t.fips140Supported() {
 		// Test standard crypto packages with fips140=on.
 		t.registerTest("GOFIPS140=latest go test crypto/...", &goTest{
 			variant: "gofips140",
@@ -728,7 +739,7 @@ func (t *tester) registerTests() {
 
 		// Test that earlier FIPS snapshots build.
 		// In long mode, test that they work too.
-		for _, version := range fipsVersions(t.short) {
+		for _, version := range fips140Versions() {
 			suffix := " # (build and vet only)"
 			run := "^$" // only ensure they compile
 			if !t.short {
@@ -744,11 +755,11 @@ func (t *tester) registerTests() {
 		}
 	}
 
-	// Test GOEXPERIMENT=jsonv2.
-	if !strings.Contains(goexperiment, "jsonv2") {
-		t.registerTest("GOEXPERIMENT=jsonv2 go test encoding/json/...", &goTest{
-			variant: "jsonv2",
-			env:     []string{"GOEXPERIMENT=" + goexperiments("jsonv2")},
+	// Test GOEXPERIMENT=nojsonv2.
+	if !strings.Contains(goexperiment, "nojsonv2") {
+		t.registerTest("GOEXPERIMENT=nojsonv2 go test encoding/json/...", &goTest{
+			variant: "nojsonv2",
+			env:     []string{"GOEXPERIMENT=" + goexperiments("nojsonv2")},
 			pkg:     "encoding/json/...",
 		})
 	}
@@ -762,13 +773,23 @@ func (t *tester) registerTests() {
 		})
 	}
 
-	// Test GOEXPERIMENT=simd on amd64.
-	if goarch == "amd64" && !strings.Contains(goexperiment, "simd") {
-		t.registerTest("GOEXPERIMENT=simd go test simd/archsimd/...", &goTest{
+	// Test GOEXPERIMENT=simd.
+	if !strings.Contains(goexperiment, "simd") {
+		// simd package is portable.
+		t.registerTest("GOEXPERIMENT=simd go test simd", &goTest{
 			variant: "simd",
 			env:     []string{"GOEXPERIMENT=" + goexperiments("simd")},
-			pkg:     "simd/archsimd/...",
+			pkg:     "simd",
 		})
+		// simd/archsimd supports amd64, arm64, and wasm.
+		archsimdSupported := goarch == "amd64" || goarch == "arm64" || goarch == "wasm"
+		if archsimdSupported {
+			t.registerTest("GOEXPERIMENT=simd go test simd/archsimd/...", &goTest{
+				variant: "simd",
+				env:     []string{"GOEXPERIMENT=" + goexperiments("simd")},
+				pkg:     "simd/archsimd/...",
+			})
+		}
 	}
 
 	// Test ios/amd64 for the iOS simulator.
@@ -776,7 +797,6 @@ func (t *tester) registerTests() {
 		t.registerTest("GOOS=ios on darwin/amd64",
 			&goTest{
 				variant:  "amd64ios",
-				timeout:  300 * time.Second,
 				runTests: "SystemRoots",
 				env:      []string{"GOOS=ios", "CGO_ENABLED=1"},
 				pkg:      "crypto/x509",
@@ -789,19 +809,33 @@ func (t *tester) registerTests() {
 	if !t.compileOnly && !t.short {
 		t.registerTest("GODEBUG=gcstoptheworld=2 archive/zip",
 			&goTest{
-				variant: "runtime:gcstoptheworld2",
-				timeout: 300 * time.Second,
+				variant: "gcstoptheworld2",
 				short:   true,
 				env:     []string{"GODEBUG=gcstoptheworld=2"},
 				pkg:     "archive/zip",
 			})
 		t.registerTest("GODEBUG=gccheckmark=1 runtime",
 			&goTest{
-				variant: "runtime:gccheckmark",
-				timeout: 300 * time.Second,
+				variant: "gccheckmark",
 				short:   true,
 				env:     []string{"GODEBUG=gccheckmark=1"},
 				pkg:     "runtime",
+			})
+	}
+
+	// Spectre mitigation smoke test.
+	if goos == "linux" && goarch == "amd64" && !(gogcflags == "-spectre=all" && t.asmflags == "all=-spectre=all") {
+		// Pick a bunch of packages known to have some assembly.
+		pkgs := []string{"internal/runtime/...", "reflect", "crypto/..."}
+		if !t.short {
+			pkgs = append(pkgs, "runtime")
+		}
+		t.registerTest("spectre",
+			&goTest{
+				variant: "spectre",
+				short:   true,
+				env:     []string{"GOFLAGS=-gcflags=all=-spectre=all -asmflags=all=-spectre=all"},
+				pkgs:    pkgs,
 			})
 	}
 
@@ -839,7 +873,6 @@ func (t *tester) registerTests() {
 			t.registerTest("maymorestack="+hook,
 				&goTest{
 					variant: hook,
-					timeout: 600 * time.Second,
 					short:   true,
 					env:     []string{"GOFLAGS=" + goFlags},
 					pkgs:    []string{"runtime", "reflect", "sync"},
@@ -885,7 +918,6 @@ func (t *tester) registerTests() {
 		t.registerTest("internal linking, -buildmode=pie",
 			&goTest{
 				variant:   "pie_internal",
-				timeout:   60 * time.Second,
 				buildmode: "pie",
 				ldflags:   "-linkmode=internal",
 				env:       []string{"CGO_ENABLED=0"},
@@ -894,7 +926,6 @@ func (t *tester) registerTests() {
 		t.registerTest("internal linking, -buildmode=pie",
 			&goTest{
 				variant:   "pie_internal",
-				timeout:   60 * time.Second,
 				buildmode: "pie",
 				ldflags:   "-linkmode=internal",
 				env:       []string{"CGO_ENABLED=0"},
@@ -906,7 +937,6 @@ func (t *tester) registerTests() {
 			t.registerTest("internal linking, -buildmode=pie",
 				&goTest{
 					variant:   "pie_internal",
-					timeout:   60 * time.Second,
 					buildmode: "pie",
 					ldflags:   "-linkmode=internal",
 					pkg:       "os/user",
@@ -919,7 +949,6 @@ func (t *tester) registerTests() {
 			t.registerTest("external linking, -buildmode=exe",
 				&goTest{
 					variant:   "exe_external",
-					timeout:   60 * time.Second,
 					buildmode: "exe",
 					ldflags:   "-linkmode=external",
 					env:       []string{"CGO_ENABLED=1"},
@@ -931,7 +960,6 @@ func (t *tester) registerTests() {
 			t.registerTest("external linking, -buildmode=pie",
 				&goTest{
 					variant:   "pie_external",
-					timeout:   60 * time.Second,
 					buildmode: "pie",
 					ldflags:   "-linkmode=external",
 					env:       []string{"CGO_ENABLED=1"},
@@ -942,11 +970,10 @@ func (t *tester) registerTests() {
 	}
 
 	// sync tests
-	if t.hasParallelism() {
+	if !t.compileOnly && t.hasParallelism() {
 		t.registerTest("sync -cpu=10",
 			&goTest{
 				variant: "cpu10",
-				timeout: 120 * time.Second,
 				cpu:     "10",
 				pkg:     "sync",
 			})
@@ -962,23 +989,8 @@ func (t *tester) registerTests() {
 			&goTest{
 				variant:   "host",
 				pkg:       "internal/runtime/wasitest",
-				timeout:   1 * time.Minute,
 				runOnHost: true,
 			})
-	}
-
-	// Only run the API check on fast development platforms.
-	// Every platform checks the API on every GOOS/GOARCH/CGO_ENABLED combination anyway,
-	// so we really only need to run this check once anywhere to get adequate coverage.
-	// To help developers avoid trybot-only failures, we try to run on typical developer machines
-	// which is darwin,linux,windows/amd64 and darwin/arm64.
-	//
-	// The same logic applies to the release notes that correspond to each api/next file.
-	//
-	// TODO: remove the exclusion of goexperiment simd right before dev.simd branch is merged to master.
-	if goos == "darwin" || ((goos == "linux" || goos == "windows") && (goarch == "amd64" && !strings.Contains(goexperiment, "simd"))) {
-		t.registerTest("API release note check", &goTest{variant: "check", pkg: "cmd/relnote", testFlags: []string{"-check"}})
-		t.registerTest("API check", &goTest{variant: "check", pkg: "cmd/api", timeout: 5 * time.Minute, testFlags: []string{"-check"}})
 	}
 
 	// Runtime CPU tests.
@@ -987,7 +999,6 @@ func (t *tester) registerTests() {
 			t.registerTest(fmt.Sprintf("GOMAXPROCS=2 runtime -cpu=%d -quick", i),
 				&goTest{
 					variant:   "cpu" + strconv.Itoa(i),
-					timeout:   300 * time.Second,
 					cpu:       strconv.Itoa(i),
 					gcflags:   gogcflags,
 					short:     true,
@@ -1005,32 +1016,16 @@ func (t *tester) registerTests() {
 		t.registerRaceTests()
 	}
 
-	if goos != "android" && !t.iOS() {
-		// Only start multiple test dir shards on builders,
-		// where they get distributed to multiple machines.
-		// See issues 20141 and 31834.
-		nShards := 1
-		if os.Getenv("GO_BUILDER_NAME") != "" {
-			nShards = 10
-		}
-		if n, err := strconv.Atoi(os.Getenv("GO_TEST_SHARDS")); err == nil {
-			nShards = n
-		}
-		for shard := 0; shard < nShards; shard++ {
-			id := fmt.Sprintf("%d_%d", shard, nShards)
-			t.registerTest("../test",
-				&goTest{
-					variant: id,
-					// Include the variant even though there's no overlap in test names.
-					// This makes the test target more clearly distinct in our build
-					// results and is important for load-balancing test shards.
-					omitVariant: false,
-					pkg:         "cmd/internal/testdir",
-					testFlags:   []string{fmt.Sprintf("-shard=%d", shard), fmt.Sprintf("-shards=%d", nShards)},
-					runOnHost:   true,
-				},
-			)
-		}
+	// These tests will be skipped as part of the initial go test std cmd invocation for
+	// js and wasip1 and need to be run on the host. Register them specially here.
+	if goos == "js" || goos == "wasip1" {
+		t.registerTest("../test",
+			&goTest{
+				variant:   "host",
+				pkg:       "cmd/internal/testdir",
+				runOnHost: true,
+			},
+		)
 	}
 }
 
@@ -1186,7 +1181,7 @@ func (t *tester) extLink() bool {
 	if !cgoEnabled[goos+"/"+goarch] {
 		return false
 	}
-	if goarch == "ppc64" && goos != "aix" {
+	if goarch == "ppc64" && goos != "aix" && goos != "linux" {
 		return false
 	}
 	return true
@@ -1227,7 +1222,7 @@ func (t *tester) internalLinkPIE() bool {
 	}
 	switch goos + "-" + goarch {
 	case "darwin-amd64", "darwin-arm64",
-		"linux-amd64", "linux-arm64", "linux-loong64", "linux-ppc64le",
+		"linux-amd64", "linux-arm64", "linux-loong64", "linux-ppc64", "linux-ppc64le", "linux-s390x",
 		"android-arm64",
 		"windows-amd64", "windows-386", "windows-arm64":
 		return true
@@ -1237,11 +1232,6 @@ func (t *tester) internalLinkPIE() bool {
 
 func (t *tester) externalLinkPIE() bool {
 	// General rule is if -buildmode=pie and -linkmode=external both work, then they work together.
-	// Handle exceptions and then fall back to the general rule.
-	switch goos + "-" + goarch {
-	case "linux-s390x":
-		return true
-	}
 	return t.internalLinkPIE() && t.extLink()
 }
 
@@ -1280,11 +1270,12 @@ func (t *tester) registerCgoTests(heading string) {
 			// This isn't actually a Go buildmode, just a convenient way to tell
 			// cgoTest we want static linking.
 			gt.buildmode = ""
-			if linkmode == "external" {
+			switch linkmode {
+			case "external":
 				ldflags = append(ldflags, `-extldflags "-static -pthread"`)
-			} else if linkmode == "auto" {
+			case "auto":
 				gt.env = append(gt.env, "CGO_LDFLAGS=-static -pthread")
-			} else {
+			default:
 				panic("unknown linkmode with static build: " + linkmode)
 			}
 			gt.tags = append(gt.tags, "static")
@@ -1309,8 +1300,8 @@ func (t *tester) registerCgoTests(heading string) {
 
 	os := gohostos
 	p := gohostos + "/" + goarch
-	switch {
-	case os == "darwin", os == "windows":
+	switch os {
+	case "darwin", "windows":
 		if !t.extLink() {
 			break
 		}
@@ -1327,7 +1318,7 @@ func (t *tester) registerCgoTests(heading string) {
 			}
 		}
 
-	case os == "aix", os == "android", os == "dragonfly", os == "freebsd", os == "linux", os == "netbsd", os == "openbsd":
+	case "aix", "android", "dragonfly", "freebsd", "linux", "netbsd", "openbsd":
 		gt := cgoTest("external-g0", "test", "external", "")
 		gt.env = append(gt.env, "CGO_CFLAGS=-g0 -fdiagnostics-color")
 
@@ -1416,7 +1407,12 @@ func (t *tester) registerCgoTests(heading string) {
 func (t *tester) runPending(nextTest *distTest) {
 	worklist := t.worklist
 	t.worklist = nil
-	for _, w := range worklist {
+	var pendingSpan span
+	if len(worklist) > 0 {
+		pendingSpan = startSpan("runPending")
+	}
+	maxbg := runtime.GOMAXPROCS(0)
+	for i, w := range worklist {
 		w.start = make(chan bool)
 		w.end = make(chan struct{})
 		// w.cmd must be set up to write to w.out. We can't check that, but we
@@ -1430,10 +1426,12 @@ func (t *tester) runPending(nextTest *distTest) {
 				w.printSkip(t, "skipped due to earlier error")
 			} else {
 				timelog("start", w.dt.name)
+				s := startSpanTID(w.dt.name, uint64(i%maxbg+1))
 				w.err = w.cmd.Run()
 				if w.flush != nil {
 					w.flush()
 				}
+				s.done()
 				if w.err != nil {
 					if isUnsupportedVMASize(w) {
 						timelog("skip", w.dt.name)
@@ -1446,23 +1444,6 @@ func (t *tester) runPending(nextTest *distTest) {
 			timelog("end", w.dt.name)
 			w.end <- struct{}{}
 		}(w)
-	}
-
-	maxbg := maxbg
-	// for runtime.NumCPU() < 4 ||  runtime.GOMAXPROCS(0) == 1, do not change maxbg.
-	// Because there is not enough CPU to parallel the testing of multiple packages.
-	if runtime.NumCPU() > 4 && runtime.GOMAXPROCS(0) != 1 {
-		for _, w := range worklist {
-			// See go.dev/issue/65164
-			// because GOMAXPROCS=2 runtime CPU usage is low,
-			// so increase maxbg to avoid slowing down execution with low CPU usage.
-			// This makes testing a single package slower,
-			// but testing multiple packages together faster.
-			if strings.Contains(w.dt.heading, "GOMAXPROCS=2 runtime") {
-				maxbg = runtime.NumCPU()
-				break
-			}
-		}
 	}
 
 	started := 0
@@ -1500,6 +1481,7 @@ func (t *tester) runPending(nextTest *distTest) {
 			t.failed = true
 		}
 	}
+	pendingSpan.done()
 	if t.failed && !t.keepGoing {
 		fatalf("FAILED")
 	}
@@ -1513,14 +1495,6 @@ func (t *tester) runPending(nextTest *distTest) {
 			fmt.Printf("# go tool dist test -run=^%s$\n", dt.name)
 		}
 	}
-}
-
-func (t *tester) hasBash() bool {
-	switch gohostos {
-	case "windows", "plan9":
-		return false
-	}
-	return true
 }
 
 // hasParallelism is a copy of the function
@@ -1726,6 +1700,20 @@ func raceDetectorSupported(goos, goarch string) bool {
 	}
 }
 
+// fips140Supported is a copy of the function
+// internal/platform.FIPS140Supported, which can't be used here
+// because cmd/dist can not import internal packages during bootstrap.
+func fips140Supported(goos, goarch string) bool {
+	switch {
+	case goarch == "wasm",
+		goos == "windows" && goarch == "386",
+		goos == "openbsd",
+		goos == "aix":
+		return false
+	}
+	return true
+}
+
 // buildModeSupported is a copy of the function
 // internal/platform.BuildModeSupported, which can't be used here
 // because cmd/dist can not import internal packages during bootstrap.
@@ -1746,9 +1734,7 @@ func buildModeSupported(compiler, buildmode, goos, goarch string) bool {
 			return true
 		case "linux":
 			switch goarch {
-			case "386", "amd64", "arm", "armbe", "arm64", "arm64be", "loong64", "ppc64le", "riscv64", "s390x":
-				// linux/ppc64 not supported because it does
-				// not support external linking mode yet.
+			case "386", "amd64", "arm", "armbe", "arm64", "arm64be", "loong64", "ppc64", "ppc64le", "riscv64", "s390x":
 				return true
 			default:
 				// Other targets do not support -shared,
@@ -1766,7 +1752,7 @@ func buildModeSupported(compiler, buildmode, goos, goarch string) bool {
 
 	case "c-shared":
 		switch platform {
-		case "linux/amd64", "linux/arm", "linux/arm64", "linux/loong64", "linux/386", "linux/ppc64le", "linux/riscv64", "linux/s390x",
+		case "linux/amd64", "linux/arm", "linux/arm64", "linux/loong64", "linux/386", "linux/ppc64", "linux/ppc64le", "linux/riscv64", "linux/s390x",
 			"android/amd64", "android/arm", "android/arm64", "android/386",
 			"freebsd/amd64",
 			"darwin/amd64", "darwin/arm64",
@@ -1784,13 +1770,13 @@ func buildModeSupported(compiler, buildmode, goos, goarch string) bool {
 
 	case "pie":
 		switch platform {
-		case "linux/386", "linux/amd64", "linux/arm", "linux/arm64", "linux/loong64", "linux/ppc64le", "linux/riscv64", "linux/s390x",
+		case "linux/386", "linux/amd64", "linux/arm", "linux/arm64", "linux/loong64", "linux/ppc64", "linux/ppc64le", "linux/riscv64", "linux/s390x",
 			"android/amd64", "android/arm", "android/arm64", "android/386",
 			"freebsd/amd64",
 			"darwin/amd64", "darwin/arm64",
 			"ios/amd64", "ios/arm64",
 			"aix/ppc64",
-			"openbsd/arm64",
+			"openbsd/amd64", "openbsd/arm64",
 			"windows/386", "windows/amd64", "windows/arm64":
 			return true
 		}
@@ -1798,14 +1784,14 @@ func buildModeSupported(compiler, buildmode, goos, goarch string) bool {
 
 	case "shared":
 		switch platform {
-		case "linux/386", "linux/amd64", "linux/arm", "linux/arm64", "linux/ppc64le", "linux/s390x":
+		case "linux/386", "linux/amd64", "linux/arm", "linux/arm64", "linux/ppc64", "linux/ppc64le", "linux/s390x":
 			return true
 		}
 		return false
 
 	case "plugin":
 		switch platform {
-		case "linux/amd64", "linux/arm", "linux/arm64", "linux/386", "linux/loong64", "linux/riscv64", "linux/s390x", "linux/ppc64le",
+		case "linux/amd64", "linux/arm", "linux/arm64", "linux/386", "linux/loong64", "linux/riscv64", "linux/s390x", "linux/ppc64", "linux/ppc64le",
 			"android/amd64", "android/386",
 			"darwin/amd64", "darwin/arm64",
 			"freebsd/amd64":
@@ -1838,25 +1824,16 @@ func isEnvSet(evar string) bool {
 	return false
 }
 
-func (t *tester) fipsSupported() bool {
-	// Keep this in sync with [crypto/internal/fips140.Supported].
+func (t *tester) fips140Supported() bool {
+	if !fips140Supported(goos, goarch) {
+		return false
+	}
 
+	// Keep the platform checks below in sync with crypto/internal/fips140.Supported.
 	// We don't test with the purego tag, so no need to check it.
 
 	// Use GOFIPS140 or GOEXPERIMENT=boringcrypto, but not both.
 	if strings.Contains(goexperiment, "boringcrypto") {
-		return false
-	}
-
-	// If this goos/goarch does not support FIPS at all, return no versions.
-	// The logic here matches crypto/internal/fips140/check.Supported for now.
-	// In the future, if some snapshots add support for these, we will have
-	// to make a decision on a per-version basis.
-	switch {
-	case goarch == "wasm",
-		goos == "windows" && goarch == "386",
-		goos == "openbsd",
-		goos == "aix":
 		return false
 	}
 
@@ -1869,8 +1846,8 @@ func (t *tester) fipsSupported() bool {
 	return true
 }
 
-// fipsVersions returns the list of versions available in lib/fips140.
-func fipsVersions(short bool) []string {
+// fips140Versions returns the list of versions available in lib/fips140.
+func fips140Versions() []string {
 	var versions []string
 	zips, err := filepath.Glob(filepath.Join(goroot, "lib/fips140/*.zip"))
 	if err != nil {
@@ -1878,13 +1855,6 @@ func fipsVersions(short bool) []string {
 	}
 	for _, zip := range zips {
 		versions = append(versions, strings.TrimSuffix(filepath.Base(zip), ".zip"))
-	}
-	txts, err := filepath.Glob(filepath.Join(goroot, "lib/fips140/*.txt"))
-	if err != nil {
-		fatalf("%v", err)
-	}
-	for _, txt := range txts {
-		versions = append(versions, strings.TrimSuffix(filepath.Base(txt), ".txt"))
 	}
 	return versions
 }

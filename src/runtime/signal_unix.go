@@ -360,13 +360,22 @@ func doSigPreempt(gp *g, ctxt *sigctxt) {
 
 const preemptMSupported = true
 
-// preemptM sends a preemption request to mp. This request may be
-// handled asynchronously and may be coalesced with other requests to
+// preemptM sends a preemption request to the M running gp. This request may
+// be handled asynchronously and may be coalesced with other requests to
 // the M. When the request is received, if the running G or P are
 // marked for preemption and the goroutine is at an asynchronous
 // safe-point, it will preempt the goroutine. It always atomically
-// increments mp.preemptGen after handling a preemption request.
-func preemptM(mp *m) {
+// increments the M's preemptGen after handling a preemption request.
+//
+// gp.preempt must be set, and gp must be in _Gscanrunning, with its _Gscan
+// bit held by the caller.
+// preemptM releases the _Gscan bit before returning.
+func preemptM(gp *g) {
+	// Save the M before releasing the _Gscan bit, which lets gp change Ms.
+	// preemptM is best effort, so it's fine if we signal a stale M.
+	mp := gp.m
+	casfrom_Gscanstatus(gp, _Gscanrunning, _Grunning)
+
 	// On Darwin, don't try to preempt threads during exec.
 	// Issue #41702.
 	if GOOS == "darwin" || GOOS == "ios" {
@@ -491,7 +500,7 @@ func sigtrampgo(sig uint32, info *siginfo, ctx unsafe.Pointer) {
 	sighandler(sig, info, ctx, gp)
 
 	if goexperiment.RuntimeSecret && gp.secret > 0 {
-		atomic.Store(&gp.m.signalSecret, 1)
+		gp.m.signalSecret = true
 	}
 
 	setg(gp)
@@ -989,8 +998,10 @@ func dieFromSignal(sig uint32) {
 	osyield()
 	osyield()
 
-	// If we are still somehow running, just exit with the wrong status.
-	exit(2)
+	// If we are still somehow running, this probably means we're PID 1
+	// immune to signals with default-terminate. Use a shell convention
+	// of exit(128+sig) to mimic the "terminated by signal".
+	exit(128 + int32(sig))
 }
 
 // raisebadsignal is called when a signal is received on a non-Go

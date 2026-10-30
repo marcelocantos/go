@@ -29,7 +29,7 @@ import (
 //		println(byval)
 //		(*&byref)++
 //	}(byval, &byref, 42)
-func directClosureCall(n *ir.CallExpr) {
+func (w *walkState) directClosureCall(n *ir.CallExpr) {
 	clo := n.Fun.(*ir.ClosureExpr)
 	clofn := clo.Func
 
@@ -73,7 +73,7 @@ func directClosureCall(n *ir.CallExpr) {
 
 	// Rewrite call.
 	n.Fun = f
-	n.Args.Prepend(closureArgs(clo)...)
+	n.Args.Prepend(closureArgs(w.curfunc, clo)...)
 
 	// Update the call expression's type. We need to do this
 	// because typecheck gave it the result type of the OCLOSURE
@@ -88,10 +88,10 @@ func directClosureCall(n *ir.CallExpr) {
 	// Add to Closures for enqueueFunc. It's no longer a proper
 	// closure, but we may have already skipped over it in the
 	// functions list, so this just ensures it's compiled.
-	ir.CurFunc.Closures = append(ir.CurFunc.Closures, clofn)
+	w.curfunc.Closures = append(w.curfunc.Closures, clofn)
 }
 
-func walkClosure(clo *ir.ClosureExpr, init *ir.Nodes) ir.Node {
+func (w *walkState) walkClosure(clo *ir.ClosureExpr, init *ir.Nodes) ir.Node {
 	clofn := clo.Func
 
 	// If not a closure, don't bother wrapping.
@@ -113,23 +113,23 @@ func walkClosure(clo *ir.ClosureExpr, init *ir.Nodes) ir.Node {
 	// compiling a function twice would lead to an ICE.
 	if !clofn.Walked() {
 		clofn.SetWalked(true)
-		ir.CurFunc.Closures = append(ir.CurFunc.Closures, clofn)
+		w.curfunc.Closures = append(w.curfunc.Closures, clofn)
 	}
 
 	typ := typecheck.ClosureType(clo)
 
 	clos := ir.NewCompLitExpr(base.Pos, ir.OCOMPLIT, typ, nil)
 	clos.SetEsc(clo.Esc())
-	clos.List = append([]ir.Node{ir.NewUnaryExpr(base.Pos, ir.OCFUNC, clofn.Nname)}, closureArgs(clo)...)
+	clos.List = append([]ir.Node{ir.NewUnaryExpr(base.Pos, ir.OCFUNC, clofn.Nname)}, closureArgs(w.curfunc, clo)...)
 	for i, value := range clos.List {
 		clos.List[i] = ir.NewStructKeyExpr(base.Pos, typ.Field(i), value)
 	}
 
-	addr := typecheck.NodAddr(clos)
+	addr := typecheck.NodAddr(w.curfunc, clos)
 	addr.SetEsc(clo.Esc())
 
 	// Force type conversion from *struct to the func type.
-	cfn := typecheck.ConvNop(addr, clo.Type())
+	cfn := typecheck.ConvNop(w.curfunc, addr, clo.Type())
 
 	// non-escaping temp to use, if any.
 	if x := clo.Prealloc; x != nil {
@@ -140,7 +140,7 @@ func walkClosure(clo *ir.ClosureExpr, init *ir.Nodes) ir.Node {
 		clo.Prealloc = nil
 	}
 
-	return walkExpr(cfn, init)
+	return w.walkExpr(cfn, init)
 }
 
 // closureArgs returns a slice of expressions that can be used to
@@ -148,7 +148,7 @@ func walkClosure(clo *ir.ClosureExpr, init *ir.Nodes) ir.Node {
 // one-to-one with the variables in clo.Func.ClosureVars, and will be
 // either an ONAME node (if the variable is captured by value) or an
 // OADDR-of-ONAME node (if not).
-func closureArgs(clo *ir.ClosureExpr) []ir.Node {
+func closureArgs(curfunc *ir.Func, clo *ir.ClosureExpr) []ir.Node {
 	fn := clo.Func
 
 	args := make([]ir.Node, len(fn.ClosureVars))
@@ -156,14 +156,14 @@ func closureArgs(clo *ir.ClosureExpr) []ir.Node {
 		var outer ir.Node
 		outer = v.Outer
 		if !v.Byval() {
-			outer = typecheck.NodAddrAt(fn.Pos(), outer)
+			outer = typecheck.NodAddrAt(curfunc, fn.Pos(), outer)
 		}
-		args[i] = typecheck.Expr(outer)
+		args[i] = typecheck.Expr(curfunc, outer)
 	}
 	return args
 }
 
-func walkMethodValue(n *ir.SelectorExpr, init *ir.Nodes) ir.Node {
+func (w *walkState) walkMethodValue(n *ir.SelectorExpr, init *ir.Nodes) ir.Node {
 	// Create closure in the form of a composite literal.
 	// For x.M with receiver (x) type T, the generated code looks like:
 	//
@@ -174,12 +174,12 @@ func walkMethodValue(n *ir.SelectorExpr, init *ir.Nodes) ir.Node {
 	if n.X.Type().IsInterface() {
 		// Trigger panic for method on nil interface now.
 		// Otherwise it happens in the wrapper and is confusing.
-		n.X = cheapExpr(n.X, init)
-		n.X = walkExpr(n.X, nil)
+		n.X = w.cheapExpr(n.X, init)
+		n.X = w.walkExpr(n.X, nil)
 
 		tab := ir.NewUnaryExpr(base.Pos, ir.OITAB, n.X)
 		check := ir.NewUnaryExpr(base.Pos, ir.OCHECKNIL, tab)
-		init.Append(typecheck.Stmt(check))
+		init.Append(typecheck.Stmt(w.curfunc, check))
 	}
 
 	typ := typecheck.MethodValueType(n)
@@ -188,11 +188,11 @@ func walkMethodValue(n *ir.SelectorExpr, init *ir.Nodes) ir.Node {
 	clos.SetEsc(n.Esc())
 	clos.List = []ir.Node{ir.NewUnaryExpr(base.Pos, ir.OCFUNC, methodValueWrapper(n)), n.X}
 
-	addr := typecheck.NodAddr(clos)
+	addr := typecheck.NodAddr(w.curfunc, clos)
 	addr.SetEsc(n.Esc())
 
 	// Force type conversion from *struct to the func type.
-	cfn := typecheck.ConvNop(addr, n.Type())
+	cfn := typecheck.ConvNop(w.curfunc, addr, n.Type())
 
 	// non-escaping temp to use, if any.
 	if x := n.Prealloc; x != nil {
@@ -203,7 +203,7 @@ func walkMethodValue(n *ir.SelectorExpr, init *ir.Nodes) ir.Node {
 		n.Prealloc = nil
 	}
 
-	return walkExpr(cfn, init)
+	return w.walkExpr(cfn, init)
 }
 
 // methodValueWrapper returns the ONAME node representing the
@@ -217,7 +217,7 @@ func methodValueWrapper(dot *ir.SelectorExpr) *ir.Name {
 
 	meth := dot.Sel
 	rcvrtype := dot.X.Type()
-	sym := ir.MethodSymSuffix(rcvrtype, meth, "-fm")
+	sym := ir.ReceiverMethodSymSuffix(rcvrtype, meth, "-fm")
 
 	if sym.Uniq() {
 		return sym.Def.(*ir.Name)

@@ -55,6 +55,7 @@ type logger = func(string, ...any)
 type Options struct {
 	Logf          logger // log output function, records decision-making process
 	IgnoreEffects bool   // ignore potential side effects of arguments (unsound)
+	Recover       bool   // catch panics from inliner and report as errors (for ill-typed ASTs)
 }
 
 // Result holds the result of code transformation.
@@ -68,12 +69,22 @@ type Result struct {
 // and returns the updated, formatted content of the caller source file.
 //
 // Inline does not mutate any public fields of Caller or Callee.
-func Inline(caller *Caller, callee *Callee, opts *Options) (*Result, error) {
-	copy := *opts // shallow copy
-	opts = &copy
+func Inline(caller *Caller, callee *Callee, opts *Options) (res *Result, err error) {
+	if opts == nil {
+		opts = new(Options)
+	} else {
+		opts = new(*opts)
+	}
 	// Set default options.
 	if opts.Logf == nil {
 		opts.Logf = func(string, ...any) {}
+	}
+	if opts.Recover {
+		defer func() {
+			if x := recover(); x != nil {
+				err = fmt.Errorf("inlining failed (%q), likely because inputs were ill-typed", x)
+			}
+		}()
 	}
 
 	st := &state{
@@ -92,7 +103,7 @@ type state struct {
 }
 
 func (st *state) inline() (*Result, error) {
-	logf, caller, callee := st.opts.Logf, st.caller, st.callee
+	logf, caller := st.opts.Logf, st.caller
 
 	logf("inline %s @ %v",
 		debugFormatNode(caller.Fset, caller.Call),
@@ -132,8 +143,9 @@ func (st *state) inline() (*Result, error) {
 	// the x subtree is subject to precedence ambiguity
 	// (replacing x by p+q would give p+q[y:z] which is wrong)
 	// but the y and z subtrees are safe.
-	if needsParens(caller.path, res.old, res.new) {
-		res.new = &ast.ParenExpr{X: res.new.(ast.Expr)}
+	if new, ok := res.new.(ast.Expr); ok {
+		parent := caller.path[slices.Index(caller.path, res.old)+1]
+		res.new = internalastutil.MaybeParenthesize(parent, res.old.(ast.Expr), new)
 	}
 
 	// Some reduction strategies return a new block holding the
@@ -248,13 +260,8 @@ func (st *state) inline() (*Result, error) {
 	// analysis driver) clean it up since it must remove unused
 	// imports anyway.
 	for _, imp := range res.newImports {
-		// Check that the new imports are accessible.
-		if !packagepath.CanImport(caller.Types.Path(), imp.path) {
-			return nil, fmt.Errorf("can't inline function %v as its body refers to inaccessible package %q", callee, imp.path)
-		}
-
-		// We've already validated the import, so we call
-		// AddImportEdits directly to compute the edit.
+		// We've already validated the import (in inlineCall),
+		// so we call AddImportEdits directly to compute the edit.
 		name := ""
 		if imp.explicit {
 			name = imp.name
@@ -488,7 +495,7 @@ func (i *importState) localName(pkgPath, pkgName, calleePkgName string, shadow s
 	i.newImports = append(i.newImports, newImport{
 		name:     name,
 		path:     pkgPath,
-		explicit: name != pkgName || name != pathpkg.Base(pkgPath),
+		explicit: name != pkgName || name != pathpkg.Base(packagepath.TrimVersionSuffix(pkgPath)),
 	})
 	i.importMap[pkgPath] = append(i.importMap[pkgPath], name)
 	return name
@@ -576,15 +583,6 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 			callee.Name, callee.Unexported[0])
 	}
 
-	// Reject cross-file inlining if callee requires a newer dialect of Go (#75726).
-	// (Versions default to types.Config.GoVersion, which is unset in many tests,
-	// though should be populated by an analysis driver.)
-	callerGoVersion := caller.Info.FileVersions[caller.File]
-	if callerGoVersion != "" && callee.GoVersion != "" && versions.Before(callerGoVersion, callee.GoVersion) {
-		return nil, fmt.Errorf("cannot inline call to %s (declared using %s) into a file using %s",
-			callee.Name, callee.GoVersion, callerGoVersion)
-	}
-
 	// -- analyze callee's free references in caller context --
 
 	// Compute syntax path enclosing Call, innermost first (Path[0]=Call),
@@ -597,21 +595,6 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		}
 	}
 
-	// If call is within a function, analyze all its
-	// local vars for the "single assignment" property.
-	// (Taking the address &v counts as a potential assignment.)
-	var assign1 func(v *types.Var) bool // reports whether v a single-assignment local var
-	{
-		updatedLocals := make(map[*types.Var]bool)
-		if caller.enclosingFunc != nil {
-			escape(caller.Info, caller.enclosingFunc, func(v *types.Var, _ bool) {
-				updatedLocals[v] = true
-			})
-			logf("multiple-assignment vars: %v", updatedLocals)
-		}
-		assign1 = func(v *types.Var) bool { return !updatedLocals[v] }
-	}
-
 	// Extract information about the caller's imports.
 	istate := newImportState(logf, caller, callee)
 
@@ -619,6 +602,27 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 	objRenames, err := st.renameFreeObjs(istate)
 	if err != nil {
 		return nil, err
+	}
+
+	// Check that the new imports are accessible.
+	for _, imp := range istate.newImports {
+		if !packagepath.CanImport(caller.Types.Path(), imp.path) {
+			return nil, fmt.Errorf("can't inline function %v as its body refers to inaccessible package %q", st.callee, imp.path)
+		}
+	}
+
+	// Reject cross-file inlining if callee requires a newer dialect of Go (#75726).
+	// (Versions default to types.Config.GoVersion, which is unset in many tests,
+	// though should be populated by an analysis driver.)
+	//
+	// This check is done after the accessibility check so that,
+	// when both apply, we report the error the user cannot fix
+	// (e.g. a reference to an inaccessible package) rather than
+	// suggest upgrading the file's Go version, which would not help.
+	callerGoVersion := caller.Info.FileVersions[caller.File]
+	if callerGoVersion != "" && callee.GoVersion != "" && versions.Before(callerGoVersion, callee.GoVersion) {
+		return nil, fmt.Errorf("cannot inline call to %s (declared using %s) into a file using %s",
+			callee.Name, callee.GoVersion, callerGoVersion)
 	}
 
 	res := &inlineCallResult{
@@ -648,6 +652,9 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 				return
 			}
 		}
+		if len(path) > 0 {
+			repl = internalastutil.MaybeParenthesize(last(path), id, repl)
+		}
 		replaceNode(calleeDecl, id, repl)
 	}
 
@@ -657,6 +664,21 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		if repl := objRenames[ref.Object]; repl != nil {
 			replaceCalleeID(ref.Offset, repl, false)
 		}
+	}
+
+	// If call is within a function, analyze all its
+	// local vars for the "single assignment" property.
+	// (Taking the address &v counts as a potential assignment.)
+	var assign1 func(v *types.Var) bool // reports whether v a single-assignment local var
+	{
+		updatedLocals := make(map[*types.Var]bool)
+		if caller.enclosingFunc != nil {
+			escape(caller.Info, caller.enclosingFunc, func(v *types.Var, _ bool) {
+				updatedLocals[v] = true
+			})
+			logf("multiple-assignment vars: %v", updatedLocals)
+		}
+		assign1 = func(v *types.Var) bool { return !updatedLocals[v] }
 	}
 
 	// Gather the effective call arguments, including the receiver.
@@ -672,6 +694,11 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 	{
 		sig := calleeSymbol.Type().(*types.Signature)
 		if sig.Recv() != nil {
+			// Defensively guard against mismatched caller and callee where a
+			// method call was passed with a function declaration (see https://golang.org/issue/80834).
+			if calleeDecl.Recv == nil || len(calleeDecl.Recv.List) == 0 {
+				return nil, fmt.Errorf("cannot inline method call: callee declaration has no receiver")
+			}
 			params = append(params, &parameter{
 				obj:       sig.Recv(),
 				fieldType: calleeDecl.Recv.List[0].Type,
@@ -721,9 +748,15 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 				// ordinary/ellipsis call to variadic
 
 				// simplify decl: func(T...) -> func([]T)
-				lastParamField := last(calleeDecl.Type.Params.List)
-				lastParamField.Type = &ast.ArrayType{
-					Elt: lastParamField.Type.(*ast.Ellipsis).Elt,
+				var lastParamFieldType ast.Expr
+				if len(calleeDecl.Type.Params.List) > 0 {
+					lastParamField := last(calleeDecl.Type.Params.List)
+					if ellipsis, ok := lastParamField.Type.(*ast.Ellipsis); ok {
+						lastParamField.Type = &ast.ArrayType{
+							Elt: ellipsis.Elt,
+						}
+					}
+					lastParamFieldType = lastParamField.Type
 				}
 
 				if caller.Call.Ellipsis.IsValid() {
@@ -748,7 +781,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 					}
 					args = append(ordinary, &argument{
 						expr: &ast.CompositeLit{
-							Type: lastParamField.Type,
+							Type: lastParamFieldType,
 							Elts: elts,
 						},
 						typ:        lastParam.obj.Type(),
@@ -764,12 +797,18 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		}
 	}
 
-	typeArgs := st.typeArguments(caller.Call)
-	if len(typeArgs) != len(callee.TypeParams) {
-		return nil, fmt.Errorf("cannot inline: type parameter inference is not yet supported")
-	}
-	if err := substituteTypeParams(logf, callee.TypeParams, typeArgs, params, replaceCalleeID); err != nil {
-		return nil, err
+	// Substitute type parameters in calleeDecl AST with type arguments from the
+	// call, and synchronize the parameter metadata.
+	{
+		typeArgs := st.typeArguments(caller.Call)
+		if len(typeArgs) != len(callee.TypeParams) {
+			return nil, fmt.Errorf("cannot inline: type parameter inference is not yet supported")
+		}
+		if err := substituteTypeParams(logf, callee.TypeParams, typeArgs, replaceCalleeID); err != nil {
+			return nil, err
+		}
+		// Synchronize the parameters' type pointers with the mutated calleeDecl.
+		syncParamFieldTypes(calleeDecl, params)
 	}
 
 	// Log effective arguments.
@@ -1333,15 +1372,6 @@ func (st *state) typeArguments(call *ast.CallExpr) []*argument {
 	var args []*argument
 	for _, e := range exprs {
 		arg := &argument{expr: e, freevars: freeVars(st.caller.Info, e)}
-		// Wrap the instantiating type in parens when it's not an
-		// ident or qualified ident to prevent "if x == struct{}"
-		// parsing ambiguity, or "T(x)" where T = "*int" or "func()"
-		// from misparsing.
-		// TODO(adonovan): this fails in cases where parens are disallowed, such as
-		// in the composite literal expression T{k: v}.
-		if _, ok := arg.expr.(*ast.Ident); !ok {
-			arg.expr = &ast.ParenExpr{X: arg.expr}
-		}
 		args = append(args, arg)
 	}
 	return args
@@ -1511,9 +1541,9 @@ type parameter struct {
 // variadic elimination, and may be unpacked into variadic calls.
 type replacer = func(offset int, repl ast.Expr, unpackVariadic bool)
 
-// substituteTypeParams replaces type parameters in the callee with the corresponding type arguments
-// from the call.
-func substituteTypeParams(logf logger, typeParams []*paramInfo, typeArgs []*argument, params []*parameter, replace replacer) error {
+// substituteTypeParams replaces type parameters in the callee with the
+// corresponding type arguments from the call.
+func substituteTypeParams(logf logger, typeParams []*paramInfo, typeArgs []*argument, replace replacer) error {
 	assert(len(typeParams) == len(typeArgs), "mismatched number of type params/args")
 	for i, paramInfo := range typeParams {
 		arg := typeArgs[i]
@@ -1527,31 +1557,37 @@ func substituteTypeParams(logf logger, typeParams []*paramInfo, typeArgs []*argu
 		for _, ref := range paramInfo.Refs {
 			replace(ref.Offset, internalastutil.CloneNode(arg.expr), false)
 		}
-		// Also replace parameter field types.
-		// TODO(jba): find a way to do this that is not so slow and clumsy.
-		// Ideally, we'd walk each p.fieldType once, replacing all type params together.
-		for _, p := range params {
-			if id, ok := p.fieldType.(*ast.Ident); ok && id.Name == paramInfo.Name {
-				p.fieldType = arg.expr
-			} else {
-				for _, id := range identsNamed(p.fieldType, paramInfo.Name) {
-					replaceNode(p.fieldType, id, arg.expr)
-				}
-			}
-		}
 	}
 	return nil
 }
 
-func identsNamed(n ast.Node, name string) []*ast.Ident {
-	var ids []*ast.Ident
-	ast.Inspect(n, func(n ast.Node) bool {
-		if id, ok := n.(*ast.Ident); ok && id.Name == name {
-			ids = append(ids, id)
+// syncParamFieldTypes synchronizes the fieldType of each parameter in params
+// with the mutated calleeDecl AST. This is necessary because substituteTypeParams
+// mutates the calleeDecl AST, replacing type nodes, but params still references
+// the original (now outdated) type nodes.
+func syncParamFieldTypes(calleeDecl *ast.FuncDecl, params []*parameter) {
+	var i int
+	setFieldType := func(t ast.Expr) {
+		assert(i < len(params), "mismatched parameter count")
+		params[i].fieldType = t
+		i++
+	}
+
+	if calleeDecl.Recv != nil && len(calleeDecl.Recv.List) > 0 {
+		setFieldType(calleeDecl.Recv.List[0].Type)
+	}
+	if calleeDecl.Type.Params != nil {
+		for _, field := range calleeDecl.Type.Params.List {
+			if field.Names == nil {
+				setFieldType(field.Type)
+			} else {
+				for range field.Names {
+					setFieldType(field.Type)
+				}
+			}
 		}
-		return true
-	})
-	return ids
+	}
+	assert(i == len(params), "mismatched parameter count")
 }
 
 // substitute implements parameter elimination by substitution.
@@ -1854,7 +1890,7 @@ next:
 					logf("param %q (offset %d): adding explicit %s -> %s conversion around argument",
 						param.info.Name, ref.Offset, arg.typ, param.obj.Type())
 				}
-				replace(ref.Offset, internalastutil.CloneNode(argExpr).(ast.Expr), arg.variadic)
+				replace(ref.Offset, internalastutil.CloneNode(argExpr), arg.variadic)
 			}
 			params[i] = nil // substituted
 			args[i] = nil   // substituted
@@ -1942,7 +1978,7 @@ func checkFalconConstraints(logf logger, params []*parameter, args []*argument, 
 			nconst++
 		} else {
 			v := types.NewVar(token.NoPos, pkg, name, arg.typ)
-			typesinternal.SetVarKind(v, typesinternal.PackageVar)
+			v.SetKind(types.PackageVar)
 			pkg.Scope().Insert(v)
 			logf("falcon env: var %s %s", name, arg.typ)
 		}
@@ -2027,8 +2063,7 @@ func resolveEffects(logf logger, args []*argument, effects []int, sg substGraph)
 		return string("RW"[btoi(effects)]) + i
 	}
 	removed := false
-	for i := len(args) - 1; i >= 0; i-- {
-		argi := args[i]
+	for i, argi := range slices.Backward(args) {
 		if sg.has(argi) && !argi.pure {
 			// i is not bound: check whether it must be bound due to hazards.
 			idx := slices.Index(effects, i)
@@ -2056,7 +2091,7 @@ func resolveEffects(logf logger, args []*argument, effects []int, sg substGraph)
 			}
 		}
 		if !sg.has(argi) {
-			for j := 0; j < i; j++ {
+			for j := range i {
 				argj := args[j]
 				if argj.pure {
 					continue
@@ -3135,73 +3170,6 @@ func last[T any](slice []T) T {
 		return slice[n-1]
 	}
 	return *new(T)
-}
-
-// needsParens reports whether parens are required to avoid ambiguity
-// around the new node replacing the specified old node (which is some
-// ancestor of the CallExpr identified by its PathEnclosingInterval).
-func needsParens(callPath []ast.Node, old, new ast.Node) bool {
-	// Find enclosing old node and its parent.
-	i := slices.Index(callPath, old)
-	if i == -1 {
-		panic("not found")
-	}
-
-	// There is no precedence ambiguity when replacing
-	// (e.g.) a statement enclosing the call.
-	if !is[ast.Expr](old) {
-		return false
-	}
-
-	// An expression beneath a non-expression
-	// has no precedence ambiguity.
-	parent, ok := callPath[i+1].(ast.Expr)
-	if !ok {
-		return false
-	}
-
-	precedence := func(n ast.Node) int {
-		switch n := n.(type) {
-		case *ast.UnaryExpr, *ast.StarExpr:
-			return token.UnaryPrec
-		case *ast.BinaryExpr:
-			return n.Op.Precedence()
-		}
-		return -1
-	}
-
-	// Parens are not required if the new node
-	// is not unary or binary.
-	newprec := precedence(new)
-	if newprec < 0 {
-		return false
-	}
-
-	// Parens are required if parent and child are both
-	// unary or binary and the parent has higher precedence.
-	if precedence(parent) > newprec {
-		return true
-	}
-
-	// Was the old node the operand of a postfix operator?
-	//  f().sel
-	//  f()[i:j]
-	//  f()[i]
-	//  f().(T)
-	//  f()(x)
-	switch parent := parent.(type) {
-	case *ast.SelectorExpr:
-		return parent.X == old
-	case *ast.IndexExpr:
-		return parent.X == old
-	case *ast.SliceExpr:
-		return parent.X == old
-	case *ast.TypeAssertExpr:
-		return parent.X == old
-	case *ast.CallExpr:
-		return parent.Fun == old
-	}
-	return false
 }
 
 // declares returns the set of lexical names declared by a

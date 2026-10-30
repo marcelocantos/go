@@ -967,6 +967,11 @@ func scanstack(gp *g, gcw *gcWork) int64 {
 		scanblock(uintptr(unsafe.Pointer(&gp.sched.ctxt)), goarch.PtrSize, &oneptrmask[0], gcw, &state)
 	}
 
+	// Scan conservatively the extended register state.
+	if gp.asyncSafePoint {
+		xRegScan(gp, gcw, &state)
+	}
+
 	// Scan the stack. Accumulate a list of stack objects.
 	var u unwinder
 	for u.init(gp, 0); u.valid(); u.next() {
@@ -1089,6 +1094,15 @@ func scanframeworker(frame *stkframe, state *stackScanState, gcw *gcWork) {
 		if frame.varp != 0 {
 			size := frame.varp - frame.sp
 			if size > 0 {
+				isSigPanic := frame.fn.valid() && frame.fn.funcID == abi.FuncID_sigpanic
+				if usesLR && (isSigPanic || isAsyncPreempt || isDebugCall) {
+					// Also include the small frame injected by
+					// (*sigctxt).pushCall. This is the same bump
+					// as the SP bump used in (*unwinder).next.
+					// We need this to ensure LR is scanned (for when
+					// it contains a pointer-y non-PC). See issue 80188.
+					size += alignUp(sys.MinFrameSize, sys.StackAlign)
+				}
 				scanConservative(frame.sp, size, nil, gcw, state)
 			}
 		}

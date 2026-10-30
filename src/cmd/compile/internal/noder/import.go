@@ -18,8 +18,8 @@ import (
 	"unicode/utf8"
 
 	"cmd/compile/internal/base"
-	"cmd/compile/internal/importer"
 	"cmd/compile/internal/ir"
+	"cmd/compile/internal/testimporter"
 	"cmd/compile/internal/typecheck"
 	"cmd/compile/internal/types"
 	"cmd/compile/internal/types2"
@@ -192,7 +192,10 @@ func readImportFile(path string, target *ir.Package, env *types2.Context, packag
 	pkg1 = types.NewPkg(path, "")
 	if packages != nil {
 		pkg2 = packages[path]
-		assert(pkg1.Direct == (pkg2 != nil && pkg2.Complete()))
+		if !(pkg1.Direct == (pkg2 != nil && pkg2.Complete())) {
+
+			base.Fatalf("pkg1.Direct == (pkg2 != nil && pkg2.Complete()), path=%s\npackages=%v", path, packages)
+		}
 	}
 
 	if pkg1.Direct {
@@ -220,7 +223,7 @@ func readImportFile(path string, target *ir.Package, env *types2.Context, packag
 
 	// Read package descriptors for both types2 and compiler backend.
 	readPackage(newPkgReader(pr), pkg1, false)
-	pkg2 = importer.ReadPackage(env, packages, pr)
+	pkg2 = testimporter.ReadPackage(env, packages, pr)
 
 	err = addFingerprint(path, data)
 	return
@@ -246,7 +249,7 @@ func readExportData(f *os.File) (data string, err error) {
 		return
 	}
 
-	_, err = exportdata.ReadExportDataHeader(r.Reader)
+	_, err = exportdata.ReadExportDataHeader(r.Reader, true)
 	if err != nil {
 		return
 	}

@@ -6,6 +6,7 @@ package runtime
 
 import (
 	"internal/abi"
+	"internal/runtime/sys"
 	"internal/runtime/syscall/windows"
 	"unsafe"
 )
@@ -105,20 +106,6 @@ const (
 	callbackLastVCH
 )
 
-// sigFetchGSafe is like getg() but without panicking
-// when TLS is not set.
-// Only implemented on windows/386, which is the only
-// arch that loads TLS when calling getg(). Others
-// use a dedicated register.
-func sigFetchGSafe() *g
-
-func sigFetchG() *g {
-	if GOARCH == "386" {
-		return sigFetchGSafe()
-	}
-	return getg()
-}
-
 // sigtrampgo is called from the exception handler function, sigtramp,
 // written in assembly code.
 // Return EXCEPTION_CONTINUE_EXECUTION if the exception is handled,
@@ -128,9 +115,16 @@ func sigFetchG() *g {
 //
 //go:nosplit
 func sigtrampgo(ep *windows.ExceptionPointers, kind int) int32 {
-	gp := sigFetchG()
+	gp := getg()
 	if gp == nil {
 		return windows.EXCEPTION_CONTINUE_SEARCH
+	}
+
+	// Windows delivers exceptions on the faulting goroutine's own stack. If the
+	// OS wrote past the bottom of that stack, the neighboring goroutine's stack
+	// is already corrupted, so crash now instead of running on bad memory.
+	if gp != gp.m.g0 && gp.stack.lo != 0 && sys.GetCallerSP() < gp.stack.lo {
+		throw("exception dispatched below goroutine stack bottom")
 	}
 
 	var fn func(info *windows.ExceptionRecord, r *windows.Context, gp *g) int32

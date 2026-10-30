@@ -36,7 +36,7 @@ type scanner struct {
 	line, col uint
 	blank     bool // line is blank up to col
 	tok       token
-	lit       string   // valid if tok is _Name, _Literal, or _Semi ("semicolon", "newline", or "EOF"); may be malformed if bad is true
+	lit       string   // valid if tok is _Name, _Literal, _Semi ("semicolon", "newline", or "EOF"), or a keyword; may be malformed if bad is true
 	bad       bool     // valid if tok is _Literal, true if a syntax error occurred, lit may be malformed
 	kind      LitKind  // valid if tok is _Literal
 	op        Operator // valid if tok is _Operator, _Star, _AssignOp, or _IncOp
@@ -63,7 +63,7 @@ func (s *scanner) errorAtf(offset int, format string, args ...any) {
 func (s *scanner) setLit(kind LitKind, ok bool) {
 	s.nlsemi = true
 	s.tok = _Literal
-	s.lit = string(s.segment())
+	s.lit = s.segment()
 	s.bad = !ok
 	s.kind = kind
 }
@@ -378,19 +378,17 @@ func (s *scanner) ident() {
 		}
 	}
 
+	s.nlsemi = true
+	s.tok = _Name
+	s.lit = s.segment()
+
 	// possibly a keyword
-	lit := s.segment()
-	if len(lit) >= 2 {
-		if tok := keywordMap[hash(lit)]; tok != 0 && tokStrFast(tok) == string(lit) {
+	if len(s.lit) >= 2 {
+		if tok := keywordMap[hash(s.lit)]; tok != 0 && tokStrFast(tok) == s.lit {
 			s.nlsemi = contains(1<<_Break|1<<_Continue|1<<_Fallthrough|1<<_Return, tok)
 			s.tok = tok
-			return
 		}
 	}
-
-	s.nlsemi = true
-	s.lit = string(lit)
-	s.tok = _Name
 }
 
 // tokStrFast is a faster version of token.String, which assumes that tok
@@ -417,7 +415,7 @@ func (s *scanner) atIdentChar(first bool) bool {
 
 // hash is a perfect hash function for keywords.
 // It assumes that s has at least length 2.
-func hash(s []byte) uint {
+func hash(s string) uint {
 	return (uint(s[0])<<4 ^ uint(s[1]) + uint(len(s))) & uint(len(keywordMap)-1)
 }
 
@@ -426,7 +424,7 @@ var keywordMap [1 << 6]token // size must be power of two
 func init() {
 	// populate keywordMap
 	for tok := _Break; tok <= _Var; tok++ {
-		h := hash([]byte(tok.String()))
+		h := hash(tok.String())
 		if keywordMap[h] != 0 {
 			panic("imperfect hash")
 		}
@@ -742,7 +740,7 @@ func (s *scanner) lineComment() {
 
 	if s.mode&comments != 0 {
 		s.skipLine()
-		s.comment(string(s.segment()))
+		s.comment(s.segment())
 		return
 	}
 
@@ -769,7 +767,7 @@ func (s *scanner) lineComment() {
 
 	// directive text
 	s.skipLine()
-	s.comment(string(s.segment()))
+	s.comment(s.segment())
 }
 
 func (s *scanner) skipComment() bool {
@@ -792,7 +790,7 @@ func (s *scanner) fullComment() {
 
 	if s.mode&comments != 0 {
 		if s.skipComment() {
-			s.comment(string(s.segment()))
+			s.comment(s.segment())
 		}
 		return
 	}
@@ -816,7 +814,7 @@ func (s *scanner) fullComment() {
 
 	// directive text
 	if s.skipComment() {
-		s.comment(string(s.segment()))
+		s.comment(s.segment())
 	}
 }
 

@@ -601,9 +601,8 @@ func (s *scavengerState) run() (released uintptr, worked float64) {
 		// Accumulate the amount of time spent scavenging.
 		r, duration := s.scavenge(scavengeQuantum)
 
-		// On some platforms we may see end >= start if the time it takes to scavenge
-		// memory is less than the minimum granularity of its clock (e.g. Windows) or
-		// due to clock bugs.
+		// A scavenging operation may take less time than the clock can measure.
+		// In that case, duration is zero.
 		//
 		// In this case, just assume scavenging takes 10 µs per regular physical page
 		// (determined empirically), and conservatively ignore the impact of huge pages
@@ -1135,7 +1134,7 @@ func (s *scavengeIndex) alloc(ci chunkIdx, npages uint) {
 	// TODO(mknyszek): Consider eagerly backing memory with huge pages
 	// here and track whether we believe this chunk is backed by huge pages.
 	// In the past we've attempted to use sysHugePageCollapse (which uses
-	// MADV_COLLAPSE on Linux, and is unsupported elswhere) for this purpose,
+	// MADV_COLLAPSE on Linux, and is unsupported elsewhere) for this purpose,
 	// but that caused performance issues in production environments.
 	s.chunks[ci].store(sc)
 }

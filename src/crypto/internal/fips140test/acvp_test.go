@@ -23,7 +23,6 @@ import (
 	"bytes"
 	"crypto/elliptic"
 	"crypto/internal/cryptotest"
-	entropy "crypto/internal/entropy/v1.0.0"
 	"crypto/internal/fips140"
 	"crypto/internal/fips140/aes"
 	"crypto/internal/fips140/aes/gcm"
@@ -59,6 +58,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	entropy "crypto/internal/entropy/v1.0.0"
 )
 
 var noPAAPAI = os.Getenv("GONOPAAPAI") == "1"
@@ -209,12 +210,12 @@ var (
 
 		"PBKDF": cmdPbkdf(),
 
-		"ML-KEM-768/keyGen":  cmdMlKem768KeyGenAft(),
-		"ML-KEM-768/encap":   cmdMlKem768EncapAft(),
-		"ML-KEM-768/decap":   cmdMlKem768DecapAft(),
-		"ML-KEM-1024/keyGen": cmdMlKem1024KeyGenAft(),
-		"ML-KEM-1024/encap":  cmdMlKem1024EncapAft(),
-		"ML-KEM-1024/decap":  cmdMlKem1024DecapAft(),
+		"ML-KEM-768/keyGen":      cmdMlKem768KeyGenAft(),
+		"ML-KEM-768/encap":       cmdMlKem768EncapAft(),
+		"ML-KEM-768/decap/seed":  cmdMlKem768DecapAft(),
+		"ML-KEM-1024/keyGen":     cmdMlKem1024KeyGenAft(),
+		"ML-KEM-1024/encap":      cmdMlKem1024EncapAft(),
+		"ML-KEM-1024/decap/seed": cmdMlKem1024DecapAft(),
 
 		"hmacDRBG/SHA2-224":     cmdHmacDrbgAft(func() hash.Hash { return sha256.New224() }),
 		"hmacDRBG/SHA2-256":     cmdHmacDrbgAft(func() hash.Hash { return sha256.New() }),
@@ -720,7 +721,7 @@ func cmdCShakeMct(hFn func(N, S []byte) *sha3.SHAKE) command {
 				rightmostOutput := digest[outputLenBytes-2:]
 				// IMPORTANT: the specification says:
 				//   NOTE: For the "Rightmost_Output_bits % Range" operation, the Rightmost_Output_bits bit string
-				//   should be interpretted as a little endian-encoded number.
+				//   should be interpreted as a little endian-encoded number.
 				// This is **a lie**! It has to be interpreted as a big-endian number.
 				rightmostOutputBE := binary.BigEndian.Uint16(rightmostOutput)
 
@@ -1226,12 +1227,12 @@ func cmdMlKem768EncapAft() command {
 
 func cmdMlKem768DecapAft() command {
 	return command{
-		requiredArgs: 2, // Private key, ciphertext
+		requiredArgs: 2, // Seed (d || z), ciphertext
 		handler: func(args [][]byte) ([][]byte, error) {
-			pk := args[0]
+			seed := args[0]
 			ct := args[1]
 
-			dk, err := mlkem.TestingOnlyNewDecapsulationKey768(pk)
+			dk, err := mlkem.NewDecapsulationKey768(seed)
 			if err != nil {
 				return nil, fmt.Errorf("generating ML-KEM 768 decapsulation key: %w", err)
 			}
@@ -1288,12 +1289,12 @@ func cmdMlKem1024EncapAft() command {
 
 func cmdMlKem1024DecapAft() command {
 	return command{
-		requiredArgs: 2, // Private key, ciphertext
+		requiredArgs: 2, // Seed (d || z), ciphertext
 		handler: func(args [][]byte) ([][]byte, error) {
-			pk := args[0]
+			seed := args[0]
 			ct := args[1]
 
-			dk, err := mlkem.TestingOnlyNewDecapsulationKey1024(pk)
+			dk, err := mlkem.NewDecapsulationKey1024(seed)
 			if err != nil {
 				return nil, fmt.Errorf("generating ML-KEM 1024 decapsulation key: %w", err)
 			}
@@ -1799,7 +1800,7 @@ func cmdKdfCounterAft() command {
 			}
 			// The spec doesn't describe the "deferred" property for a KDF counterMode test case.
 			// BoringSSL's acvptool sends an empty key when deferred=true, but with the capabilities
-			// we register all test cases ahve deferred=false and provide a key from the populated
+			// we register all test cases have deferred=false and provide a key from the populated
 			// keyIn property.
 			if len(key) == 0 {
 				return nil, errors.New("deferred test cases are not supported")
@@ -2107,9 +2108,9 @@ func TestACVP(t *testing.T) {
 
 	const (
 		bsslModule    = "boringssl.googlesource.com/boringssl.git"
-		bsslVersion   = "v0.0.0-20251111011041-baaf868e6e8f"
+		bsslVersion   = "v0.0.0-20260804180546-69dd9a8a2afc"
 		goAcvpModule  = "github.com/geomys/acvp-testdata"
-		goAcvpVersion = "v0.0.0-20251201200548-d893de8b8b1c"
+		goAcvpVersion = "v0.0.0-20260804131014-77f1447dbc6f"
 	)
 
 	// In crypto/tls/bogo_shim_test.go the test is skipped if run on a builder with runtime.GOOS == "windows"

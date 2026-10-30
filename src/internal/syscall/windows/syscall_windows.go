@@ -44,6 +44,7 @@ const (
 	ERROR_IO_INCOMPLETE          syscall.Errno = 996
 	ERROR_NO_TOKEN               syscall.Errno = 1008
 	ERROR_NO_UNICODE_TRANSLATION syscall.Errno = 1113
+	ERROR_NONE_MAPPED            syscall.Errno = 1332
 	ERROR_CANT_ACCESS_FILE       syscall.Errno = 1920
 )
 
@@ -280,7 +281,7 @@ func loadWSASendRecvMsg() error {
 		if sendRecvMsgFunc.err != nil {
 			return
 		}
-		defer syscall.CloseHandle(s)
+		defer syscall.Closesocket(s)
 		var n uint32
 		sendRecvMsgFunc.err = syscall.WSAIoctl(s,
 			syscall.SIO_GET_EXTENSION_FUNCTION_POINTER,
@@ -308,7 +309,7 @@ func WSASendMsg(fd syscall.Handle, msg *WSAMsg, flags uint32, bytesSent *uint32,
 	if err != nil {
 		return err
 	}
-	r1, _, e1 := syscall.Syscall6(sendRecvMsgFunc.sendAddr, 6, uintptr(fd), uintptr(unsafe.Pointer(msg)), uintptr(flags), uintptr(unsafe.Pointer(bytesSent)), uintptr(unsafe.Pointer(overlapped)), uintptr(unsafe.Pointer(croutine)))
+	r1, _, e1 := syscall.SyscallN(sendRecvMsgFunc.sendAddr, uintptr(fd), uintptr(unsafe.Pointer(msg)), uintptr(flags), uintptr(unsafe.Pointer(bytesSent)), uintptr(unsafe.Pointer(overlapped)), uintptr(unsafe.Pointer(croutine)))
 	if r1 == socket_error {
 		if e1 != 0 {
 			err = errnoErr(e1)
@@ -324,7 +325,7 @@ func WSARecvMsg(fd syscall.Handle, msg *WSAMsg, bytesReceived *uint32, overlappe
 	if err != nil {
 		return err
 	}
-	r1, _, e1 := syscall.Syscall6(sendRecvMsgFunc.recvAddr, 5, uintptr(fd), uintptr(unsafe.Pointer(msg)), uintptr(unsafe.Pointer(bytesReceived)), uintptr(unsafe.Pointer(overlapped)), uintptr(unsafe.Pointer(croutine)), 0)
+	r1, _, e1 := syscall.SyscallN(sendRecvMsgFunc.recvAddr, uintptr(fd), uintptr(unsafe.Pointer(msg)), uintptr(unsafe.Pointer(bytesReceived)), uintptr(unsafe.Pointer(overlapped)), uintptr(unsafe.Pointer(croutine)))
 	if r1 == socket_error {
 		if e1 != 0 {
 			err = errnoErr(e1)
@@ -380,6 +381,7 @@ const MB_ERR_INVALID_CHARS = 8
 //sys	GetConsoleCP() (ccp uint32) = kernel32.GetConsoleCP
 //sys	MultiByteToWideChar(codePage uint32, dwFlags uint32, str *byte, nstr int32, wchar *uint16, nwchar int32) (nwrite int32, err error) = kernel32.MultiByteToWideChar
 //sys	GetCurrentThread() (pseudoHandle syscall.Handle, err error) = kernel32.GetCurrentThread
+//sys	CancelSynchronousIo(thread syscall.Handle) (err error) = kernel32.CancelSynchronousIo
 
 // Constants from lmshare.h
 const (
@@ -561,6 +563,7 @@ const (
 	STATUS_NOT_SUPPORTED             NTStatus = 0xC00000BB
 	STATUS_INVALID_PARAMETER         NTStatus = 0xC000000D
 	STATUS_INVALID_INFO_CLASS        NTStatus = 0xC0000003
+	STATUS_ACCESS_DENIED             NTStatus = 0xC0000022
 )
 
 const (
@@ -572,6 +575,8 @@ type FILE_MODE_INFORMATION struct {
 	Mode uint32
 }
 
+//sys	IsProcessorFeaturePresent(ProcessorFeature uint32) (ret bool) = kernel32.IsProcessorFeaturePresent
+
 // NT Native APIs
 //sys   NtCreateFile(handle *syscall.Handle, access uint32, oa *OBJECT_ATTRIBUTES, iosb *IO_STATUS_BLOCK, allocationSize *int64, attributes uint32, share uint32, disposition uint32, options uint32, eabuffer unsafe.Pointer, ealength uint32) (ntstatus error) = ntdll.NtCreateFile
 //sys   NtOpenFile(handle *syscall.Handle, access uint32, oa *OBJECT_ATTRIBUTES, iosb *IO_STATUS_BLOCK, share uint32, options uint32) (ntstatus error) = ntdll.NtOpenFile
@@ -579,3 +584,6 @@ type FILE_MODE_INFORMATION struct {
 //sys   NtSetInformationFile(handle syscall.Handle, iosb *IO_STATUS_BLOCK, inBuffer unsafe.Pointer, inBufferLen uint32, class uint32) (ntstatus error) = ntdll.NtSetInformationFile
 //sys	RtlIsDosDeviceName_U(name *uint16) (ret uint32) = ntdll.RtlIsDosDeviceName_U
 //sys   NtQueryInformationFile(handle syscall.Handle, iosb *IO_STATUS_BLOCK, inBuffer unsafe.Pointer, inBufferLen uint32, class uint32) (ntstatus error) = ntdll.NtQueryInformationFile
+
+//sys	SetEntriesInAcl(countExplicitEntries uint32, explicitEntries *EXPLICIT_ACCESS, oldACL *ACL, newACL **ACL) (ret error) =  advapi32.SetEntriesInAclW
+//sys	SetNamedSecurityInfo(objectName string, objectType uint32, securityInformation uint32, owner *syscall.SID, group *syscall.SID, dacl *ACL, sacl *ACL) (ret error) = advapi32.SetNamedSecurityInfoW

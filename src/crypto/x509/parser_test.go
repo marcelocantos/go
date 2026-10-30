@@ -5,15 +5,20 @@
 package x509
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/pem"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
+	"golang.org/x/crypto/cryptobyte"
 	cryptobyte_asn1 "golang.org/x/crypto/cryptobyte/asn1"
 )
 
@@ -256,6 +261,141 @@ d5l1tRhScKu2NBgm74nYmJxJYgvuTA38wGhRrGU=
 	}
 }
 
+func TestParseNameConstraintsExtensionEmptySubtrees(t *testing.T) {
+	permittedTag := cryptobyte_asn1.Tag(0).ContextSpecific().Constructed()
+	excludedTag := cryptobyte_asn1.Tag(1).ContextSpecific().Constructed()
+	dnsNameTag := cryptobyte_asn1.Tag(2).ContextSpecific()
+	tests := []struct {
+		name     string
+		emptyTag cryptobyte_asn1.Tag
+	}{
+		{
+			name:     "permittedSubtrees",
+			emptyTag: permittedTag,
+		},
+		{
+			name:     "excludedSubtrees",
+			emptyTag: excludedTag,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var builder cryptobyte.Builder
+			builder.AddASN1(cryptobyte_asn1.SEQUENCE, func(builder *cryptobyte.Builder) {
+				for _, tag := range []cryptobyte_asn1.Tag{permittedTag, excludedTag} {
+					builder.AddASN1(tag, func(builder *cryptobyte.Builder) {
+						if tag == test.emptyTag {
+							return
+						}
+						builder.AddASN1(cryptobyte_asn1.SEQUENCE, func(builder *cryptobyte.Builder) {
+							builder.AddASN1(dnsNameTag, func(builder *cryptobyte.Builder) {
+								builder.AddBytes([]byte("example.com"))
+							})
+						})
+					})
+				}
+			})
+			der, err := builder.Bytes()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = parseNameConstraintsExtension(&Certificate{}, pkix.Extension{
+				Value: der,
+			})
+			if err == nil {
+				t.Fatal("unexpected success")
+			}
+			if got, want := err.Error(), "x509: empty name constraints subtree sequence"; got != want {
+				t.Fatalf("unexpected error: got %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestParseExtensionTrailingData(t *testing.T) {
+	// extnValue is the DER encoding of a single value (RFC 5280, Section
+	// 4.1), so bytes after the top-level value are rejected. Unknown
+	// elements inside a SEQUENCE (RFC 5280, Appendix B) stay tolerated.
+	tests := []struct {
+		name  string
+		value []byte
+		parse func([]byte) error
+		want  string
+	}{
+		{
+			name:  "KeyUsage",
+			value: []byte{0x03, 0x02, 0x07, 0x80},
+			parse: func(der []byte) error { _, err := parseKeyUsageExtension(der); return err },
+			want:  "x509: trailing data after key usage",
+		},
+		{
+			name:  "BasicConstraints",
+			value: []byte{0x30, 0x03, 0x01, 0x01, 0xff},
+			parse: func(der []byte) error { _, _, err := parseBasicConstraintsExtension(der); return err },
+			want:  "x509: trailing data after basic constraints",
+		},
+		{
+			name:  "SubjectAltName",
+			value: []byte{0x30, 0x05, 0x82, 0x03, 'a', 'b', 'c'},
+			parse: func(der []byte) error { _, _, _, _, err := parseSANExtension(der); return err },
+			want:  "x509: trailing data after subject alternative names",
+		},
+		{
+			name:  "ExtKeyUsage",
+			value: []byte{0x30, 0x0a, 0x06, 0x08, 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x01},
+			parse: func(der []byte) error { _, _, err := parseExtKeyUsageExtension(der); return err },
+			want:  "x509: trailing data after extended key usages",
+		},
+		{
+			name:  "CertificatePolicies",
+			value: []byte{0x30, 0x08, 0x30, 0x06, 0x06, 0x04, 0x55, 0x1d, 0x20, 0x00},
+			parse: func(der []byte) error { _, err := parseCertificatePoliciesExtension(der); return err },
+			want:  "x509: trailing data after certificate policies",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.parse(test.value); err != nil {
+				t.Fatalf("parse(valid) = %v, want nil", err)
+			}
+			trailing := append(append([]byte{}, test.value...), 0x00)
+			if err := test.parse(trailing); err == nil || err.Error() != test.want {
+				t.Errorf("parse(trailing) = %v, want %q", err, test.want)
+			}
+		})
+	}
+
+	// An unknown element inside the BasicConstraints SEQUENCE is still accepted.
+	extensible := []byte{0x30, 0x05, 0x01, 0x01, 0xff, 0x05, 0x00}
+	if _, _, err := parseBasicConstraintsExtension(extensible); err != nil {
+		t.Errorf("parseBasicConstraintsExtension(extensible) = %v, want nil", err)
+	}
+}
+
+func TestParseCertificateExtensionTrailingData(t *testing.T) {
+	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &Certificate{
+		ExtraExtensions: []pkix.Extension{{
+			Id:       asn1.ObjectIdentifier{2, 5, 29, 19},
+			Critical: true,
+			Value:    []byte{0x30, 0x03, 0x01, 0x01, 0xff, 0x00},
+		}},
+	}
+	der, err := CreateCertificate(rand.Reader, tmpl, tmpl, &k.PublicKey, k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "x509: trailing data after basic constraints"
+	if _, err := ParseCertificate(der); err == nil || err.Error() != want {
+		t.Errorf("ParseCertificate() = %v, want %q", err, want)
+	}
+}
+
 func TestDomainNameValid(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
@@ -357,4 +497,183 @@ func FuzzDomainNameValid(f *testing.F) {
 		domainNameValid(data, false)
 		domainNameValid(data, true)
 	})
+}
+
+func TestParseNameTypes(t *testing.T) {
+	block, _ := pem.Decode([]byte(`
+-----BEGIN CERTIFICATE-----
+MIICGzCCAcGgAwIBAgIJAIZft7jy3RcpMAoGCCqGSM49BAMCMA8xDTALBgNVBAMM
+BFRlc3QwHhcNMjUwOTAyMTg0MzE3WhcNMjUxMDAyMTg0MzE3WjCCARUxIjAgBg0q
+hkiG9xIEAYS3CQIBDA91dGY4LXN0cmluZ/CfpooxHzAdBg0qhkiG9xIEAYS3CQIC
+BAxvY3RldC1zdHJpbmcxGDAWBg0qhkiG9xIEAYS3CQIDDQUBAgMEBTETMBEGDSqG
+SIb3EgQBhLcJAgQFADEVMBMGDSqGSIb3EgQBhLcJAgUwAgECMRQwEgYNKoZIhvcS
+BAGEtwkCBgIBKjEgMB4GDSqGSIb3EgQBhLcJAgcGDSqGSIb3EgQBhLcJAgcxGDAW
+Bg0qhkiG9xIEAYS3CQIIAwUAqrvM3TEgMB4GDSqGSIb3EgQBhLcJAgkXDTI1MDkw
+MjE4NDMxN1oxFDASBg0qhkiG9xIEAYS3CQIKAQH/MFkwEwYHKoZIzj0CAQYIKoZI
+zj0DAQcDQgAE7M4zoqQtXbvGsudKaM5gd8emxyk68AFTjIYU4PO1AtiYX3wyL89k
+wbHjxgvmh/9aBg1LOj6kfsJIxULUmUpdzTAKBggqhkjOPQQDAgNIADBFAiBvKz3o
+ALhCqKrRFLUbax6+tI1s1B14IPVk2ZHbBEou5gIhAOpvJRNj5qluPXKLXmZvIK8u
+OjUhiZoowYvborSS1EBK
+-----END CERTIFICATE-----
+	`))
+	expected := map[string]any{
+		"1.2.840.113554.4.1.72585.2.1": "utf8-string🦊",
+		"1.2.840.113554.4.1.72585.2.2": []byte("octet-string"),
+		"1.2.840.113554.4.1.72585.2.3": asn1.RawValue{Tag: 13,
+			Bytes: []byte{1, 2, 3, 4, 5}, FullBytes: []byte{13, 5, 1, 2, 3, 4, 5}},
+		"1.2.840.113554.4.1.72585.2.4": nil,
+		"1.2.840.113554.4.1.72585.2.5": asn1.RawValue{Tag: asn1.TagSequence, IsCompound: true,
+			Bytes: []byte{1, 2}, FullBytes: []byte{0x30, 2, 1, 2}},
+		"1.2.840.113554.4.1.72585.2.6": int64(42),
+		"1.2.840.113554.4.1.72585.2.7": asn1.ObjectIdentifier{1, 2, 840, 113554, 4, 1, 72585, 2, 7},
+		"1.2.840.113554.4.1.72585.2.8": asn1.BitString{BitLength: 32,
+			Bytes: []byte{0xaa, 0xbb, 0xcc, 0xdd}},
+		"1.2.840.113554.4.1.72585.2.9":  time.Date(2025, 9, 2, 18, 43, 17, 0, time.UTC),
+		"1.2.840.113554.4.1.72585.2.10": true,
+	}
+	cert, err := ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatalf("ParseCertificate failed: %v", err)
+	}
+	for _, attr := range cert.Subject.Names {
+		if val, ok := expected[attr.Type.String()]; ok {
+			if !reflect.DeepEqual(attr.Value, val) {
+				t.Errorf("unexpected value for %s: got %v (%T), want %v (%T)", attr.Type, attr.Value, attr.Value, val, val)
+			}
+		} else {
+			t.Errorf("unexpected attribute type: %s", attr.Type)
+		}
+	}
+	extra := pkix.Name{ExtraNames: cert.Subject.Names}
+	// asn1.Marshal does not encode NULL.
+	for i := range extra.ExtraNames {
+		if extra.ExtraNames[i].Value == nil {
+			extra.ExtraNames[i].Value = asn1.NullRawValue
+		}
+	}
+	got, err := asn1.Marshal(extra.ToRDNSequence())
+	if err != nil {
+		t.Fatalf("asn1.Marshal failed: %v", err)
+	}
+	if !bytes.Equal(got, cert.RawSubject) {
+		t.Errorf("unexpected marshaled RDNSequence: got %x, want %x", got, cert.RawSubject)
+	}
+}
+
+func TestParseAITrailingData(t *testing.T) {
+	var b cryptobyte.Builder
+	b.AddASN1ObjectIdentifier(oidPublicKeyRSA)
+	b.AddASN1NULL()
+	good, err := b.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseAI(good); err != nil {
+		t.Fatalf("parseAI(valid) = %v, want nil", err)
+	}
+	// A second element after the parameters.
+	bad := append(append([]byte{}, good...), 0x05, 0x00)
+	want := "x509: trailing data after AlgorithmIdentifier parameters"
+	if _, err := parseAI(bad); err == nil || err.Error() != want {
+		t.Errorf("parseAI(trailing) = %v, want %q", err, want)
+	}
+}
+
+func TestParsePKIXPublicKeyRSATrailingData(t *testing.T) {
+	spki := func(mod func(*cryptobyte.Builder)) []byte {
+		var b cryptobyte.Builder
+		b.AddASN1(cryptobyte_asn1.SEQUENCE, func(b *cryptobyte.Builder) {
+			b.AddASN1(cryptobyte_asn1.SEQUENCE, func(b *cryptobyte.Builder) {
+				b.AddASN1ObjectIdentifier(oidPublicKeyRSA)
+				b.AddASN1NULL()
+			})
+			var key cryptobyte.Builder
+			mod(&key)
+			keyBytes, err := key.Bytes()
+			if err != nil {
+				t.Fatal(err)
+			}
+			b.AddASN1BitString(keyBytes)
+		})
+		out, err := b.Bytes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	pub := &testPrivateKey.PublicKey
+	rsaPublicKey := func(b *cryptobyte.Builder, extra func(*cryptobyte.Builder)) {
+		b.AddASN1(cryptobyte_asn1.SEQUENCE, func(b *cryptobyte.Builder) {
+			b.AddASN1BigInt(pub.N)
+			b.AddASN1Int64(int64(pub.E))
+			if extra != nil {
+				extra(b)
+			}
+		})
+	}
+
+	valid := spki(func(b *cryptobyte.Builder) { rsaPublicKey(b, nil) })
+	if _, err := ParsePKIXPublicKey(valid); err != nil {
+		t.Fatalf("ParsePKIXPublicKey(valid) = %v, want nil", err)
+	}
+
+	tests := []struct {
+		name string
+		der  []byte
+		want string
+	}{
+		{
+			name: "element after the public exponent",
+			der:  spki(func(b *cryptobyte.Builder) { rsaPublicKey(b, (*cryptobyte.Builder).AddASN1NULL) }),
+			want: "x509: trailing data after RSA public exponent",
+		},
+		{
+			name: "element after the RSAPublicKey SEQUENCE",
+			der: spki(func(b *cryptobyte.Builder) {
+				rsaPublicKey(b, nil)
+				b.AddASN1NULL()
+			}),
+			want: "x509: trailing data after RSA public key",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := ParsePKIXPublicKey(test.der); err == nil || err.Error() != test.want {
+				t.Errorf("ParsePKIXPublicKey() = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestParsePublicKeyECDSATrailingData(t *testing.T) {
+	// The parameters value reaching parsePublicKey is always a single DER
+	// element, so this is a defense-in-depth check on the function itself.
+	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	point, err := k.PublicKey.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyInfo := func(params []byte) *publicKeyInfo {
+		return &publicKeyInfo{
+			Algorithm: pkix.AlgorithmIdentifier{Algorithm: oidPublicKeyECDSA, Parameters: asn1.RawValue{FullBytes: params}},
+			PublicKey: asn1.BitString{Bytes: point, BitLength: len(point) * 8},
+		}
+	}
+	var b cryptobyte.Builder
+	b.AddASN1ObjectIdentifier(oidNamedCurveP256)
+	good, err := b.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parsePublicKey(keyInfo(good)); err != nil {
+		t.Fatalf("parsePublicKey(valid) = %v, want nil", err)
+	}
+	bad := append(append([]byte{}, good...), 0x05, 0x00)
+	want := "x509: trailing data after ECDSA parameters"
+	if _, err := parsePublicKey(keyInfo(bad)); err == nil || err.Error() != want {
+		t.Errorf("parsePublicKey(trailing) = %v, want %q", err, want)
+	}
 }

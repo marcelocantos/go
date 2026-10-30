@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/cfg"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -84,7 +83,7 @@ func runFunc(pass *analysis.Pass, node ast.Node) {
 	// {FuncDecl,FuncLit,CallExpr,SelectorExpr}.
 
 	// Find the set of cancel vars to analyze.
-	astutil.PreorderStack(node, nil, func(n ast.Node, stack []ast.Node) bool {
+	ast.PreorderStack(node, nil, func(n ast.Node, stack []ast.Node) bool {
 		if _, ok := n.(*ast.FuncLit); ok && len(stack) > 0 {
 			return false // don't stray into nested functions
 		}
@@ -139,7 +138,8 @@ func runFunc(pass *analysis.Pass, node ast.Node) {
 	switch node := node.(type) {
 	case *ast.FuncDecl:
 		sig, _ = pass.TypesInfo.Defs[node.Name].Type().(*types.Signature)
-		if node.Name.Name == "main" && sig.Recv() == nil && pass.Pkg.Name() == "main" {
+		if sig != nil && sig.Recv() == nil &&
+			node.Name.Name == "main" && pass.Pkg.Name() == "main" {
 			// Returning from main.main terminates the process,
 			// so there's no need to cancel contexts.
 			return
@@ -151,7 +151,7 @@ func runFunc(pass *analysis.Pass, node ast.Node) {
 		g = cfgs.FuncLit(node)
 	}
 	if sig == nil {
-		return // missing type information
+		return // missing type information (can this happen?)
 	}
 
 	// Print CFG.

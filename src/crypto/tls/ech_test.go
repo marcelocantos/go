@@ -5,8 +5,16 @@
 package tls
 
 import (
+	"bytes"
+	"crypto/ecdh"
+	"crypto/hpke"
+	"crypto/rand"
 	"encoding/hex"
+	"errors"
+	"strings"
 	"testing"
+
+	"golang.org/x/crypto/cryptobyte"
 )
 
 func TestDecodeECHConfigLists(t *testing.T) {
@@ -44,5 +52,331 @@ func TestSkipBadConfigs(t *testing.T) {
 	config, _, _, _ := pickECHConfig(configs)
 	if config != nil {
 		t.Fatal("pickECHConfig picked an invalid config")
+	}
+}
+
+func TestPickECHConfigWithInvalidAEADID(t *testing.T) {
+	b, err := hex.DecodeString("0045fe0d0041590020002092a01233db2218518ccbbbbc24df20686af417b37388de6460e94011974777090004000100010012636c6f7564666c6172652d6563682e636f6d0000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := bytes.Replace(b, []byte{0x00, 0x01, 0x00, 0x01}, []byte{0x00, 0x01, 0xFF, 0xFF}, 1)
+	configs, err := parseECHConfigList(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config, _, _, _ := pickECHConfig(configs); config != nil {
+		t.Fatalf("got %v, want nil", config)
+	}
+}
+
+func TestECHPadding(t *testing.T) {
+	const maxNameLength = 64
+	for _, tc := range []struct {
+		name       string
+		serverName string
+	}{
+		{"Short", "a.test"},
+		{"Medium", strings.Repeat("a", 30) + ".test"},
+		{"MaxLength", strings.Repeat("a", maxNameLength) + ".test"},
+		{"NoSNI", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inner := &clientHelloMsg{
+				vers:               VersionTLS13,
+				random:             make([]byte, 32),
+				serverName:         tc.serverName,
+				cipherSuites:       []uint16{TLS_AES_128_GCM_SHA256},
+				compressionMethods: []uint8{0},
+				supportedVersions:  []uint16{VersionTLS13},
+			}
+			encoded, err := encodeInnerClientHello(inner, maxNameLength)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(encoded)%32 != 0 {
+				t.Errorf("got %d, want multiple of 32", len(encoded))
+			}
+		})
+	}
+
+	t.Run("SetSizeReduction", func(t *testing.T) {
+		sizes := make(map[int]struct{})
+		for sniLen := 1; sniLen <= maxNameLength; sniLen++ {
+			inner := &clientHelloMsg{
+				vers:               VersionTLS13,
+				random:             make([]byte, 32),
+				serverName:         strings.Repeat("a", sniLen) + ".test",
+				cipherSuites:       []uint16{TLS_AES_128_GCM_SHA256},
+				compressionMethods: []uint8{0},
+				supportedVersions:  []uint16{VersionTLS13},
+			}
+			encoded, err := encodeInnerClientHello(inner, maxNameLength)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sizes[len(encoded)] = struct{}{}
+		}
+		if len(sizes) > 4 {
+			t.Errorf("got %d distinct encoded sizes for SNI lengths 1..%d, want <= 4", len(sizes), maxNameLength)
+		}
+	})
+}
+
+func TestDecodeInnerClientHelloOuterExtensions(t *testing.T) {
+	outer := &clientHelloMsg{
+		vers:                 VersionTLS12,
+		random:               make([]byte, 32),
+		cipherSuites:         []uint16{TLS_AES_128_GCM_SHA256},
+		compressionMethods:   []uint8{compressionNone},
+		ocspStapling:         true,
+		supportedCurves:      []CurveID{CurveP256},
+		encryptedClientHello: []byte{byte(innerECHExt)},
+	}
+	outer.original = mustMarshal(t, outer)
+
+	encodeInner := func(buildExts func(*cryptobyte.Builder)) []byte {
+		var b cryptobyte.Builder
+		b.AddUint16(VersionTLS12)
+		b.AddBytes(make([]byte, 32))
+		b.AddUint8(0)
+		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddUint16(TLS_AES_128_GCM_SHA256)
+		})
+		b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddUint8(compressionNone)
+		})
+		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+			buildExts(b)
+			b.AddUint16(extensionEncryptedClientHello)
+			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+				b.AddUint8(uint8(innerECHExt))
+			})
+			b.AddUint16(extensionSupportedVersions)
+			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+				b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
+					b.AddUint16(VersionTLS13)
+				})
+			})
+		})
+		return b.BytesOrPanic()
+	}
+
+	outerExts := func(b *cryptobyte.Builder, extTypes ...uint16) {
+		b.AddUint16(extensionECHOuterExtensions)
+		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
+				for _, extType := range extTypes {
+					b.AddUint16(extType)
+				}
+			})
+		})
+	}
+
+	for _, tc := range []struct {
+		name      string
+		buildExts func(*cryptobyte.Builder)
+		wantErr   string
+	}{
+		{
+			name: "valid order",
+			buildExts: func(b *cryptobyte.Builder) {
+				outerExts(b, extensionStatusRequest, extensionSupportedCurves)
+			},
+		},
+		{
+			name: "duplicate reference",
+			buildExts: func(b *cryptobyte.Builder) {
+				outerExts(b, extensionStatusRequest, extensionStatusRequest)
+			},
+			wantErr: "tls: invalid outer extensions",
+		},
+		{
+			name: "references encrypted_client_hello",
+			buildExts: func(b *cryptobyte.Builder) {
+				outerExts(b, extensionEncryptedClientHello)
+			},
+			wantErr: "tls: invalid outer extensions",
+		},
+		{
+			name: "references ech_outer_extensions",
+			buildExts: func(b *cryptobyte.Builder) {
+				outerExts(b, extensionECHOuterExtensions)
+			},
+			wantErr: "tls: invalid outer extensions",
+		},
+		{
+			name: "multiple ech_outer_extensions",
+			buildExts: func(b *cryptobyte.Builder) {
+				outerExts(b, extensionStatusRequest)
+				outerExts(b, extensionSupportedCurves)
+			},
+			wantErr: "tls: invalid outer extensions",
+		},
+		{
+			name: "odd-length reference list",
+			buildExts: func(b *cryptobyte.Builder) {
+				b.AddUint16(extensionECHOuterExtensions)
+				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+					b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
+						b.AddUint8(0)
+					})
+				})
+			},
+			wantErr: "tls: invalid inner client hello",
+		},
+		{
+			name: "empty reference list",
+			buildExts: func(b *cryptobyte.Builder) {
+				b.AddUint16(extensionECHOuterExtensions)
+				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+					b.AddUint8(0)
+				})
+			},
+			wantErr: "tls: invalid inner client hello",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			encoded := encodeInner(tc.buildExts)
+			_, err := decodeInnerClientHello(outer, encoded)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("decodeInnerClientHello returned %v, want nil", err)
+				}
+			} else if err == nil || err.Error() != tc.wantErr {
+				t.Fatalf("decodeInnerClientHello returned %v, want %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestDecodeECHConfigListOverflow(t *testing.T) {
+	// Craft a 65538-byte payload with an outer length header of 0 (bytes 0-1)
+	// and an inner length of 65532 (bytes 4-5). Previously, both lengths were
+	// handled as uint16 and would overflow:
+	// 1. uint16(65538-2) becomes 0, causing it to erroneously match the
+	// declared outer length header of 0.
+	// 2. uint16(65532+4) becomes 0, making it so that when we advance past the
+	// inner ECHConfig, we would only advance the buffer by 0 bytes, causing an
+	// infinite loop.
+	payload := make([]byte, 65538)
+	payload[4] = 0xFF
+	payload[5] = 0xFC
+	if _, err := parseECHConfigList(payload); !errors.Is(err, errMalformedECHConfigList) {
+		t.Fatalf("got %v when parsing a malformed ECHConfigList; want %v", err, errMalformedECHConfigList)
+	}
+}
+
+func TestPickECHConfigWithIPPublicName(t *testing.T) {
+	b, err := hex.DecodeString("0045fe0d0041590020002092a01233db2218518ccbbbbc24df20686af417b37388de6460e94011974777090004000100010012636c6f7564666c6172652d6563682e636f6d0000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	configs, err := parseECHConfigList(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid := configs[0]
+	for _, name := range []string{
+		"127.0.0.1",
+		"::1",
+	} {
+		t.Run(name, func(t *testing.T) {
+			invalid := valid
+			invalid.PublicName = []byte(name)
+			if config, _, _, _ := pickECHConfig([]echConfig{invalid}); config != nil {
+				t.Error("selected an ECH config with an IP public name")
+			}
+			config, _, _, _ := pickECHConfig([]echConfig{invalid, valid})
+			if config == nil || !bytes.Equal(config.PublicName, valid.PublicName) {
+				t.Error("did not select the subsequent config with a DNS public name")
+			}
+		})
+	}
+}
+
+func TestECHServerCipherSuite(t *testing.T) {
+	key, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicKey, err := hpke.NewDHKEMPublicKey(key.PublicKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	makeConfig := func(suite echCipher) []byte {
+		var b cryptobyte.Builder
+		b.AddUint16(extensionEncryptedClientHello)
+		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddUint8(1)
+			b.AddUint16(0x0020)
+			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) { b.AddBytes(key.PublicKey().Bytes()) })
+			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) { b.AddUint16(suite.KDFID); b.AddUint16(suite.AEADID) })
+			b.AddUint8(0)
+			b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) { b.AddBytes([]byte("public.example")) })
+			b.AddUint16(0)
+		})
+		raw, err := b.Bytes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	for _, tc := range []struct {
+		name            string
+		kdf             hpke.KDF
+		aead            hpke.AEAD
+		advertised      bool
+		precedingConfig bool
+	}{
+		{"advertised", hpke.HKDFSHA256(), hpke.AES128GCM(), true, false},
+		{"unadvertised AEAD", hpke.HKDFSHA256(), hpke.AES256GCM(), false, false},
+		{"unadvertised KDF", hpke.HKDFSHA384(), hpke.AES128GCM(), false, false},
+		{"later matching config", hpke.HKDFSHA256(), hpke.AES256GCM(), true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := makeConfig(echCipher{1, 1})
+			if tc.advertised {
+				raw = makeConfig(echCipher{tc.kdf.ID(), tc.aead.ID()})
+			}
+			_, config, err := parseECHConfig(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			enc, sender, err := hpke.NewSender(publicKey, tc.kdf, tc.aead, append([]byte("tls ech\x00"), raw...))
+			if err != nil {
+				t.Fatal(err)
+			}
+			inner := &clientHelloMsg{vers: VersionTLS12, random: make([]byte, 32), cipherSuites: []uint16{TLS_AES_128_GCM_SHA256}, compressionMethods: []uint8{0}, supportedVersions: []uint16{VersionTLS13}, serverName: "secret.example", encryptedClientHello: []byte{uint8(innerECHExt)}}
+			outer := *inner
+			outer.serverName = "public.example"
+			ctx := &echClientContext{config: &config, kdfID: tc.kdf.ID(), aeadID: tc.aead.ID(), encapsulatedKey: enc, hpkeContext: sender}
+			if err := computeAndUpdateOuterECHExtension(&outer, inner, ctx, true); err != nil {
+				t.Fatal(err)
+			}
+			outer.original, err = outer.marshal()
+			if err != nil {
+				t.Fatal(err)
+			}
+			keys := []EncryptedClientHelloKey{{Config: raw, PrivateKey: key.Bytes()}}
+			if tc.precedingConfig {
+				keys = append([]EncryptedClientHelloKey{{Config: makeConfig(echCipher{1, 1}), PrivateKey: key.Bytes()}}, keys...)
+			}
+			c := &Conn{}
+			hello, server, err := c.processECHClientHello(&outer, keys)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.echAccepted != tc.advertised || (server != nil) != tc.advertised {
+				t.Fatalf("ECH accepted = %v, want %v", c.echAccepted, tc.advertised)
+			}
+			if tc.advertised {
+				if hello.serverName != inner.serverName {
+					t.Fatalf("inner server name = %q", hello.serverName)
+				}
+			} else if hello != &outer {
+				t.Fatal("rejection did not preserve outer ClientHello")
+			}
+		})
 	}
 }

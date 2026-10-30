@@ -58,7 +58,7 @@ func (check *Checker) usage(scope *Scope) {
 		return !(kind == RecvVar || kind == ParamVar || kind == ResultVar)
 	}
 	var unused []*Var
-	for name, elem := range scope.elems {
+	for name, elem := range scope.objects {
 		elem = resolve(name, elem)
 		if v, _ := elem.(*Var); v != nil && needUse(v.kind) && !check.usedVars[v] {
 			unused = append(unused, v)
@@ -177,7 +177,7 @@ func (check *Checker) suspendedCall(keyword string, call syntax.Expr) {
 
 	var x operand
 	var msg string
-	switch check.rawExpr(nil, &x, call, nil, false) {
+	switch check.rawExpr(nil, &x, call, false) {
 	case conversion:
 		msg = "requires function call, not conversion"
 	case expression:
@@ -234,24 +234,28 @@ type (
 )
 
 func (check *Checker) caseValues(x *operand, values []syntax.Expr, seen valueMap) {
+	var T *target
+	if x.isValid() {
+		T = newTarget(x.typ(), "case")
+	}
 L:
 	for _, e := range values {
 		var v operand
-		check.expr(nil, &v, e)
-		if x.mode == invalid || v.mode == invalid {
+		check.expr(T, &v, e)
+		if !x.isValid() || !v.isValid() {
 			continue L
 		}
-		check.convertUntyped(&v, x.typ)
-		if v.mode == invalid {
+		check.convertUntyped(&v, x.typ())
+		if !v.isValid() {
 			continue L
 		}
 		// Order matters: By comparing v against x, error positions are at the case values.
 		res := v // keep original v unchanged
 		check.comparison(&res, x, syntax.Eql, true)
-		if res.mode == invalid {
+		if !res.isValid() {
 			continue L
 		}
-		if v.mode != constant_ {
+		if v.mode() != constant_ {
 			continue L // we're done
 		}
 		// look for duplicate values
@@ -259,7 +263,7 @@ L:
 			// look for duplicate types for a given value
 			// (quadratic algorithm, but these lists tend to be very short)
 			for _, vt := range seen[val] {
-				if Identical(v.typ, vt.typ) {
+				if Identical(v.typ(), vt.typ) {
 					err := check.newError(DuplicateCase)
 					err.addf(&v, "duplicate case %s in expression switch", &v)
 					err.addf(vt.pos, "previous case")
@@ -267,7 +271,7 @@ L:
 					continue L
 				}
 			}
-			seen[val] = append(seen[val], valueType{v.Pos(), v.typ})
+			seen[val] = append(seen[val], valueType{v.Pos(), v.typ()})
 		}
 	}
 }
@@ -345,7 +349,7 @@ L:
 	if len(types) != 1 || T == nil {
 		T = Typ[Invalid]
 		if x != nil {
-			T = x.typ
+			T = x.typ()
 		}
 	}
 
@@ -398,7 +402,7 @@ L:
 	if len(types) != 1 || T == nil {
 		T = Typ[Invalid]
 		if x != nil {
-			T = x.typ
+			T = x.typ()
 		}
 	}
 
@@ -441,10 +445,10 @@ func (check *Checker) stmt(ctxt stmtContext, s syntax.Stmt) {
 		// function and method calls and receive operations can appear
 		// in statement context. Such statements may be parenthesized."
 		var x operand
-		kind := check.rawExpr(nil, &x, s.X, nil, false)
+		kind := check.rawExpr(nil, &x, s.X, false)
 		var msg string
 		var code Code
-		switch x.mode {
+		switch x.mode() {
 		default:
 			if kind == statement {
 				return
@@ -463,12 +467,17 @@ func (check *Checker) stmt(ctxt stmtContext, s syntax.Stmt) {
 	case *syntax.SendStmt:
 		var ch, val operand
 		check.expr(nil, &ch, s.Chan)
-		check.expr(nil, &val, s.Value)
-		if ch.mode == invalid || val.mode == invalid {
-			return
-		}
-		if elem := check.chanElem(s, &ch, false); elem != nil {
-			check.assignment(&val, elem, "send")
+		if ch.isValid() {
+			// try to get a target type for the sent value
+			// TODO(mark): use T in an upcoming CL
+			T := check.chanElem(s, &ch, false)
+			check.genericExpr(newTarget(T, "channel send"), &val, s.Value)
+			if T != nil {
+				check.assignment(&val, T, "send")
+			}
+		} else {
+			// no target type, don't drop work on the floor
+			check.genericExpr(nil, &val, s.Value)
 		}
 
 	case *syntax.AssignStmt:
@@ -477,11 +486,11 @@ func (check *Checker) stmt(ctxt stmtContext, s syntax.Stmt) {
 			// (no need to call unpackExpr as s.Lhs must be single-valued)
 			var x operand
 			check.expr(nil, &x, s.Lhs)
-			if x.mode == invalid {
+			if !x.isValid() {
 				return
 			}
-			if !allNumeric(x.typ) {
-				check.errorf(s.Lhs, NonNumericIncDec, invalidOp+"%s%s%s (non-numeric type %s)", s.Lhs, s.Op, s.Op, x.typ)
+			if !allNumeric(x.typ()) {
+				check.errorf(s.Lhs, NonNumericIncDec, invalidOp+"%s%s%s (non-numeric type %s)", s.Lhs, s.Op, s.Op, x.typ())
 				return
 			}
 			check.assignVar(s.Lhs, nil, &x, "assignment")
@@ -592,7 +601,7 @@ func (check *Checker) stmt(ctxt stmtContext, s syntax.Stmt) {
 		check.simpleStmt(s.Init)
 		var x operand
 		check.expr(nil, &x, s.Cond)
-		if x.mode != invalid && !allBoolean(x.typ) {
+		if x.isValid() && !allBoolean(x.typ()) {
 			check.error(s.Cond, InvalidCond, "non-boolean condition in if statement")
 		}
 		check.stmt(inner, s.Then)
@@ -694,7 +703,7 @@ func (check *Checker) stmt(ctxt stmtContext, s syntax.Stmt) {
 		if s.Cond != nil {
 			var x operand
 			check.expr(nil, &x, s.Cond)
-			if x.mode != invalid && !allBoolean(x.typ) {
+			if x.isValid() && !allBoolean(x.typ()) {
 				check.error(s.Cond, InvalidCond, "non-boolean condition in for statement")
 			}
 		}
@@ -721,15 +730,15 @@ func (check *Checker) switchStmt(inner stmtContext, s *syntax.SwitchStmt) {
 		// By checking assignment of x to an invisible temporary
 		// (as a compiler would), we get all the relevant checks.
 		check.assignment(&x, nil, "switch expression")
-		if x.mode != invalid && !Comparable(x.typ) && !hasNil(x.typ) {
-			check.errorf(&x, InvalidExprSwitch, "cannot switch on %s (%s is not comparable)", &x, x.typ)
-			x.mode = invalid
+		if x.isValid() && !Comparable(x.typ()) && !hasNil(x.typ()) {
+			check.errorf(&x, InvalidExprSwitch, "cannot switch on %s (%s is not comparable)", &x, x.typ())
+			x.invalidate()
 		}
 	} else {
 		// spec: "A missing switch expression is
 		// equivalent to the boolean value true."
-		x.mode = constant_
-		x.typ = Typ[Bool]
+		x.mode_ = constant_
+		x.typ_ = Typ[Bool]
 		x.val = constant.MakeBool(true)
 		// TODO(gri) should have a better position here
 		pos := s.Rbrace
@@ -785,10 +794,10 @@ func (check *Checker) typeSwitchStmt(inner stmtContext, s *syntax.SwitchStmt, gu
 	{
 		var x operand
 		check.expr(nil, &x, guard.X)
-		if x.mode != invalid {
-			if isTypeParam(x.typ) {
+		if x.isValid() {
+			if isTypeParam(x.typ()) {
 				check.errorf(&x, InvalidTypeSwitch, "cannot use type switch on type parameter value %s", &x)
-			} else if IsInterface(x.typ) {
+			} else if IsInterface(x.typ()) {
 				sx = &x
 			} else {
 				check.errorf(&x, InvalidTypeSwitch, "%s is not an interface", &x)

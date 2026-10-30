@@ -97,8 +97,6 @@ lable2:
 	MOVV	R4, 1(R5)		// a404c029
 	MOVB	R4, 1(R5)		// a4040029
 	MOVBU	R4, 1(R5)		// a4040029
-	SC	R4, 4096(R5)		// a4001021
-	SCV	R4, 4096(R5)		// a4001023
 	MOVW	y+8(FP), R4		// 64408028
 	MOVWU	y+8(FP), R4		// 6440802a
 	MOVV	y+8(FP), R4		// 6440c028
@@ -109,8 +107,6 @@ lable2:
 	MOVV	1(R5), R4		// a404c028
 	MOVB	1(R5), R4		// a4040028
 	MOVBU	1(R5), R4		// a404002a
-	LL	4096(R5), R4		// a4001020
-	LLV	4096(R5), R4		// a4001022
 	MOVW	$4(R4), R5		// 8510c002
 	MOVV	$4(R4), R5		// 8510c002
 	MOVW	$-1, R4			// 04fcff02
@@ -260,6 +256,11 @@ lable2:
 	SQRTD	F4, F5			// 85481401
 
 	DBAR	 			// 00007238
+	DBAR	$0 			// 00007238
+	DBAR	$18 			// 12007238
+	IBAR	 			// 00807238
+	IBAR	$0 			// 00807238
+	IBAR	$18 			// 12807238
 	NOOP	 			// 00004003
 
 	CMPEQF	F4, F5, FCC0		// a010120c
@@ -354,6 +355,18 @@ lable2:
 	AMMAXDBVU	R14, (R13), R12 // acb97038
 	AMMINDBWU	R14, (R13), R12 // ac397138
 	AMMINDBVU	R14, (R13), R12 // acb97138
+	LL	4096(R5), R4		// a4001020
+	LLW	4096(R5), R4		// a4001020
+	LLV	4096(R5), R4		// a4001022
+	LLACQW	(R5), R4		// a4805738
+	LLACQV	(R5), R4		// a4885738
+	SC	R4, 4096(R5)		// a4001021
+	SCW	R4, 4096(R5)		// a4001021
+	SCV	R4, 4096(R5)		// a4001023
+	SCQ	R4, R5, (R6)		// c4145738
+	SCRELW	R4, (R6)		// c4845738
+	SCRELV	R4, (R6)		// c48c5738
+
 
 	FMADDF	F2, F14, F9, F16	// 30391108
 	FMADDD	F11, F20, F23, F12	// ecd22508
@@ -394,6 +407,10 @@ lable2:
 	FTINTWD		F0, F1		// 01081b01
 	FTINTVF		F0, F1		// 01241b01
 	FTINTVD		F0, F1		// 01281b01
+
+	// FRINT{F,D} instructions
+	FRINTF		F0, F1		// 01441e01
+	FRINTD		F0, F1		// 01481e01
 
 	FMAXAF		F4, F5, F6	// a6900c01
 	FMAXAF		F4, F5		// a5900c01
@@ -478,26 +495,26 @@ lable2:
 	VMOVQ		V2, 3(R4)       // 820c402c
 	VMOVQ		V2, 2040(R4)    // 82e05f2c
 	VMOVQ		V2, -2040(R4)   // 8220602c
-	VMOVQ		V2, y+16(FP)    // 0260402c
-	VMOVQ		V2, x+2030(FP)  // 02d85f2c
+	VMOVQ		V2, y+16(FP)    // 6260402c
+	VMOVQ		V2, x+2030(FP)  // 62d85f2c
 	VMOVQ		(R4), V2        // 8200002c
 	VMOVQ		3(R4), V2       // 820c002c
 	VMOVQ		2044(R4), V2    // 82f01f2c
 	VMOVQ		-2044(R4), V2   // 8210202c
-	VMOVQ		y+16(FP), V2    // 0260002c
-	VMOVQ		x+2030(FP), V2  // 02d81f2c
+	VMOVQ		y+16(FP), V2    // 6260002c
+	VMOVQ		x+2030(FP), V2  // 62d81f2c
 	XVMOVQ		X2, (R4)        // 8200c02c
 	XVMOVQ		X3, 3(R4)       // 830cc02c
 	XVMOVQ		X4, 2040(R4)    // 84e0df2c
 	XVMOVQ		X5, -2040(R4)   // 8520e02c
-	XVMOVQ		X6, y+16(FP)    // 0660c02c
-	XVMOVQ		X7, x+2030(FP)  // 07d8df2c
+	XVMOVQ		X6, y+16(FP)    // 6660c02c
+	XVMOVQ		X7, x+2030(FP)  // 67d8df2c
 	XVMOVQ		(R4), X2        // 8200802c
 	XVMOVQ		3(R4), X3       // 830c802c
 	XVMOVQ		2044(R4), X4    // 84f09f2c
 	XVMOVQ		-2044(R4), X5   // 8510a02c
-	XVMOVQ		y+16(FP), X6    // 0660802c
-	XVMOVQ		x+2030(FP), X7  // 07d89f2c
+	XVMOVQ		y+16(FP), X6    // 6660802c
+	XVMOVQ		x+2030(FP), X7  // 67d89f2c
 
 	// Move vector element to general-purpose register: VMOVQ  <Vn>.<T>[index], Rd
 	VMOVQ		V0.B[0], R4     // 0480ef72
@@ -591,6 +608,16 @@ lable2:
 	XVMOVQ		24(R4), X3.V4	// 830c1032
 	XVMOVQ		-24(R4), X3.V4	// 83f41732
 
+	// Store the byte/halfword/word/doubleword element selected by immediate index from vector register vd/xd into memory.
+	VMOVQ		V5.B[3], 1(R4)	// 85048c31
+	VMOVQ		V5.H[2], 2(R4)	// 85044831
+	VMOVQ		V5.W[1], 4(R4)	// 85042431
+	VMOVQ		V5.V[0], 8(R4)	// 85041031
+	XVMOVQ		X5.B[3], 1(R4)	// 85048c33
+	XVMOVQ		X5.H[2], 2(R4)	// 85044833
+	XVMOVQ		X5.W[1], 4(R4)	// 85042433
+	XVMOVQ		X5.V[0], 8(R4)	// 85041033
+
 	// VSEQ{B,H,W,V}, XVSEQ{B,H,W,V} instruction
 	VSEQB		V1, V2, V3      // 43040070
 	VSEQH		V1, V2, V3      // 43840070
@@ -621,11 +648,11 @@ lable2:
 	XVSLTW		X1, X2, X3      // 43040774
 	XVSLTV		X1, X2, X3      // 43840774
 	VSLTB		$1, V2, V3      // 43048672
-	VSLTH		$16, V2, V3     // 43c08672
+	VSLTH		$-16, V2, V3    // 43c08672
 	VSLTW		$-16, V2, V3    // 43408772
 	VSLTV		$-15, V2, V3    // 43c48772
 	XVSLTB		$1, X2, X3      // 43048676
-	XVSLTH		$16, X2, X3     // 43c08676
+	XVSLTH		$-16, X2, X3    // 43c08676
 	XVSLTW		$-16, X2, X3    // 43408776
 	XVSLTV		$-16, X2, X3    // 43c08776
 
@@ -882,6 +909,7 @@ lable2:
 	XVSUBQ		X3, X2, X1	// 418c2d75
 
 	// [X]VADD{B,H,W,V}U, [X]VSUB{B,H,W,V}U instructions
+	VADDBU		$1, V2		// 42048a72
 	VADDBU		$1, V2, V1	// 41048a72
 	VADDHU		$2, V2, V1	// 41888a72
 	VADDWU		$3, V2, V1	// 410c8b72
@@ -927,7 +955,7 @@ lable2:
 	VSSUBWU		V1, V2, V3	// 43044d70
 	VSSUBVU		V1, V2, V3	// 43844d70
 	XVSADDBU	X1, X2, X3	// 43044a74
-	XVSADDHU	X1, X2, X3	// 43044b74
+	XVSADDHU	X1, X2, X3	// 43844a74
 	XVSADDWU	X1, X2, X3	// 43044b74
 	XVSADDVU	X1, X2, X3	// 43844b74
 	XVSSUBBU	X1, X2, X3	// 43044c74
@@ -1127,7 +1155,7 @@ lable2:
 
 	// [X]VADDW{EV/OD}.{H.B/W.H/D.W/Q.D}U instructions
 	VADDWEVHBU	V1, V2, V3	// 43042e70
-	VADDWEVWHU	V1, V2, V3	// 43042f70
+	VADDWEVWHU	V1, V2, V3	// 43842e70
 	VADDWEVVWU	V1, V2, V3	// 43042f70
 	VADDWEVQVU	V1, V2, V3	// 43842f70
 	VADDWODHBU	V1, V2, V3	// 43043270
@@ -1408,6 +1436,14 @@ lable2:
 	XVBITREVH	$15, X2, X1	// 417c1877
 	XVBITREVW	$31, X2, X1	// 41fc1877
 	XVBITREVV	$63, X2, X1	// 41fc1977
+
+	// [X]{VBITSELV} instructions
+	VBITSELV	V1, V2, V3, V4	// 6488100d
+	XVBITSELV	X1, X2, X3, X4	// 6488200d
+
+	// [X]{VBITSELB} instructions
+	VBITSELB	$255, V2, V1	// 41fcc773
+	XVBITSELB	$0, X2, X1	// 4100c477
 
 	// ALSL{W/WU/D}
 	ALSLW		$4, R4, R5, R6	// 86940500

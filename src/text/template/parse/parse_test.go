@@ -341,6 +341,7 @@ var parseTests = []parseTest{
 	{"paren nesting in pipeline exceeds limit", "{{ (((( 1 )))) | printf }}", hasError, "template: test:1: max expression depth exceeded"},
 	{"paren nesting with other constructs", "{{ if ((( true ))) }}YES{{ end }}", noError, "{{if (((true)))}}\"YES\"{{end}}"},
 	{"paren nesting with other constructs exceeds limit", "{{ if (((( true )))) }}YES{{ end }}", hasError, "template: test:1: max expression depth exceeded"},
+	{"control structure nesting at limit", "{{if .X}}{{with .Y}}{{range .Z}}x{{end}}{{end}}{{end}}", noError, `{{if .X}}{{with .Y}}{{range .Z}}"x"{{end}}{{end}}{{end}}`},
 }
 
 var builtins = map[string]any{
@@ -409,6 +410,36 @@ func TestParseWithComments(t *testing.T) {
 				t.Errorf("%s=(%q): got\n\t%v\nexpected\n\t%v", test.name, test.input, result, test.result)
 			}
 		})
+	}
+}
+
+func TestDelimsStringRoundtrip(t *testing.T) {
+	// Each input is already in canonical String form, so parsing it with the
+	// custom delimiters and printing the resulting tree must reproduce the
+	// input exactly. This exercises the String/writeTo methods of every node
+	// type that emits delimiters.
+	const (
+		left  = "[["
+		right = "]]"
+	)
+	for _, input := range []string{
+		`[[.X]]`,                     // ActionNode
+		`[[/* a comment */]]`,        // CommentNode
+		`[[if .X]]y[[else]]z[[end]]`, // BranchNode (if), with else and end
+		`[[range .X]][[break]][[continue]][[end]]`, // RangeNode, BreakNode, ContinueNode
+		`[[with .X]]y[[end]]`,                      // BranchNode (with)
+		`[[template "name" .]]`,                    // TemplateNode
+	} {
+		tr := New("test")
+		tr.Mode = ParseComments
+		tmpl, err := tr.Parse(input, left, right, make(map[string]*Tree))
+		if err != nil {
+			t.Errorf("%q: unexpected parse error: %v", input, err)
+			continue
+		}
+		if got := tmpl.Root.String(); got != input {
+			t.Errorf("got\n\t%q\nexpected\n\t%q", got, input)
+		}
 	}
 }
 
@@ -608,6 +639,24 @@ var errorTests = []parseTest{
 	{"rangenotvariable2",
 		"{{range $k, 123 := .}}{{end}}",
 		hasError, `range can only initialize variables`},
+	{"ifnesting",
+		"{{if .}}{{if .}}{{if .}}{{if .}}{{end}}{{end}}{{end}}{{end}}",
+		hasError, `max control structure depth exceeded`},
+	{"rangenesting",
+		"{{range .}}{{range .}}{{range .}}{{range .}}{{end}}{{end}}{{end}}{{end}}",
+		hasError, `max control structure depth exceeded`},
+	{"withnesting",
+		"{{with .}}{{with .}}{{with .}}{{with .}}{{end}}{{end}}{{end}}{{end}}",
+		hasError, `max control structure depth exceeded`},
+	{"elseifnesting",
+		"{{if .}}{{else if .}}{{else if .}}{{else if .}}{{end}}",
+		hasError, `max control structure depth exceeded`},
+	{"blocknesting",
+		"{{block `a` .}}{{block `b` .}}{{block `c` .}}{{block `d` .}}{{end}}{{end}}{{end}}{{end}}",
+		hasError, `max control structure depth exceeded`},
+	{"parennesting",
+		"{{if .}}{{with .}}{{range .}}{{(.)}}{{end}}{{end}}{{end}}",
+		hasError, `max expression depth exceeded`},
 }
 
 func TestErrors(t *testing.T) {

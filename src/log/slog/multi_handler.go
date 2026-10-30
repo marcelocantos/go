@@ -7,6 +7,7 @@ package slog
 import (
 	"context"
 	"errors"
+	"slices"
 )
 
 // NewMultiHandler creates a [MultiHandler] with the given Handlers.
@@ -47,12 +48,19 @@ func (h *MultiHandler) Handle(ctx context.Context, r Record) error {
 func (h *MultiHandler) WithAttrs(attrs []Attr) Handler {
 	handlers := make([]Handler, 0, len(h.multi))
 	for i := range h.multi {
-		handlers = append(handlers, h.multi[i].WithAttrs(attrs))
+		as := attrs
+		if i != len(h.multi)-1 {
+			as = slices.Clone(attrs)
+		}
+		handlers = append(handlers, h.multi[i].WithAttrs(as))
 	}
 	return &MultiHandler{multi: handlers}
 }
 
 func (h *MultiHandler) WithGroup(name string) Handler {
+	if name == "" {
+		return h
+	}
 	handlers := make([]Handler, 0, len(h.multi))
 	for i := range h.multi {
 		handlers = append(handlers, h.multi[i].WithGroup(name))

@@ -208,8 +208,26 @@ func Append17(n int) []int {
 	for i, x := range r {
 		println(i, x)
 	}
+	// "range r" keeps pointer to backing store of r. Our analysis
+	// is not yet precise enough to know it is OK in this case, so
+	// currently no `moveSliceNoCapNoScan` here. See #79909.
+	// amd64:-`.*moveSlice`
+	return r
+}
+
+func Append21(n int) []int {
+	var r []int
+	for i := range n {
+		// amd64:`.*growsliceNoAlias\b`
+		r = append(r, i)
+	}
 	// amd64:`.*moveSliceNoCapNoScan\b`
 	return r
+}
+
+func Append22(n int) int {
+	// amd64:-`.*moveSlice`
+	return Append21(n)[0]
 }
 
 //go:noinline

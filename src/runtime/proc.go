@@ -9,9 +9,9 @@ import (
 	"internal/cpu"
 	"internal/goarch"
 	"internal/goexperiment"
-	"internal/goos"
 	"internal/runtime/atomic"
 	"internal/runtime/exithook"
+	"internal/runtime/maps"
 	"internal/runtime/sys"
 	"internal/strconv"
 	"internal/stringslite"
@@ -127,11 +127,14 @@ var (
 // done to start up the runtime. It is built by the linker.
 var runtime_inittasks []*initTask
 
-// main_init_done is a signal used by cgocallbackg that initialization
-// has been completed. It is made before _cgo_notify_runtime_init_done,
-// so all cgo calls can rely on it existing. When main_init is complete,
-// it is closed, meaning cgocallbackg can reliably receive from it.
-var main_init_done chan bool
+// mainInitDone is a signal used by cgocallbackg that initialization
+// has been completed. If this is false, wait on mainInitDoneChan.
+var mainInitDone atomic.Bool
+
+// mainInitDoneChan is closed after initialization has been completed.
+// It is made before _cgo_notify_runtime_init_done, so all cgo
+// calls can rely on it existing.
+var mainInitDoneChan chan bool
 
 //go:linkname main_main main.main
 func main_main()
@@ -213,16 +216,23 @@ func main() {
 	gcenable()
 	defaultGOMAXPROCSUpdateEnable() // don't STW before runtime initialized.
 
-	main_init_done = make(chan bool)
+	// If we encountered a removed GODEBUG during startup we can panic now.
+	if k := invalidGODEBUG.key; k != "" {
+		v := invalidGODEBUG.value
+		r := strconv.Itoa(invalidGODEBUG.removed)
+		fatal(`removed GODEBUG "` + k + `" set to old value "` + v + `" in environment (https://go.dev/doc/godebug#go-1` + r + `)`)
+	}
+
+	mainInitDoneChan = make(chan bool)
 	if iscgo {
 		if _cgo_pthread_key_created == nil {
 			throw("_cgo_pthread_key_created missing")
 		}
 
-		if _cgo_thread_start == nil {
-			throw("_cgo_thread_start missing")
-		}
 		if GOOS != "windows" {
+			if _cgo_thread_start == nil {
+				throw("_cgo_thread_start missing")
+			}
 			if _cgo_setenv == nil {
 				throw("_cgo_setenv missing")
 			}
@@ -265,7 +275,8 @@ func main() {
 	// of collecting statistics in malloc and newproc
 	inittrace.active = false
 
-	close(main_init_done)
+	mainInitDone.Store(true)
+	close(mainInitDoneChan)
 
 	needUnlock = false
 	unlockOSThread()
@@ -778,6 +789,7 @@ func cpuinit(env string) {
 	case "loong64":
 		loong64HasLAMCAS = cpu.Loong64.HasLAMCAS
 		loong64HasLAM_BH = cpu.Loong64.HasLAM_BH
+		loong64HasDBAR_HINTS = cpu.Loong64.HasDBAR_HINTS
 		loong64HasLSX = cpu.Loong64.HasLSX
 
 	case "riscv64":
@@ -873,10 +885,10 @@ func schedinit() {
 	ticks.init() // run as early as possible
 	moduledataverify()
 	stackinit()
-	randinit() // must run before mallocinit, alginit, mcommoninit
+	randinit() // must run before mallocinit, AlgInit, mcommoninit
 	mallocinit()
-	cpuinit(godebug) // must run before alginit
-	alginit()        // maps, hash, rand must not be used before this call
+	cpuinit(godebug) // must run before AlgInit
+	maps.AlgInit()   // maps, hash, rand must not be used before this call
 	mcommoninit(gp.m, -1)
 	modulesinit()   // provides activeModules
 	typelinksinit() // uses maps, activeModules
@@ -1102,19 +1114,9 @@ func (mp *m) hasCgoOnStack() bool {
 	return mp.ncgo > 0 || mp.isextra
 }
 
-const (
-	// osHasLowResTimer indicates that the platform's internal timer system has a low resolution,
-	// typically on the order of 1 ms or more.
-	osHasLowResTimer = GOOS == "windows" || GOOS == "openbsd" || GOOS == "netbsd"
-
-	// osHasLowResClockInt is osHasLowResClock but in integer form, so it can be used to create
-	// constants conditionally.
-	osHasLowResClockInt = goos.IsWindows
-
-	// osHasLowResClock indicates that timestamps produced by nanotime on the platform have a
-	// low resolution, typically on the order of 1 ms or more.
-	osHasLowResClock = osHasLowResClockInt > 0
-)
+// osHasLowResTimer indicates that the platform's internal timer system has a low resolution,
+// typically on the order of 1 ms or more.
+const osHasLowResTimer = GOOS == "windows" || GOOS == "openbsd" || GOOS == "netbsd" || GOOS == "plan9"
 
 // Mark gp ready to run.
 func ready(gp *g, traceskip int, next bool) {
@@ -1657,7 +1659,6 @@ func stopTheWorldWithSema(reason stwReason) worldStop {
 	start := nanotime() // exclude time waiting for sched.lock from start and total time metrics.
 	sched.stopwait = gomaxprocs
 	sched.gcwaiting.Store(true)
-	preemptall()
 
 	// Stop current P.
 	gp.m.p.ptr().status = _Pgcstop // Pgcstop is only diagnostic.
@@ -1684,10 +1685,11 @@ func stopTheWorldWithSema(reason stwReason) worldStop {
 		sched.stopwait--
 	}
 	wait := sched.stopwait > 0
-	unlock(&sched.lock)
+	unlock(&sched.lock) // available to preempted threads
 
 	// Wait for remaining Ps to stop voluntarily.
 	if wait {
+		preemptall()
 		for {
 			// wait for 100us, then try to re-preempt in case of any races
 			if notetsleep(&sched.stopnote, 100*1000) {
@@ -1917,6 +1919,7 @@ func mstart1() {
 	gp.sched.g = guintptr(unsafe.Pointer(gp))
 	gp.sched.pc = sys.GetCallerPC()
 	gp.sched.sp = sys.GetCallerSP()
+	gp.sched.bp = getcallerfp()
 
 	asminit()
 	minit()
@@ -1964,6 +1967,11 @@ func mstartm0() {
 //go:nosplit
 func mPark() {
 	gp := getg()
+	// This M might stay parked through an entire GC cycle.
+	// Erase any leftovers on the signal stack.
+	if goexperiment.RuntimeSecret {
+		eraseSecretsSignalStk()
+	}
 	notesleep(&gp.m.park)
 	noteclear(&gp.m.park)
 }
@@ -2138,6 +2146,11 @@ func forEachP(reason waitReason, fn func(*p)) {
 //
 //go:systemstack
 func forEachPInternal(fn func(*p)) {
+	if atomic.Load(&worldsema) != 0 {
+		// Not held by anyone, so certainly not held by our caller
+		throw("worldsema not held")
+	}
+
 	mp := acquirem()
 	pp := getg().m.p.ptr()
 
@@ -2154,7 +2167,6 @@ func forEachPInternal(fn func(*p)) {
 			atomic.Store(&p2.runSafePointFn, 1)
 		}
 	}
-	preemptall()
 
 	// Any P entering _Pidle or a system call from now on will observe
 	// p.runSafePointFn == 1 and will call runSafePointFn when
@@ -2170,7 +2182,11 @@ func forEachPInternal(fn func(*p)) {
 	}
 
 	wait := sched.safePointWait > 0
-	unlock(&sched.lock)
+	unlock(&sched.lock) // available to preempted threads
+
+	if wait {
+		preemptall()
+	}
 
 	// Run fn for the current P.
 	fn(pp)
@@ -2422,10 +2438,6 @@ func needm(signal bool) {
 
 	// Store the original signal mask for use by minit.
 	mp.sigmask = sigmask
-
-	// Install TLS on some platforms (previously setg
-	// would do this if necessary).
-	osSetupTLS(mp)
 
 	// Install g (= m->g0) and set the stack bounds
 	// to match the current stack.
@@ -2904,11 +2916,8 @@ func newm(fn func(), pp *p, id int64) {
 }
 
 func newm1(mp *m) {
-	if iscgo {
+	if iscgo && _cgo_thread_start != nil {
 		var ts cgothreadstart
-		if _cgo_thread_start == nil {
-			throw("_cgo_thread_start missing")
-		}
 		ts.g.set(mp.g0)
 		ts.tls = (*uint64)(unsafe.Pointer(&mp.tls[0]))
 		ts.fn = unsafe.Pointer(abi.FuncPCABI0(mstart))
@@ -3379,6 +3388,16 @@ func execute(gp *g, inheritTime bool) {
 		traceRelease(trace)
 	}
 
+	// A safe-point request may have arrived after findRunnable checked
+	// for it, while this M had no running G for preemptone to preempt.
+	// Handle it before executing gp instead of waiting for a retry.
+	//
+	// Keep this after trace.GoStart: the safe-point function may itself
+	// emit trace events that assume gp has already been traced as running.
+	if mp.p.ptr().runSafePointFn != 0 {
+		runSafePointFn()
+	}
+
 	gogo(&gp.sched)
 }
 
@@ -3582,7 +3601,7 @@ top:
 	// everything up to cap(allp) is immutable.
 	//
 	// We clear the snapshot from the M after return via
-	// mp.clearAllpSnapshop (in schedule) and on each iteration of the top
+	// mp.clearAllpSnapshot (in schedule) and on each iteration of the top
 	// loop.
 	allpSnapshot := mp.snapshotAllp()
 	// Also snapshot masks. Value changes are OK, but we can't allow
@@ -3835,10 +3854,6 @@ func stealWork(now int64) (gp *g, inheritTime bool, rnow, pollUntil int64, newWo
 		stealTimersOrRunNextG := i == stealTries-1
 
 		for enum := stealOrder.start(cheaprand()); !enum.done(); enum.next() {
-			if sched.gcwaiting.Load() {
-				// GC work may be available.
-				return nil, false, now, pollUntil, true
-			}
 			p2 := allp[enum.position()]
 			if pp == p2 {
 				continue
@@ -3884,6 +3899,12 @@ func stealWork(now int64) (gp *g, inheritTime bool, rnow, pollUntil int64, newWo
 				if gp := runqsteal(pp, p2, stealTimersOrRunNextG); gp != nil {
 					return gp, false, now, pollUntil, ranTimer
 				}
+			}
+
+			if sched.gcwaiting.Load() {
+				// GC work may be available (and may have caused an early return
+				// from runqsteal).
+				return nil, false, now, pollUntil, true
 			}
 		}
 	}
@@ -4630,6 +4651,30 @@ func reentersyscall(pc, sp, bp uintptr) {
 	// Disable preemption because during this function g is in Gsyscall status,
 	// but can have inconsistent g->sched, do not let GC observe it.
 	gp.m.locks++
+
+	// This M may have a signal stack that is dirtied with secret information
+	// (see package "runtime/secret"). Since it's about to go into a syscall for
+	// an arbitrary amount of time and the G that put the secret info there
+	// might have returned from secret.Do, we have to zero it out now, lest we
+	// break the guarantee that secrets are purged by the next GC after a return
+	// to secret.Do.
+	//
+	// It might be tempting to think that we only need to zero out this if we're
+	// not running in secret mode anymore, but that leaves an ABA problem. The G
+	// that put the secrets onto our signal stack may not be the one that is
+	// currently executing.
+	//
+	// Logically, we should erase this when we lose our P, not when we enter the
+	// syscall. This would avoid a zeroing in the case where the call returns
+	// almost immediately. Since we use this path for cgo calls as well, these
+	// fast "syscalls" are quite common. However, since we only erase the signal
+	// stack if we were delivered a signal in secret mode and considering the
+	// cross-thread synchronization cost for the P, it hardly seems worth it.
+	//
+	// TODO(dmo): can we encode the goid into mp.signalSecret and avoid the ABA problem?
+	if goexperiment.RuntimeSecret {
+		eraseSecretsSignalStk()
+	}
 
 	// Entersyscall must not call any function that might split/grow the stack.
 	// (See details in comment above.)
@@ -5410,6 +5455,18 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	// dit bubble
 	newg.ditWanted = callergp.ditWanted
 
+	if goexperiment.RuntimeSecret && callergp.secret > 0 {
+		// while it might seem weird to have a non-zero gp.secret value
+		// with no calls to secret.Do on the stack, this case is handled
+		// just fine by the cleanup logic in goexit0
+		// TODO: secret mode is invisible to the user if they don't ask about it via secret.Enabled
+		// and can have severe performance penalties (at time of writing, wrapping the entire
+		// tls handshake resulted in a 30% slowdown of the benchmarks).
+		// Whether a goroutine is running in secret mode should be more visible,
+		// maybe with a stack frame or some sort of bubble inspecting mechanism
+		newg.secret = 1
+	}
+
 	// Set up race context.
 	if raceenabled {
 		newg.racectx = racegostart(callerpc)
@@ -5976,6 +6033,12 @@ func (pp *p) destroy() {
 	clear(pp.sudogbuf[:])
 	pp.sudogcache = pp.sudogbuf[:0]
 	pp.pinnerCache = nil
+	if pp.pinCounterCache != nil {
+		lock(&mheap_.speciallock)
+		mheap_.specialPinCounterAlloc.free(unsafe.Pointer(pp.pinCounterCache))
+		unlock(&mheap_.speciallock)
+		pp.pinCounterCache = nil
+	}
 	clear(pp.deferpoolbuf[:])
 	pp.deferpool = pp.deferpoolbuf[:0]
 	systemstack(func() {
@@ -6888,7 +6951,15 @@ func preemptone(pp *p) bool {
 	// Request an async preemption of this P.
 	if preemptMSupported && debug.asyncpreemptoff == 0 {
 		pp.preempt = true
-		preemptM(mp)
+		// Claim the G's status and check that it is still running on mp.
+		// preemptM releases the _Gscan bit.
+		if castogscanstatus(gp, _Grunning, _Gscanrunning) {
+			if gp.m == mp {
+				preemptM(gp)
+			} else {
+				casfrom_Gscanstatus(gp, _Gscanrunning, _Grunning)
+			}
+		}
 	}
 
 	return true
@@ -7418,8 +7489,8 @@ func pidleget(now int64) (*p, int64) {
 }
 
 // pidlegetSpinning tries to get a p from the _Pidle list, acquiring ownership.
-// This is called by spinning Ms (or callers than need a spinning M) that have
-// found work. If no P is available, this must synchronized with non-spinning
+// This is called by spinning Ms (or callers that need a spinning M) that have
+// found work. If no P is available, this must be synchronized with non-spinning
 // Ms that may be preparing to drop their P without discovering this work.
 //
 // sched.lock must be held.
@@ -7698,6 +7769,11 @@ func runqgrab(pp *p, batch *[256]guintptr, batchHead uint32, stealRunNextG bool)
 									// 1-15ms, which is way too much for this
 									// optimization. So just yield.
 									osyield()
+								}
+								if sched.gcwaiting.Load() {
+									// The sleep above might have overlapped with a STW
+									// request. Check before committing to this new work.
+									return 0
 								}
 							}
 						}

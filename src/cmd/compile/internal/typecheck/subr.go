@@ -37,20 +37,20 @@ func NewFuncParams(origs []*types.Field) []*types.Field {
 }
 
 // NodAddr returns a node representing &n at base.Pos.
-func NodAddr(n ir.Node) *ir.AddrExpr {
-	return NodAddrAt(base.Pos, n)
+func NodAddr(curfunc *ir.Func, n ir.Node) *ir.AddrExpr {
+	return NodAddrAt(curfunc, base.Pos, n)
 }
 
 // NodAddrAt returns a node representing &n at position pos.
-func NodAddrAt(pos src.XPos, n ir.Node) *ir.AddrExpr {
-	return ir.NewAddrExpr(pos, Expr(n))
+func NodAddrAt(curfunc *ir.Func, pos src.XPos, n ir.Node) *ir.AddrExpr {
+	return ir.NewAddrExpr(pos, Expr(curfunc, n))
 }
 
 // LinksymAddr returns a new expression that evaluates to the address
 // of lsym. typ specifies the type of the addressed memory.
-func LinksymAddr(pos src.XPos, lsym *obj.LSym, typ *types.Type) *ir.AddrExpr {
+func LinksymAddr(curfunc *ir.Func, pos src.XPos, lsym *obj.LSym, typ *types.Type) *ir.AddrExpr {
 	n := ir.NewLinksymExpr(pos, lsym, typ)
-	return Expr(NodAddrAt(pos, n)).(*ir.AddrExpr)
+	return Expr(curfunc, NodAddrAt(curfunc, pos, n)).(*ir.AddrExpr)
 }
 
 func NodNil() ir.Node {
@@ -60,8 +60,8 @@ func NodNil() ir.Node {
 // AddImplicitDots finds missing fields in obj.field that
 // will give the shortest unique addressing and
 // modifies the tree with missing field names.
-func AddImplicitDots(n *ir.SelectorExpr) *ir.SelectorExpr {
-	n.X = typecheck(n.X, ctxType|ctxExpr)
+func AddImplicitDots(curfunc *ir.Func, n *ir.SelectorExpr) *ir.SelectorExpr {
+	n.X = typecheck(curfunc, n.X, ctxType|ctxExpr)
 	t := n.X.Type()
 	if t == nil {
 		return n
@@ -96,9 +96,10 @@ func AddImplicitDots(n *ir.SelectorExpr) *ir.SelectorExpr {
 // CalcMethods calculates all the methods (including embedding) of a non-interface
 // type t.
 func CalcMethods(t *types.Type) {
-	if t == nil || len(t.AllMethods()) != 0 {
+	if t == nil || t.MethodsComputed() {
 		return
 	}
+	defer t.SetMethodsComputed(true)
 
 	// mark top-level method symbols
 	// so that expand1 doesn't consider them.
@@ -130,10 +131,20 @@ func CalcMethods(t *types.Type) {
 		// add it to the base type method list
 		f = f.Copy()
 		f.Embedded = 1 // needs a trampoline
-		for _, d := range path {
-			if d.field.Type.IsPtr() {
-				f.Embedded = 2
-				break
+		if types.IsInterfaceMethod(f.Type) {
+			// Interface methods use Offset as an itab slot.
+			f.Embedded = 2
+		} else {
+			var offset int64
+			for _, d := range path {
+				if d.field.Type.IsPtr() {
+					f.Embedded = 2
+					break
+				}
+				offset += d.field.Offset
+			}
+			if f.Embedded == 1 {
+				f.Offset = offset
 			}
 		}
 		ms = append(ms, f)
@@ -794,4 +805,22 @@ var slist []symlink
 
 type symlink struct {
 	field *types.Field
+}
+
+// FieldOffset returns the offset of field f in t,
+// including any implicit offsets from embedded fields.
+func FieldOffset(t *types.Type, f *types.Field) int64 {
+	if f.Sym == nil {
+		return f.Offset
+	}
+	path, ambig := dotpath(f.Sym, t, nil, false)
+	if path == nil || ambig {
+		return f.Offset
+	}
+	var offset int64
+	for _, d := range path {
+		offset += d.field.Offset
+	}
+	offset += f.Offset
+	return offset
 }

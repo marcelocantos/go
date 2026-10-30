@@ -862,14 +862,14 @@ func TestUnmarshalInvalidTimes(t *testing.T) {
 	}{
 		{`{}`, func() string {
 			if goexperiment.JSONv2 {
-				return "json: cannot unmarshal JSON object into Go type time.Time"
+				return "json: cannot unmarshal object into Go value of type time.Time"
 			} else {
 				return "Time.UnmarshalJSON: input is not a JSON string"
 			}
 		}()},
 		{`[]`, func() string {
 			if goexperiment.JSONv2 {
-				return "json: cannot unmarshal JSON array into Go type time.Time"
+				return "json: cannot unmarshal array into Go value of type time.Time"
 			} else {
 				return "Time.UnmarshalJSON: input is not a JSON string"
 			}
@@ -1752,6 +1752,29 @@ func TestMarshalBinaryVersion2(t *testing.T) {
 	}
 }
 
+func TestMarshalBinaryVersion2Bugfix(t *testing.T) {
+	offsetSec := -5*3600 - 30*60 - 45 // -19845
+	loc := FixedZone("LMT", offsetSec)
+
+	t1 := Date(2024, 6, 15, 12, 0, 0, 0, loc)
+	b, err := t1.MarshalBinary()
+	if err != nil {
+		t.Errorf("Failed to Marshal, error = %v", err)
+	}
+
+	t2 := Time{}
+	err = t2.UnmarshalBinary(b)
+	if err != nil {
+		t.Errorf("Failed to Unmarshal, error = %v", err)
+	}
+
+	_, t1OriginOffset := t1.Zone()
+	_, t2OriginOffset := t2.Zone()
+	if t1OriginOffset != t2OriginOffset {
+		t.Errorf("The result offsetSec: %d after Unmarshal is not matched original offsetSec: %d", t2OriginOffset, t1OriginOffset)
+	}
+}
+
 func TestUnmarshalTextAllocations(t *testing.T) {
 	in := []byte(testdataRFC3339UTC) // short enough to be stack allocated
 	if allocs := testing.AllocsPerRun(100, func() {
@@ -2011,6 +2034,7 @@ func TestZoneBounds(t *testing.T) {
 		20: {makeLocalTime(2159200800), makeLocalTime(2152173600), makeLocalTime(2172733200)},
 		21: {makeLocalTime(2172733199), makeLocalTime(2152173600), makeLocalTime(2172733200)},
 		22: {makeLocalTime(2172733200), makeLocalTime(2172733200), makeLocalTime(2177452800)},
+		23: {makeLocalTime(2240568000), makeLocalTime(2235632400), makeLocalTime(2240611200)},
 	}
 	for i, tt := range realTests {
 		start, end := tt.giveTime.ZoneBounds()

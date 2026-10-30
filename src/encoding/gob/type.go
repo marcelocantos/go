@@ -266,10 +266,10 @@ var (
 	tDecimal64  = bootstrapType("decimal64", (*decimal64)(nil))
 	tDecimal128 = bootstrapType("decimal128", (*decimal128)(nil))
 	// Reserve some Ids for compatible expansion
-	tReserved5 = bootstrapType("_reserved1", (*struct{ r5 int })(nil))
-	tReserved4 = bootstrapType("_reserved1", (*struct{ r4 int })(nil))
-	tReserved3 = bootstrapType("_reserved1", (*struct{ r3 int })(nil))
-	tReserved2 = bootstrapType("_reserved1", (*struct{ r2 int })(nil))
+	tReserved5 = bootstrapType("_reserved5", (*struct{ r5 int })(nil))
+	tReserved4 = bootstrapType("_reserved4", (*struct{ r4 int })(nil))
+	tReserved3 = bootstrapType("_reserved3", (*struct{ r3 int })(nil))
+	tReserved2 = bootstrapType("_reserved2", (*struct{ r2 int })(nil))
 	tReserved1 = bootstrapType("_reserved1", (*struct{ r1 int })(nil))
 )
 

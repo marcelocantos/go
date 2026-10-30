@@ -34,6 +34,8 @@ import (
 	"cmd/compile/internal/syntax"
 	"flag"
 	"fmt"
+	"go/build"
+	"go/build/constraint"
 	"internal/buildcfg"
 	"internal/testenv"
 	"os"
@@ -41,6 +43,7 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -112,8 +115,6 @@ func parseFlags(src []byte, flags *flag.FlagSet) error {
 
 // testFiles type-checks the package consisting of the given files, and
 // compares the resulting errors with the ERROR annotations in the source.
-// Except for manual tests, each package is type-checked twice, once without
-// use of Alias types, and once with Alias types.
 //
 // The srcs slice contains the file content for the files named in the
 // filenames slice. The colDelta parameter specifies the tolerance for position
@@ -122,16 +123,6 @@ func parseFlags(src []byte, flags *flag.FlagSet) error {
 //
 // If provided, opts may be used to mutate the Config before type-checking.
 func testFiles(t *testing.T, filenames []string, srcs [][]byte, colDelta uint, manual bool, opts ...func(*Config)) {
-	enableAlias := true
-	opts = append(opts, func(conf *Config) { conf.EnableAlias = enableAlias })
-	testFilesImpl(t, filenames, srcs, colDelta, manual, opts...)
-	if !manual {
-		enableAlias = false
-		testFilesImpl(t, filenames, srcs, colDelta, manual, opts...)
-	}
-}
-
-func testFilesImpl(t *testing.T, filenames []string, srcs [][]byte, colDelta uint, manual bool, opts ...func(*Config)) {
 	if len(filenames) == 0 {
 		t.Fatal("no source files")
 	}
@@ -171,12 +162,11 @@ func testFilesImpl(t *testing.T, filenames []string, srcs [][]byte, colDelta uin
 	}
 
 	// apply flag setting (overrides custom configuration)
-	var goexperiment, gotypesalias string
+	var goexperiment string
 	flags := flag.NewFlagSet("", flag.PanicOnError)
 	flags.StringVar(&conf.GoVersion, "lang", "", "")
 	flags.StringVar(&goexperiment, "goexperiment", "", "")
 	flags.BoolVar(&conf.FakeImportC, "fakeImportC", false, "")
-	flags.StringVar(&gotypesalias, "gotypesalias", "", "")
 	if err := parseFlags(srcs[0], flags); err != nil {
 		t.Fatal(err)
 	}
@@ -184,11 +174,6 @@ func testFilesImpl(t *testing.T, filenames []string, srcs [][]byte, colDelta uin
 	if goexperiment != "" {
 		revert := setGOEXPERIMENT(goexperiment)
 		defer revert()
-	}
-
-	// By default, gotypesalias is not set.
-	if gotypesalias != "" {
-		conf.EnableAlias = gotypesalias != "0"
 	}
 
 	// Provide Config.Info with all maps so that info recording is tested.
@@ -204,7 +189,15 @@ func testFilesImpl(t *testing.T, filenames []string, srcs [][]byte, colDelta uin
 	}
 
 	// typecheck
-	conf.Check(pkgName, files, &info)
+	pkg, err := conf.Check(pkgName, files, &info)
+	// errlist holds parse errors from parseFiles (and type-checking errors from
+	// conf.Error when !listErrors); err is the first type-checking error from Check.
+	hasErrors := len(errlist) > 0 || err != nil
+	if errs := checkInvariants(pkg, &info, hasErrors); len(errs) > 0 {
+		for _, err := range errs {
+			t.Errorf("%s: invariant failure: %v", pkgName, err)
+		}
+	}
 	if listErrors {
 		return
 	}
@@ -372,6 +365,7 @@ func TestManual(t *testing.T) {
 }
 
 func TestLongConstants(t *testing.T) {
+	t.Parallel()
 	format := `package longconst; const _ = %s /* ERROR "constant overflow" */; const _ = %s // ERROR "excessively long constant"`
 	src := fmt.Sprintf(format, strings.Repeat("1", 9999), strings.Repeat("1", 10001))
 	testFiles(t, []string{"longconst.go"}, [][]byte{[]byte(src)}, 0, false)
@@ -387,11 +381,13 @@ func withSizes(sizes Sizes) func(*Config) {
 // be representable as int even if they already have a type that can
 // represent larger values.
 func TestIndexRepresentability(t *testing.T) {
+	t.Parallel()
 	const src = `package index; var s []byte; var _ = s[int64 /* ERRORx "int64\\(1\\) << 40 \\(.*\\) overflows int" */ (1) << 40]`
 	testFiles(t, []string{"index.go"}, [][]byte{[]byte(src)}, 0, false, withSizes(&StdSizes{4, 4}))
 }
 
 func TestIssue47243_TypedRHS(t *testing.T) {
+	t.Parallel()
 	// The RHS of the shift expression below overflows uint on 32bit platforms,
 	// but this is OK as it is explicitly typed.
 	const src = `package issue47243; var a uint64; var _ = a << uint64(4294967296)` // uint64(1<<32)
@@ -453,13 +449,42 @@ func testDir(t *testing.T, dir string, colDelta uint, manual bool) {
 }
 
 func testPkg(t *testing.T, filenames []string, colDelta uint, manual bool) {
-	srcs := make([][]byte, len(filenames))
-	for i, filename := range filenames {
+	fs := filenames[:0]
+	srcs := make([][]byte, 0, len(filenames))
+	for _, filename := range filenames {
 		src, err := os.ReadFile(filename)
 		if err != nil {
 			t.Fatalf("could not read %s: %v", filename, err)
 		}
-		srcs[i] = src
+		if !shouldTest(src) {
+			continue
+		}
+		fs = append(fs, filename)
+		srcs = append(srcs, src)
 	}
-	testFiles(t, filenames, srcs, colDelta, manual)
+	if len(fs) == 0 {
+		t.Skip("all files skipped by build tags")
+	}
+	testFiles(t, fs, srcs, colDelta, manual)
+}
+
+// shouldTest checks build tags in src and returns whether the file
+// should be tested according to the tags.
+func shouldTest(src []byte) bool {
+	match := func(tag string) bool {
+		// We only care GOOS, GOARCH, and go version tags.
+		if slices.Contains(build.Default.ReleaseTags, tag) {
+			return true
+		}
+		return tag == runtime.GOOS || tag == runtime.GOARCH
+	}
+	for line := range strings.SplitSeq(string(src), "\n") {
+		if strings.HasPrefix(line, "package ") {
+			break
+		}
+		if expr, err := constraint.Parse(line); err == nil {
+			return expr.Eval(match)
+		}
+	}
+	return true
 }

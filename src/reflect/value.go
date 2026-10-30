@@ -57,30 +57,26 @@ type Value struct {
 	//	- flagAddr: v.CanAddr is true (implies flagIndir and ptr is non-nil)
 	//	- flagMethod: v is a method value.
 	// If !typ.IsDirectIface(), code can assume that flagIndir is set.
-	//
-	// The remaining 22+ bits give a method number for method values.
 	// If flag.kind() != Func, code can assume that flagMethod is unset.
 	flag
 
 	// A method value represents a curried method invocation
-	// like r.Read for some receiver r. The typ+val+flag bits describe
-	// the receiver r, but the flag's Kind bits say Func (methods are
-	// functions), and the top bits of the flag give the method number
-	// in r's type's method table.
+	// like r.Read for some receiver r. The Value's ptr points to a
+	// heap-allocated methodValue closure, which contains the receiver
+	// and the method information, and the flag has flagMethod set.
 }
 
 type flag uintptr
 
 const (
-	flagKindWidth        = 5 // there are 27 kinds
-	flagKindMask    flag = 1<<flagKindWidth - 1
-	flagStickyRO    flag = 1 << 5
-	flagEmbedRO     flag = 1 << 6
-	flagIndir       flag = 1 << 7
-	flagAddr        flag = 1 << 8
-	flagMethod      flag = 1 << 9
-	flagMethodShift      = 10
-	flagRO          flag = flagStickyRO | flagEmbedRO
+	flagKindWidth      = 5 // there are 27 kinds
+	flagKindMask  flag = 1<<flagKindWidth - 1
+	flagStickyRO  flag = 1 << 5
+	flagEmbedRO   flag = 1 << 6
+	flagIndir     flag = 1 << 7
+	flagAddr      flag = 1 << 8
+	flagMethod    flag = 1 << 9
+	flagRO        flag = flagStickyRO | flagEmbedRO
 )
 
 func (f flag) kind() Kind {
@@ -396,8 +392,9 @@ func (v Value) call(op string, in []Value) []Value {
 		rcvrtype *abi.Type
 	)
 	if v.flag&flagMethod != 0 {
-		rcvr = v
-		rcvrtype, t, fn = methodReceiver(op, v, int(v.flag)>>flagMethodShift)
+		fv := (*methodValue)(v.ptr)
+		rcvr = fv.rcvr
+		rcvrtype, t, fn = methodReceiver(op, fv.rcvr, fv.method)
 	} else if v.flag&flagIndir != 0 {
 		fn = *(*unsafe.Pointer)(v.ptr)
 	} else {
@@ -1311,9 +1308,10 @@ func (v Value) Field(i int) Value {
 		// bunch of zero-sized fields. We must return the zero-sized
 		// fields indirectly, as only ptr-shaped things can be direct.
 		// See issue 74935.
-		// We use nil instead of v.ptr as it doesn't matter and
+		// We use &zeroVal[0] instead of v.ptr as it doesn't matter and
 		// we can avoid pinning a possibly now-unused object.
-		return Value{typ, nil, fl | flagIndir}
+		// Don't use nil, see issue 77779.
+		return Value{typ, unsafe.Pointer(&zeroVal[0]), fl | flagIndir}
 	}
 
 	// Either flagIndir is set and v.ptr points at struct,
@@ -1522,9 +1520,6 @@ func valueInterface(v Value, safe bool) any {
 		// writable or methods or function that should not be callable.
 		panic("reflect.Value.Interface: cannot return value obtained from unexported field or method")
 	}
-	if v.flag&flagMethod != 0 {
-		v = makeMethodValue("Interface", v)
-	}
 
 	if v.kind() == Interface {
 		// Special case: return the element inside the interface.
@@ -1537,6 +1532,17 @@ func valueInterface(v Value, safe bool) any {
 // TypeAssert is semantically equivalent to:
 //
 //	v2, ok := v.Interface().(T)
+//
+// Note that this function, just as the type assertion above, might return:
+//
+//   - ok == false when v.Type() == reflect.TypeFor[T]()
+//     For example, when both T and v are interface types and v.IsNil() == true.
+//     In that case v.Interface() returns a nil interface value, and the
+//     assertion .(T) fails with ok == false.
+//
+//   - ok == true when v.Type() != reflect.TypeFor[T]().
+//     For example, when T is an interface type and v holds a value whose
+//     concrete type implements T.
 func TypeAssert[T any](v Value) (T, bool) {
 	if v.flag == 0 {
 		panic(&ValueError{"reflect.TypeAssert", Invalid})
@@ -1546,10 +1552,6 @@ func TypeAssert[T any](v Value) (T, bool) {
 		// because they might be pointers that should not be
 		// writable or methods or function that should not be callable.
 		panic("reflect.TypeAssert: cannot return value obtained from unexported field or method")
-	}
-
-	if v.flag&flagMethod != 0 {
-		v = makeMethodValue("TypeAssert", v)
 	}
 
 	typ := abi.TypeFor[T]()
@@ -1655,9 +1657,6 @@ func (v Value) IsNil() bool {
 	k := v.kind()
 	switch k {
 	case Chan, Func, Map, Pointer, UnsafePointer:
-		if v.flag&flagMethod != 0 {
-			return false
-		}
 		ptr := v.ptr
 		if v.flag&flagIndir != 0 {
 			ptr = *(*unsafe.Pointer)(ptr)
@@ -1930,16 +1929,13 @@ func (v Value) Method(i int) Value {
 	if v.typ() == nil {
 		panic(&ValueError{"reflect.Value.Method", Invalid})
 	}
-	if v.flag&flagMethod != 0 || uint(i) >= uint(toRType(v.typ()).NumMethod()) {
+	if uint(i) >= uint(toRType(v.typ()).NumMethod()) {
 		panic("reflect: Method index out of range")
 	}
 	if v.typ().Kind() == abi.Interface && v.IsNil() {
 		panic("reflect: Method on nil interface value")
 	}
-	fl := v.flag.ro() | (v.flag & flagIndir)
-	fl |= flag(Func)
-	fl |= flag(i)<<flagMethodShift | flagMethod
-	return Value{v.typ(), v.ptr, fl}
+	return makeMethodValue(v, i)
 }
 
 // NumMethod returns the number of methods in the value's method set.
@@ -1950,9 +1946,6 @@ func (v Value) Method(i int) Value {
 func (v Value) NumMethod() int {
 	if v.typ() == nil {
 		panic(&ValueError{"reflect.Value.NumMethod", Invalid})
-	}
-	if v.flag&flagMethod != 0 {
-		return 0
 	}
 	return toRType(v.typ()).NumMethod()
 }
@@ -1970,14 +1963,11 @@ func (v Value) MethodByName(name string) Value {
 	if v.typ() == nil {
 		panic(&ValueError{"reflect.Value.MethodByName", Invalid})
 	}
-	if v.flag&flagMethod != 0 {
+	i := toRType(v.typ()).methodIndex(name)
+	if i < 0 {
 		return Value{}
 	}
-	m, ok := toRType(v.typ()).MethodByName(name)
-	if !ok {
-		return Value{}
-	}
-	return v.Method(m.Index)
+	return v.Method(i)
 }
 
 // NumField returns the number of fields in the struct v.
@@ -2057,8 +2047,10 @@ func (v Value) OverflowUint(x uint64) bool {
 //
 // If v's Kind is [Func], the returned pointer is an underlying
 // code pointer, but not necessarily enough to identify a
-// single function uniquely. The only guarantee is that the
-// result is zero if and only if v is a nil func Value.
+// single function uniquely. In particular, functions with equal
+// code pointers may not have identical behaviors when called.
+// The only guarantee is that the result is zero if and only if
+// v is a nil func Value.
 //
 // If v's Kind is [Slice], the returned pointer is to the first
 // element of the slice. If the slice is nil the returned value
@@ -2088,15 +2080,6 @@ func (v Value) Pointer() uintptr {
 	case Chan, Map, UnsafePointer:
 		return uintptr(v.pointer())
 	case Func:
-		if v.flag&flagMethod != 0 {
-			// As the doc comment says, the returned pointer is an
-			// underlying code pointer but not necessarily enough to
-			// identify a single function uniquely. All method expressions
-			// created via reflect have the same underlying code pointer,
-			// so their Pointers are equal. The function used here must
-			// match the one used in makeMethodValue.
-			return methodValueCallCodePtr()
-		}
 		p := v.pointer()
 		// Non-nil func value points at data block.
 		// First word of data block is actual code.
@@ -2183,7 +2166,12 @@ func (v Value) Set(x Value) {
 	x.mustBeExported() // do not let unexported x leak
 	var target unsafe.Pointer
 	if v.kind() == Interface {
-		target = v.ptr
+		// x.assignTo below uses target as a scratch space, which
+		// then will be assigned back to v in the code below.
+		// So it is a self-assignment, therefore does not cause
+		// escape, but the compiler cannot see it. Mark it noescape
+		// to help the compiler.
+		target = abi.NoEscape(v.ptr)
 	}
 	x = x.assignTo("reflect.Set", v.typ(), target)
 	if x.flag&flagIndir != 0 {
@@ -2523,53 +2511,17 @@ func (v Value) TrySend(x Value) bool {
 
 // Type returns v's type.
 func (v Value) Type() Type {
-	if v.flag != 0 && v.flag&flagMethod == 0 {
-		return (*rtype)(abi.NoEscape(unsafe.Pointer(v.typ_))) // inline of toRType(v.typ()), for own inlining in inline test
-	}
-	return v.typeSlow()
-}
-
-//go:noinline
-func (v Value) typeSlow() Type {
-	return toRType(v.abiTypeSlow())
-}
-
-func (v Value) abiType() *abi.Type {
-	if v.flag != 0 && v.flag&flagMethod == 0 {
-		return v.typ()
-	}
-	return v.abiTypeSlow()
-}
-
-func (v Value) abiTypeSlow() *abi.Type {
 	if v.flag == 0 {
 		panic(&ValueError{"reflect.Value.Type", Invalid})
 	}
+	return (*rtype)(abi.NoEscape(unsafe.Pointer(v.typ_))) // inline of toRType(v.typ()), for own inlining in inline test
+}
 
-	typ := v.typ()
-	if v.flag&flagMethod == 0 {
-		return v.typ()
+func (v Value) abiType() *abi.Type {
+	if v.flag == 0 {
+		panic(&ValueError{"reflect.Value.Type", Invalid})
 	}
-
-	// Method value.
-	// v.typ describes the receiver, not the method type.
-	i := int(v.flag) >> flagMethodShift
-	if v.typ().Kind() == abi.Interface {
-		// Method on interface.
-		tt := (*interfaceType)(unsafe.Pointer(typ))
-		if uint(i) >= uint(len(tt.Methods)) {
-			panic("reflect: internal error: invalid method index")
-		}
-		m := &tt.Methods[i]
-		return typeOffFor(typ, m.Typ)
-	}
-	// Method on concrete type.
-	ms := typ.ExportedMethods()
-	if uint(i) >= uint(len(ms)) {
-		panic("reflect: internal error: invalid method index")
-	}
-	m := ms[i]
-	return typeOffFor(typ, m.Mtyp)
+	return v.typ()
 }
 
 // CanUint reports whether [Value.Uint] can be used without panicking.
@@ -2655,16 +2607,6 @@ func (v Value) UnsafePointer() unsafe.Pointer {
 	case Chan, Map, UnsafePointer:
 		return v.pointer()
 	case Func:
-		if v.flag&flagMethod != 0 {
-			// As the doc comment says, the returned pointer is an
-			// underlying code pointer but not necessarily enough to
-			// identify a single function uniquely. All method expressions
-			// created via reflect have the same underlying code pointer,
-			// so their Pointers are equal. The function used here must
-			// match the one used in makeMethodValue.
-			code := methodValueCallCodePtr()
-			return *(*unsafe.Pointer)(unsafe.Pointer(&code))
-		}
 		p := v.pointer()
 		// Non-nil func value points at data block.
 		// First word of data block is actual code.
@@ -2712,9 +2654,10 @@ func (v Value) Fields() iter.Seq2[StructField, Value] {
 // Calling this method will force the linker to retain all exported methods in all packages.
 // This may make the executable binary larger but will not affect execution time.
 func (v Value) Methods() iter.Seq2[Method, Value] {
+	rtype := v.Type()
+	n := v.NumMethod()
 	return func(yield func(Method, Value) bool) {
-		rtype := v.Type()
-		for i := range v.NumMethod() {
+		for i := range n {
 			if !yield(rtype.Method(i), v.Method(i)) {
 				return
 			}
@@ -2968,6 +2911,10 @@ type SelectCase struct {
 	Send Value     // value to send (for send)
 }
 
+// stackAllocSelectCases represents the length of a slice that we
+// pre-allocate in [Select] to avoid heap allocations.
+const stackAllocSelectCases = 4
+
 // Select executes a select operation described by the list of cases.
 // Like the Go select statement, it blocks until at least one of the cases
 // can proceed, makes a uniform pseudo-random choice,
@@ -2977,22 +2924,42 @@ type SelectCase struct {
 // (as opposed to a zero value received because the channel is closed).
 // Select supports a maximum of 65536 cases.
 func Select(cases []SelectCase) (chosen int, recv Value, recvOK bool) {
+	// This function is specially designed to be inlined, such that when called as:
+	//
+	// Select([]SelectCase{})
+	//
+	// With a slice, that has a compile known length, the runcases slice
+	// will end up being stack allocated, since the compiler can infer
+	// the len([]SelectCase{}).
+	//
+	// We additionaly want to optimize Select(cases) for cases where len(cases)
+	// cannot be infered at compile-time, thus in [select0] we allocate a
+	// [stackAllocSelectCases]-length slice, which will avoid memory allocations
+	// when the len(cases) <= stackAllocSelectCases and len(cases) is not compile-known.
+
+	var runcases []runtimeSelect
+	if len(cases) > stackAllocSelectCases {
+		runcases = make([]runtimeSelect, len(cases))
+	}
+	chosen, recv, recvOK = select0(cases, runcases)
+	return
+}
+
+func select0(cases []SelectCase, runcases []runtimeSelect) (chosen int, recv Value, recvOK bool) {
 	if len(cases) > 65536 {
 		panic("reflect.Select: too many cases (max 65536)")
 	}
-	// NOTE: Do not trust that caller is not modifying cases data underfoot.
-	// The range is safe because the caller cannot modify our copy of the len
-	// and each iteration makes its own copy of the value c.
-	var runcases []runtimeSelect
-	if len(cases) > 4 {
-		// Slice is heap allocated due to runtime dependent capacity.
-		runcases = make([]runtimeSelect, len(cases))
-	} else {
-		// Slice can be stack allocated due to constant capacity.
-		runcases = make([]runtimeSelect, len(cases), 4)
+
+	// See [Select] for more details on this.
+	if runcases == nil {
+		runcases = make([]runtimeSelect, len(cases), stackAllocSelectCases)
 	}
 
 	haveDefault := false
+
+	// NOTE: Do not trust that caller is not modifying cases data underfoot.
+	// The range is safe because the caller cannot modify our copy of the len
+	// and each iteration makes its own copy of the value c.
 	for i, c := range cases {
 		rc := &runcases[i]
 		rc.dir = c.Dir
@@ -3090,6 +3057,7 @@ func unsafe_NewArray(*abi.Type, int) unsafe.Pointer
 // MakeSlice creates a new zero-initialized slice value
 // for the specified slice type, length, and capacity.
 func MakeSlice(typ Type, len, cap int) Value {
+	typ = toType(typ.common())
 	if typ.Kind() != Slice {
 		panic("reflect.MakeSlice of non-slice type")
 	}
@@ -3119,6 +3087,7 @@ func SliceAt(typ Type, p unsafe.Pointer, n int) Value {
 
 // MakeChan creates a new channel with the specified type and buffer size.
 func MakeChan(typ Type, buffer int) Value {
+	typ = toType(typ.common())
 	if typ.Kind() != Chan {
 		panic("reflect.MakeChan of non-chan type")
 	}
@@ -3141,6 +3110,7 @@ func MakeMap(typ Type) Value {
 // MakeMapWithSize creates a new map with the specified type
 // and initial space for approximately n elements.
 func MakeMapWithSize(typ Type, n int) Value {
+	typ = toType(typ.common())
 	if typ.Kind() != Map {
 		panic("reflect.MakeMapWithSize of non-map type")
 	}
@@ -3225,10 +3195,6 @@ func NewAt(typ Type, p unsafe.Pointer) Value {
 // is a suggested scratch space to use.
 // target must be initialized memory (or nil).
 func (v Value) assignTo(context string, dst *abi.Type, target unsafe.Pointer) Value {
-	if v.flag&flagMethod != 0 {
-		v = makeMethodValue(context, v)
-	}
-
 	switch {
 	case directlyAssignable(dst, v.typ()):
 		// Overwrite type so that they match.
@@ -3264,9 +3230,7 @@ func (v Value) assignTo(context string, dst *abi.Type, target unsafe.Pointer) Va
 // If the usual Go conversion rules do not allow conversion
 // of the value v to type t, or if converting v to type t panics, Convert panics.
 func (v Value) Convert(t Type) Value {
-	if v.flag&flagMethod != 0 {
-		v = makeMethodValue("Convert", v)
-	}
+	t = toType(t.common())
 	op := convertOp(t.common(), v.typ())
 	if op == nil {
 		panic("reflect.Value.Convert: value of type " + stringFor(v.typ()) + " cannot be converted to type " + t.String())
@@ -3278,6 +3242,7 @@ func (v Value) Convert(t Type) Value {
 // If v.CanConvert(t) returns true then v.Convert(t) will not panic.
 func (v Value) CanConvert(t Type) bool {
 	vt := v.Type()
+	t = toType(t.common())
 	if !vt.ConvertibleTo(t) {
 		return false
 	}
@@ -3470,7 +3435,7 @@ func convertOp(dst, src *abi.Type) func(Value, Type) Value {
 		}
 
 	case String:
-		if dst.Kind() == abi.Slice && pkgPathFor(dst.Elem()) == "" {
+		if dst.Kind() == abi.Slice {
 			switch Kind(dst.Elem().Kind()) {
 			case Uint8:
 				return cvtStringBytes
@@ -3480,7 +3445,7 @@ func convertOp(dst, src *abi.Type) func(Value, Type) Value {
 		}
 
 	case Slice:
-		if dst.Kind() == abi.String && pkgPathFor(src.Elem()) == "" {
+		if dst.Kind() == abi.String {
 			switch Kind(src.Elem().Kind()) {
 			case Uint8:
 				return cvtBytesString

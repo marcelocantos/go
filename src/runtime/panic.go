@@ -791,7 +791,7 @@ type PanicNilError struct {
 	_ [0]*PanicNilError
 }
 
-func (*PanicNilError) Error() string { return "panic called with nil argument" }
+func (*PanicNilError) Error() string { return "runtime error: panic called with nil argument" }
 func (*PanicNilError) RuntimeError() {}
 
 var panicnil = &godebugInc{name: "panicnil"}
@@ -847,7 +847,6 @@ func gopanic(e any) {
 
 	var p _panic
 	p.arg = e
-	p.gopanicFP = unsafe.Pointer(sys.GetCallerSP())
 
 	runningPanicDefers.Add(1)
 
@@ -920,7 +919,7 @@ func (p *_panic) start(pc uintptr, sp unsafe.Pointer) {
 	// caller instead, we avoid needing to unwind through an extra
 	// frame. It also somewhat simplifies the terminating condition for
 	// deferreturn.
-	p.lr, p.fp = pc, sp
+	p.pc, p.sp = pc, sp
 	p.nextFrame()
 }
 
@@ -995,22 +994,24 @@ func (p *_panic) nextDefer() (func(), bool) {
 
 // nextFrame finds the next frame that contains deferred calls, if any.
 func (p *_panic) nextFrame() (ok bool) {
-	if p.lr == 0 {
+	if p.pc == 0 {
 		return false
 	}
 
 	gp := getg()
 	systemstack(func() {
 		var limit uintptr
+		var limitFn funcInfo
 		if d := gp._defer; d != nil {
 			limit = d.sp
+			limitFn = findfunc(d.pc)
 		}
 
 		var u unwinder
-		u.initAt(p.lr, uintptr(p.fp), 0, gp, 0)
+		u.initAt(p.pc, uintptr(p.sp), 0, gp, 0)
 		for {
 			if !u.valid() {
-				p.lr = 0
+				p.pc = 0
 				return // ok == false
 			}
 
@@ -1019,7 +1020,7 @@ func (p *_panic) nextFrame() (ok bool) {
 			// then we can simply loop until we find the next frame where
 			// it's non-zero.
 
-			if u.frame.sp == limit {
+			if u.frame.sp == limit && u.frame.fn == limitFn {
 				break // found a frame with linked defers
 			}
 
@@ -1027,10 +1028,25 @@ func (p *_panic) nextFrame() (ok bool) {
 				break // found a frame with open-coded defers
 			}
 
+			if p.link != nil && uintptr(u.frame.sp) == uintptr(p.link.startSP) && uintptr(p.link.sp) > u.frame.sp {
+				// Skip ahead to where the next panic up the stack was last looking
+				// for defers. See issue 77062.
+				//
+				// The startSP condition is to check when we have walked up the stack
+				// to where the next panic up the stack started. If so, the processing
+				// of that panic has run all the defers up to its current scanning
+				// position.
+				//
+				// The final condition is just to make sure that the line below
+				// is actually helpful.
+				u.initAt(p.link.pc, uintptr(p.link.sp), 0, gp, 0)
+				continue
+			}
+
 			u.next()
 		}
 
-		p.lr = u.frame.lr
+		p.pc = u.frame.pc
 		p.sp = unsafe.Pointer(u.frame.sp)
 		p.fp = unsafe.Pointer(u.frame.fp)
 
@@ -1067,61 +1083,132 @@ func (p *_panic) initOpenCodedDefers(fn funcInfo, varp unsafe.Pointer) bool {
 
 // The implementation of the predeclared function recover.
 func gorecover() any {
+	p := recoverablePanic(3) // skip systemstack_switch, recoverablePanic, gorecover
+	if p == nil {
+		return nil
+	}
+	p.recovered = true
+	return p.arg
+}
+
+// recoverrangefunc is called on entry to a range-over-func loop whose body
+// calls recover. The body runs in a frame of its own, called from the iterator,
+// so a recover there cannot tell that it is, in the source, a call made directly
+// in this function. This does the part of that decision that depends on the frame,
+// while the frame is the current one, and returns the panic the body may recover,
+// or nil if a recover in the body does not take effect.
+//
+// See also ../cmd/compile/internal/rangefunc/rewrite.go.
+func recoverrangefunc() any {
+	p := recoverablePanic(3) // skip systemstack_switch, recoverablePanic, recoverrangefunc
+	if p == nil {
+		// Either nothing is panicking, or this function is not the one the
+		// panic deferred, so nothing in it can recover.
+		return nil
+	}
+	return p
+}
+
+// gorecoverat is the implementation of the predeclared function recover
+// when it is called in the body of a range-over-func loop. frame is the
+// token recoverrangefunc returned for the function the loop is written in.
+func gorecoverat(frame any) any {
+	p, _ := frame.(*_panic)
+	if p == nil {
+		return nil
+	}
+	// The frame was the right one to recover in when the loop started. It
+	// still is, as it is still running the loop, but the panic it was going
+	// to recover must still be the one being processed: the body may have
+	// panicked and recovered in the meantime.
+	if gp := getg(); gp._panic != p || p.goexit || p.recovered {
+		return nil
+	}
+	p.recovered = true
+	return p.arg
+}
+
+// recoverablePanic returns the panic that a call to recover in the caller
+// of the function that called recoverablePanic would recover, or nil if
+// such a call would not take effect. skip is the number of frames to step
+// over to reach that caller.
+//
+// A recover takes effect when the function it is called in is the one the
+// panicking function deferred.
+//
+// Check to see if the function that called recover() was
+// deferred directly from the panicking function.
+// For code like:
+//
+//	func foo() {
+//	    defer bar()
+//	    panic("panic")
+//	}
+//	func bar() {
+//	    recover()
+//	}
+//
+// Normally the stack would look like this:
+//
+//	foo
+//	runtime.gopanic
+//	bar
+//	runtime.gorecover
+//
+// However, if the function we deferred requires a wrapper
+// of some sort, we need to ignore the wrapper. In that case,
+// the stack looks like:
+//
+//	foo
+//	runtime.gopanic
+//	wrapper
+//	bar
+//	runtime.gorecover
+//
+// And we should also successfully recover.
+//
+// Finally, in the weird case "defer recover()", the stack looks like:
+//
+//	foo
+//	runtime.gopanic
+//	wrapper
+//	runtime.gorecover
+//
+// And we should not recover in that case.
+//
+// So our criteria is, there must be exactly one non-wrapper
+// frame between gopanic and gorecover.
+//
+// We don't recover this:
+//
+//	defer func() { func() { recover() }() }()
+//
+// because there are 2 non-wrapper frames.
+//
+// We don't recover this:
+//
+//	defer recover()
+//
+// because there are 0 non-wrapper frames.
+//
+// It must not be inlined into its callers: they count on its frame being
+// there to skip.
+//
+//go:noinline
+func recoverablePanic(skip int) *_panic {
 	gp := getg()
 	p := gp._panic
 	if p == nil || p.goexit || p.recovered {
 		return nil
 	}
 
-	// Check to see if the function that called recover() was
-	// deferred directly from the panicking function.
-	// For code like:
-	//     func foo() {
-	//         defer bar()
-	//         panic("panic")
-	//     }
-	//     func bar() {
-	//         recover()
-	//     }
-	// Normally the stack would look like this:
-	//     foo
-	//     runtime.gopanic
-	//     bar
-	//     runtime.gorecover
-	//
-	// However, if the function we deferred requires a wrapper
-	// of some sort, we need to ignore the wrapper. In that case,
-	// the stack looks like:
-	//     foo
-	//     runtime.gopanic
-	//     wrapper
-	//     bar
-	//     runtime.gorecover
-	// And we should also successfully recover.
-	//
-	// Finally, in the weird case "defer recover()", the stack looks like:
-	//     foo
-	//     runtime.gopanic
-	//     wrapper
-	//     runtime.gorecover
-	// And we should not recover in that case.
-	//
-	// So our criteria is, there must be exactly one non-wrapper
-	// frame between gopanic and gorecover.
-	//
-	// We don't recover this:
-	//     defer func() { func() { recover() }() }()
-	// because there are 2 non-wrapper frames.
-	//
-	// We don't recover this:
-	//     defer recover()
-	// because there are 0 non-wrapper frames.
 	canRecover := false
 	systemstack(func() {
 		var u unwinder
 		u.init(gp, 0)
-		u.next() // skip systemstack_switch
-		u.next() // skip gorecover
+		for i := 0; i < skip; i++ {
+			u.next()
+		}
 		nonWrapperFrames := 0
 	loop:
 		for ; u.valid(); u.next() {
@@ -1131,7 +1218,7 @@ func gorecover() any {
 				case abi.FuncIDWrapper:
 					continue
 				case abi.FuncID_gopanic:
-					if u.frame.fp == uintptr(p.gopanicFP) && nonWrapperFrames > 0 {
+					if u.frame.sp == uintptr(p.startSP) && nonWrapperFrames > 0 {
 						canRecover = true
 					}
 					break loop
@@ -1147,8 +1234,7 @@ func gorecover() any {
 	if !canRecover {
 		return nil
 	}
-	p.recovered = true
-	return p.arg
+	return p
 }
 
 //go:linkname sync_throw sync.throw
@@ -1701,4 +1787,75 @@ func isAbortPC(pc uintptr) bool {
 		return false
 	}
 	return f.funcID == abi.FuncID_abort
+}
+
+// For debugging only.
+//
+//go:noinline
+//go:nosplit
+func dumpPanicDeferState(where string, gp *g) {
+	systemstack(func() {
+		println("DUMPPANICDEFERSTATE", where)
+		p := gp._panic
+		d := gp._defer
+		var u unwinder
+		for u.init(gp, 0); u.valid(); u.next() {
+			// Print frame.
+			println("  frame sp=", hex(u.frame.sp), "fp=", hex(u.frame.fp), "pc=", pcName(u.frame.pc), "+", pcOff(u.frame.pc))
+			// Print panic.
+			for p != nil && uintptr(p.sp) == u.frame.sp {
+				println("    panic", p, "sp=", p.sp, "fp=", p.fp, "arg=", p.arg, "recovered=", p.recovered, "pc=", pcName(p.pc), "+", pcOff(p.pc), "retpc=", pcName(p.retpc), "+", pcOff(p.retpc), "startsp=", p.startSP, "startPC=", hex(p.startPC), pcName(p.startPC), "+", pcOff(p.startPC))
+				p = p.link
+			}
+
+			// Print linked defers.
+			for d != nil && d.sp == u.frame.sp {
+				println("    defer(link)", "heap=", d.heap, "rangefunc=", d.rangefunc, fnName(d.fn))
+				d = d.link
+			}
+
+			// Print open-coded defers.
+			// (A function is all linked or all open-coded, so we don't
+			// need to interleave this loop with the one above.)
+			fd := funcdata(u.frame.fn, abi.FUNCDATA_OpenCodedDeferInfo)
+			if fd != nil {
+				deferBitsOffset, fd := readvarintUnsafe(fd)
+				m := *(*uint8)(unsafe.Pointer(u.frame.varp - uintptr(deferBitsOffset)))
+				slotsOffset, fd := readvarintUnsafe(fd)
+				slots := u.frame.varp - uintptr(slotsOffset)
+				for i := 7; i >= 0; i-- {
+					if m>>i&1 == 0 {
+						continue
+					}
+					fn := *(*func())(unsafe.Pointer(slots + uintptr(i)*goarch.PtrSize))
+					println("    defer(open)", fnName(fn))
+				}
+			}
+
+		}
+		if p != nil {
+			println("  REMAINING PANICS!", p)
+		}
+		if d != nil {
+			println("  REMAINING DEFERS!")
+		}
+	})
+}
+
+func pcName(pc uintptr) string {
+	fn := findfunc(pc)
+	if !fn.valid() {
+		return "<unk>"
+	}
+	return funcname(fn)
+}
+func pcOff(pc uintptr) hex {
+	fn := findfunc(pc)
+	if !fn.valid() {
+		return 0
+	}
+	return hex(pc - fn.entry())
+}
+func fnName(fn func()) string {
+	return pcName(**(**uintptr)(unsafe.Pointer(&fn)))
 }

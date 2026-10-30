@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"go/format"
 	"internal/godebug"
+	"internal/goexperiment"
 	"internal/platform"
 	"internal/testenv"
 	"io"
@@ -467,9 +468,6 @@ func (tg *testgoData) unsetenv(name string) {
 	if tg.env == nil {
 		tg.env = append([]string(nil), os.Environ()...)
 		tg.env = append(tg.env, "GO111MODULE=off", "TESTGONETWORK=panic")
-		if testing.Short() {
-			tg.env = append(tg.env, "TESTGOVCSREMOTE=panic")
-		}
 	}
 	for i, v := range tg.env {
 		if strings.HasPrefix(v, name+"=") {
@@ -487,11 +485,12 @@ func (tg *testgoData) goTool() string {
 // returning exit status.
 func (tg *testgoData) doRun(args []string) error {
 	tg.t.Helper()
-	if tg.inParallel {
-		for _, arg := range args {
-			if strings.HasPrefix(arg, "testdata") || strings.HasPrefix(arg, "./testdata") {
-				tg.t.Fatal("internal testsuite error: parallel run using testdata")
-			}
+	if !tg.inParallel {
+		tg.t.Fatal("all tests using testgoData must run in parallel")
+	}
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "testdata") || strings.HasPrefix(arg, "./testdata") {
+			tg.t.Fatal("internal testsuite error: parallel run using testdata")
 		}
 	}
 
@@ -1124,10 +1123,14 @@ func TestGoListExport(t *testing.T) {
 		t.Fatalf(".BuildID with -export was empty")
 	}
 
-	tg.run("tool", "buildid", file)
-	toolBuildID := strings.TrimSpace(tg.stdout.String())
-	if buildID != toolBuildID {
-		t.Fatalf(".BuildID with -export %q disagrees with 'go tool buildid' %q", buildID, toolBuildID)
+	// In this experiment, "go list -export" produces export data using
+	// cmd/export, which does not include a build ID in its output.
+	if !goexperiment.GoListExportNewFormat {
+		tg.run("tool", "buildid", file)
+		toolBuildID := strings.TrimSpace(tg.stdout.String())
+		if buildID != toolBuildID {
+			t.Fatalf(".BuildID with -export %q disagrees with 'go tool buildid' %q", buildID, toolBuildID)
+		}
 	}
 }
 
@@ -1673,56 +1676,6 @@ func TestParallelTest(t *testing.T) {
 	tg.run("test", "-p=4", "p1", "p2", "p3", "p4")
 }
 
-func TestBinaryOnlyPackages(t *testing.T) {
-	tooSlow(t, "compiles several packages sequentially")
-
-	tg := testgo(t)
-	defer tg.cleanup()
-	tg.parallel()
-	tg.makeTempdir()
-	tg.setenv("GOPATH", tg.path("."))
-
-	tg.tempFile("src/p1/p1.go", `//go:binary-only-package
-
-		package p1
-	`)
-	tg.wantStale("p1", "binary-only packages are no longer supported", "p1 is binary-only, and this message should always be printed")
-	tg.runFail("install", "p1")
-	tg.grepStderr("binary-only packages are no longer supported", "did not report attempt to compile binary-only package")
-
-	tg.tempFile("src/p1/p1.go", `
-		package p1
-		import "fmt"
-		func F(b bool) { fmt.Printf("hello from p1\n"); if b { F(false) } }
-	`)
-	tg.run("install", "p1")
-	os.Remove(tg.path("src/p1/p1.go"))
-	tg.mustNotExist(tg.path("src/p1/p1.go"))
-
-	tg.tempFile("src/p2/p2.go", `//go:binary-only-packages-are-not-great
-
-		package p2
-		import "p1"
-		func F() { p1.F(true) }
-	`)
-	tg.runFail("install", "p2")
-	tg.grepStderr("no Go files", "did not complain about missing sources")
-
-	tg.tempFile("src/p1/missing.go", `//go:binary-only-package
-
-		package p1
-		import _ "fmt"
-		func G()
-	`)
-	tg.wantStale("p1", "binary-only package", "should NOT want to rebuild p1 (first)")
-	tg.runFail("install", "p2")
-	tg.grepStderr("p1: binary-only packages are no longer supported", "did not report error for binary-only p1")
-
-	tg.run("list", "-deps", "-f", "{{.ImportPath}}: {{.BinaryOnly}}", "p2")
-	tg.grepStdout("p1: true", "p1 not listed as BinaryOnly")
-	tg.grepStdout("p2: false", "p2 listed as BinaryOnly")
-}
-
 // Issue 16050 and 21884.
 func TestLinkSysoFiles(t *testing.T) {
 	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
@@ -1948,6 +1901,7 @@ func TestNeedVersion(t *testing.T) {
 
 func TestBuildmodePIE(t *testing.T) {
 	tooSlow(t, "links binaries")
+	t.Parallel()
 
 	if !platform.BuildModeSupported(runtime.Compiler, "pie", runtime.GOOS, runtime.GOARCH) {
 		t.Skipf("skipping test because buildmode=pie is not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
@@ -1970,6 +1924,7 @@ func TestWindowsDefaultBuildmodIsPIE(t *testing.T) {
 		t.Skip("skipping windows only test")
 	}
 	tooSlow(t, "links binaries")
+	t.Parallel()
 
 	t.Run("non-cgo", func(t *testing.T) {
 		testBuildmodePIE(t, false, false)
@@ -2278,19 +2233,19 @@ func TestTestCache(t *testing.T) {
 	// Changing the actual package should have limited effects.
 	tg.tempFile("src/p1/p1.go", "package p1\nvar X = 02\n")
 	tg.run("test", "-p=1", "-x", "-v", "-short", "t/...")
-
-	// p2 should have been rebuilt.
-	tg.grepStderr(`([\\/]compile|gccgo).*p2.go`, "did not recompile p2")
+	// p2 should not have been rebuilt.
+	tg.grepStderrNot(`([\\/]compile|gccgo).*p2.go`, "incorrectly recompiled p2")
 
 	// t1 does not import anything, should not have been rebuilt.
 	tg.grepStderrNot(`([\\/]compile|gccgo).*t1_test.go`, "incorrectly recompiled t1")
 	tg.grepStderrNot(`([\\/]link|gccgo).*t1_test`, "incorrectly relinked t1_test")
 	tg.grepStdout(`ok  \tt/t1\t\(cached\)`, "did not cache t/t1")
 
-	// t2 imports p1 and must be rebuilt and relinked,
-	// but the change should not have any effect on the test binary,
+	// t2 imports p1 and it must not be rebuilt because p1's export data
+	// didn't change but must be relinked because p1's object data did.
+	// The change should not have any effect on the test binary,
 	// so the test should not have been rerun.
-	tg.grepStderr(`([\\/]compile|gccgo).*t2_test.go`, "did not recompile t2")
+	tg.grepStderrNot(`([\\/]compile|gccgo).*t2_test.go`, "incorrectly recompiled t2")
 	tg.grepStderr(`([\\/]link|gccgo).*t2\.test`, "did not relink t2_test")
 	// This check does not currently work with gccgo, as garbage
 	// collection of unused variables is not turned on by default.
@@ -2299,7 +2254,7 @@ func TestTestCache(t *testing.T) {
 	}
 
 	// t3 imports p1, and changing X changes t3's test binary.
-	tg.grepStderr(`([\\/]compile|gccgo).*t3_test.go`, "did not recompile t3")
+	tg.grepStderrNot(`([\\/]compile|gccgo).*t3_test.go`, "incorrectly recompiled t3")
 	tg.grepStderr(`([\\/]link|gccgo).*t3\.test`, "did not relink t3_test")
 	tg.grepStderr(`t3\.test.*-test.short`, "did not rerun t3_test")
 	tg.grepStdoutNot(`ok  \tt/t3\t\(cached\)`, "reported cached t3_test result")
@@ -2650,25 +2605,4 @@ func TestCoverpkgTestOnly(t *testing.T) {
 	tg.run("test", "-coverpkg=a", "atest")
 	tg.grepStderrNot("no packages being tested depend on matches", "bad match message")
 	tg.grepStdout("coverage: 100", "no coverage")
-}
-
-// Regression test for golang.org/issue/34499: version command should not crash
-// when executed in a deleted directory on Linux.
-func TestExecInDeletedDir(t *testing.T) {
-	switch runtime.GOOS {
-	case "windows", "plan9",
-		"aix",                // Fails with "device busy".
-		"solaris", "illumos": // Fails with "invalid argument".
-		t.Skipf("%v does not support removing the current working directory", runtime.GOOS)
-	}
-	tg := testgo(t)
-	defer tg.cleanup()
-
-	tg.makeTempdir()
-	t.Chdir(tg.tempdir)
-
-	tg.check(os.Remove(tg.tempdir))
-
-	// `go version` should not fail
-	tg.run("version")
 }

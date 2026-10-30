@@ -6,7 +6,10 @@
 
 package types2
 
-import "bytes"
+import (
+	"bytes"
+	"strings"
+)
 
 // LookupSelection selects the field or method whose ID is Id(pkg,
 // name), on a value of type T. If addressable is set, T is the type
@@ -31,6 +34,9 @@ import "bytes"
 // fields traversed to get to the found entry, starting at depth 0.
 //
 // See also [LookupFieldOrMethod], which returns the components separately.
+//
+// Selections should generally be passed and returned by pointer.
+// The lack of a pointer here was an unfortunate mistake.
 func LookupSelection(T Type, addressable bool, pkg *Package, name string) (Selection, bool) {
 	obj, index, indirect := LookupFieldOrMethod(T, addressable, pkg, name)
 	var kind SelectionKind
@@ -44,7 +50,7 @@ func LookupSelection(T Type, addressable bool, pkg *Package, name string) (Selec
 	default:
 		panic(obj) // can't happen
 	}
-	return Selection{kind, T, obj, index, indirect}, true
+	return Selection{int8(kind), indirect, T, obj, index}, true
 }
 
 // Internal use of LookupFieldOrMethod: If the obj result is a method
@@ -387,6 +393,7 @@ func (check *Checker) missingMethod(V, T Type, static bool, equivalent func(x, y
 		ambigSel
 		ptrRecv
 		field
+		nointerface
 	)
 
 	state := ok
@@ -450,6 +457,11 @@ func (check *Checker) missingMethod(V, T Type, static bool, equivalent func(x, y
 				check.objDecl(f)
 			}
 
+			if f.nointerface {
+				state = nointerface
+				break
+			}
+
 			if !equivalent(f.typ, m.typ) {
 				state = wrongSig
 				break
@@ -509,6 +521,8 @@ func (check *Checker) missingMethod(V, T Type, static bool, equivalent func(x, y
 			*cause = check.sprintf("(method %s has pointer receiver)", m.Name())
 		case field:
 			*cause = check.sprintf("(%s.%s is a field, not a method)", V, m.Name())
+		case nointerface:
+			*cause = check.sprintf("(%s method is marked 'nointerface')", m.Name())
 		default:
 			panic("unreachable")
 		}
@@ -645,19 +659,6 @@ func concat(list []int, i int) []int {
 	return append(t, i)
 }
 
-// fieldIndex returns the index for the field with matching package and name, or a value < 0.
-// See Object.sameId for the meaning of foldCase.
-func fieldIndex(fields []*Var, pkg *Package, name string, foldCase bool) int {
-	if name != "_" {
-		for i, f := range fields {
-			if f.sameId(pkg, name, foldCase) {
-				return i
-			}
-		}
-	}
-	return -1
-}
-
 // methodIndex returns the index of and method with matching package and name, or (-1, nil).
 // See Object.sameId for the meaning of foldCase.
 func methodIndex(methods []*Func, pkg *Package, name string, foldCase bool) (int, *Func) {
@@ -669,4 +670,23 @@ func methodIndex(methods []*Func, pkg *Package, name string, foldCase bool) (int
 		}
 	}
 	return -1, nil
+}
+
+// Given a (possibly pointer to a) struct type and field index sequence,
+// fieldPath returns the dot-separated concatenated field names for the
+// given index sequence (e.g. "a.b.c").
+// Use for error reporting etc. where speed is not important.
+func fieldPath(typ Type, index []int) string {
+	var names []string
+	for _, i := range index {
+		u, ok := derefStructPtr(typ).Underlying().(*Struct)
+		if !ok {
+			// should not happen if index is valid for typ
+			break
+		}
+		fld := u.Field(i)
+		names = append(names, fld.name)
+		typ = fld.typ
+	}
+	return strings.Join(names, ".")
 }

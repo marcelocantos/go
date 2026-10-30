@@ -231,11 +231,24 @@ func (a *activeSweep) reset() {
 func finishsweep_m() {
 	assertWorldStopped()
 
-	// Sweeping must be complete before marking commences, so
-	// sweep any unswept spans. If this is a concurrent GC, there
-	// shouldn't be any spans left to sweep, so this should finish
-	// instantly. If GC was forced before the concurrent sweep
-	// finished, there may be spans to sweep.
+	// Sweeping must be complete before marking commences.
+	//
+	// gcStart picks up any unswept spans prior to commencing, which
+	// ensures there are no unswept spans in the presence of a single GC.
+	// However, in the case of gcStart racing with another GC, there are
+	// edge cases that allow finishsweep_m to observe unswept spans. For
+	// example,
+	//
+	// - gcStart sweeps remaining spans prior to taking work.startSema.
+	//   While blocked waiting, another goroutine could take the lock and
+	//   complete an entire GC cycle. When the original goroutine finally
+	//   unblocks there are now unswept spans from the subsequent GC cycle.
+	//
+	// - Mark termination makes most sweep work prior to startTheWorld, but
+	//   it calls prepareForSweep after restarting the world, which adds more
+	//   work. A concurrent gcStart call could finish all of the initial work
+	//   before prepareForSweep adds more, and thus gcStart doesn't see it
+	//   until after taking work.startSema.
 	for sweepone() != ^uintptr(0) {
 	}
 
@@ -469,6 +482,13 @@ func (s *mspan) ensureSwept() {
 	gp := getg()
 	if gp.m.locks == 0 && gp.m.mallocing == 0 && gp != gp.m.g0 {
 		throw("mspan.ensureSwept: m is not locked")
+	}
+
+	// Avoid registering a sweeper if the span is already swept.
+	// Preemption is disabled, so the sweep generation cannot change.
+	sweepgen := mheap_.sweepgen
+	if spangen := atomic.Load(&s.sweepgen); spangen == sweepgen || spangen == sweepgen+3 {
+		return
 	}
 
 	// If this operation fails, then that means that there are

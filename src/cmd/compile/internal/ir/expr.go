@@ -204,6 +204,7 @@ type CallExpr struct {
 	// whether it's a runtime.KeepAlive call the compiler generates to
 	// keep a variable alive. See #73137.
 	IsCompilerVarLive bool
+	Reshape           bool
 }
 
 func NewCallExpr(pos src.XPos, op Op, fun Node, args []Node) *CallExpr {
@@ -383,6 +384,7 @@ type InlinedCallExpr struct {
 	miniExpr
 	Body       Nodes
 	ReturnVars Nodes // must be side-effect free
+	Reshape    bool
 }
 
 func NewInlinedCallExpr(pos src.XPos, body, retvars []Node) *InlinedCallExpr {
@@ -398,10 +400,16 @@ func (n *InlinedCallExpr) SingleResult() Node {
 	if have := len(n.ReturnVars); have != 1 {
 		base.FatalfAt(n.Pos(), "inlined call has %v results, expected 1", have)
 	}
-	if !n.Type().HasShape() && n.ReturnVars[0].Type().HasShape() {
-		// If the type of the call is not a shape, but the type of the return value
-		// is a shape, we need to do an implicit conversion, so the real type
-		// of n is maintained.
+
+	// If the type of the call is not a shape, but the type of the return value
+	// is a shape, we need to do an implicit conversion, so the real type
+	// of n is maintained.
+	needImplicitConv := !n.Type().HasShape() && n.ReturnVars[0].Type().HasShape()
+	if n.Reshape { // or if the inlined call expr needs reshaping.
+		needImplicitConv = true
+	}
+
+	if needImplicitConv {
 		r := NewConvExpr(n.Pos(), OCONVNOP, n.Type(), n.ReturnVars[0])
 		r.SetTypecheck(1)
 		return r
@@ -580,7 +588,8 @@ func (n *SelectorExpr) FuncName() *Name {
 	if n.Op() != OMETHEXPR {
 		panic(n.no("FuncName"))
 	}
-	fn := NewNameAt(n.Selection.Pos, MethodSym(n.X.Type(), n.Sel), n.Type())
+	sym, _ := MethodSym(n.X.Type(), n.Selection)
+	fn := NewNameAt(n.Selection.Pos, sym, n.Type())
 	fn.Class = PFUNC
 	if n.Selection.Nname != nil {
 		// TODO(austin): Nname is nil for interface method
@@ -934,6 +943,9 @@ FindRHS:
 		return nil
 	}
 	if rhs == nil {
+		if n.AutoTemp() {
+			return nil
+		}
 		base.FatalfAt(defn.Pos(), "RHS is nil: %v", defn)
 	}
 
@@ -1168,24 +1180,62 @@ func RecvParamNames(ft *types.Type) []Node {
 	return args
 }
 
-// MethodSym returns the method symbol representing a method name
-// associated with a specific receiver type.
-//
-// Method symbols can be used to distinguish the same method appearing
-// in different method sets. For example, T.M and (*T).M have distinct
-// method symbols.
-//
-// The returned symbol will be marked as a function.
-func MethodSym(recv *types.Type, msym *types.Sym) *types.Sym {
-	sym := MethodSymSuffix(recv, msym, "")
+// MethodSym returns the method function symbol for recv. The second result
+// reports whether the symbol is a shared promoted wrapper.
+func MethodSym(recv *types.Type, method *types.Field) (*types.Sym, bool) {
+	if method.Embedded == 1 && recv.IsPtr() && method.Offset != types.BADWIDTH {
+		wrappee := method.Type.Recv().Type
+		return promotedWrapperSym(recv, wrappee, method.Sym, method.Offset), true
+	}
+	return ReceiverMethodSym(recv, method.Sym), false
+}
+
+// ReceiverMethodSym returns the receiver-named method function symbol.
+func ReceiverMethodSym(recv *types.Type, msym *types.Sym) *types.Sym {
+	sym := ReceiverMethodSymSuffix(recv, msym, "")
 	sym.SetFunc(true)
 	return sym
 }
 
-// MethodSymSuffix is like MethodSym, but allows attaching a
-// distinguisher suffix. To avoid collisions, the suffix must not
-// start with a letter, number, or period.
-func MethodSymSuffix(recv *types.Type, msym *types.Sym, suffix string) *types.Sym {
+// promotedWrapperSym returns the symbol for a shared promoted method wrapper
+// that adjusts its pointer receiver by offset before calling msym on wrappee.
+func promotedWrapperSym(wrapper, wrappee *types.Type, msym *types.Sym, offset int64) *types.Sym {
+	if msym.IsBlank() {
+		base.Fatalf("blank method name")
+	}
+
+	// derefs == 0: T; not shared because its ABI depends on the concrete T.
+	// derefs == 1: *T; used for pointer-shaped receivers.
+	// derefs == 2: **T; used for not-in-heap T, where *T is scalar-shaped.
+	derefs := 0
+	for t := wrapper; t.IsPtr(); t = t.Elem() {
+		derefs++
+	}
+
+	// Pointers to not-in-heap types are scalar-shaped and use a different
+	// receiver pointer map from ordinary pointers.
+	recvMode := ""
+	if wrapper.Elem().NotInHeap() {
+		recvMode = "n"
+	}
+
+	wrappeeMethod := ReceiverMethodSym(wrappee, msym)
+
+	var b bytes.Buffer
+	fmt.Fprintf(&b, ".embed.%d%s.%d.", derefs, recvMode, offset)
+	b.WriteString(wrappeeMethod.Pkg.Prefix)
+	b.WriteString(".")
+	b.WriteString(wrappeeMethod.Name)
+
+	sym := wrappeeMethod.Pkg.LookupBytes(b.Bytes())
+	sym.SetFunc(true)
+	return sym
+}
+
+// ReceiverMethodSymSuffix is like ReceiverMethodSym, but allows attaching a
+// distinguisher suffix. To avoid collisions, the suffix must not start with a
+// letter, number, or period.
+func ReceiverMethodSymSuffix(recv *types.Type, msym *types.Sym, suffix string) *types.Sym {
 	if msym.IsBlank() {
 		base.Fatalf("blank method name")
 	}
@@ -1316,4 +1366,93 @@ func NewMoveToHeapExpr(pos src.XPos, slice Node) *MoveToHeapExpr {
 	n.pos = pos
 	n.op = OMOVE2HEAP
 	return n
+}
+
+func IsSideEffect(n Node) bool {
+	switch n.Op() {
+	// Assume side effects unless we know otherwise.
+	default:
+		return true
+
+	// No side effects here (arguments are checked separately).
+	case ONAME,
+		ONONAME,
+		OTYPE,
+		OLITERAL,
+		ONIL,
+		OADD,
+		OSUB,
+		OOR,
+		OXOR,
+		OADDSTR,
+		OADDR,
+		OANDAND,
+		OBYTES2STR,
+		ORUNES2STR,
+		OSTR2BYTES,
+		OSTR2RUNES,
+		OCAP,
+		OCOMPLIT,
+		OMAPLIT,
+		OSTRUCTLIT,
+		OARRAYLIT,
+		OSLICELIT,
+		OPTRLIT,
+		OCONV,
+		OCONVIFACE,
+		OCONVNOP,
+		ODOT,
+		OEQ,
+		ONE,
+		OLT,
+		OLE,
+		OGT,
+		OGE,
+		OKEY,
+		OSTRUCTKEY,
+		OLEN,
+		OMUL,
+		OLSH,
+		ORSH,
+		OAND,
+		OANDNOT,
+		ONEW,
+		ONOT,
+		OBITNOT,
+		OPLUS,
+		ONEG,
+		OOROR,
+		OPAREN,
+		ORUNESTR,
+		OREAL,
+		OIMAG,
+		OCOMPLEX:
+		return false
+
+	// Only possible side effect is division by zero.
+	case ODIV, OMOD:
+		n := n.(*BinaryExpr)
+		if n.Y.Op() != OLITERAL || constant.Sign(n.Y.Val()) == 0 {
+			return true
+		}
+
+	// Only possible side effect is panic on invalid size,
+	// but many makechan and makemap use size zero, which is definitely OK.
+	case OMAKECHAN, OMAKEMAP:
+		n := n.(*MakeExpr)
+		if !IsConst(n.Len, constant.Int) || constant.Sign(n.Len.Val()) != 0 {
+			return true
+		}
+
+	// Only possible side effect is panic on invalid size.
+	// TODO(rsc): Merge with previous case (probably breaks toolstash -cmp).
+	case OMAKESLICE, OMAKESLICECOPY:
+		return true
+	}
+	return false
+}
+
+// AnySideEffects reports whether n contains any operations that could have observable side effects.
+func AnySideEffects(n Node) bool {
+	return Any(n, IsSideEffect)
 }

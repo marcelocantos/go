@@ -643,8 +643,6 @@ Registers R20 - R21, R23 – R28, R30 - R31, F16 – F31 are permanent scratch r
 
 Register R2 is reserved and never used.
 
-Register R20, R21 is Used by runtime.duffcopy, runtime.duffzero.
-
 Special-purpose registers used within Go generated code and Go assembly code
 are as follows:
 
@@ -653,7 +651,6 @@ are as follows:
 | R0 | Zero value | Same | Same |
 | R1 | Link register | Link register | Scratch |
 | R3 | Stack pointer | Same | Same |
-| R20,R21 | Scratch | Scratch | Used by duffcopy, duffzero |
 | R22 | Current goroutine | Same | Same |
 | R29 | Closure context pointer | Same | Same |
 | R30, R31 | used by the assembler | Same | Same |
@@ -737,6 +734,14 @@ different from other platforms and that needs to be recognized by the internal
 implementation of reflection so that float32 arguments are passed correctly.
 
 Registers R18 - R29 and F13 - F31 are considered scratch registers.
+
+The floating-point registers F0 - F31 alias the lower VSX registers VS0 - VS31,
+and the vector registers V0 - V31 (the VMX/Altivec registers) alias the upper VSX
+registers VS32 - VS63. Together they form the 64-entry VSX register file used for
+SIMD operations. Currently ppc64 doesn't yet expose SIMD types (so vector args
+don't arise today). This is future work and when they do they'll follow the FP-arg
+convention (F1–F12 = low VSX bank VS1–VS12). None of V0 - V31 are preserved across
+a call; like F0 - F31 they are all caller-saved.
 
 #### Stack layout
 

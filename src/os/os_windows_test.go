@@ -26,6 +26,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"testing"
+	"testing/synctest"
 	"time"
 	"unicode/utf16"
 	"unsafe"
@@ -1474,17 +1475,21 @@ func TestIllformedUTF16FileName(t *testing.T) {
 }
 
 func TestUTF16Alloc(t *testing.T) {
-	allowsPerRun := func(want int, f func()) {
+	allocsPerRun := func(want int, f func()) {
 		t.Helper()
 		got := int(testing.AllocsPerRun(5, f))
 		if got != want {
 			t.Errorf("got %d allocs, want %d", got, want)
 		}
 	}
-	allowsPerRun(1, func() {
+	allocsPerRun(1, func() {
 		syscall.UTF16ToString([]uint16{'a', 'b', 'c'})
 	})
-	allowsPerRun(1, func() {
+	want := 0
+	if testenv.OptimizationOff() {
+		want = 1
+	}
+	allocsPerRun(want, func() {
 		syscall.UTF16FromString("abc")
 	})
 }
@@ -1617,7 +1622,7 @@ func TestStdinOverlappedPipe(t *testing.T) {
 	name := pipeName()
 
 	// Create the read handle inherited by the child process.
-	r := newPipe(t, name, false, true)
+	r := newPipe(t, name, 4096, false, true)
 	defer r.Close()
 
 	// Create a write handle.
@@ -1674,18 +1679,18 @@ var currentProcess = sync.OnceValue(func() string {
 var pipeCounter atomic.Uint64
 
 func newBytePipe(t testing.TB, name string, overlapped bool) *os.File {
-	return newPipe(t, name, false, overlapped)
+	return newPipe(t, name, 4096, false, overlapped)
 }
 
 func newMessagePipe(t testing.TB, name string, overlapped bool) *os.File {
-	return newPipe(t, name, true, overlapped)
+	return newPipe(t, name, 4096, true, overlapped)
 }
 
 func pipeName() string {
 	return `\\.\pipe\go-os-test-` + currentProcess() + `-` + strconv.FormatUint(pipeCounter.Add(1), 10)
 }
 
-func newPipe(t testing.TB, name string, message, overlapped bool) *os.File {
+func newPipe(t testing.TB, name string, bufSize uint32, message, overlapped bool) *os.File {
 	wname, err := syscall.UTF16PtrFromString(name)
 	if err != nil {
 		t.Fatal(err)
@@ -1699,7 +1704,7 @@ func newPipe(t testing.TB, name string, message, overlapped bool) *os.File {
 	if message {
 		typ = windows.PIPE_TYPE_MESSAGE | windows.PIPE_READMODE_MESSAGE
 	}
-	h, err := windows.CreateNamedPipe(wname, uint32(flags), uint32(typ), 1, 4096, 4096, 0, nil)
+	h, err := windows.CreateNamedPipe(wname, uint32(flags), uint32(typ), 1, bufSize, bufSize, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1926,6 +1931,131 @@ func TestPipe(t *testing.T) {
 	testReadWrite(t, r, w)
 }
 
+func TestPipeCloseInvalidHandle(t *testing.T) {
+	// Closing the same handle through distinct Files must return an error,
+	// not panic. See go.dev/issue/82273.
+	for _, first := range []string{"original", "new"} {
+		t.Run(first, func(t *testing.T) {
+			r, w, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer r.Close()
+			defer w.Close()
+
+			for _, f := range []*os.File{r, w} {
+				other := os.NewFile(f.Fd(), f.Name())
+				defer other.Close()
+				if first == "new" {
+					f, other = other, f
+				}
+				if err := f.Close(); err != nil {
+					t.Fatal(err)
+				}
+				if err := other.Close(); !errors.Is(err, windows.ERROR_INVALID_HANDLE) {
+					t.Errorf("Close = %v; want ERROR_INVALID_HANDLE", err)
+				}
+			}
+		})
+	}
+}
+
+func TestPipeCloseRaceThreadReuse(t *testing.T) {
+	// A read can finish while Close is still canceling it. Starting a blocking
+	// operation on the same thread must not prevent that Close from returning.
+	// See go.dev/issue/74754.
+	t.Parallel()
+
+	for range 100 {
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		r2, w2, err := os.Pipe()
+		if err != nil {
+			r.Close()
+			w.Close()
+			t.Fatal(err)
+		}
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			runtime.LockOSThread()
+			defer runtime.UnlockOSThread()
+			defer r2.Close()
+			if _, err := io.Copy(io.Discard, r); !errors.Is(err, os.ErrClosed) {
+				t.Errorf("Read interrupted by Close = %v; want ErrClosed", err)
+			}
+			// Reuse the thread before waiting for Close to finish.
+			var b [1]byte
+			if _, err := r2.Read(b[:]); err != io.EOF {
+				t.Errorf("Read from second pipe = %v; want EOF", err)
+			}
+		})
+		wg.Go(func() {
+			defer w.Close()
+			for {
+				if _, err := w.Write([]byte("x")); err != nil {
+					return
+				}
+			}
+		})
+		time.Sleep(time.Millisecond) // Let reads and writes race with Close.
+		if err := r.Close(); err != nil {
+			t.Error(err)
+		}
+		// Release the second read only after Close returns.
+		w2.Close()
+		wg.Wait()
+	}
+}
+
+func TestPipeConcurrentReadWrite(t *testing.T) {
+	test := func(t *testing.T) {
+		t.Helper()
+		writers := make([]*os.File, 32)
+		started := make(chan struct{}, len(writers))
+		var wg sync.WaitGroup
+		defer wg.Wait()
+		for i := range writers {
+			r, w, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer r.Close()
+			defer w.Close()
+			writers[i] = w
+			wg.Go(func() {
+				started <- struct{}{}
+				var b [1]byte
+				if _, err := io.ReadFull(r, b[:]); err != nil {
+					t.Error(err)
+				} else if b[0] != byte(i) {
+					t.Errorf("Read = %d; want %d", b[0], i)
+				}
+			})
+		}
+		for range writers {
+			<-started
+		}
+		runtime.GC()
+		for i, w := range writers {
+			if _, err := w.Write([]byte{byte(i)}); err != nil {
+				t.Error(err)
+			}
+			w.Close()
+		}
+		wg.Wait()
+	}
+	// Pipe I/O must keep working across GC and successive synctest bubbles.
+	for range 2 {
+		test(t)
+		runtime.GC()
+		runtime.GC()
+		synctest.Test(t, test)
+	}
+	test(t)
+}
+
 func TestNamedPipe(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -1947,6 +2077,43 @@ func TestNamedPipe(t *testing.T) {
 			testReadWrite(t, pipe, file)
 		})
 	}
+}
+
+func TestNamedPipeConcurrentReadWrite(t *testing.T) {
+	t.Parallel()
+	name := pipeName()
+	server := newBytePipe(t, name, true)
+	client := newFileOverlapped(t, name, true)
+
+	// Read and Write use separate locks. In particular, neither may
+	// access the shared file offset, which is unused by pipes.
+	const count = 100
+	var wg sync.WaitGroup
+	for _, f := range []*os.File{server, client} {
+		wg.Go(func() {
+			var buf [1]byte
+			for i := range count {
+				if _, err := io.ReadFull(f, buf[:]); err != nil {
+					t.Error(err)
+					f.Close() // Unblock the peer.
+					return
+				}
+				if buf[0] != byte(i) {
+					t.Errorf("Read = %d; want %d", buf[0], i)
+				}
+			}
+		})
+		wg.Go(func() {
+			for i := range count {
+				if _, err := f.Write([]byte{byte(i)}); err != nil {
+					t.Error(err)
+					f.Close()
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
 }
 
 func TestPipeMessageReadEOF(t *testing.T) {
@@ -2124,6 +2291,87 @@ func TestFileAssociatedWithExternalIOCP(t *testing.T) {
 	}
 }
 
+func TestPipePendingIOAfterFd(t *testing.T) {
+	t.Parallel()
+	name := pipeName()
+	writer := newPipe(t, name, 0, false, true)
+	reader := newFileOverlapped(t, name, true)
+	writer.Fd()
+	reader.Fd()
+
+	// An unbuffered pipe keeps the write pending until all bytes are read.
+	// Both handles use events rather than the runtime IOCP.
+	const want = "ab"
+	writeDone := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		var buf [len(want)]byte
+		if _, err := io.ReadFull(reader, buf[:1]); err != nil {
+			t.Error(err)
+			reader.Close()
+			return
+		}
+		select {
+		case <-writeDone:
+			t.Error("Write returned before all bytes were read")
+		default:
+		}
+		if _, err := io.ReadFull(reader, buf[1:]); err != nil {
+			t.Error(err)
+			reader.Close()
+			return
+		}
+		if string(buf[:]) != want {
+			t.Errorf("Read = %q; want %q", buf[:], want)
+		}
+	})
+	if n, err := writer.Write([]byte(want)); err != nil || n != len(want) {
+		t.Errorf("Write = %d, %v; want %d, nil", n, err, len(want))
+		writer.Close()
+	}
+	close(writeDone)
+	wg.Wait()
+}
+
+func TestPipeReadCloseRace(t *testing.T) {
+	t.Parallel()
+	for i := range 100 {
+		name := pipeName()
+		writer := newBytePipe(t, name, true)
+		reader := newFileOverlapped(t, name, true)
+		reader.Fd() // Use event-backed I/O.
+
+		var wg sync.WaitGroup
+		readDone := make(chan error, 1)
+		wg.Go(func() {
+			var buf [1]byte
+			_, err := reader.Read(buf[:])
+			readDone <- err
+		})
+		// Give Read a chance to acquire its FD reference, then race Close
+		// against submission of the I/O request.
+		time.Sleep(time.Nanosecond)
+		closeDone := make(chan error, 1)
+		wg.Go(func() { closeDone <- reader.Close() })
+		select {
+		case err := <-closeDone:
+			if err != nil {
+				t.Error(err)
+			}
+		case <-time.After(5 * time.Second):
+			// Release the read even if Close missed its cancellation.
+			writer.Close()
+			wg.Wait()
+			t.Fatalf("iteration %d: Close did not unblock Read", i)
+		}
+		wg.Wait()
+		writer.Close()
+		if err := <-readDone; !errors.Is(err, os.ErrClosed) {
+			t.Fatalf("iteration %d: Read error = %v; want ErrClosed", i, err)
+		}
+	}
+}
+
 func TestFileWriteFdRace(t *testing.T) {
 	t.Parallel()
 
@@ -2169,6 +2417,58 @@ func TestFileWriteFdRace(t *testing.T) {
 
 	if _, err := f.Write([]byte("hi")); err != nil {
 		t.Error(err)
+	}
+}
+
+func TestFileFdWithConcurrentIO(t *testing.T) {
+	t.Parallel()
+	name := pipeName()
+	pipe := newPipe(t, name, 0, true, true) // unbuffered pipe so Write blocks
+	file := newFileOverlapped(t, name, true)
+	const writeSize = 2
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		// Ensure the Write is pending.
+		var tmp [writeSize / 2]byte
+		if _, err := file.Read(tmp[:]); err != nil {
+			t.Error(err)
+		}
+		// Try to dissaciate the file from any IOCP.
+		pipe.Fd()
+		// Complete the Write.
+		if _, err := file.Read(tmp[:]); err != nil {
+			t.Error(err)
+		}
+	})
+	// Write will block until the goroutine reads all 2 bytes.
+	var tmp [writeSize]byte
+	n, err := pipe.Write(tmp[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != writeSize {
+		t.Fatalf("expected to write %d bytes, got %d", writeSize, n)
+	}
+	wg.Wait()
+
+	// Verify that the pipe is still associated with the Go runtime IOCP
+	// by trying to associate it with a new IOCP, which should fail.
+	iocp, err := windows.CreateIoCompletionPort(syscall.InvalidHandle, 0, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.CloseHandle(iocp)
+	sc, err := pipe.SyscallConn()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sc.Control(func(fd uintptr) {
+		_, err = windows.CreateIoCompletionPort(syscall.Handle(fd), iocp, 0, 0)
+		if err == nil {
+			t.Fatal("pipe should still be associated with the Go runtime IOCP")
+		}
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -2287,6 +2587,70 @@ func TestOpenFileTruncateNamedPipe(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.Close()
+}
+
+func TestFileKeepsCompletionNotificationModes(t *testing.T) {
+	// NewFile must preserve completion notification modes and perform I/O
+	// correctly with each combination. See go.dev/issue/80979.
+	t.Parallel()
+	for _, tt := range []struct {
+		name  string
+		modes uint8
+	}{
+		{"none", 0},
+		{"skipSuccess", syscall.FILE_SKIP_COMPLETION_PORT_ON_SUCCESS},
+		{"skipEvent", syscall.FILE_SKIP_SET_EVENT_ON_HANDLE},
+		{"both", syscall.FILE_SKIP_COMPLETION_PORT_ON_SUCCESS | syscall.FILE_SKIP_SET_EVENT_ON_HANDLE},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			name := filepath.Join(t.TempDir(), "file")
+			namep, err := syscall.UTF16PtrFromString(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			h, err := syscall.CreateFile(namep, syscall.GENERIC_READ|syscall.GENERIC_WRITE,
+				0, nil, syscall.CREATE_ALWAYS, syscall.FILE_FLAG_OVERLAPPED, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := syscall.SetFileCompletionNotificationModes(h, tt.modes); err != nil {
+				syscall.CloseHandle(h)
+				t.Fatal(err)
+			}
+			f := os.NewFile(uintptr(h), name)
+			if f == nil {
+				syscall.CloseHandle(h)
+				t.Fatal("NewFile returned nil")
+			}
+			defer f.Close()
+
+			// Query h directly: calling f.Fd would disassociate it from the poller.
+			var info windows.FILE_IO_COMPLETION_NOTIFICATION_INFORMATION
+			if err := windows.NtQueryInformationFile(h, &windows.IO_STATUS_BLOCK{},
+				unsafe.Pointer(&info), uint32(unsafe.Sizeof(info)), windows.FileIoCompletionNotificationInformation); err != nil {
+				t.Fatal(err)
+			}
+			if info.Flags != uint32(tt.modes) {
+				t.Fatalf("completion modes = %#x; want %#x", info.Flags, tt.modes)
+			}
+			// Check that NewFile has initialized the runtime poller.
+			if err := f.SetDeadline(time.Time{}); err != nil {
+				t.Fatal(err)
+			}
+			const want = "hello"
+			if n, err := f.Write([]byte(want)); err != nil || n != len(want) {
+				t.Fatalf("Write = %d, %v; want %d, nil", n, err, len(want))
+			}
+			buf := make([]byte, len(want))
+			if n, err := f.ReadAt(buf, 0); err != nil || n != len(want) {
+				t.Fatalf("ReadAt = %d, %v; want %d, nil", n, err, len(want))
+			}
+			if string(buf) != want {
+				t.Fatalf("ReadAt returned %q; want %q", buf, want)
+			}
+		})
+	}
 }
 
 func TestNewFileStdinBlocked(t *testing.T) {

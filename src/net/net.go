@@ -606,6 +606,8 @@ func (e UnknownNetworkError) Temporary() bool { return false }
 
 type InvalidAddrError string
 
+var _ error = InvalidAddrError("")
+
 func (e InvalidAddrError) Error() string   { return string(e) }
 func (e InvalidAddrError) Timeout() bool   { return false }
 func (e InvalidAddrError) Temporary() bool { return false }
@@ -634,7 +636,8 @@ func (e *timeoutError) Is(err error) bool {
 }
 
 // DNSConfigError represents an error reading the machine's DNS configuration.
-// (No longer used; kept for compatibility.)
+//
+// Deprecated: No longer used; kept for compatibility.
 type DNSConfigError struct {
 	Err error
 }

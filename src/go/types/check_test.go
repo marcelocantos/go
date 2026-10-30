@@ -34,6 +34,8 @@ import (
 	"flag"
 	"fmt"
 	"go/ast"
+	"go/build"
+	"go/build/constraint"
 	"go/parser"
 	"go/scanner"
 	"go/token"
@@ -45,6 +47,7 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -57,13 +60,14 @@ var (
 	verifyErrors = flag.Bool("verify", false, "verify errors (rather than list them) in TestManual")
 )
 
-var fset = token.NewFileSet()
+// The *FileSet used by tests.
+var testFSet = token.NewFileSet()
 
 func parseFiles(t *testing.T, filenames []string, srcs [][]byte, mode parser.Mode) ([]*ast.File, []error) {
 	var files []*ast.File
 	var errlist []error
 	for i, filename := range filenames {
-		file, err := parser.ParseFile(fset, filename, srcs[i], mode)
+		file, err := parser.ParseFile(testFSet, filename, srcs[i], mode)
 		if file == nil {
 			t.Fatalf("%s: %s", filename, err)
 		}
@@ -123,8 +127,6 @@ func parseFlags(src []byte, flags *flag.FlagSet) error {
 
 // testFiles type-checks the package consisting of the given files, and
 // compares the resulting errors with the ERROR annotations in the source.
-// Except for manual tests, each package is type-checked twice, once without
-// use of Alias types, and once with Alias types.
 //
 // The srcs slice contains the file content for the files named in the
 // filenames slice. The colDelta parameter specifies the tolerance for position
@@ -133,21 +135,12 @@ func parseFlags(src []byte, flags *flag.FlagSet) error {
 //
 // If provided, opts may be used to mutate the Config before type-checking.
 func testFiles(t *testing.T, filenames []string, srcs [][]byte, manual bool, opts ...func(*Config)) {
-	// Alias types are enabled by default
-	testFilesImpl(t, filenames, srcs, manual, opts...)
-	if !manual {
-		t.Setenv("GODEBUG", "gotypesalias=0")
-		testFilesImpl(t, filenames, srcs, manual, opts...)
-	}
-}
-
-func testFilesImpl(t *testing.T, filenames []string, srcs [][]byte, manual bool, opts ...func(*Config)) {
 	if len(filenames) == 0 {
 		t.Fatal("no source files")
 	}
 
 	// parse files
-	files, errlist := parseFiles(t, filenames, srcs, parser.AllErrors)
+	files, errlist := parseFiles(t, filenames, srcs, parser.AllErrors|parser.SkipObjectResolution)
 	pkgName := "<no package>"
 	if len(files) > 0 {
 		pkgName = files[0].Name.Name
@@ -163,7 +156,7 @@ func testFilesImpl(t *testing.T, filenames []string, srcs [][]byte, manual bool,
 	// set up typechecker
 	var conf Config
 	*boolFieldAddr(&conf, "_Trace") = manual && testing.Verbose()
-	conf.Importer = defaultImporter(fset)
+	conf.Importer = defaultImporter(testFSet)
 	conf.Error = func(err error) {
 		if *haltOnError {
 			defer panic(err)
@@ -185,12 +178,11 @@ func testFilesImpl(t *testing.T, filenames []string, srcs [][]byte, manual bool,
 	}
 
 	// apply flag setting (overrides custom configuration)
-	var goexperiment, gotypesalias string
+	var goexperiment string
 	flags := flag.NewFlagSet("", flag.PanicOnError)
 	flags.StringVar(&conf.GoVersion, "lang", "", "")
 	flags.StringVar(&goexperiment, "goexperiment", "", "")
 	flags.BoolVar(&conf.FakeImportC, "fakeImportC", false, "")
-	flags.StringVar(&gotypesalias, "gotypesalias", "", "")
 	if err := parseFlags(srcs[0], flags); err != nil {
 		t.Fatal(err)
 	}
@@ -198,11 +190,6 @@ func testFilesImpl(t *testing.T, filenames []string, srcs [][]byte, manual bool,
 	if goexperiment != "" {
 		revert := setGOEXPERIMENT(goexperiment)
 		defer revert()
-	}
-
-	// By default, gotypesalias is not set.
-	if gotypesalias != "" {
-		t.Setenv("GODEBUG", "gotypesalias="+gotypesalias)
 	}
 
 	// Provide Config.Info with all maps so that info recording is tested.
@@ -218,7 +205,15 @@ func testFilesImpl(t *testing.T, filenames []string, srcs [][]byte, manual bool,
 	}
 
 	// typecheck
-	conf.Check(pkgName, fset, files, &info)
+	pkg, err := conf.Check(pkgName, testFSet, files, &info)
+	// errlist holds parse errors from parseFiles (and type-checking errors from
+	// conf.Error when !listErrors); err is the first type-checking error from Check.
+	hasErrors := len(errlist) > 0 || err != nil
+	if errs := checkInvariants(pkg, &info, hasErrors); len(errs) > 0 {
+		for _, err := range errs {
+			t.Errorf("%s: invariant failure: %v", pkgName, err)
+		}
+	}
 	if listErrors {
 		return
 	}
@@ -234,7 +229,7 @@ func testFilesImpl(t *testing.T, filenames []string, srcs [][]byte, manual bool,
 	// match against found errors
 	var indices []int // list indices of matching errors, reused for each error
 	for _, err := range errlist {
-		gotPos, gotMsg := unpackError(fset, err)
+		gotPos, gotMsg := unpackError(testFSet, err)
 
 		// find list of errors for the respective error line
 		filename := gotPos.Filename
@@ -399,6 +394,7 @@ func TestManual(t *testing.T) {
 }
 
 func TestLongConstants(t *testing.T) {
+	t.Parallel()
 	format := `package longconst; const _ = %s /* ERROR "constant overflow" */; const _ = %s // ERROR "excessively long constant"`
 	src := fmt.Sprintf(format, strings.Repeat("1", 9999), strings.Repeat("1", 10001))
 	testFiles(t, []string{"longconst.go"}, [][]byte{[]byte(src)}, false)
@@ -414,11 +410,13 @@ func withSizes(sizes Sizes) func(*Config) {
 // be representable as int even if they already have a type that can
 // represent larger values.
 func TestIndexRepresentability(t *testing.T) {
+	t.Parallel()
 	const src = `package index; var s []byte; var _ = s[int64 /* ERRORx "int64\\(1\\) << 40 \\(.*\\) overflows int" */ (1) << 40]`
 	testFiles(t, []string{"index.go"}, [][]byte{[]byte(src)}, false, withSizes(&StdSizes{4, 4}))
 }
 
 func TestIssue47243_TypedRHS(t *testing.T) {
+	t.Parallel()
 	// The RHS of the shift expression below overflows uint on 32bit platforms,
 	// but this is OK as it is explicitly typed.
 	const src = `package issue47243; var a uint64; var _ = a << uint64(4294967296)` // uint64(1<<32)
@@ -478,13 +476,42 @@ func testDir(t *testing.T, dir string, manual bool) {
 }
 
 func testPkg(t *testing.T, filenames []string, manual bool) {
-	srcs := make([][]byte, len(filenames))
-	for i, filename := range filenames {
+	fs := filenames[:0]
+	srcs := make([][]byte, 0, len(filenames))
+	for _, filename := range filenames {
 		src, err := os.ReadFile(filename)
 		if err != nil {
 			t.Fatalf("could not read %s: %v", filename, err)
 		}
-		srcs[i] = src
+		if !shouldTest(src) {
+			continue
+		}
+		fs = append(fs, filename)
+		srcs = append(srcs, src)
 	}
-	testFiles(t, filenames, srcs, manual)
+	if len(fs) == 0 {
+		t.Skip("all files skipped by build tags")
+	}
+	testFiles(t, fs, srcs, manual)
+}
+
+// shouldTest checks build tags in src and returns whether the file
+// should be tested according to the tags.
+func shouldTest(src []byte) bool {
+	match := func(tag string) bool {
+		// We only care GOOS, GOARCH, and go version tags.
+		if slices.Contains(build.Default.ReleaseTags, tag) {
+			return true
+		}
+		return tag == runtime.GOOS || tag == runtime.GOARCH
+	}
+	for line := range strings.SplitSeq(string(src), "\n") {
+		if strings.HasPrefix(line, "package ") {
+			break
+		}
+		if expr, err := constraint.Parse(line); err == nil {
+			return expr.Eval(match)
+		}
+	}
+	return true
 }

@@ -12,7 +12,6 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"internal/godebug"
 	"internal/testenv"
 	"strings"
 	"testing"
@@ -58,6 +57,7 @@ func testEval(t *testing.T, fset *token.FileSet, pkg *Package, pos token.Pos, ex
 }
 
 func TestEvalBasic(t *testing.T) {
+	t.Parallel()
 	fset := token.NewFileSet()
 	for _, typ := range Typ[Bool : String+1] {
 		testEval(t, fset, nil, nopos, typ.Name(), typ, "", "")
@@ -65,6 +65,7 @@ func TestEvalBasic(t *testing.T) {
 }
 
 func TestEvalComposite(t *testing.T) {
+	t.Parallel()
 	fset := token.NewFileSet()
 	for _, test := range independentTestTypes {
 		testEval(t, fset, nil, nopos, test.src, nil, test.str, "")
@@ -72,6 +73,7 @@ func TestEvalComposite(t *testing.T) {
 }
 
 func TestEvalArith(t *testing.T) {
+	t.Parallel()
 	var tests = []string{
 		`true`,
 		`false == false`,
@@ -90,6 +92,7 @@ func TestEvalArith(t *testing.T) {
 
 func TestEvalPos(t *testing.T) {
 	testenv.MustHaveGoBuild(t)
+	t.Parallel()
 
 	// The contents of /*-style comments are of the form
 	//	expr => value, type
@@ -169,19 +172,13 @@ func TestEvalPos(t *testing.T) {
 	fset := token.NewFileSet()
 	var files []*ast.File
 	for i, src := range sources {
-		file, err := parser.ParseFile(fset, "p", src, parser.ParseComments)
+		file, err := parser.ParseFile(fset, "p", src, parser.ParseComments|parser.SkipObjectResolution)
 		if err != nil {
 			t.Fatalf("could not parse file %d: %s", i, err)
 		}
 
-		// Materialized aliases give a different (better)
-		// result for the final test, so skip it for now.
-		// TODO(adonovan): reenable when gotypesalias=1 is the default.
-		switch gotypesalias.Value() {
-		case "", "1":
-			if strings.Contains(src, "interface{R}.Read") {
-				continue
-			}
+		if strings.Contains(src, "interface{R}.Read") {
+			continue
 		}
 
 		files = append(files, file)
@@ -207,9 +204,6 @@ func TestEvalPos(t *testing.T) {
 	}
 }
 
-// gotypesalias controls the use of Alias types.
-var gotypesalias = godebug.New("gotypesalias")
-
 // split splits string s at the first occurrence of s, trimming spaces.
 func split(s, sep string) (string, string) {
 	before, after, _ := strings.Cut(s, sep)
@@ -218,6 +212,7 @@ func split(s, sep string) (string, string) {
 
 func TestCheckExpr(t *testing.T) {
 	testenv.MustHaveGoBuild(t)
+	t.Parallel()
 
 	// Each comment has the form /* expr => object */:
 	// expr is an identifier or selector expression that is passed
@@ -251,10 +246,7 @@ func f(a int, s string) S {
 }`
 
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "p", src, parser.ParseComments)
-	if err != nil {
-		t.Fatal(err)
-	}
+	f := mustParse(fset, src)
 
 	conf := Config{Importer: defaultImporter(fset)}
 	pkg, err := conf.Check("p", fset, []*ast.File{f}, nil)
@@ -312,6 +304,7 @@ func f(a int, s string) S {
 }
 
 func TestIssue65898(t *testing.T) {
+	t.Parallel()
 	const src = `
 package p
 func _[A any](A) {}

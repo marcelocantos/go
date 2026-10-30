@@ -42,6 +42,7 @@ import (
 	"internal/buildcfg"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/pprof"
 	"strconv"
@@ -55,9 +56,11 @@ var (
 )
 
 func init() {
-	flag.Var(&rpath, "r", "set the ELF dynamic linker search `path` to dir1:dir2:...")
 	flag.Var(&flagExtld, "extld", "use `linker` when linking in external mode")
 	flag.Var(&flagExtldflags, "extldflags", "pass `flags` to external linker")
+	flag.Var(&macOS, "macos", "mac OS version to write in build info (only used in internal linking)")
+	flag.Var(&macSDK, "macsdk", "mac SDK version to write in build info (only used in internal linking)")
+	flag.Var(&rpath, "r", "set the ELF dynamic linker search `path` to dir1:dir2:...")
 	flag.Var(&flagW, "w", "disable DWARF generation")
 }
 
@@ -89,7 +92,7 @@ var (
 
 	flagA             = flag.Bool("a", false, "no-op (deprecated)")
 	FlagC             = flag.Bool("c", false, "dump call graph")
-	FlagD             = flag.Bool("d", false, "disable dynamic executable")
+	FlagD             = flag.Bool("d", false, "disable dynamic executable (ELF only)")
 	flagF             = flag.Bool("f", false, "ignore version mismatch")
 	flagG             = flag.Bool("g", false, "disable go package data checks")
 	flagH             = flag.Bool("h", false, "halt on error")
@@ -116,6 +119,7 @@ var (
 	memprofilerate    = flag.Int64("memprofilerate", 0, "set runtime.MemProfileRate to `rate`")
 	benchmarkFlag     = flag.String("benchmark", "", "set to 'mem' or 'cpu' to enable phase benchmarking")
 	benchmarkFileFlag = flag.String("benchmarkprofile", "", "emit phase profiles to `base`_phase.{cpu,mem}prof")
+	FlagSplitDWARF    = flag.Bool("splitdwarf", true, "emit DWARF in a separate file (darwin only)")
 
 	flagW ternaryFlag
 	FlagW = new(bool) // the -w flag, computed in main from flagW
@@ -270,8 +274,8 @@ func Main(arch *sys.Arch, theArch Arch) {
 		*FlagW = true
 	case ternaryFlagUnset:
 		*FlagW = *FlagS // -s implies -w if not explicitly set
-		if ctxt.IsDarwin() && ctxt.BuildMode == BuildModeCShared {
-			*FlagW = true // default to -w in c-shared mode on darwin, see #61229
+		if ctxt.IsDarwin() && ctxt.BuildMode == BuildModeCShared && !*FlagSplitDWARF {
+			*FlagW = true // default to -w in c-shared mode on darwin when not splitting DWARF, see #61229
 		}
 	}
 
@@ -293,6 +297,10 @@ func Main(arch *sys.Arch, theArch Arch) {
 		if ctxt.HeadType == objabi.Hwindows {
 			*flagOutfile += ".exe"
 		}
+	}
+
+	if !ctxt.IsDarwin() || ctxt.BuildMode == BuildModeCArchive || *FlagW || *flagOutfile == os.DevNull {
+		*FlagSplitDWARF = false
 	}
 
 	interpreter = *flagInterpreter
@@ -422,8 +430,6 @@ func Main(arch *sys.Arch, theArch Arch) {
 
 	bench.Start("textaddress")
 	ctxt.textaddress()
-	bench.Start("typelink")
-	ctxt.typelink()
 	bench.Start("buildinfo")
 	ctxt.buildinfo()
 	bench.Start("pclntab")
@@ -457,6 +463,19 @@ func Main(arch *sys.Arch, theArch Arch) {
 			Exitf("mapping output file failed: %v", err)
 		}
 	}
+	if *FlagSplitDWARF && ctxt.IsInternal() {
+		dsym := filepath.Join(*flagOutfile+".dSYM", "Contents", "Resources", "DWARF", filepath.Base(*flagOutfile))
+		if err := os.MkdirAll(filepath.Dir(dsym), 0777); err != nil {
+			Exitf("cannot create dSYM dir: %v", err)
+		}
+		ctxt.OutDWARF = NewOutBuf(ctxt.Arch)
+		if err := ctxt.OutDWARF.Open(dsym); err != nil {
+			Exitf("cannot create %s: %v", dsym, err)
+		}
+		if err := ctxt.OutDWARF.Mmap(Segdwarf.Fileoff + Segdwarf.Filelen); err != nil {
+			Exitf("mapping output DWARF file failed: %v", err)
+		}
+	}
 	// asmb will redirect symbols to the output file mmap, and relocations
 	// will be applied directly there.
 	bench.Start("Asmb")
@@ -477,6 +496,9 @@ func Main(arch *sys.Arch, theArch Arch) {
 
 	bench.Start("Munmap")
 	ctxt.Out.Close() // Close handles Munmapping if necessary.
+	if ctxt.OutDWARF != nil {
+		ctxt.OutDWARF.Close()
+	}
 
 	bench.Start("hostlink")
 	ctxt.hostlink()

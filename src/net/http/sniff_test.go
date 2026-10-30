@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 )
 
 var sniffTests = []struct {
@@ -88,7 +89,7 @@ func TestDetectContentType(t *testing.T) {
 	}
 }
 
-func TestServerContentTypeSniff(t *testing.T) { run(t, testServerContentTypeSniff) }
+func TestServerContentTypeSniff(t *testing.T) { runSynctest(t, testServerContentTypeSniff) }
 func testServerContentTypeSniff(t *testing.T, mode testMode) {
 	cst := newClientServerTest(t, mode, HandlerFunc(func(w ResponseWriter, r *Request) {
 		i, _ := strconv.Atoi(r.FormValue("i"))
@@ -130,7 +131,7 @@ func testServerContentTypeSniff(t *testing.T, mode testMode) {
 
 // Issue 5953: shouldn't sniff if the handler set a Content-Type header,
 // even if it's the empty string.
-func TestServerIssue5953(t *testing.T) { run(t, testServerIssue5953) }
+func TestServerIssue5953(t *testing.T) { runSynctest(t, testServerIssue5953) }
 func testServerIssue5953(t *testing.T, mode testMode) {
 	cst := newClientServerTest(t, mode, HandlerFunc(func(w ResponseWriter, r *Request) {
 		w.Header()["Content-Type"] = []string{""}
@@ -166,7 +167,9 @@ func (b *byteAtATimeReader) Read(p []byte) (n int, err error) {
 	return 1, nil
 }
 
-func TestContentTypeWithVariousSources(t *testing.T) { run(t, testContentTypeWithVariousSources) }
+func TestContentTypeWithVariousSources(t *testing.T) {
+	runNoSynctest(t, testContentTypeWithVariousSources)
+}
 func testContentTypeWithVariousSources(t *testing.T, mode testMode) {
 	const (
 		input    = "\n<html>\n\t<head>\n"
@@ -228,7 +231,7 @@ func testContentTypeWithVariousSources(t *testing.T, mode testMode) {
 			}
 		},
 	}} {
-		t.Run(test.name, func(t *testing.T) {
+		synctest.Subtest(t, test.name, func(t *testing.T) {
 			cst := newClientServerTest(t, mode, HandlerFunc(test.handler))
 
 			resp, err := cst.c.Get(cst.ts.URL)
@@ -238,7 +241,8 @@ func testContentTypeWithVariousSources(t *testing.T, mode testMode) {
 			if ct := resp.Header.Get("Content-Type"); ct != expected {
 				t.Errorf("Content-Type = %q, want %q", ct, expected)
 			}
-			if want, got := resp.Header.Get("Content-Length"), fmt.Sprint(len(input)); want != got {
+			// HTTP/3 does not populate Content-Length automatically.
+			if want, got := resp.Header.Get("Content-Length"), fmt.Sprint(len(input)); want != got && mode != http3Mode {
 				t.Errorf("Content-Length = %q, want %q", want, got)
 			}
 			data, err := io.ReadAll(resp.Body)
@@ -254,7 +258,7 @@ func testContentTypeWithVariousSources(t *testing.T, mode testMode) {
 	}
 }
 
-func TestSniffWriteSize(t *testing.T) { run(t, testSniffWriteSize) }
+func TestSniffWriteSize(t *testing.T) { runSynctest(t, testSniffWriteSize) }
 func testSniffWriteSize(t *testing.T, mode testMode) {
 	cst := newClientServerTest(t, mode, HandlerFunc(func(w ResponseWriter, r *Request) {
 		size, _ := strconv.Atoi(r.FormValue("size"))

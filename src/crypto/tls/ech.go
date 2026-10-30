@@ -9,6 +9,8 @@ import (
 	"crypto/hpke"
 	"errors"
 	"fmt"
+	"net/netip"
+	"slices"
 	"strings"
 
 	"golang.org/x/crypto/cryptobyte"
@@ -55,7 +57,7 @@ func (e *echConfigErr) Error() string {
 
 func parseECHConfig(enc []byte) (skip bool, ec echConfig, err error) {
 	s := cryptobyte.String(enc)
-	ec.raw = []byte(enc)
+	ec.raw = enc
 	if !s.ReadUint16(&ec.Version) {
 		return false, echConfig{}, &echConfigErr{"version"}
 	}
@@ -65,7 +67,7 @@ func parseECHConfig(enc []byte) (skip bool, ec echConfig, err error) {
 	if len(ec.raw) < int(ec.Length)+4 {
 		return false, echConfig{}, &echConfigErr{"length"}
 	}
-	ec.raw = ec.raw[:ec.Length+4]
+	ec.raw = ec.raw[:int(ec.Length)+4]
 	if ec.Version != extensionEncryptedClientHello {
 		s.Skip(int(ec.Length))
 		return true, echConfig{}, nil
@@ -119,7 +121,7 @@ func parseECHConfig(enc []byte) (skip bool, ec echConfig, err error) {
 	return false, ec, nil
 }
 
-// parseECHConfigList parses a draft-ietf-tls-esni-18 ECHConfigList, returning a
+// parseECHConfigList parses a RFC 9849 ECHConfigList, returning a
 // slice of parsed ECHConfigs, in the same order they were parsed, or an error
 // if the list is malformed.
 func parseECHConfigList(data []byte) ([]echConfig, error) {
@@ -128,7 +130,7 @@ func parseECHConfigList(data []byte) ([]echConfig, error) {
 	if !s.ReadUint16(&length) {
 		return nil, errMalformedECHConfigList
 	}
-	if length != uint16(len(data)-2) {
+	if int(length) != len(data)-2 {
 		return nil, errMalformedECHConfigList
 	}
 	var configs []echConfig
@@ -136,7 +138,7 @@ func parseECHConfigList(data []byte) ([]echConfig, error) {
 		if len(s) < 4 {
 			return nil, errors.New("tls: malformed ECHConfig")
 		}
-		configLen := uint16(s[2])<<8 | uint16(s[3])
+		configLen := int(s[2])<<8 | int(s[3])
 		skip, ec, err := parseECHConfig(s)
 		if err != nil {
 			return nil, err
@@ -184,6 +186,11 @@ func pickECHConfig(list []echConfig) (*echConfig, hpke.PublicKey, hpke.KDF, hpke
 			if err != nil {
 				continue
 			}
+			// 0xFFFF is an export-only AEAD that cannot seal/open, making
+			// it an invalid choice for encrypting ClientHelloInner.
+			if cs.AEADID == 0xFFFF {
+				continue
+			}
 			aead, err := hpke.NewAEAD(cs.AEADID)
 			if err != nil {
 				continue
@@ -207,7 +214,7 @@ func encodeInnerClientHello(inner *clientHelloMsg, maxNameLength int) ([]byte, e
 	} else {
 		paddingLen = maxNameLength + 9
 	}
-	paddingLen = 31 - ((len(h) + paddingLen - 1) % 32)
+	paddingLen += 31 - ((len(h) + paddingLen - 1) % 32)
 
 	return append(h, make([]byte, paddingLen)...), nil
 }
@@ -308,6 +315,7 @@ func decodeInnerClientHello(outer *clientHelloMsg, encoded []byte) (*clientHello
 			recon.AddBytes(compressionMethods)
 		})
 		recon.AddUint16LengthPrefixed(func(recon *cryptobyte.Builder) {
+			var outerExtensionsSeen bool
 			for !extensions.Empty() {
 				var extension uint16
 				var extData cryptobyte.String
@@ -317,18 +325,30 @@ func decodeInnerClientHello(outer *clientHelloMsg, encoded []byte) (*clientHello
 					return
 				}
 				if extension == extensionECHOuterExtensions {
-					if !extData.ReadUint8LengthPrefixed(&extData) {
+					if outerExtensionsSeen {
+						recon.SetError(errors.New("tls: invalid outer extensions"))
+						return
+					}
+					outerExtensionsSeen = true
+					var outerExtensions cryptobyte.String
+					if !extData.ReadUint8LengthPrefixed(&outerExtensions) || !extData.Empty() ||
+						outerExtensions.Empty() {
 						recon.SetError(errors.New("tls: invalid inner client hello"))
 						return
 					}
+					// OuterExtensions reconstruction per RFC 9849, Appendix A.
+					// i scans the outer extensions in order and never rewinds,
+					// so a referenced type that is out of order or duplicated
+					// cannot be found again and is rejected.
 					var i int
-					for !extData.Empty() {
+					for !outerExtensions.Empty() {
 						var extType uint16
-						if !extData.ReadUint16(&extType) {
+						if !outerExtensions.ReadUint16(&extType) {
 							recon.SetError(errors.New("tls: invalid inner client hello"))
 							return
 						}
-						if extType == extensionEncryptedClientHello {
+						if extType == extensionEncryptedClientHello ||
+							extType == extensionECHOuterExtensions {
 							recon.SetError(errors.New("tls: invalid outer extensions"))
 							return
 						}
@@ -345,6 +365,7 @@ func decodeInnerClientHello(outer *clientHelloMsg, encoded []byte) (*clientHello
 						recon.AddUint16LengthPrefixed(func(recon *cryptobyte.Builder) {
 							recon.AddBytes(rawOuterExts[i].data)
 						})
+						i++
 					}
 				} else {
 					recon.AddUint16(extension)
@@ -450,6 +471,12 @@ func computeAndUpdateOuterECHExtension(outer, inner *clientHelloMsg, ech *echCli
 // picking a config. This can be somewhat lax because even if we pick a
 // valid-looking name, the DNS layer will later reject it anyway.
 func validDNSName(name string) bool {
+	// Reject public names the certificate verifier would interpret as IP addresses.
+	// RFC 9849, Section 6.1.7 explicitly rejects IPv4. IPv6 literals, including
+	// scoped addresses, are already excluded by the DNS syntax (they contain ':').
+	if _, err := netip.ParseAddr(name); err == nil {
+		return false
+	}
 	if len(name) > 253 {
 		return false
 	}
@@ -567,11 +594,16 @@ func (c *Conn) processECHClientHello(outer *clientHelloMsg, echKeys []EncryptedC
 
 	for _, echKey := range echKeys {
 		skip, config, err := parseECHConfig(echKey.Config)
-		if err != nil || skip {
+		if err != nil {
 			c.sendAlert(alertInternalError)
 			return nil, nil, fmt.Errorf("tls: invalid EncryptedClientHelloKey Config: %s", err)
 		}
 		if skip {
+			continue
+		}
+		// RFC 9849, Section 7.1 requires trying the next config if the
+		// offered cipher suite is not supported by this config.
+		if !slices.Contains(config.SymmetricCipherSuite, echCiphersuite) {
 			continue
 		}
 		kem, err := hpke.NewKEM(config.KemID)

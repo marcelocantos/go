@@ -4,710 +4,1306 @@
 
 package archsimd
 
-// BroadcastInt8x16 returns a vector with the input
-// x assigned to all elements of the output.
+import "simd/internal/simdfmt"
+
+// BroadcastInt8x16 returns a vector with the input x assigned to all elements of the
+// result.
 //
 // Emulated, CPU Feature: AVX2
-func BroadcastInt8x16(x int8) Int8x16 {
-	var z Int8x16
-	return z.SetElem(0, x).Broadcast1To16()
+func BroadcastInt8x16(x int8) (z Int8x16) {
+	var v Int8x16
+	return v.SetElem(0, x).broadcast1To16()
 }
 
-// BroadcastInt16x8 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastInt16x8 returns a vector with the input x assigned to all elements of the
+// result.
 //
 // Emulated, CPU Feature: AVX2
-func BroadcastInt16x8(x int16) Int16x8 {
-	var z Int16x8
-	return z.SetElem(0, x).Broadcast1To8()
+func BroadcastInt16x8(x int16) (z Int16x8) {
+	var v Int16x8
+	return v.SetElem(0, x).broadcast1To8()
 }
 
-// BroadcastInt32x4 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastInt32x4 returns a vector with the input x assigned to all elements of the
+// result.
 //
 // Emulated, CPU Feature: AVX2
-func BroadcastInt32x4(x int32) Int32x4 {
-	var z Int32x4
-	return z.SetElem(0, x).Broadcast1To4()
+func BroadcastInt32x4(x int32) (z Int32x4) {
+	var v Int32x4
+	return v.SetElem(0, x).broadcast1To4()
 }
 
-// BroadcastInt64x2 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastInt64x2 returns a vector with the input x assigned to all elements of the
+// result.
 //
 // Emulated, CPU Feature: AVX2
-func BroadcastInt64x2(x int64) Int64x2 {
-	var z Int64x2
-	return z.SetElem(0, x).Broadcast1To2()
+func BroadcastInt64x2(x int64) (z Int64x2) {
+	var v Int64x2
+	return v.SetElem(0, x).broadcast1To2()
 }
 
-// BroadcastUint8x16 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastUint8x16 returns a vector with the input x assigned to all elements of the
+// result.
 //
 // Emulated, CPU Feature: AVX2
-func BroadcastUint8x16(x uint8) Uint8x16 {
-	var z Uint8x16
-	return z.SetElem(0, x).Broadcast1To16()
+func BroadcastUint8x16(x uint8) (z Uint8x16) {
+	var v Uint8x16
+	return v.SetElem(0, x).broadcast1To16()
 }
 
-// BroadcastUint16x8 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastUint16x8 returns a vector with the input x assigned to all elements of the
+// result.
 //
 // Emulated, CPU Feature: AVX2
-func BroadcastUint16x8(x uint16) Uint16x8 {
-	var z Uint16x8
-	return z.SetElem(0, x).Broadcast1To8()
+func BroadcastUint16x8(x uint16) (z Uint16x8) {
+	var v Uint16x8
+	return v.SetElem(0, x).broadcast1To8()
 }
 
-// BroadcastUint32x4 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastUint32x4 returns a vector with the input x assigned to all elements of the
+// result.
 //
 // Emulated, CPU Feature: AVX2
-func BroadcastUint32x4(x uint32) Uint32x4 {
-	var z Uint32x4
-	return z.SetElem(0, x).Broadcast1To4()
+func BroadcastUint32x4(x uint32) (z Uint32x4) {
+	var v Uint32x4
+	return v.SetElem(0, x).broadcast1To4()
 }
 
-// BroadcastUint64x2 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastUint64x2 returns a vector with the input x assigned to all elements of the
+// result.
 //
 // Emulated, CPU Feature: AVX2
-func BroadcastUint64x2(x uint64) Uint64x2 {
-	var z Uint64x2
-	return z.SetElem(0, x).Broadcast1To2()
+func BroadcastUint64x2(x uint64) (z Uint64x2) {
+	var v Uint64x2
+	return v.SetElem(0, x).broadcast1To2()
 }
 
-// BroadcastFloat32x4 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastFloat32x4 returns a vector with the input x assigned to all elements of the
+// result.
 //
 // Emulated, CPU Feature: AVX2
-func BroadcastFloat32x4(x float32) Float32x4 {
-	var z Float32x4
-	return z.SetElem(0, x).Broadcast1To4()
+func BroadcastFloat32x4(x float32) (z Float32x4) {
+	var v Float32x4
+	return v.SetElem(0, x).broadcast1To4()
 }
 
-// BroadcastFloat64x2 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastFloat64x2 returns a vector with the input x assigned to all elements of the
+// result.
 //
 // Emulated, CPU Feature: AVX2
-func BroadcastFloat64x2(x float64) Float64x2 {
-	var z Float64x2
-	return z.SetElem(0, x).Broadcast1To2()
+func BroadcastFloat64x2(x float64) (z Float64x2) {
+	var v Float64x2
+	return v.SetElem(0, x).broadcast1To2()
 }
 
-// BroadcastInt8x32 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastInt8x32 returns a vector with the input x assigned to all elements of the
+// result.
 //
 // Emulated, CPU Feature: AVX2
-func BroadcastInt8x32(x int8) Int8x32 {
-	var z Int8x16
-	return z.SetElem(0, x).Broadcast1To32()
+func BroadcastInt8x32(x int8) (z Int8x32) {
+	var v Int8x16
+	return v.SetElem(0, x).broadcast1To32()
 }
 
-// BroadcastInt16x16 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastInt16x16 returns a vector with the input x assigned to all elements of the
+// result.
 //
 // Emulated, CPU Feature: AVX2
-func BroadcastInt16x16(x int16) Int16x16 {
-	var z Int16x8
-	return z.SetElem(0, x).Broadcast1To16()
+func BroadcastInt16x16(x int16) (z Int16x16) {
+	var v Int16x8
+	return v.SetElem(0, x).broadcast1To16()
 }
 
-// BroadcastInt32x8 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastInt32x8 returns a vector with the input x assigned to all elements of the
+// result.
 //
 // Emulated, CPU Feature: AVX2
-func BroadcastInt32x8(x int32) Int32x8 {
-	var z Int32x4
-	return z.SetElem(0, x).Broadcast1To8()
+func BroadcastInt32x8(x int32) (z Int32x8) {
+	var v Int32x4
+	return v.SetElem(0, x).broadcast1To8()
 }
 
-// BroadcastInt64x4 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastInt64x4 returns a vector with the input x assigned to all elements of the
+// result.
 //
 // Emulated, CPU Feature: AVX2
-func BroadcastInt64x4(x int64) Int64x4 {
-	var z Int64x2
-	return z.SetElem(0, x).Broadcast1To4()
+func BroadcastInt64x4(x int64) (z Int64x4) {
+	var v Int64x2
+	return v.SetElem(0, x).broadcast1To4()
 }
 
-// BroadcastUint8x32 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastUint8x32 returns a vector with the input x assigned to all elements of the
+// result.
 //
 // Emulated, CPU Feature: AVX2
-func BroadcastUint8x32(x uint8) Uint8x32 {
-	var z Uint8x16
-	return z.SetElem(0, x).Broadcast1To32()
+func BroadcastUint8x32(x uint8) (z Uint8x32) {
+	var v Uint8x16
+	return v.SetElem(0, x).broadcast1To32()
 }
 
-// BroadcastUint16x16 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastUint16x16 returns a vector with the input x assigned to all elements of the
+// result.
 //
 // Emulated, CPU Feature: AVX2
-func BroadcastUint16x16(x uint16) Uint16x16 {
-	var z Uint16x8
-	return z.SetElem(0, x).Broadcast1To16()
+func BroadcastUint16x16(x uint16) (z Uint16x16) {
+	var v Uint16x8
+	return v.SetElem(0, x).broadcast1To16()
 }
 
-// BroadcastUint32x8 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastUint32x8 returns a vector with the input x assigned to all elements of the
+// result.
 //
 // Emulated, CPU Feature: AVX2
-func BroadcastUint32x8(x uint32) Uint32x8 {
-	var z Uint32x4
-	return z.SetElem(0, x).Broadcast1To8()
+func BroadcastUint32x8(x uint32) (z Uint32x8) {
+	var v Uint32x4
+	return v.SetElem(0, x).broadcast1To8()
 }
 
-// BroadcastUint64x4 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastUint64x4 returns a vector with the input x assigned to all elements of the
+// result.
 //
 // Emulated, CPU Feature: AVX2
-func BroadcastUint64x4(x uint64) Uint64x4 {
-	var z Uint64x2
-	return z.SetElem(0, x).Broadcast1To4()
+func BroadcastUint64x4(x uint64) (z Uint64x4) {
+	var v Uint64x2
+	return v.SetElem(0, x).broadcast1To4()
 }
 
-// BroadcastFloat32x8 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastFloat32x8 returns a vector with the input x assigned to all elements of the
+// result.
 //
 // Emulated, CPU Feature: AVX2
-func BroadcastFloat32x8(x float32) Float32x8 {
-	var z Float32x4
-	return z.SetElem(0, x).Broadcast1To8()
+func BroadcastFloat32x8(x float32) (z Float32x8) {
+	var v Float32x4
+	return v.SetElem(0, x).broadcast1To8()
 }
 
-// BroadcastFloat64x4 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastFloat64x4 returns a vector with the input x assigned to all elements of the
+// result.
 //
 // Emulated, CPU Feature: AVX2
-func BroadcastFloat64x4(x float64) Float64x4 {
-	var z Float64x2
-	return z.SetElem(0, x).Broadcast1To4()
+func BroadcastFloat64x4(x float64) (z Float64x4) {
+	var v Float64x2
+	return v.SetElem(0, x).broadcast1To4()
 }
 
-// BroadcastInt8x64 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastInt8x64 returns a vector with the input x assigned to all elements of the
+// result.
 //
-// Emulated, CPU Feature: AVX512BW
-func BroadcastInt8x64(x int8) Int8x64 {
-	var z Int8x16
-	return z.SetElem(0, x).Broadcast1To64()
+// Emulated, CPU Feature: AVX512
+func BroadcastInt8x64(x int8) (z Int8x64) {
+	var v Int8x16
+	return v.SetElem(0, x).broadcast1To64()
 }
 
-// BroadcastInt16x32 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastInt16x32 returns a vector with the input x assigned to all elements of the
+// result.
 //
-// Emulated, CPU Feature: AVX512BW
-func BroadcastInt16x32(x int16) Int16x32 {
-	var z Int16x8
-	return z.SetElem(0, x).Broadcast1To32()
+// Emulated, CPU Feature: AVX512
+func BroadcastInt16x32(x int16) (z Int16x32) {
+	var v Int16x8
+	return v.SetElem(0, x).broadcast1To32()
 }
 
-// BroadcastInt32x16 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastInt32x16 returns a vector with the input x assigned to all elements of the
+// result.
 //
-// Emulated, CPU Feature: AVX512F
-func BroadcastInt32x16(x int32) Int32x16 {
-	var z Int32x4
-	return z.SetElem(0, x).Broadcast1To16()
+// Emulated, CPU Feature: AVX512
+func BroadcastInt32x16(x int32) (z Int32x16) {
+	var v Int32x4
+	return v.SetElem(0, x).broadcast1To16()
 }
 
-// BroadcastInt64x8 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastInt64x8 returns a vector with the input x assigned to all elements of the
+// result.
 //
-// Emulated, CPU Feature: AVX512F
-func BroadcastInt64x8(x int64) Int64x8 {
-	var z Int64x2
-	return z.SetElem(0, x).Broadcast1To8()
+// Emulated, CPU Feature: AVX512
+func BroadcastInt64x8(x int64) (z Int64x8) {
+	var v Int64x2
+	return v.SetElem(0, x).broadcast1To8()
 }
 
-// BroadcastUint8x64 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastUint8x64 returns a vector with the input x assigned to all elements of the
+// result.
 //
-// Emulated, CPU Feature: AVX512BW
-func BroadcastUint8x64(x uint8) Uint8x64 {
-	var z Uint8x16
-	return z.SetElem(0, x).Broadcast1To64()
+// Emulated, CPU Feature: AVX512
+func BroadcastUint8x64(x uint8) (z Uint8x64) {
+	var v Uint8x16
+	return v.SetElem(0, x).broadcast1To64()
 }
 
-// BroadcastUint16x32 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastUint16x32 returns a vector with the input x assigned to all elements of the
+// result.
 //
-// Emulated, CPU Feature: AVX512BW
-func BroadcastUint16x32(x uint16) Uint16x32 {
-	var z Uint16x8
-	return z.SetElem(0, x).Broadcast1To32()
+// Emulated, CPU Feature: AVX512
+func BroadcastUint16x32(x uint16) (z Uint16x32) {
+	var v Uint16x8
+	return v.SetElem(0, x).broadcast1To32()
 }
 
-// BroadcastUint32x16 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastUint32x16 returns a vector with the input x assigned to all elements of the
+// result.
 //
-// Emulated, CPU Feature: AVX512F
-func BroadcastUint32x16(x uint32) Uint32x16 {
-	var z Uint32x4
-	return z.SetElem(0, x).Broadcast1To16()
+// Emulated, CPU Feature: AVX512
+func BroadcastUint32x16(x uint32) (z Uint32x16) {
+	var v Uint32x4
+	return v.SetElem(0, x).broadcast1To16()
 }
 
-// BroadcastUint64x8 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastUint64x8 returns a vector with the input x assigned to all elements of the
+// result.
 //
-// Emulated, CPU Feature: AVX512F
-func BroadcastUint64x8(x uint64) Uint64x8 {
-	var z Uint64x2
-	return z.SetElem(0, x).Broadcast1To8()
+// Emulated, CPU Feature: AVX512
+func BroadcastUint64x8(x uint64) (z Uint64x8) {
+	var v Uint64x2
+	return v.SetElem(0, x).broadcast1To8()
 }
 
-// BroadcastFloat32x16 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastFloat32x16 returns a vector with the input x assigned to all elements of the
+// result.
 //
-// Emulated, CPU Feature: AVX512F
-func BroadcastFloat32x16(x float32) Float32x16 {
-	var z Float32x4
-	return z.SetElem(0, x).Broadcast1To16()
+// Emulated, CPU Feature: AVX512
+func BroadcastFloat32x16(x float32) (z Float32x16) {
+	var v Float32x4
+	return v.SetElem(0, x).broadcast1To16()
 }
 
-// BroadcastFloat64x8 returns a vector with the input
-// x assigned to all elements of the output.
+// BroadcastFloat64x8 returns a vector with the input x assigned to all elements of the
+// result.
 //
-// Emulated, CPU Feature: AVX512F
-func BroadcastFloat64x8(x float64) Float64x8 {
-	var z Float64x2
-	return z.SetElem(0, x).Broadcast1To8()
+// Emulated, CPU Feature: AVX512
+func BroadcastFloat64x8(x float64) (z Float64x8) {
+	var v Float64x2
+	return v.SetElem(0, x).broadcast1To8()
 }
 
-// ToMask converts from Int8x16 to Mask8x16, mask element is set to true when the corresponding vector element is non-zero.
-func (from Int8x16) ToMask() (to Mask8x16) {
-	return from.NotEqual(Int8x16{})
+// ToMask returns a mask indicating which elements of x are non-zero.
+//
+//	z[i] = x[i] != 0
+func (x Int8x16) ToMask() (z Mask8x16) {
+	return x.NotEqual(Int8x16{})
 }
 
-// ToMask converts from Int16x8 to Mask16x8, mask element is set to true when the corresponding vector element is non-zero.
-func (from Int16x8) ToMask() (to Mask16x8) {
-	return from.NotEqual(Int16x8{})
+// ToMask returns a mask indicating which elements of x are non-zero.
+//
+//	z[i] = x[i] != 0
+func (x Int16x8) ToMask() (z Mask16x8) {
+	return x.NotEqual(Int16x8{})
 }
 
-// ToMask converts from Int32x4 to Mask32x4, mask element is set to true when the corresponding vector element is non-zero.
-func (from Int32x4) ToMask() (to Mask32x4) {
-	return from.NotEqual(Int32x4{})
+// ToMask returns a mask indicating which elements of x are non-zero.
+//
+//	z[i] = x[i] != 0
+func (x Int32x4) ToMask() (z Mask32x4) {
+	return x.NotEqual(Int32x4{})
 }
 
-// ToMask converts from Int64x2 to Mask64x2, mask element is set to true when the corresponding vector element is non-zero.
-func (from Int64x2) ToMask() (to Mask64x2) {
-	return from.NotEqual(Int64x2{})
+// ToMask returns a mask indicating which elements of x are non-zero.
+//
+//	z[i] = x[i] != 0
+func (x Int64x2) ToMask() (z Mask64x2) {
+	return x.NotEqual(Int64x2{})
 }
 
-// ToMask converts from Int8x32 to Mask8x32, mask element is set to true when the corresponding vector element is non-zero.
-func (from Int8x32) ToMask() (to Mask8x32) {
-	return from.NotEqual(Int8x32{})
+// ToMask returns a mask indicating which elements of x are non-zero.
+//
+//	z[i] = x[i] != 0
+func (x Int8x32) ToMask() (z Mask8x32) {
+	return x.NotEqual(Int8x32{})
 }
 
-// ToMask converts from Int16x16 to Mask16x16, mask element is set to true when the corresponding vector element is non-zero.
-func (from Int16x16) ToMask() (to Mask16x16) {
-	return from.NotEqual(Int16x16{})
+// ToMask returns a mask indicating which elements of x are non-zero.
+//
+//	z[i] = x[i] != 0
+func (x Int16x16) ToMask() (z Mask16x16) {
+	return x.NotEqual(Int16x16{})
 }
 
-// ToMask converts from Int32x8 to Mask32x8, mask element is set to true when the corresponding vector element is non-zero.
-func (from Int32x8) ToMask() (to Mask32x8) {
-	return from.NotEqual(Int32x8{})
+// ToMask returns a mask indicating which elements of x are non-zero.
+//
+//	z[i] = x[i] != 0
+func (x Int32x8) ToMask() (z Mask32x8) {
+	return x.NotEqual(Int32x8{})
 }
 
-// ToMask converts from Int64x4 to Mask64x4, mask element is set to true when the corresponding vector element is non-zero.
-func (from Int64x4) ToMask() (to Mask64x4) {
-	return from.NotEqual(Int64x4{})
+// ToMask returns a mask indicating which elements of x are non-zero.
+//
+//	z[i] = x[i] != 0
+func (x Int64x4) ToMask() (z Mask64x4) {
+	return x.NotEqual(Int64x4{})
 }
 
-// ToMask converts from Int8x64 to Mask8x64, mask element is set to true when the corresponding vector element is non-zero.
-func (from Int8x64) ToMask() (to Mask8x64) {
-	return from.NotEqual(Int8x64{})
+// ToMask returns a mask indicating which elements of x are non-zero.
+//
+//	z[i] = x[i] != 0
+func (x Int8x64) ToMask() (z Mask8x64) {
+	return x.NotEqual(Int8x64{})
 }
 
-// ToMask converts from Int16x32 to Mask16x32, mask element is set to true when the corresponding vector element is non-zero.
-func (from Int16x32) ToMask() (to Mask16x32) {
-	return from.NotEqual(Int16x32{})
+// ToMask returns a mask indicating which elements of x are non-zero.
+//
+//	z[i] = x[i] != 0
+func (x Int16x32) ToMask() (z Mask16x32) {
+	return x.NotEqual(Int16x32{})
 }
 
-// ToMask converts from Int32x16 to Mask32x16, mask element is set to true when the corresponding vector element is non-zero.
-func (from Int32x16) ToMask() (to Mask32x16) {
-	return from.NotEqual(Int32x16{})
+// ToMask returns a mask indicating which elements of x are non-zero.
+//
+//	z[i] = x[i] != 0
+func (x Int32x16) ToMask() (z Mask32x16) {
+	return x.NotEqual(Int32x16{})
 }
 
-// ToMask converts from Int64x8 to Mask64x8, mask element is set to true when the corresponding vector element is non-zero.
-func (from Int64x8) ToMask() (to Mask64x8) {
-	return from.NotEqual(Int64x8{})
+// ToMask returns a mask indicating which elements of x are non-zero.
+//
+//	z[i] = x[i] != 0
+func (x Int64x8) ToMask() (z Mask64x8) {
+	return x.NotEqual(Int64x8{})
 }
 
-// Not returns the bitwise complement of x.
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
 //
 // Emulated, CPU Feature: AVX
-func (x Int8x16) Not() Int8x16 {
+func (x Int8x16) Not() (z Int8x16) {
 	return x.Xor(x.Equal(x).ToInt8x16())
 }
 
-// Not returns the bitwise complement of x.
+// Neg returns the elementwise negation of x.
+//
+//	z[i] = -x[i]
 //
 // Emulated, CPU Feature: AVX
-func (x Int16x8) Not() Int16x8 {
+func (x Int8x16) Neg() (z Int8x16) {
+	var zero Int8x16
+	return zero.Sub(x)
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX
+func (x Mask8x16) Not() (z Mask8x16) {
+	return x.ToInt8x16().Xor(x.Equal(x).ToInt8x16()).asMask()
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX
+func (x Int16x8) Not() (z Int16x8) {
 	return x.Xor(x.Equal(x).ToInt16x8())
 }
 
-// Not returns the bitwise complement of x.
+// Neg returns the elementwise negation of x.
+//
+//	z[i] = -x[i]
 //
 // Emulated, CPU Feature: AVX
-func (x Int32x4) Not() Int32x4 {
+func (x Int16x8) Neg() (z Int16x8) {
+	var zero Int16x8
+	return zero.Sub(x)
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX
+func (x Mask16x8) Not() (z Mask16x8) {
+	return x.ToInt16x8().Xor(x.Equal(x).ToInt16x8()).asMask()
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX
+func (x Int32x4) Not() (z Int32x4) {
 	return x.Xor(x.Equal(x).ToInt32x4())
 }
 
-// Not returns the bitwise complement of x.
+// Neg returns the elementwise negation of x.
+//
+//	z[i] = -x[i]
 //
 // Emulated, CPU Feature: AVX
-func (x Int64x2) Not() Int64x2 {
+func (x Int32x4) Neg() (z Int32x4) {
+	var zero Int32x4
+	return zero.Sub(x)
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX
+func (x Mask32x4) Not() (z Mask32x4) {
+	return x.ToInt32x4().Xor(x.Equal(x).ToInt32x4()).asMask()
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX
+func (x Int64x2) Not() (z Int64x2) {
 	return x.Xor(x.Equal(x).ToInt64x2())
 }
 
-// Not returns the bitwise complement of x.
+// Neg returns the elementwise negation of x.
+//
+//	z[i] = -x[i]
+//
+// Emulated, CPU Feature: AVX
+func (x Int64x2) Neg() (z Int64x2) {
+	var zero Int64x2
+	return zero.Sub(x)
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX
+func (x Mask64x2) Not() (z Mask64x2) {
+	return x.ToInt64x2().Xor(x.Equal(x).ToInt64x2()).asMask()
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
 //
 // Emulated, CPU Feature: AVX2
-func (x Int8x32) Not() Int8x32 {
+func (x Int8x32) Not() (z Int8x32) {
 	return x.Xor(x.Equal(x).ToInt8x32())
 }
 
-// Not returns the bitwise complement of x.
+// Neg returns the elementwise negation of x.
+//
+//	z[i] = -x[i]
 //
 // Emulated, CPU Feature: AVX2
-func (x Int16x16) Not() Int16x16 {
+func (x Int8x32) Neg() (z Int8x32) {
+	var zero Int8x32
+	return zero.Sub(x)
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX2
+func (x Mask8x32) Not() (z Mask8x32) {
+	return x.ToInt8x32().Xor(x.Equal(x).ToInt8x32()).asMask()
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX2
+func (x Int16x16) Not() (z Int16x16) {
 	return x.Xor(x.Equal(x).ToInt16x16())
 }
 
-// Not returns the bitwise complement of x.
+// Neg returns the elementwise negation of x.
+//
+//	z[i] = -x[i]
 //
 // Emulated, CPU Feature: AVX2
-func (x Int32x8) Not() Int32x8 {
+func (x Int16x16) Neg() (z Int16x16) {
+	var zero Int16x16
+	return zero.Sub(x)
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX2
+func (x Mask16x16) Not() (z Mask16x16) {
+	return x.ToInt16x16().Xor(x.Equal(x).ToInt16x16()).asMask()
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX2
+func (x Int32x8) Not() (z Int32x8) {
 	return x.Xor(x.Equal(x).ToInt32x8())
 }
 
-// Not returns the bitwise complement of x.
+// Neg returns the elementwise negation of x.
+//
+//	z[i] = -x[i]
 //
 // Emulated, CPU Feature: AVX2
-func (x Int64x4) Not() Int64x4 {
+func (x Int32x8) Neg() (z Int32x8) {
+	var zero Int32x8
+	return zero.Sub(x)
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX2
+func (x Mask32x8) Not() (z Mask32x8) {
+	return x.ToInt32x8().Xor(x.Equal(x).ToInt32x8()).asMask()
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX2
+func (x Int64x4) Not() (z Int64x4) {
 	return x.Xor(x.Equal(x).ToInt64x4())
 }
 
-// Not returns the bitwise complement of x.
+// Neg returns the elementwise negation of x.
+//
+//	z[i] = -x[i]
+//
+// Emulated, CPU Feature: AVX2
+func (x Int64x4) Neg() (z Int64x4) {
+	var zero Int64x4
+	return zero.Sub(x)
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX2
+func (x Mask64x4) Not() (z Mask64x4) {
+	return x.ToInt64x4().Xor(x.Equal(x).ToInt64x4()).asMask()
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
 //
 // Emulated, CPU Feature: AVX512
-func (x Int8x64) Not() Int8x64 {
+func (x Int8x64) Not() (z Int8x64) {
 	return x.Xor(x.Equal(x).ToInt8x64())
 }
 
-// Not returns the bitwise complement of x.
+// Neg returns the elementwise negation of x.
+//
+//	z[i] = -x[i]
 //
 // Emulated, CPU Feature: AVX512
-func (x Int16x32) Not() Int16x32 {
+func (x Int8x64) Neg() (z Int8x64) {
+	var zero Int8x64
+	return zero.Sub(x)
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX512
+func (x Mask8x64) Not() (z Mask8x64) {
+	return x.ToInt8x64().Xor(x.Equal(x).ToInt8x64()).asMask()
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX512
+func (x Int16x32) Not() (z Int16x32) {
 	return x.Xor(x.Equal(x).ToInt16x32())
 }
 
-// Not returns the bitwise complement of x.
+// Neg returns the elementwise negation of x.
+//
+//	z[i] = -x[i]
 //
 // Emulated, CPU Feature: AVX512
-func (x Int32x16) Not() Int32x16 {
+func (x Int16x32) Neg() (z Int16x32) {
+	var zero Int16x32
+	return zero.Sub(x)
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX512
+func (x Mask16x32) Not() (z Mask16x32) {
+	return x.ToInt16x32().Xor(x.Equal(x).ToInt16x32()).asMask()
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX512
+func (x Int32x16) Not() (z Int32x16) {
 	return x.Xor(x.Equal(x).ToInt32x16())
 }
 
-// Not returns the bitwise complement of x.
+// Neg returns the elementwise negation of x.
+//
+//	z[i] = -x[i]
 //
 // Emulated, CPU Feature: AVX512
-func (x Int64x8) Not() Int64x8 {
+func (x Int32x16) Neg() (z Int32x16) {
+	var zero Int32x16
+	return zero.Sub(x)
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX512
+func (x Mask32x16) Not() (z Mask32x16) {
+	return x.ToInt32x16().Xor(x.Equal(x).ToInt32x16()).asMask()
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX512
+func (x Int64x8) Not() (z Int64x8) {
 	return x.Xor(x.Equal(x).ToInt64x8())
 }
 
-// Not returns the bitwise complement of x.
+// Neg returns the elementwise negation of x.
+//
+//	z[i] = -x[i]
+//
+// Emulated, CPU Feature: AVX512
+func (x Int64x8) Neg() (z Int64x8) {
+	var zero Int64x8
+	return zero.Sub(x)
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
+//
+// Emulated, CPU Feature: AVX512
+func (x Mask64x8) Not() (z Mask64x8) {
+	return x.ToInt64x8().Xor(x.Equal(x).ToInt64x8()).asMask()
+}
+
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
 //
 // Emulated, CPU Feature: AVX
-func (x Uint8x16) Not() Uint8x16 {
+func (x Uint8x16) Not() (z Uint8x16) {
 	return x.Xor(x.Equal(x).ToInt8x16().AsUint8x16())
 }
 
-// Not returns the bitwise complement of x.
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
 //
 // Emulated, CPU Feature: AVX
-func (x Uint16x8) Not() Uint16x8 {
+func (x Uint16x8) Not() (z Uint16x8) {
 	return x.Xor(x.Equal(x).ToInt16x8().AsUint16x8())
 }
 
-// Not returns the bitwise complement of x.
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
 //
 // Emulated, CPU Feature: AVX
-func (x Uint32x4) Not() Uint32x4 {
+func (x Uint32x4) Not() (z Uint32x4) {
 	return x.Xor(x.Equal(x).ToInt32x4().AsUint32x4())
 }
 
-// Not returns the bitwise complement of x.
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
 //
 // Emulated, CPU Feature: AVX
-func (x Uint64x2) Not() Uint64x2 {
+func (x Uint64x2) Not() (z Uint64x2) {
 	return x.Xor(x.Equal(x).ToInt64x2().AsUint64x2())
 }
 
-// Not returns the bitwise complement of x.
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
 //
 // Emulated, CPU Feature: AVX2
-func (x Uint8x32) Not() Uint8x32 {
+func (x Uint8x32) Not() (z Uint8x32) {
 	return x.Xor(x.Equal(x).ToInt8x32().AsUint8x32())
 }
 
-// Not returns the bitwise complement of x.
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
 //
 // Emulated, CPU Feature: AVX2
-func (x Uint16x16) Not() Uint16x16 {
+func (x Uint16x16) Not() (z Uint16x16) {
 	return x.Xor(x.Equal(x).ToInt16x16().AsUint16x16())
 }
 
-// Not returns the bitwise complement of x.
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
 //
 // Emulated, CPU Feature: AVX2
-func (x Uint32x8) Not() Uint32x8 {
+func (x Uint32x8) Not() (z Uint32x8) {
 	return x.Xor(x.Equal(x).ToInt32x8().AsUint32x8())
 }
 
-// Not returns the bitwise complement of x.
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
 //
 // Emulated, CPU Feature: AVX2
-func (x Uint64x4) Not() Uint64x4 {
+func (x Uint64x4) Not() (z Uint64x4) {
 	return x.Xor(x.Equal(x).ToInt64x4().AsUint64x4())
 }
 
-// Not returns the bitwise complement of x.
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
 //
 // Emulated, CPU Feature: AVX512
-func (x Uint8x64) Not() Uint8x64 {
+func (x Uint8x64) Not() (z Uint8x64) {
 	return x.Xor(x.Equal(x).ToInt8x64().AsUint8x64())
 }
 
-// Not returns the bitwise complement of x.
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
 //
 // Emulated, CPU Feature: AVX512
-func (x Uint16x32) Not() Uint16x32 {
+func (x Uint16x32) Not() (z Uint16x32) {
 	return x.Xor(x.Equal(x).ToInt16x32().AsUint16x32())
 }
 
-// Not returns the bitwise complement of x.
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
 //
 // Emulated, CPU Feature: AVX512
-func (x Uint32x16) Not() Uint32x16 {
+func (x Uint32x16) Not() (z Uint32x16) {
 	return x.Xor(x.Equal(x).ToInt32x16().AsUint32x16())
 }
 
-// Not returns the bitwise complement of x.
+// Not returns the bitwise negation of x.
+//
+//	z[i] = ^x[i]
 //
 // Emulated, CPU Feature: AVX512
-func (x Uint64x8) Not() Uint64x8 {
+func (x Uint64x8) Not() (z Uint64x8) {
 	return x.Xor(x.Equal(x).ToInt64x8().AsUint64x8())
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Int8x16) String() string {
 	var s [16]int8
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Int16x8) String() string {
 	var s [8]int16
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Int32x4) String() string {
 	var s [4]int32
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Int64x2) String() string {
 	var s [2]int64
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Uint8x16) String() string {
 	var s [16]uint8
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Uint16x8) String() string {
 	var s [8]uint16
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Uint32x4) String() string {
 	var s [4]uint32
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Uint64x2) String() string {
 	var s [2]uint64
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Float32x4) String() string {
 	var s [4]float32
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Float64x2) String() string {
 	var s [2]float64
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Int8x32) String() string {
 	var s [32]int8
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Int16x16) String() string {
 	var s [16]int16
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Int32x8) String() string {
 	var s [8]int32
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Int64x4) String() string {
 	var s [4]int64
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Uint8x32) String() string {
 	var s [32]uint8
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Uint16x16) String() string {
 	var s [16]uint16
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Uint32x8) String() string {
 	var s [8]uint32
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Uint64x4) String() string {
 	var s [4]uint64
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Float32x8) String() string {
 	var s [8]float32
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Float64x4) String() string {
 	var s [4]float64
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Int8x64) String() string {
 	var s [64]int8
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Int16x32) String() string {
 	var s [32]int16
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Int32x16) String() string {
 	var s [16]int32
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Int64x8) String() string {
 	var s [8]int64
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Uint8x64) String() string {
 	var s [64]uint8
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Uint16x32) String() string {
 	var s [32]uint16
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Uint32x16) String() string {
 	var s [16]uint32
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Uint64x8) String() string {
 	var s [8]uint64
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Float32x16) String() string {
 	var s [16]float32
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
 }
 
-// String returns a string representation of SIMD vector x.
+// String returns x in the form "{x[0],x[1],...}".
 func (x Float64x8) String() string {
 	var s [8]float64
-	x.Store(&s)
-	return sliceToString(s[:])
+	x.StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
+}
+
+// String returns x in the form "{x[0],x[1],...}", where 0 means false and 1
+// means true.
+func (x Mask8x16) String() string {
+	var s [16]int8
+	x.ToInt8x16().Neg().StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
+}
+
+// String returns x in the form "{x[0],x[1],...}", where 0 means false and 1
+// means true.
+func (x Mask16x8) String() string {
+	var s [8]int16
+	x.ToInt16x8().Neg().StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
+}
+
+// String returns x in the form "{x[0],x[1],...}", where 0 means false and 1
+// means true.
+func (x Mask32x4) String() string {
+	var s [4]int32
+	x.ToInt32x4().Neg().StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
+}
+
+// String returns x in the form "{x[0],x[1],...}", where 0 means false and 1
+// means true.
+func (x Mask64x2) String() string {
+	var s [2]int64
+	x.ToInt64x2().Neg().StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
+}
+
+// String returns x in the form "{x[0],x[1],...}", where 0 means false and 1
+// means true.
+func (x Mask8x32) String() string {
+	var s [32]int8
+	x.ToInt8x32().Neg().StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
+}
+
+// String returns x in the form "{x[0],x[1],...}", where 0 means false and 1
+// means true.
+func (x Mask16x16) String() string {
+	var s [16]int16
+	x.ToInt16x16().Neg().StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
+}
+
+// String returns x in the form "{x[0],x[1],...}", where 0 means false and 1
+// means true.
+func (x Mask32x8) String() string {
+	var s [8]int32
+	x.ToInt32x8().Neg().StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
+}
+
+// String returns x in the form "{x[0],x[1],...}", where 0 means false and 1
+// means true.
+func (x Mask64x4) String() string {
+	var s [4]int64
+	x.ToInt64x4().Neg().StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
+}
+
+// String returns x in the form "{x[0],x[1],...}", where 0 means false and 1
+// means true.
+func (x Mask8x64) String() string {
+	var s [64]int8
+	x.ToInt8x64().Neg().StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
+}
+
+// String returns x in the form "{x[0],x[1],...}", where 0 means false and 1
+// means true.
+func (x Mask16x32) String() string {
+	var s [32]int16
+	x.ToInt16x32().Neg().StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
+}
+
+// String returns x in the form "{x[0],x[1],...}", where 0 means false and 1
+// means true.
+func (x Mask32x16) String() string {
+	var s [16]int32
+	x.ToInt32x16().Neg().StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
+}
+
+// String returns x in the form "{x[0],x[1],...}", where 0 means false and 1
+// means true.
+func (x Mask64x8) String() string {
+	var s [8]int64
+	x.ToInt64x8().Neg().StoreArray(&s)
+	return simdfmt.SliceToString(s[:])
+}
+
+// RotateAllLeft rotates each element of x left by shift bits.
+//
+//	z[i] = rotateLeft(x[i], shift)
+//
+// Emulated
+func (x Uint16x8) RotateAllLeft(shift uint64) (z Uint16x8) {
+	shift = shift & (16 - 1)
+	nshift := 16 - shift
+	return x.ShiftAllLeft(shift).Or(x.ShiftAllRight(nshift))
+}
+
+// RotateAllRight rotates each element of x right by shift bits.
+//
+//	z[i] = rotateRight(x[i], shift)
+//
+// Emulated
+func (x Uint16x8) RotateAllRight(shift uint64) (z Uint16x8) {
+	shift = shift & (16 - 1)
+	nshift := 16 - shift
+	return x.ShiftAllLeft(nshift).Or(x.ShiftAllRight(shift))
+}
+
+// RotateAllLeft rotates each element of x left by shift bits.
+//
+//	z[i] = rotateLeft(x[i], shift)
+//
+// Emulated
+func (x Uint32x4) RotateAllLeft(shift uint64) (z Uint32x4) {
+	shift = shift & (32 - 1)
+	nshift := 32 - shift
+	return x.ShiftAllLeft(shift).Or(x.ShiftAllRight(nshift))
+}
+
+// RotateAllRight rotates each element of x right by shift bits.
+//
+//	z[i] = rotateRight(x[i], shift)
+//
+// Emulated
+func (x Uint32x4) RotateAllRight(shift uint64) (z Uint32x4) {
+	shift = shift & (32 - 1)
+	nshift := 32 - shift
+	return x.ShiftAllLeft(nshift).Or(x.ShiftAllRight(shift))
+}
+
+// RotateAllLeft rotates each element of x left by shift bits.
+//
+//	z[i] = rotateLeft(x[i], shift)
+//
+// Emulated
+func (x Uint64x2) RotateAllLeft(shift uint64) (z Uint64x2) {
+	shift = shift & (64 - 1)
+	nshift := 64 - shift
+	return x.ShiftAllLeft(shift).Or(x.ShiftAllRight(nshift))
+}
+
+// RotateAllRight rotates each element of x right by shift bits.
+//
+//	z[i] = rotateRight(x[i], shift)
+//
+// Emulated
+func (x Uint64x2) RotateAllRight(shift uint64) (z Uint64x2) {
+	shift = shift & (64 - 1)
+	nshift := 64 - shift
+	return x.ShiftAllLeft(nshift).Or(x.ShiftAllRight(shift))
+}
+
+// RotateAllLeft rotates each element of x left by shift bits.
+//
+//	z[i] = rotateLeft(x[i], shift)
+//
+// Emulated
+func (x Uint16x16) RotateAllLeft(shift uint64) (z Uint16x16) {
+	shift = shift & (16 - 1)
+	nshift := 16 - shift
+	return x.ShiftAllLeft(shift).Or(x.ShiftAllRight(nshift))
+}
+
+// RotateAllRight rotates each element of x right by shift bits.
+//
+//	z[i] = rotateRight(x[i], shift)
+//
+// Emulated
+func (x Uint16x16) RotateAllRight(shift uint64) (z Uint16x16) {
+	shift = shift & (16 - 1)
+	nshift := 16 - shift
+	return x.ShiftAllLeft(nshift).Or(x.ShiftAllRight(shift))
+}
+
+// RotateAllLeft rotates each element of x left by shift bits.
+//
+//	z[i] = rotateLeft(x[i], shift)
+//
+// Emulated
+func (x Uint32x8) RotateAllLeft(shift uint64) (z Uint32x8) {
+	shift = shift & (32 - 1)
+	nshift := 32 - shift
+	return x.ShiftAllLeft(shift).Or(x.ShiftAllRight(nshift))
+}
+
+// RotateAllRight rotates each element of x right by shift bits.
+//
+//	z[i] = rotateRight(x[i], shift)
+//
+// Emulated
+func (x Uint32x8) RotateAllRight(shift uint64) (z Uint32x8) {
+	shift = shift & (32 - 1)
+	nshift := 32 - shift
+	return x.ShiftAllLeft(nshift).Or(x.ShiftAllRight(shift))
+}
+
+// RotateAllLeft rotates each element of x left by shift bits.
+//
+//	z[i] = rotateLeft(x[i], shift)
+//
+// Emulated
+func (x Uint64x4) RotateAllLeft(shift uint64) (z Uint64x4) {
+	shift = shift & (64 - 1)
+	nshift := 64 - shift
+	return x.ShiftAllLeft(shift).Or(x.ShiftAllRight(nshift))
+}
+
+// RotateAllRight rotates each element of x right by shift bits.
+//
+//	z[i] = rotateRight(x[i], shift)
+//
+// Emulated
+func (x Uint64x4) RotateAllRight(shift uint64) (z Uint64x4) {
+	shift = shift & (64 - 1)
+	nshift := 64 - shift
+	return x.ShiftAllLeft(nshift).Or(x.ShiftAllRight(shift))
+}
+
+// RotateAllLeft rotates each element of x left by shift bits.
+//
+//	z[i] = rotateLeft(x[i], shift)
+//
+// Emulated
+func (x Uint16x32) RotateAllLeft(shift uint64) (z Uint16x32) {
+	shift = shift & (16 - 1)
+	nshift := 16 - shift
+	return x.ShiftAllLeft(shift).Or(x.ShiftAllRight(nshift))
+}
+
+// RotateAllRight rotates each element of x right by shift bits.
+//
+//	z[i] = rotateRight(x[i], shift)
+//
+// Emulated
+func (x Uint16x32) RotateAllRight(shift uint64) (z Uint16x32) {
+	shift = shift & (16 - 1)
+	nshift := 16 - shift
+	return x.ShiftAllLeft(nshift).Or(x.ShiftAllRight(shift))
+}
+
+// RotateAllLeft rotates each element of x left by shift bits.
+//
+//	z[i] = rotateLeft(x[i], shift)
+//
+// Emulated
+func (x Uint32x16) RotateAllLeft(shift uint64) (z Uint32x16) {
+	shift = shift & (32 - 1)
+	nshift := 32 - shift
+	return x.ShiftAllLeft(shift).Or(x.ShiftAllRight(nshift))
+}
+
+// RotateAllRight rotates each element of x right by shift bits.
+//
+//	z[i] = rotateRight(x[i], shift)
+//
+// Emulated
+func (x Uint32x16) RotateAllRight(shift uint64) (z Uint32x16) {
+	shift = shift & (32 - 1)
+	nshift := 32 - shift
+	return x.ShiftAllLeft(nshift).Or(x.ShiftAllRight(shift))
+}
+
+// RotateAllLeft rotates each element of x left by shift bits.
+//
+//	z[i] = rotateLeft(x[i], shift)
+//
+// Emulated
+func (x Uint64x8) RotateAllLeft(shift uint64) (z Uint64x8) {
+	shift = shift & (64 - 1)
+	nshift := 64 - shift
+	return x.ShiftAllLeft(shift).Or(x.ShiftAllRight(nshift))
+}
+
+// RotateAllRight rotates each element of x right by shift bits.
+//
+//	z[i] = rotateRight(x[i], shift)
+//
+// Emulated
+func (x Uint64x8) RotateAllRight(shift uint64) (z Uint64x8) {
+	shift = shift & (64 - 1)
+	nshift := 64 - shift
+	return x.ShiftAllLeft(nshift).Or(x.ShiftAllRight(shift))
 }

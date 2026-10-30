@@ -308,8 +308,8 @@ type heapArena struct {
 	// specials (finalizers or other). Like pageInUse, only the bit
 	// corresponding to the first page in each span is used.
 	//
-	// Writes are done atomically whenever a special is added to
-	// a span and whenever the last special is removed from a span.
+	// The bit is set atomically when the first special is added to
+	// a span and cleared when the last special is removed from a span.
 	// Reads are done atomically to find spans containing specials
 	// during marking.
 	pageSpecials [pagesPerArena / 8]uint8
@@ -517,15 +517,6 @@ type mspan struct {
 
 func (s *mspan) base() uintptr {
 	return s.startAddr
-}
-
-func (s *mspan) layout() (size, n, total uintptr) {
-	total = s.npages << gc.PageShift
-	size = s.elemsize
-	if size > 0 {
-		n = total / size
-	}
-	return
 }
 
 // recordspan adds a newly allocated span to h.allspans.
@@ -1979,7 +1970,12 @@ type special struct {
 }
 
 // spanHasSpecials marks a span as having specials in the arena bitmap.
+// The caller must hold s.speciallock and have just added one special.
 func spanHasSpecials(s *mspan) {
+	if s.specials.next != nil {
+		// The span already had specials, so its bit is already set.
+		return
+	}
 	arenaPage := (s.base() / pageSize) % pagesPerArena
 	ai := arenaIndex(s.base())
 	ha := mheap_.arenas[ai.l1()][ai.l2()]
@@ -2075,22 +2071,19 @@ func removespecial(p unsafe.Pointer, kind uint8) *special {
 func (span *mspan) specialFindSplicePoint(offset uintptr, kind byte) (**special, bool) {
 	// Find splice point, check for existing record.
 	iter := &span.specials
-	found := false
-	for {
-		s := *iter
-		if s == nil {
-			break
-		}
-		if offset == s.offset && kind == s.kind {
-			found = true
-			break
-		}
-		if offset < s.offset || (offset == s.offset && kind < s.kind) {
-			break
+	s := *iter
+	for s != nil && s.offset < offset {
+		iter = &s.next
+		s = *iter
+	}
+	for s != nil && s.offset == offset {
+		if s.kind >= kind {
+			return iter, s.kind == kind
 		}
 		iter = &s.next
+		s = *iter
 	}
-	return iter, found
+	return iter, false
 }
 
 // The described object has a finalizer set for it.
@@ -2799,7 +2792,7 @@ func freeSpecial(s *special, p unsafe.Pointer, size uintptr) {
 		unlock(&mheap_.speciallock)
 	case _KindSpecialProfile:
 		sp := (*specialprofile)(unsafe.Pointer(s))
-		mProf_Free(sp.b, size)
+		mProf_Free(sp.b)
 		lock(&mheap_.speciallock)
 		mheap_.specialprofilealloc.free(unsafe.Pointer(sp))
 		unlock(&mheap_.speciallock)

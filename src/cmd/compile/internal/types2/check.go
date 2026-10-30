@@ -12,7 +12,6 @@ import (
 	"go/constant"
 	. "internal/types/errors"
 	"os"
-	"sync/atomic"
 )
 
 // nopos indicates an unknown position
@@ -23,29 +22,6 @@ const debug = false // leave on during development
 
 // position tracing for panics during type checking
 const tracePos = true
-
-// _aliasAny changes the behavior of [Scope.Lookup] for "any" in the
-// [Universe] scope.
-//
-// This is necessary because while Alias creation is controlled by
-// [Config.EnableAlias], the representation of "any" is a global. In
-// [Scope.Lookup], we select this global representation based on the result of
-// [aliasAny], but as a result need to guard against this behavior changing
-// during the type checking pass. Therefore we implement the following rule:
-// any number of goroutines can type check concurrently with the same
-// EnableAlias value, but if any goroutine tries to type check concurrently
-// with a different EnableAlias value, we panic.
-//
-// To achieve this, _aliasAny is a state machine:
-//
-//	0:        no type checking is occurring
-//	negative: type checking is occurring without EnableAlias set
-//	positive: type checking is occurring with EnableAlias set
-var _aliasAny int32
-
-func aliasAny() bool {
-	return atomic.LoadInt32(&_aliasAny) >= 0 // default true
-}
 
 // exprInfo stores information about an untyped expression.
 type exprInfo struct {
@@ -198,34 +174,6 @@ func (check *Checker) addDeclDep(to Object) {
 		return // to is not a package-level object
 	}
 	from.addDep(to)
-}
-
-// Note: The following three alias-related functions are only used
-//       when Alias types are not enabled.
-
-// brokenAlias records that alias doesn't have a determined type yet.
-// It also sets alias.typ to Typ[Invalid].
-// Not used if check.conf.EnableAlias is set.
-func (check *Checker) brokenAlias(alias *TypeName) {
-	assert(!check.conf.EnableAlias)
-	if check.brokenAliases == nil {
-		check.brokenAliases = make(map[*TypeName]bool)
-	}
-	check.brokenAliases[alias] = true
-	alias.typ = Typ[Invalid]
-}
-
-// validAlias records that alias has the valid type typ (possibly Typ[Invalid]).
-func (check *Checker) validAlias(alias *TypeName, typ Type) {
-	assert(!check.conf.EnableAlias)
-	delete(check.brokenAliases, alias)
-	alias.typ = typ
-}
-
-// isBrokenAlias reports whether alias doesn't have a determined type yet.
-func (check *Checker) isBrokenAlias(alias *TypeName) bool {
-	assert(!check.conf.EnableAlias)
-	return check.brokenAliases[alias]
 }
 
 func (check *Checker) rememberUntyped(e syntax.Expr, lhs bool, mode operandMode, typ *Basic, val constant.Value) {
@@ -472,20 +420,6 @@ func (check *Checker) Files(files []*syntax.File) (err error) {
 // syntax is properly type annotated even in a package containing
 // errors.
 func (check *Checker) checkFiles(files []*syntax.File) {
-	// Ensure that EnableAlias is consistent among concurrent type checking
-	// operations. See the documentation of [_aliasAny] for details.
-	if check.conf.EnableAlias {
-		if atomic.AddInt32(&_aliasAny, 1) <= 0 {
-			panic("EnableAlias set while !EnableAlias type checking is ongoing")
-		}
-		defer atomic.AddInt32(&_aliasAny, -1)
-	} else {
-		if atomic.AddInt32(&_aliasAny, -1) >= 0 {
-			panic("!EnableAlias set while EnableAlias type checking is ongoing")
-		}
-		defer atomic.AddInt32(&_aliasAny, 1)
-	}
-
 	print := func(msg string) {
 		if check.conf.Trace {
 			fmt.Println()
@@ -584,6 +518,32 @@ func (check *Checker) cleanup() {
 		check.cleaners[i].cleanup()
 	}
 	check.cleaners = nil
+
+	// Before CL 825744, syntax errors, broken cyclic declarations, or
+	// unresolved types could leave objects in check.objList with a nil Type().
+	// When callers (such as gopls, objectpath, or linters) walked
+	// the package scope, calling methods on obj.Type() resulted in nil pointer
+	// panics (see go.dev/issue/77321, go.dev/issue/81138, go.dev/issue/80275).
+	//
+	// Invariant: go/types must never return Typ[Invalid] unless an error was
+	// reported. If an object has a nil type at the end of checking but no
+	// error was recorded, this indicates an internal type-checker bug, so we
+	// report an error.
+	for _, obj := range check.objList {
+		if obj.Type() == nil {
+			if check.firstErr == nil {
+				check.internalErrorf(obj, "%v has nil type", obj)
+			}
+			if fn, ok := obj.(*Func); ok {
+				// The type checker and external callers (such as (*Func).Signature())
+				// require that a Func's type dynamically implements *Signature.
+				// Assign an empty Signature for broken functions to satisfy this type assertion.
+				fn.setType(new(Signature))
+			} else {
+				obj.setType(Typ[Invalid])
+			}
+		}
+	}
 }
 
 // types2-specific support for recording type information in the syntax tree.

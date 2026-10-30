@@ -1,5 +1,3 @@
-env GO111MODULE=on
-
 go mod edit -godebug 'http2debug=2'
 cmp go.mod go.mod.edit.want1
 
@@ -26,11 +24,5 @@ godebug http2debug=2
 			"Key": "http2debug",
 			"Value": "2"
 		}
-	],
-	"Require": null,
-	"Exclude": null,
-	"Replace": null,
-	"Retract": null,
-	"Tool": null,
-	"Ignore": null
+	]
 }

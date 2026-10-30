@@ -416,6 +416,15 @@ func init() {
 
 		// Issue #76236: '{' and '}' are token chars.
 		{"attachment; filename={file}.png", "attachment", m("filename", "{file}.png")},
+
+		// Issue #82343: Don't allow *-encoded parameters in weird places.
+		{`multipart/form-data; boundary=a; boundary*=utf-8''b`, "multipart/form-data", m("boundary", "a")},
+		{`multipart/form-data; boundary=a; boundary*0="b"`, "multipart/form-data", m("boundary", "a")},
+		{`multipart/form-data; boundary*0="b"`, "multipart/form-data", m()},
+		{`text; charset=utf-8; charset*=utf-8''utf-7`, "text", m("charset", "utf-8")},
+		{`text; charset=utf-8; charset*0="utf-7"`, "text", m("charset", "utf-8")},
+		{`text; charset*0="utf-7"`, "text", m()},
+		{`text; boundary=a; boundary*0="b"`, "text", m("boundary", "a")},
 	}
 }
 
@@ -531,6 +540,7 @@ var formatTests = []formatTest{
 	{"foo/BAR", map[string]string{"both": `With \backslash and "quote`}, `foo/bar; both="With \\backslash and \"quote"`},
 	{"foo/BAR", map[string]string{"": "empty attribute"}, ""},
 	{"foo/BAR", map[string]string{"bad attribute": "baz"}, ""},
+	{"foo/BAR", map[string]string{"Name": "foo", "name": "bar"}, ""},
 	{"foo/BAR", map[string]string{"nonascii": "not an ascii character: ä"}, "foo/bar; nonascii*=utf-8''not%20an%20ascii%20character%3A%20%C3%A4"},
 	{"foo/BAR", map[string]string{"ctl": "newline: \n nil: \000"}, "foo/bar; ctl*=utf-8''newline%3A%20%0A%20nil%3A%20%00"},
 	{"foo/bar", map[string]string{"a": "av", "b": "bv", "c": "cv"}, "foo/bar; a=av; b=bv; c=cv"},

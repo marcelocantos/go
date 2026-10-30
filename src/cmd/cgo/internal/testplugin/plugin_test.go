@@ -7,7 +7,6 @@ package plugin_test
 import (
 	"bytes"
 	"cmd/cgo/internal/cgotest"
-	"context"
 	"flag"
 	"fmt"
 	"internal/platform"
@@ -19,7 +18,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 )
 
 var globalSkip = func(t *testing.T) {}
@@ -235,14 +233,12 @@ func TestUniqueTypesAndItabs(t *testing.T) {
 
 func TestIssue18676(t *testing.T) {
 	// make sure we don't add the same itab twice.
-	// The buggy code hangs forever, so use a timeout to check for that.
+	// The buggy code hangs forever, so time out based on a test deadline via testenv.Command.
 	globalSkip(t)
 	goCmd(t, "build", "-buildmode=plugin", "-o", "plugin.so", "./issue18676/plugin.go")
 	goCmd(t, "build", "-o", "issue18676.exe", "./issue18676/main.go")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "./issue18676.exe")
+	cmd := testenv.Command(t, "./issue18676.exe")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("%#q: %v\n%s", cmd, err, out)
@@ -429,4 +425,15 @@ func TestIssue75102(t *testing.T) {
 	goCmd(t, "build", "-gcflags=all=-N -l", "-buildmode=plugin", "-o", "issue75102.so", "./issue75102/plugin.go")
 	goCmd(t, "build", "-o", "issue75102.exe", "./issue75102/main.go")
 	run(t, "./issue75102.exe")
+}
+
+func TestIssue81303(t *testing.T) {
+	// Issue 81303: the itab copies of a plugin must not hide the itabs
+	// of the host for the same interface/type pairs.
+	globalSkip(t)
+	goCmd(t, "build", "-buildmode=plugin", "-o", "issue81303p1.so", "./issue81303/plugin1.go")
+	goCmd(t, "build", "-buildmode=plugin", "-o", "issue81303p2.so", "./issue81303/plugin2.go")
+	goCmd(t, "build", "-buildmode=plugin", "-o", "issue81303p3.so", "./issue81303/plugin3.go")
+	goCmd(t, "build", "-o", "issue81303.exe", "./issue81303/main.go")
+	run(t, "./issue81303.exe")
 }

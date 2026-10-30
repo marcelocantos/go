@@ -78,6 +78,8 @@ type ErrNaN struct {
 	msg string
 }
 
+var _ error = ErrNaN{}
+
 func (err ErrNaN) Error() string {
 	return err.msg
 }
@@ -517,7 +519,7 @@ func (z *Float) setBits64(neg bool, x uint64) *Float {
 	// x != 0
 	z.form = finite
 	s := bits.LeadingZeros64(x)
-	z.mant = z.mant.setUint64(x << uint(s))
+	z.mant = z.mant.setUint64(x << s)
 	z.exp = int32(64 - s) // always fits
 	if z.prec < 64 {
 		z.round(0)
@@ -754,8 +756,8 @@ func (x *Float) Uint64() (uint64, Accuracy) {
 		// 1 <= x < Inf
 		if x.exp <= 64 {
 			// u = trunc(x) fits into a uint64
-			u := msb64(x.mant) >> (64 - uint32(x.exp))
-			if x.MinPrec() <= 64 {
+			u := msb64(x.mant) >> (64 - x.exp)
+			if x.MinPrec() <= uint(x.exp) {
 				return u, Exact
 			}
 			return u, Below // x truncated
@@ -799,7 +801,7 @@ func (x *Float) Int64() (int64, Accuracy) {
 		// 1 <= |x| < +Inf
 		if x.exp <= 63 {
 			// i = trunc(x) fits into an int64 (excluding math.MinInt64)
-			i := int64(msb64(x.mant) >> (64 - uint32(x.exp)))
+			i := int64(msb64(x.mant) >> (64 - x.exp))
 			if x.neg {
 				i = -i
 			}
@@ -856,7 +858,7 @@ func (x *Float) Float32() (float32, Accuracy) {
 		)
 
 		// Float mantissa m is 0.5 <= m < 1.0; compute exponent e for float32 mantissa.
-		e := x.exp - 1 // exponent for normal mantissa m with 1.0 <= m < 2.0
+		e := int64(x.exp) - 1 // exponent for normal mantissa m with 1.0 <= m < 2.0 (use int64 to avoid overflow).
 
 		// Compute precision p for float32 mantissa.
 		// If the exponent is too small, we have a denormal number before
@@ -897,7 +899,7 @@ func (x *Float) Float32() (float32, Accuracy) {
 		var r Float
 		r.prec = uint32(p)
 		r.Set(x)
-		e = r.exp - 1
+		e = int64(r.exp) - 1
 
 		// Rounding may have caused r to overflow to ±Inf
 		// (rounding never causes underflows to 0).
@@ -925,7 +927,7 @@ func (x *Float) Float32() (float32, Accuracy) {
 			// and we have eliminated p <= 0 early, we know p > 0.
 			// bexp == 0 for denormals
 			p = mbits + 1 - emin + int(e)
-			mant = msb32(r.mant) >> uint(fbits-p)
+			mant = msb32(r.mant) >> (fbits - p)
 		} else {
 			// normal number: emin <= e <= emax
 			bexp = uint32(e+bias) << mbits
@@ -976,7 +978,7 @@ func (x *Float) Float64() (float64, Accuracy) {
 		)
 
 		// Float mantissa m is 0.5 <= m < 1.0; compute exponent e for float64 mantissa.
-		e := x.exp - 1 // exponent for normal mantissa m with 1.0 <= m < 2.0
+		e := int64(x.exp) - 1 // exponent for normal mantissa m with 1.0 <= m < 2.0; (use int64 to avoid overflow).
 
 		// Compute precision p for float64 mantissa.
 		// If the exponent is too small, we have a denormal number before
@@ -1017,7 +1019,7 @@ func (x *Float) Float64() (float64, Accuracy) {
 		var r Float
 		r.prec = uint32(p)
 		r.Set(x)
-		e = r.exp - 1
+		e = int64(r.exp) - 1
 
 		// Rounding may have caused r to overflow to ±Inf
 		// (rounding never causes underflows to 0).
@@ -1045,7 +1047,7 @@ func (x *Float) Float64() (float64, Accuracy) {
 			// and we have eliminated p <= 0 early, we know p > 0.
 			// bexp == 0 for denormals
 			p = mbits + 1 - emin + int(e)
-			mant = msb64(r.mant) >> uint(fbits-p)
+			mant = msb64(r.mant) >> (fbits - p)
 		} else {
 			// normal number: emin <= e <= emax
 			bexp = uint64(e+bias) << mbits

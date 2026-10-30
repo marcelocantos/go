@@ -10,8 +10,11 @@ import (
 	"debug/elf"
 	"debug/macho"
 	"debug/pe"
+	"encoding/binary"
 	"errors"
+	"fmt"
 	"internal/abi"
+	"internal/buildcfg"
 	"internal/platform"
 	"internal/testenv"
 	"internal/xcoff"
@@ -128,7 +131,7 @@ func TestIssue21703(t *testing.T) {
 	t.Parallel()
 
 	testenv.MustHaveGoBuild(t)
-	// N.B. the build below explictly doesn't pass through
+	// N.B. the build below explicitly doesn't pass through
 	// -asan/-msan/-race, so we don't care about those.
 	testenv.MustInternalLink(t, testenv.NoSpecialBuildTypes)
 
@@ -175,7 +178,7 @@ func TestIssue28429(t *testing.T) {
 	t.Parallel()
 
 	testenv.MustHaveGoBuild(t)
-	// N.B. go build below explictly doesn't pass through
+	// N.B. go build below explicitly doesn't pass through
 	// -asan/-msan/-race, so we don't care about those.
 	testenv.MustInternalLink(t, testenv.NoSpecialBuildTypes)
 
@@ -224,6 +227,11 @@ func TestIssue28429(t *testing.T) {
 }
 
 func TestUnresolved(t *testing.T) {
+	// Don't build library for non-standard target in short mode.
+	if testing.Short() && (runtime.GOOS != "linux" || runtime.GOARCH != "amd64") {
+		t.Skipf("skipping on %s/%s in short mode", runtime.GOOS, runtime.GOARCH)
+	}
+
 	testenv.MustHaveGoBuild(t)
 
 	t.Parallel()
@@ -280,7 +288,7 @@ main.x: relocation target main.zero not defined
 func TestIssue33979(t *testing.T) {
 	testenv.MustHaveGoBuild(t)
 	testenv.MustHaveCGO(t)
-	// N.B. go build below explictly doesn't pass through
+	// N.B. go build below explicitly doesn't pass through
 	// -asan/-msan/-race, so we don't care about those.
 	testenv.MustInternalLink(t, testenv.SpecialBuildTypes{Cgo: true})
 
@@ -451,7 +459,9 @@ func main() { }
 
 func TestMachOBuildVersion(t *testing.T) {
 	testenv.MustHaveGoBuild(t)
-
+	if runtime.GOOS != "darwin" {
+		t.Skip("skip on non-Mach-O platforms")
+	}
 	t.Parallel()
 
 	tmpdir := t.TempDir()
@@ -464,11 +474,7 @@ func TestMachOBuildVersion(t *testing.T) {
 
 	exe := filepath.Join(tmpdir, "main")
 	cmd := goCmd(t, "build", "-ldflags=-linkmode=internal", "-o", exe, src)
-	cmd.Env = append(cmd.Env,
-		"CGO_ENABLED=0",
-		"GOOS=darwin",
-		"GOARCH=amd64",
-	)
+	cmd.Env = append(cmd.Env, "CGO_ENABLED=0")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("%v: %v:\n%s", cmd.Args, err, out)
 	}
@@ -484,8 +490,8 @@ func TestMachOBuildVersion(t *testing.T) {
 	found := false
 	checkMin := func(ver uint32) {
 		major, minor, patch := (ver>>16)&0xff, (ver>>8)&0xff, (ver>>0)&0xff
-		if major < 12 {
-			t.Errorf("LC_BUILD_VERSION version %d.%d.%d < 12.0.0", major, minor, patch)
+		if major < 13 {
+			t.Errorf("LC_BUILD_VERSION version %d.%d.%d < 13.0.0", major, minor, patch)
 		}
 	}
 	for _, cmd := range exem.Loads {
@@ -921,10 +927,16 @@ func TestTrampoline(t *testing.T) {
 	// calls will use trampolines.
 	buildmodes := []string{"default"}
 	switch runtime.GOARCH {
-	case "arm", "arm64", "ppc64", "loong64":
-	case "ppc64le":
-		// Trampolines are generated differently when internal linking PIE, test them too.
-		buildmodes = append(buildmodes, "pie")
+	case "arm", "arm64", "loong64":
+	case "ppc64le", "ppc64":
+		switch runtime.GOOS {
+		case "aix":
+		case "linux":
+			// Trampolines are generated differently when internal linking PIE, test them too.
+			buildmodes = append(buildmodes, "pie")
+		default:
+			t.Skipf("trampoline insertion is not implemented on %s-%s", runtime.GOARCH, runtime.GOOS)
+		}
 	default:
 		t.Skipf("trampoline insertion is not implemented on %s", runtime.GOARCH)
 	}
@@ -986,8 +998,8 @@ func TestTrampolineCgo(t *testing.T) {
 	// calls will use trampolines.
 	buildmodes := []string{"default"}
 	switch runtime.GOARCH {
-	case "arm", "arm64", "ppc64", "loong64":
-	case "ppc64le":
+	case "arm", "arm64", "loong64":
+	case "ppc64le", "ppc64":
 		// Trampolines are generated differently when internal linking PIE, test them too.
 		buildmodes = append(buildmodes, "pie")
 	default:
@@ -1049,7 +1061,7 @@ func TestIndexMismatch(t *testing.T) {
 	// This shouldn't happen with "go build". We invoke the compiler and the linker
 	// manually, and try to "trick" the linker with an inconsistent object file.
 	testenv.MustHaveGoBuild(t)
-	// N.B. the build below explictly doesn't pass through
+	// N.B. the build below explicitly doesn't pass through
 	// -asan/-msan/-race, so we don't care about those.
 	testenv.MustInternalLink(t, testenv.NoSpecialBuildTypes)
 
@@ -1076,7 +1088,7 @@ func TestIndexMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compiling a.go failed: %v\n%s", err, out)
 	}
-	cmd = testenv.Command(t, testenv.GoToolPath(t), "tool", "compile", "-importcfg="+importcfgWithAFile, "-p=main", "-I", tmpdir, "-o", mObj, mSrc)
+	cmd = testenv.Command(t, testenv.GoToolPath(t), "tool", "compile", "-importcfg="+importcfgWithAFile, "-p=main", "-o", mObj, mSrc)
 	t.Log(cmd)
 	out, err = cmd.CombinedOutput()
 	if err != nil {
@@ -1173,6 +1185,96 @@ func TestPErsrcLLVM(t *testing.T) {
 	}
 	if !bytes.Contains(b, []byte("resname RCDATA a.rc")) {
 		t.Fatalf("binary does not contain expected content")
+	}
+}
+
+func TestPELoaderTLS(t *testing.T) {
+	testenv.MustHaveGoBuild(t)
+	if runtime.GOOS != "windows" {
+		t.Skip("this is a windows-only test")
+	}
+	t.Parallel()
+
+	tmpdir := t.TempDir()
+	src := filepath.Join(tmpdir, "main.go")
+	if err := os.WriteFile(src, []byte(trivialSrc), 0666); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(tmpdir, "main.exe")
+	cmd := goCmd(t, "build", "-ldflags=-linkmode=internal", "-o", exe, src)
+	cmd.Env = append(cmd.Env, "CGO_ENABLED=0")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%v: %v:\n%s", cmd.Args, err, out)
+	}
+
+	pf, err := pe.Open(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pf.Close()
+
+	var imageBase uint64
+	var imageSize uint64
+	var tlsDir pe.DataDirectory
+	ptrSize := 4
+	switch header := pf.OptionalHeader.(type) {
+	case *pe.OptionalHeader32:
+		imageBase = uint64(header.ImageBase)
+		imageSize = uint64(header.SizeOfImage)
+		tlsDir = header.DataDirectory[pe.IMAGE_DIRECTORY_ENTRY_TLS]
+	case *pe.OptionalHeader64:
+		imageBase = header.ImageBase
+		imageSize = uint64(header.SizeOfImage)
+		tlsDir = header.DataDirectory[pe.IMAGE_DIRECTORY_ENTRY_TLS]
+		ptrSize = 8
+	default:
+		t.Fatalf("unexpected optional header type %T", header)
+	}
+	wantDirSize := uint32(4*ptrSize + 8)
+	if tlsDir.VirtualAddress == 0 || tlsDir.Size != wantDirSize {
+		t.Fatalf("TLS directory = {%#x, %#x}, want non-zero address and size %#x", tlsDir.VirtualAddress, tlsDir.Size, wantDirSize)
+	}
+
+	var tlsSection *pe.Section
+	for _, section := range pf.Sections {
+		if section.Name == ".tls" {
+			tlsSection = section
+			break
+		}
+	}
+	if tlsSection == nil {
+		t.Fatal("missing .tls section")
+	}
+	data, err := tlsSection.Data()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tlsDir.VirtualAddress < tlsSection.VirtualAddress {
+		t.Fatalf("TLS directory lies outside .tls section")
+	}
+	dirOffset := int(tlsDir.VirtualAddress - tlsSection.VirtualAddress)
+	if dirOffset+int(tlsDir.Size) > len(data) {
+		t.Fatalf("TLS directory lies outside .tls section")
+	}
+	directory := data[dirOffset:]
+	readAddress := func(offset int) uint64 {
+		if ptrSize == 8 {
+			return binary.LittleEndian.Uint64(directory[offset:])
+		}
+		return uint64(binary.LittleEndian.Uint32(directory[offset:]))
+	}
+	start := readAddress(0)
+	end := readAddress(ptrSize)
+	index := readAddress(2 * ptrSize)
+	callbacks := readAddress(3 * ptrSize)
+	if want := imageBase + uint64(tlsSection.VirtualAddress); start != want || end-start != uint64(ptrSize) {
+		t.Fatalf("TLS template = [%#x, %#x), want [%#x, %#x)", start, end, want, want+uint64(ptrSize))
+	}
+	if index < imageBase || index >= imageBase+imageSize {
+		t.Fatalf("TLS index address %#x lies outside image", index)
+	}
+	if callbacks != 0 {
+		t.Fatalf("TLS callback address = %#x, want 0", callbacks)
 	}
 }
 
@@ -1348,8 +1450,23 @@ func TestLargeReloc(t *testing.T) {
 
 	tmpdir := t.TempDir()
 
+	// Also generate a large symbol table (>8MB) to test that
+	// unallocated symbols (such as .machosymstr) don't cause failure.
+	var buf bytes.Buffer
+	buf.WriteString(testLargeRelocSrc)
+	const n = 1000
+	symName := strings.Repeat("a", 1<<14)
+	for i := range n {
+		fmt.Fprintf(&buf, "var sym%d_%s byte = 1\n", i, symName)
+	}
+	fmt.Fprintln(&buf, "var syms = []*byte{")
+	for i := range n {
+		fmt.Fprintf(&buf, "\t&sym%d_%s,\n", i, symName)
+	}
+	fmt.Fprintln(&buf, "}\nfunc init() { check(*syms[0], 1) }")
+
 	src := filepath.Join(tmpdir, "x.go")
-	err := os.WriteFile(src, []byte(testLargeRelocSrc), 0666)
+	err := os.WriteFile(src, buf.Bytes(), 0666)
 	if err != nil {
 		t.Fatalf("failed to write source file: %v", err)
 	}
@@ -1468,10 +1585,11 @@ func main() {}
 	// Link with -v -linkmode=external to see the flags we pass to the
 	// external linker.
 	ldflags := "-ldflags=-v -linkmode=external -tmpdir=" + linktmp
-	var out0 []byte
+	var out0, fullOut0 []byte
 	for i := 0; i < 5; i++ {
-		cmd := goCmd(t, "build", ldflags, "-o", exe, src)
-		out, err := cmd.CombinedOutput()
+		cmd := goCmd(t, "build", ldflags, "-x", "-o", exe, src)
+		fullOut, err := cmd.CombinedOutput()
+		out := fullOut
 		if err != nil {
 			t.Fatalf("build failed: %v, output:\n%s", err, out)
 		}
@@ -1504,11 +1622,68 @@ func main() {}
 
 		if i == 0 {
 			out0 = out
+			fullOut0 = fullOut
 			continue
 		}
 		if !bytes.Equal(out0, out) {
-			t.Fatalf("output differ:\n%s\n==========\n%s", out0, out)
+			t.Fatalf("output differ:\n%s\n==========\n%s\n\nfull output:\n%s\n==========\n%s",
+				out0, out, fullOut0, fullOut)
 		}
+	}
+}
+
+// TestExtldWithArgs tests that cmd/link runs the external linker command
+// with the arguments that command was given (as in CC="ccache gcc"), both
+// when linking and when merely probing whether the toolchain supports some
+// flag. Dropping the arguments makes every probe fail, which silently
+// changes how the program is linked. See issue 81164.
+func TestExtldWithArgs(t *testing.T) {
+	testenv.MustHaveGoBuild(t)
+	testenv.MustHaveCGO(t) // this test requires -linkmode=external
+	t.Parallel()
+
+	ccOut, err := testenv.CleanCmdEnv(testenv.Command(t, testenv.GoToolPath(t), "env", "CC")).Output()
+	if err != nil {
+		t.Fatalf("go env CC: %v", err)
+	}
+	cc := strings.TrimSpace(string(ccOut))
+	if cc == "" || strings.ContainsAny(cc, " \t'\"") {
+		t.Skipf("CC=%q is not a plain command name", cc)
+	}
+
+	tmpdir := t.TempDir()
+	if strings.ContainsAny(tmpdir, " \t'\"") {
+		t.Skipf("temporary directory %q needs quoting in CC", tmpdir)
+	}
+	errfile := filepath.Join(tmpdir, "errors")
+
+	wrapccGo := filepath.Join(tmpdir, "wrapcc.go")
+	src := strings.Replace(wrapccSrc, "ERRFILE", strconv.Quote(errfile), 1)
+	if err := os.WriteFile(wrapccGo, []byte(src), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	wrapcc := filepath.Join(tmpdir, "wrapcc.exe")
+	cmd := testenv.CleanCmdEnv(testenv.Command(t, testenv.GoToolPath(t), "build", "-o", wrapcc, wrapccGo))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("building wrapcc failed: %v\n%s", err, out)
+	}
+
+	xGo := filepath.Join(tmpdir, "x.go")
+	if err := os.WriteFile(xGo, []byte(`package main; import "C"; func main() {}`), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(tmpdir, "x.exe")
+	cmd = goCmd(t, "build", "-ldflags=-linkmode=external", "-o", exe, xGo)
+	cmd.Env = append(cmd.Env, "CC="+wrapcc+" --sentinel "+cc)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build failed: %v\n%s", err, out)
+	}
+
+	switch data, err := os.ReadFile(errfile); {
+	case err == nil:
+		t.Errorf("C compiler wrapper was invoked without its arguments:\n%s", data)
+	case !os.IsNotExist(err):
+		t.Fatal(err)
 	}
 }
 
@@ -1708,6 +1883,10 @@ func TestCheckLinkname(t *testing.T) {
 		{"coro2.go", false},
 		// pull linkname of a builtin symbol is not ok
 		{"builtin.go", false},
+		// using a linkname to reference a runtime assembly
+		// function is not ok (except on non-regabi platforms)
+		{"systemstack.go", !buildcfg.Experiment.RegabiWrappers},
+		// misc
 		{"addmoduledata.go", false},
 		{"freegc.go", false},
 		// legacy bad linkname is ok, for now
@@ -1715,7 +1894,6 @@ func TestCheckLinkname(t *testing.T) {
 		{"badlinkname.go", true},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.src, func(t *testing.T) {
 			t.Parallel()
 			src := "./testdata/linkname/" + test.src
@@ -2221,3 +2399,293 @@ func TestModuledataPlacement(t *testing.T) {
 		// so there is nothing to test here.
 	}
 }
+
+const typeSrc = `
+package main
+
+import (
+	"fmt"
+	"unsafe"
+)
+
+type MyInt int
+
+var vals = []any{
+	0,
+	0.1,
+	"",
+	MyInt(0),
+	struct{ f int }{0},
+	func() {},
+}
+
+var global int
+
+func main() {
+	fmt.Printf("global %#x\n", &global)
+	for _, v := range vals {
+		// Unsafe assumption: the first word of a value
+		// of type any is the type descriptor.
+		td := *(*uintptr)(unsafe.Pointer(&v))
+		fmt.Printf("%#x\n", td)
+	}
+}
+`
+
+// Test that type data is stored in the types section.
+func TestTypePlacement(t *testing.T) {
+	testenv.MustHaveGoRun(t)
+	t.Parallel()
+
+	tmpdir := t.TempDir()
+	src := filepath.Join(tmpdir, "x.go")
+	if err := os.WriteFile(src, []byte(typeSrc), 0o444); err != nil {
+		t.Fatal(err)
+	}
+
+	exe := filepath.Join(tmpdir, "x.exe")
+	cmd := goCmd(t, "build", "-o", exe, src)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build failed; %v, output:\n%s", err, out)
+	}
+
+	cmd = testenv.Command(t, exe)
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("running test program failed: %v, stdout:\n%s\nstderr:\n%s", err, &stdout, &stderr)
+	}
+	stderrString := stderr.String()
+	if stderrString != "" {
+		t.Fatalf("running test program printed to stderr:\n%s", stderrString)
+	}
+
+	t.Logf("\n%s", &stdout)
+
+	var globalExeAddr uint64
+	var addrs []uint64
+	globalNext := false
+	for s := range strings.FieldsSeq(stdout.String()) {
+		if globalNext {
+			v, err := strconv.ParseUint(s, 0, 64)
+			if err != nil {
+				t.Errorf("failed to parse test program output %s: %v", s, err)
+			}
+			globalExeAddr = v
+			globalNext = false
+		} else if s == "global" {
+			globalNext = true
+		} else {
+			addr, err := strconv.ParseUint(s, 0, 64)
+			if err != nil {
+				t.Errorf("failed to parse test program output %q: %v", s, err)
+			}
+			addrs = append(addrs, addr)
+		}
+	}
+
+	ef, _ := elf.Open(exe)
+	mf, _ := macho.Open(exe)
+	pf, _ := pe.Open(exe)
+	xf, _ := xcoff.Open(exe)
+	// TODO: plan9
+	if ef == nil && mf == nil && pf == nil && xf == nil {
+		t.Skip("unrecognized executable file format")
+	}
+
+	const globalName = "main.global"
+	var typeStart, typeEnd uint64
+	var globalObjAddr uint64
+	switch {
+	case ef != nil:
+		defer ef.Close()
+
+		for _, sec := range ef.Sections {
+			if sec.Name == ".go.type" {
+				typeStart = sec.Addr
+				typeEnd = sec.Addr + sec.Size
+				break
+			}
+		}
+
+		syms, err := ef.Symbols()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if typeStart == 0 && typeEnd == 0 {
+			// We can fail to find the section for PIE.
+			// Fall back to symbols.
+			for _, sym := range syms {
+				switch sym.Name {
+				case "runtime.types":
+					typeStart = sym.Value
+				case "runtime.etypes":
+					typeEnd = sym.Value
+				}
+			}
+		}
+
+		for _, sym := range syms {
+			if sym.Name == globalName {
+				globalObjAddr = sym.Value
+				break
+			}
+		}
+
+	case mf != nil:
+		defer mf.Close()
+
+		for _, sec := range mf.Sections {
+			if sec.Name == "__go_type" {
+				typeStart = sec.Addr
+				typeEnd = sec.Addr + sec.Size
+				break
+			}
+		}
+
+		for _, sym := range mf.Symtab.Syms {
+			if sym.Name == globalName {
+				globalObjAddr = sym.Value
+				break
+			}
+		}
+
+	case pf != nil:
+		defer pf.Close()
+
+		var imageBase uint64
+		switch ohdr := pf.OptionalHeader.(type) {
+		case *pe.OptionalHeader32:
+			imageBase = uint64(ohdr.ImageBase)
+		case *pe.OptionalHeader64:
+			imageBase = ohdr.ImageBase
+		}
+
+		var typeSym, eTypeSym *pe.Symbol
+		for _, sym := range pf.Symbols {
+			switch sym.Name {
+			case "runtime.types":
+				typeSym = sym
+			case "runtime.etypes":
+				eTypeSym = sym
+			case globalName:
+				globalSec := pf.Sections[sym.SectionNumber-1]
+				globalObjAddr = imageBase + uint64(globalSec.VirtualAddress+sym.Value)
+			}
+		}
+
+		if typeSym == nil {
+			t.Fatal("could not find symbol runtime.types")
+		}
+		if eTypeSym == nil {
+			t.Fatal("could not find symbol runtime.etypes")
+		}
+		if typeSym.SectionNumber != eTypeSym.SectionNumber {
+			t.Fatalf("runtime.types section %d != runtime.etypes section %d", typeSym.SectionNumber, eTypeSym.SectionNumber)
+		}
+
+		sec := pf.Sections[typeSym.SectionNumber-1]
+
+		typeStart = imageBase + uint64(sec.VirtualAddress+typeSym.Value)
+		typeEnd = imageBase + uint64(sec.VirtualAddress+eTypeSym.Value)
+
+	case xf != nil:
+		defer xf.Close()
+
+		// On XCOFF the .go.type section,
+		// like all relro sections,
+		//  gets folded into the .data section.
+		var typeSym, eTypeSym *xcoff.Symbol
+		for _, sym := range xf.Symbols {
+			switch sym.Name {
+			case "runtime.types":
+				typeSym = sym
+			case "runtime.etypes":
+				eTypeSym = sym
+			case globalName:
+				globalSec := xf.Sections[sym.SectionNumber-1]
+				globalObjAddr = uint64(globalSec.VirtualAddress + sym.Value)
+			}
+		}
+
+		if typeSym == nil {
+			t.Fatal("could not find symbol runtime.types")
+		}
+		if eTypeSym == nil {
+			t.Fatal("could not find symbol runtime.etypes")
+		}
+		if typeSym.SectionNumber != eTypeSym.SectionNumber {
+			t.Fatalf("runtime.types section %d != runtime.etypes section %d", typeSym.SectionNumber, eTypeSym.SectionNumber)
+		}
+
+		sec := xf.Sections[typeSym.SectionNumber-1]
+
+		typeStart = uint64(sec.VirtualAddress + typeSym.Value)
+
+		typeEnd = uint64(sec.VirtualAddress + eTypeSym.Value)
+	}
+
+	if typeStart == 0 || typeEnd == 0 {
+		t.Fatalf("failed to find type descriptor addresses; found %#x to %#x", typeStart, typeEnd)
+	}
+	t.Logf("type start: %#x type end: %#x", typeStart, typeEnd)
+
+	offset := globalExeAddr - globalObjAddr
+	t.Logf("execution offset: %#x", offset)
+
+	// On AIX with internal linking the type descriptors are
+	// currently put in the .text section, whereas the global
+	// variable will be in the .data section. We must ignore
+	// the offset. This would change if using external linking.
+	if runtime.GOOS == "aix" {
+		offset = 0
+	}
+
+	for _, addr := range addrs {
+		addr -= offset
+		if addr < typeStart || addr >= typeEnd {
+			t.Errorf("type descriptor address %#x out of range: not between %#x and %#x", addr, typeStart, typeEnd)
+		}
+	}
+}
+
+// wrapcc is a C compiler wrapper that runs the compiler named by its
+// second argument, but only if it was passed the sentinel first
+// argument. Invocations missing them are recorded in errfile.
+const wrapccSrc = `
+package main
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+)
+
+func main() {
+	for _, arg := range os.Args {
+		if arg == "-###" {
+			// cmd/go probes the compiler named by CC[0] alone to
+			// compute its tool ID. Don't print the word "version".
+			return
+		}
+	}
+	if len(os.Args) < 3 || os.Args[1] != "--sentinel" {
+		f, err := os.OpenFile(ERRFILE, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Fprintf(f, "%q\n", os.Args)
+		f.Close()
+		os.Exit(1)
+	}
+	cmd := exec.Command(os.Args[2], os.Args[3:]...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+`

@@ -68,7 +68,7 @@ var defercalc int
 
 // RoundUp rounds o to a multiple of r, r is a power of 2.
 func RoundUp(o int64, r int64) int64 {
-	if r < 1 || r > 8 || r&(r-1) != 0 {
+	if r < 1 || r > 16 || r&(r-1) != 0 {
 		base.Fatalf("Round %d", r)
 	}
 	return (o + r - 1) &^ (r - 1)
@@ -187,8 +187,23 @@ func calcStructOffset(t *Type, fields []*Field, offset int64) int64 {
 		if maxwidth < 1<<32 {
 			maxwidth = 1<<31 - 1
 		}
-		if offset >= maxwidth {
-			base.ErrorfAt(typePos(t), 0, "type %L too large", t)
+		// Only apply the MaxWidth constraint when t is a struct; skip it when
+		// calculating function argument offsets.
+		if t.IsStruct() && offset >= maxwidth {
+			// Use the field position if the struct position is unknown.
+			// Presumably this can happen for unnamed struct types since
+			// the struct position is its object position. But it appears
+			// to also happen for named struct types at the moment, so this
+			// is a work-around for those cases.
+			// Caused an internal compiler error; see go.dev/issue/81241.
+			//
+			// TODO: need to investigate why named struct types have a
+			//       nil Object which in turn produces a nil position.
+			pos := t.Pos()
+			if !pos.IsKnown() {
+				pos = f.Pos
+			}
+			base.ErrorfAt(pos, 0, "type %L too large", t)
 			offset = 8 // small but nonzero
 		}
 	}
@@ -378,6 +393,12 @@ func CalcSize(t *Type) {
 		t.intRegs = 1
 		CheckSize(t.Elem())
 		CheckSize(t.Key())
+		if t.Elem().width >= 1<<31 {
+			base.Errorf("map element type too large")
+		}
+		if t.Key().width >= 1<<31 {
+			base.Errorf("map key type too large")
+		}
 		t.setAlg(ANOEQ)
 		t.ptrBytes = int64(PtrSize)
 
@@ -441,9 +462,9 @@ func CalcSize(t *Type) {
 		// TODO(mdempsky): Should package abi be responsible for computing argwid?
 		w = calcStructOffset(t1, t1.Recvs(), 0)
 		w = calcStructOffset(t1, t1.Params(), w)
-		w = RoundUp(w, int64(RegSize))
+		w = RoundUp(w, int64(PtrSize))
 		w = calcStructOffset(t1, t1.Results(), w)
-		w = RoundUp(w, int64(RegSize))
+		w = RoundUp(w, int64(PtrSize))
 		t1.extra.(*Func).Argwid = w
 		t.align = 1
 	}
@@ -475,10 +496,10 @@ func simdify(st *Type, isTag bool) {
 	st.align = 8
 	st.alg = ANOALG // not comparable with ==
 	st.intRegs = 0
-	st.isSIMD = true
+	st.flags |= typeIsSIMD
 	if isTag {
 		st.width = 0
-		st.isSIMDTag = true
+		st.flags |= typeIsSIMDTag
 		st.floatRegs = 0
 	} else {
 		st.floatRegs = 1
@@ -498,6 +519,9 @@ func CalcStructSize(t *Type) {
 		case sym.Name == "align64" && isAtomicStdPkg(sym.Pkg):
 			maxAlign = 8
 
+		case sym.Name == "align128" && isAtomicStdPkg(sym.Pkg):
+			maxAlign = 16
+
 		case buildcfg.Experiment.SIMD && (sym.Pkg.Path == "simd/archsimd") && len(t.Fields()) >= 1:
 			// This gates the experiment -- without it, no user-visible types can be "simd".
 			// The SSA-visible SIMD types remain.
@@ -509,6 +533,9 @@ func CalcStructSize(t *Type) {
 				simdify(t, true)
 				return
 			case "v512":
+				simdify(t, true)
+				return
+			case "psve":
 				simdify(t, true)
 				return
 			}
@@ -590,9 +617,17 @@ func CalcStructSize(t *Type) {
 		}
 	}
 
-	if len(t.Fields()) >= 1 && t.Fields()[0].Type.isSIMDTag {
+	if len(t.Fields()) >= 1 && t.Fields()[0].Type.flags&typeIsSIMDTag != 0 {
 		// this catches `type Foo simd.Whatever` -- Foo is also SIMD.
-		simdify(t, false)
+		if t.Fields()[0].Type.Sym().Name == "psve" {
+			simdify(t, false)
+			// Force it to be passed via memory for now.
+			// TODO: support p registers in the ABI.
+			t.intRegs = math.MaxUint8
+			t.floatRegs = math.MaxUint8
+		} else {
+			simdify(t, false)
+		}
 	}
 }
 

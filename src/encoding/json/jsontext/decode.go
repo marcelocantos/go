@@ -34,11 +34,11 @@ import (
 //     return the end of the consumed JSON token as a position,
 //     also relative to the start of Decoder.buf.
 //
-//   - In the event of an I/O errors or state machine violations,
+//   - In the event of an I/O error or state machine violations,
 //     the implementation avoids mutating the state of Decoder
 //     (aside from the book-keeping needed to implement Decoder.fetch).
 //     For this reason, only Decoder.ReadToken and Decoder.ReadValue are
-//     responsible for updated Decoder.prevStart and Decoder.prevEnd.
+//     responsible for updating Decoder.prevStart and Decoder.prevEnd.
 //
 //   - For performance, much of the implementation uses the pattern of calling
 //     the inlinable consumeXXX functions first, and if more work is necessary,
@@ -71,7 +71,7 @@ import (
 //	d.ReadValue() // {"k":"v"}
 //	d.ReadToken() // }
 //
-// The above is one of many possible sequence of calls and
+// The above is one of many possible sequences of calls and
 // may not represent the most sensible method to call for any given token/value.
 // For example, it is probably more common to call [Decoder.ReadToken] to obtain a
 // string token for object names.
@@ -80,7 +80,7 @@ type Decoder struct {
 }
 
 // decoderState is the low-level state of Decoder.
-// It has exported fields and method for use by the "json" package.
+// It has exported fields and methods for use by the "json" package.
 type decoderState struct {
 	state
 	decodeBuffer
@@ -111,7 +111,8 @@ type decodeBuffer struct {
 	// the absolute offset relative to the start of io.Reader stream.
 	baseOffset int64
 
-	rd io.Reader
+	rd    io.Reader
+	rdErr error // deferred read error until next fetch operation
 }
 
 // NewDecoder constructs a new streaming decoder reading from r.
@@ -126,7 +127,7 @@ func NewDecoder(r io.Reader, opts ...Options) *Decoder {
 }
 
 // Reset resets a decoder such that it is reading afresh from r and
-// configured with the provided options. Reset must not be called on an
+// configured with the provided options. Reset must not be called on
 // a Decoder passed to the [encoding/json/v2.UnmarshalerFrom.UnmarshalJSONFrom] method
 // or the [encoding/json/v2.UnmarshalFromFunc] function.
 func (d *Decoder) Reset(r io.Reader, opts ...Options) {
@@ -134,7 +135,13 @@ func (d *Decoder) Reset(r io.Reader, opts ...Options) {
 	case d == nil:
 		panic("jsontext: invalid nil Decoder")
 	case r == nil:
-		panic("jsontext: invalid nil io.Reader")
+		// Reset with nil io.Reader is often used to avoid pinning memory
+		// when using the Decoder with a sync.Pool.
+		// A nil io.Reader is insufficient since that signals that the
+		// Decoder is operating in a purely buffered mode.
+		// Instead, use a wrapped nil interface so that method calls
+		// on Decoder eventually panic when calling the Read method.
+		r = struct{ io.Reader }{}
 	case d.s.Flags.Get(jsonflags.WithinArshalCall):
 		panic("jsontext: cannot reset Decoder passed to json.UnmarshalerFrom")
 	}
@@ -154,7 +161,7 @@ func (d *decoderState) reset(b []byte, r io.Reader, opts ...Options) {
 	d.Struct = opts2
 }
 
-// Options returns the options used to construct the encoder and
+// Options returns the options used to construct the decoder and
 // may additionally contain semantic options passed to a
 // [encoding/json/v2.UnmarshalDecode] call.
 //
@@ -166,6 +173,8 @@ func (d *Decoder) Options() Options {
 	return &d.s.Struct
 }
 
+func (d *decoderState) options() *jsonopts.Struct { return &d.Struct }
+
 var errBufferWriteAfterNext = errors.New("invalid bytes.Buffer.Write call after calling bytes.Buffer.Next")
 
 // fetch reads at least 1 byte from the underlying io.Reader.
@@ -173,6 +182,9 @@ var errBufferWriteAfterNext = errors.New("invalid bytes.Buffer.Write call after 
 func (d *decoderState) fetch() error {
 	if d.rd == nil {
 		return io.ErrUnexpectedEOF
+	}
+	if r, ok := d.rd.(struct{ io.Reader }); ok && r.Reader == nil {
+		panic("nil io.Reader")
 	}
 
 	// Inform objectNameStack that we are about to fetch new buffer content.
@@ -193,7 +205,7 @@ func (d *decoderState) fetch() error {
 			// may overwrite the contents of the current buffer.
 			//
 			// The user is trying to use a bytes.Buffer as a pipe,
-			// but a bytes.Buffer is poor implementation of a pipe,
+			// but a bytes.Buffer is a poor implementation of a pipe,
 			// the purpose-built io.Pipe should be used instead.
 			return &ioError{action: "read", err: errBufferWriteAfterNext}
 		}
@@ -234,12 +246,17 @@ func (d *decoderState) fetch() error {
 	d.prevStart = 0
 
 	// Read more data into the internal buffer.
+	if err := d.rdErr; err != nil && err != io.EOF {
+		d.rdErr = nil
+		return &ioError{action: "read", err: err} // surface previous read error, but assume it as intermittent
+	}
 	for {
 		n, err := d.rd.Read(d.buf[len(d.buf):cap(d.buf)])
 		switch {
 		case n > 0:
 			d.buf = d.buf[:len(d.buf)+n]
-			return nil // ignore errors if any bytes are read
+			d.rdErr = err // defer read error until next fetch
+			return nil
 		case err == io.EOF:
 			return io.ErrUnexpectedEOF
 		case err != nil:
@@ -407,10 +424,11 @@ func (d *decoderState) checkDelim(delim byte, next Kind) error {
 }
 
 // SkipValue is semantically equivalent to calling [Decoder.ReadValue] and discarding
-// the result except that memory is not wasted trying to hold the entire result.
+// the result, except that memory is not wasted trying to hold the entire result.
 func (d *Decoder) SkipValue() error {
 	return d.s.SkipValue()
 }
+
 func (d *decoderState) SkipValue() error {
 	switch d.PeekKind() {
 	case '{', '[':
@@ -621,6 +639,7 @@ func (d *decoderState) ReadToken() (Token, error) {
 		if !d.Flags.Get(jsonflags.AllowDuplicateNames) {
 			d.Namespaces.push()
 		}
+		d.Flags.Clear(jsonflags.TagFlags) // tags only apply to current depth
 		pos += 1
 		d.prevStart, d.prevEnd = pos, pos
 		return BeginObject, nil
@@ -641,6 +660,7 @@ func (d *decoderState) ReadToken() (Token, error) {
 		if err = d.Tokens.pushArray(); err != nil {
 			return Token{}, wrapSyntacticError(d, err, pos, +1)
 		}
+		d.Flags.Clear(jsonflags.TagFlags) // tags only apply to current depth
 		pos += 1
 		d.prevStart, d.prevEnd = pos, pos
 		return BeginArray, nil
@@ -1127,24 +1147,54 @@ func (d *decoderState) consumeArray(flags *jsonwire.ValueFlags, pos, depth int) 
 // InputOffset returns the current input byte offset. It gives the location
 // of the next byte immediately after the most recently returned token or value.
 // The number of bytes actually read from the underlying [io.Reader] may be more
-// than this offset due to internal buffering effects.
+// than this offset due to internal buffering.
 func (d *Decoder) InputOffset() int64 {
 	return d.s.previousOffsetEnd()
 }
 
 // UnreadBuffer returns the data remaining in the unread buffer,
 // which may contain zero or more bytes.
+// This is the data already consumed from the input [io.Reader],
+// but not yet read by a [Decoder.ReadToken] or [Decoder.ReadValue] call.
+// It may contain bytes that do not form valid JSON, since it has not yet
+// been validated according to the JSON grammar.
+// The exact amount of buffered data is an implementation detail
+// of the Decoder and may change over time.
+//
+// It is the caller's responsibility to concatenate this buffer with
+// the remainder of the input Reader to obtain the full sequence
+// of bytes after the last read JSON token or value.
+//
 // The returned buffer must not be mutated while Decoder continues to be used.
 // The buffer contents are valid until the next Peek, Read, or Skip call.
 func (d *Decoder) UnreadBuffer() []byte {
 	return d.s.unreadBuffer()
 }
 
-// StackDepth returns the depth of the state machine for read JSON data.
+// StackDepth returns the depth of the state machine for JSON data
+// that has already been read.
 // Each level on the stack represents a nested JSON object or array.
-// It is incremented whenever an [BeginObject] or [BeginArray] token is encountered
+// It is incremented whenever a [BeginObject] or [BeginArray] token is encountered
 // and decremented whenever an [EndObject] or [EndArray] token is encountered.
-// The depth is zero-indexed, where zero represents the top-level JSON value.
+//
+// StackDepth returns 0 when not inside any object or array.
+// In particular, it returns 0 before any tokens have been read,
+// after any top-level value has been read, and between values
+// when decoding a stream of top-level values (e.g., NDJSON).
+// StackDepth returns 1 inside a top-level object or array,
+// 2 inside a nested object or array, and so on.
+//
+// For example, consider decoding the following JSON:
+//
+//	{"a": [1, 2], "b": {"c": 3}}
+//
+// While decoding, StackDepth would report the following:
+//
+//   - At the start, StackDepth reports 0.
+//   - After decoding the outer '{', StackDepth reports 1.
+//   - After decoding the inner '[', StackDepth reports 2.
+//   - After decoding the inner ']', StackDepth reports 1.
+//   - After decoding the outer '}', StackDepth reports 0.
 func (d *Decoder) StackDepth() int {
 	// NOTE: Keep in sync with Encoder.StackDepth.
 	return d.s.Tokens.Depth() - 1
@@ -1158,9 +1208,9 @@ func (d *Decoder) StackDepth() int {
 //   - [KindBeginObject] for a level representing a JSON object, and
 //   - [KindBeginArray] for a level representing a JSON array.
 //
-// It also reports the length of that JSON object or array.
+// It also reports the length of that JSON object or array decoded so far.
 // Each name and value in a JSON object is counted separately,
-// so the effective number of members would be half the length.
+// so the effective number of members is half the length.
 // A complete JSON object must have an even length.
 func (d *Decoder) StackIndex(i int) (Kind, int64) {
 	// NOTE: Keep in sync with Encoder.StackIndex.

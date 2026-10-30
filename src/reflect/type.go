@@ -17,6 +17,7 @@ package reflect
 
 import (
 	"internal/abi"
+	"internal/bytealg"
 	"internal/goarch"
 	"iter"
 	"runtime"
@@ -680,35 +681,58 @@ func (t *rtype) Method(i int) (m Method) {
 }
 
 func (t *rtype) MethodByName(name string) (m Method, ok bool) {
+	if i := t.methodIndex(name); i >= 0 {
+		return t.Method(i), true
+	}
+	return Method{}, false
+}
+
+// methodIndex returns the index of the method with the given name in t's
+// method set, or -1.
+func (t *rtype) methodIndex(name string) int {
 	if t.Kind() == Interface {
 		tt := (*interfaceType)(unsafe.Pointer(t))
-		return tt.MethodByName(name)
+		for i := range tt.Methods {
+			if tt.nameOff(tt.Methods[i].Name).Name() == name {
+				return i
+			}
+		}
+		return -1
 	}
 	ut := t.uncommon()
 	if ut == nil {
-		return Method{}, false
+		return -1
 	}
 
 	methods := ut.ExportedMethods()
 
-	// We are looking for the first index i where the string becomes >= s.
-	// This is a copy of sort.Search, with f(h) replaced by (t.nameOff(methods[h].name).name() >= name).
+	// We are looking for the first index i where the method name becomes
+	// >= name. This is a copy of sort.Find, with cmp(h) replaced by
+	// comparing the name of method h against name.
+	//
+	// Invariant: cmp(i-1) < 0, cmp(j) >= 0,
+	// and found == (j < len(methods) && cmp(j) == 0).
 	i, j := 0, len(methods)
+	// found only goes from false to true: j only decreases, and the methods
+	// are sorted by name, so a method below one whose name compares equal
+	// cannot compare greater.
+	found := false
 	for i < j {
 		h := int(uint(i+j) >> 1) // avoid overflow when computing h
 		// i ≤ h < j
-		if !(t.nameOff(methods[h].Name).Name() >= name) {
-			i = h + 1 // preserves f(i-1) == false
+		if c := bytealg.CompareString(t.nameOff(methods[h].Name).Name(), name); c < 0 {
+			i = h + 1 // preserves cmp(i-1) < 0
 		} else {
-			j = h // preserves f(j) == true
+			j = h // preserves cmp(j) >= 0
+			found = c == 0
 		}
 	}
-	// i == j, f(i-1) == false, and f(j) (= f(i)) == true  =>  answer is i.
-	if i < len(methods) && name == t.nameOff(methods[i].Name).Name() {
-		return t.Method(i), true
+	// i == j, cmp(i-1) < 0, and cmp(j) (= cmp(i)) >= 0  =>  answer is i,
+	// and found reports whether methods[i] is the method we want.
+	if found {
+		return i
 	}
-
-	return Method{}, false
+	return -1
 }
 
 func (t *rtype) PkgPath() string {
@@ -910,27 +934,11 @@ func (t *rtype) CanSeq() bool {
 	case Int8, Int16, Int32, Int64, Int, Uint8, Uint16, Uint32, Uint64, Uint, Uintptr, Array, Slice, Chan, String, Map:
 		return true
 	case Func:
-		return canRangeFunc(&t.t)
+		return canRangeFunc(&t.t, 1)
 	case Pointer:
 		return t.Elem().Kind() == Array
 	}
 	return false
-}
-
-func canRangeFunc(t *abi.Type) bool {
-	if t.Kind() != abi.Func {
-		return false
-	}
-	f := t.FuncType()
-	if f.InCount != 1 || f.OutCount != 0 {
-		return false
-	}
-	y := f.In(0)
-	if y.Kind() != abi.Func {
-		return false
-	}
-	yield := y.FuncType()
-	return yield.InCount == 1 && yield.OutCount == 1 && yield.Out(0).Kind() == abi.Bool
 }
 
 func (t *rtype) CanSeq2() bool {
@@ -938,14 +946,14 @@ func (t *rtype) CanSeq2() bool {
 	case Array, Slice, String, Map:
 		return true
 	case Func:
-		return canRangeFunc2(&t.t)
+		return canRangeFunc(&t.t, 2)
 	case Pointer:
 		return t.Elem().Kind() == Array
 	}
 	return false
 }
 
-func canRangeFunc2(t *abi.Type) bool {
+func canRangeFunc(t *abi.Type, seq uint16) bool {
 	if t.Kind() != abi.Func {
 		return false
 	}
@@ -958,7 +966,7 @@ func canRangeFunc2(t *abi.Type) bool {
 		return false
 	}
 	yield := y.FuncType()
-	return yield.InCount == 2 && yield.OutCount == 1 && yield.Out(0).Kind() == abi.Bool
+	return yield.InCount == seq && yield.OutCount == 1 && yield.Out(0).Kind() == abi.Bool && toRType(yield.Out(0)).PkgPath() == ""
 }
 
 func (t *rtype) Fields() iter.Seq[StructField] {
@@ -1730,26 +1738,18 @@ func haveIdenticalUnderlyingType(T, V *abi.Type, cmpTags bool) bool {
 	return false
 }
 
-// typelinks is implemented in package runtime.
-// It returns a slice of the sections in each module,
-// and a slice of *rtype offsets in each module.
-//
-// The types in each module are sorted by string. That is, the first
-// two linked types of the first module are:
-//
-//	d0 := sections[0]
-//	t1 := (*rtype)(add(d0, offset[0][0]))
-//	t2 := (*rtype)(add(d0, offset[0][1]))
-//
-// and
-//
-//	t1.String() < t2.String()
+// compiledTypelinks is implemented in package runtime.
+// It returns the types defined by the first module,
+// and a slice of types defined in any other modules.
+// Each slice of types is sorted by string.
 //
 // Note that strings are not unique identifiers for types:
 // there can be more than one with a given string.
 // Only types we might want to look up are included:
 // pointers, channels, maps, slices, and arrays.
-func typelinks() (sections []unsafe.Pointer, offset [][]int32)
+//
+//go:linknamestd compiledTypelinks
+func compiledTypelinks() ([]*abi.Type, [][]*abi.Type)
 
 // rtypeOff should be an internal detail,
 // but widely used packages access it using linkname.
@@ -1764,7 +1764,7 @@ func rtypeOff(section unsafe.Pointer, off int32) *abi.Type {
 	return (*abi.Type)(add(section, uintptr(off), "sizeof(rtype) > 0"))
 }
 
-// typesByString returns the subslice of typelinks() whose elements have
+// typesByString returns all known types whose elements have
 // the given string representation.
 // It may be empty (no known types with that string) or may have
 // multiple elements (multiple types with that string).
@@ -1780,19 +1780,17 @@ func rtypeOff(section unsafe.Pointer, off int32) *abi.Type {
 //
 //go:linkname typesByString
 func typesByString(s string) []*abi.Type {
-	sections, offset := typelinks()
+	first, rest := compiledTypelinks()
 	var ret []*abi.Type
 
-	for offsI, offs := range offset {
-		section := sections[offsI]
-
+	searchTypes := func(types []*abi.Type) {
 		// We are looking for the first index i where the string becomes >= s.
 		// This is a copy of sort.Search, with f(h) replaced by (*typ[h].String() >= s).
-		i, j := 0, len(offs)
+		i, j := 0, len(types)
 		for i < j {
 			h := int(uint(i+j) >> 1) // avoid overflow when computing h
 			// i ≤ h < j
-			if !(stringFor(rtypeOff(section, offs[h])) >= s) {
+			if !(stringFor(types[h]) >= s) {
 				i = h + 1 // preserves f(i-1) == false
 			} else {
 				j = h // preserves f(j) == true
@@ -1803,14 +1801,20 @@ func typesByString(s string) []*abi.Type {
 		// Having found the first, linear scan forward to find the last.
 		// We could do a second binary search, but the caller is going
 		// to do a linear scan anyway.
-		for j := i; j < len(offs); j++ {
-			typ := rtypeOff(section, offs[j])
+		for j := i; j < len(types); j++ {
+			typ := types[j]
 			if stringFor(typ) != s {
 				break
 			}
 			ret = append(ret, typ)
 		}
 	}
+
+	searchTypes(first)
+	for _, r := range rest {
+		searchTypes(r)
+	}
+
 	return ret
 }
 
@@ -1845,6 +1849,7 @@ var funcLookupCache struct {
 // If t's size is equal to or exceeds this limit, ChanOf panics.
 func ChanOf(dir ChanDir, t Type) Type {
 	typ := t.common()
+	t = toType(typ) // for #80332, ensure t's exported methods are not shadowed
 
 	// Look in cache.
 	ckey := cacheKey{Chan, typ, nil, uintptr(dir)}
@@ -1936,7 +1941,7 @@ func initFuncTypes(n int) Type {
 // panics if the in[len(in)-1] does not represent a slice and variadic is
 // true.
 func FuncOf(in, out []Type, variadic bool) Type {
-	if variadic && (len(in) == 0 || in[len(in)-1].Kind() != Slice) {
+	if variadic && (len(in) == 0 || toType(in[len(in)-1].common()).Kind() != Slice) {
 		panic("reflect.FuncOf: last arg of variadic func must be slice")
 	}
 
@@ -2152,6 +2157,7 @@ func emitGCMask(out []byte, base uintptr, typ *abi.Type, n uintptr) {
 // For example, if t represents int, SliceOf(t) represents []int.
 func SliceOf(t Type) Type {
 	typ := t.common()
+	t = toType(typ) // for #80332, ensure t's exported methods are not shadowed
 
 	// Look in cache.
 	ckey := cacheKey{Slice, typ, nil, 0}
@@ -2307,7 +2313,7 @@ func StructOf(fields []StructField) Type {
 			if pkgpath == "" {
 				pkgpath = fpkgpath
 			} else if pkgpath != fpkgpath {
-				panic("reflect.Struct: fields with different PkgPath " + pkgpath + " and " + fpkgpath)
+				panic("reflect.StructOf: fields with different PkgPath " + pkgpath + " and " + fpkgpath)
 			}
 		}
 
@@ -2584,6 +2590,9 @@ func StructOf(fields []StructField) Type {
 		// space to store it.
 		typ.TFlag |= abi.TFlagGCMaskOnDemand
 		typ.GCData = (*byte)(unsafe.Pointer(new(uintptr)))
+		if runtime.GOOS == "aix" {
+			typ.GCData = adjustAIXGCData(typ.GCData)
+		}
 	}
 
 	typ.Equal = nil
@@ -2677,6 +2686,7 @@ func ArrayOf(length int, elem Type) Type {
 	}
 
 	typ := elem.common()
+	elem = toType(typ) // for #80332, ensure elem's exported methods are not shadowed
 
 	// Look in cache.
 	ckey := cacheKey{Array, typ, nil, uintptr(length)}
@@ -2749,6 +2759,9 @@ func ArrayOf(length int, elem Type) Type {
 		// space to store it.
 		array.TFlag |= abi.TFlagGCMaskOnDemand
 		array.GCData = (*byte)(unsafe.Pointer(new(uintptr)))
+		if runtime.GOOS == "aix" {
+			array.GCData = adjustAIXGCData(array.GCData)
+		}
 	}
 
 	etyp := typ
@@ -2779,6 +2792,34 @@ func ArrayOf(length int, elem Type) Type {
 	ti, _ := lookupCache.LoadOrStore(ckey, toRType(&array.Type))
 	return ti.(Type)
 }
+
+// adjustAIXGCData adjusts the GCData field pointer for AIX.
+// See runtime.getGCMaskOnDemand.
+func adjustAIXGCData(addr *byte) *byte {
+	adjusted := adjustAIXGCDataForRuntime(addr)
+	if adjusted != addr {
+		pinAIXGCDataMu.Lock()
+		pinAIXGCData = append(pinAIXGCData, addr)
+		pinAIXGCDataMu.Unlock()
+	}
+	return adjusted
+}
+
+// adjustAIXGCDataForRuntime adjusts the GCData field pointer
+// as the runtime requires for AIX. See runtime.getGCMaskOnDemand.
+//
+//go:linknamestd adjustAIXGCDataForRuntime
+//go:noescape
+func adjustAIXGCDataForRuntime(*byte) *byte
+
+// pinAIXGCDataMu proects pinAIXGCData.
+var pinAIXGCDataMu sync.Mutex
+
+// pinAIXGCData keeps the actual GCData pointer alive on AIX.
+// On AIX we need to use adjustAIXGCData to convert the GC pointer
+// to the value that the runtime expects. That means that the rtype
+// no longer refers to the original pointer. This slice keeps it alive.
+var pinAIXGCData []*byte
 
 func appendVarint(x []byte, v uintptr) []byte {
 	for ; v >= 0x80; v >>= 7 {

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build amd64 || arm64 || loong64
+//go:build amd64 || arm64 || loong64 || ppc64 || ppc64le
 
 // This provides common support for architectures that use extended register
 // state in asynchronous preemption.
@@ -10,8 +10,8 @@
 // While asynchronous preemption stores general-purpose (GP) registers on the
 // preempted goroutine's own stack, extended register state can be used to save
 // non-GP state off the stack. In particular, this is meant for large vector
-// register files. Currently, we assume this contains only scalar data, though
-// we could change this constraint by conservatively scanning this memory.
+// register files. This memory is conservatively scanned to enable using
+// non-GP registers for operations that may involve pointers.
 //
 // For an architecture to support extended register state, it must provide a Go
 // definition of an xRegState type for storing the state, and its asyncPreempt
@@ -20,6 +20,7 @@
 package runtime
 
 import (
+	"internal/abi"
 	"internal/runtime/sys"
 	"unsafe"
 )
@@ -62,6 +63,8 @@ var xRegAlloc struct {
 func xRegInitAlloc() {
 	lockInit(&xRegAlloc.lock, lockRankXRegAlloc)
 	xRegAlloc.alloc.init(unsafe.Sizeof(xRegState{}), nil, nil, &memstats.other_sys)
+	// xRegSave overwrites the whole block before the GC can see it.
+	xRegAlloc.alloc.zero = false
 }
 
 // xRegSave saves the extended register state on this P to gp.
@@ -133,5 +136,31 @@ func (xRegs *xRegPerP) free() {
 		xRegAlloc.alloc.free(unsafe.Pointer(xRegs.cache))
 		xRegs.cache = nil
 		unlock(&xRegAlloc.lock)
+	}
+}
+
+// xRegScan conservatively scans the extended register state.
+//
+// This is supposed to be called only by scanstack when it handles async preemption.
+func xRegScan(gp *g, gcw *gcWork, state *stackScanState) {
+	// Regular async preemption always provides the extended register state.
+	if gp.xRegs.state == nil {
+		var u unwinder
+		for u.init(gp, 0); u.valid(); u.next() {
+			if u.frame.fn.valid() && u.frame.fn.funcID == abi.FuncID_debugCallV2 {
+				return
+			}
+		}
+		println("runtime: gp=", gp, ", goid=", gp.goid)
+		throw("gp.xRegs.state == nil on a scanstack attempt during async preemption")
+	}
+	b := uintptr(unsafe.Pointer(&gp.xRegs.state.regs))
+	n := uintptr(unsafe.Sizeof(gp.xRegs.state.regs))
+	if debugScanConservative {
+		print("begin scan xRegs of goroutine ", gp.goid, " at [", hex(b), ",", hex(b+n), ")\n")
+	}
+	scanConservative(b, n, nil, gcw, state)
+	if debugScanConservative {
+		print("end scan xRegs of goroutine ", gp.goid, "\n")
 	}
 }

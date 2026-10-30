@@ -5,11 +5,9 @@
 package doc
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"go/ast"
-	"go/build"
 	"go/doc"
 	"go/format"
 	"go/parser"
@@ -22,6 +20,9 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"cmd/go/internal/cfg"
+	"cmd/go/internal/load"
 )
 
 const (
@@ -30,13 +31,12 @@ const (
 )
 
 type Package struct {
-	writer      io.Writer    // Destination for output.
-	name        string       // Package name, json for encoding/json.
-	userPath    string       // String the user used to find this package.
-	pkg         *ast.Package // Parsed package.
-	file        *ast.File    // Merged from all files in the package
+	writer      io.Writer // Destination for output.
+	name        string    // Package name, json for encoding/json.
+	userPath    string    // String the user used to find this package.
+	file        *ast.File // Merged from all files in the package
 	doc         *doc.Package
-	build       *build.Package
+	build       *load.Package
 	typedValue  map[*doc.Value]bool // Consts and vars related to types.
 	constructor map[*doc.Func]bool  // Constructors.
 	fs          *token.FileSet      // Needed for printing.
@@ -68,7 +68,7 @@ func (pb *pkgBuffer) packageClause() {
 	if !pb.printed {
 		pb.printed = true
 		// Only show package clause for commands if requested explicitly.
-		if pb.pkg.pkg.Name != "main" || showCmd {
+		if pb.pkg.name != "main" || showCmd {
 			pb.pkg.packageClause()
 		}
 	}
@@ -96,8 +96,8 @@ func (pkg *Package) prettyPath() string {
 	// Also convert everything to slash-separated paths for uniform handling.
 	path = filepath.Clean(filepath.ToSlash(pkg.build.Dir))
 	// Can we find a decent prefix?
-	if buildCtx.GOROOT != "" {
-		goroot := filepath.Join(buildCtx.GOROOT, "src")
+	if cfg.GOROOT != "" {
+		goroot := filepath.Join(cfg.GOROOT, "src")
 		if p, ok := trim(path, filepath.ToSlash(goroot)); ok {
 			return p
 		}
@@ -137,19 +137,18 @@ func (pkg *Package) Fatalf(format string, args ...any) {
 
 // parsePackage turns the build package we found into a parsed package
 // we can then use to generate documentation.
-func parsePackage(writer io.Writer, pkg *build.Package, userPath string) *Package {
+func parsePackage(writer io.Writer, pkg *load.Package, userPath string) *Package {
 	// include tells parser.ParseDir which files to include.
-	// That means the file must be in the build package's GoFiles or CgoFiles
-	// list only (no tag-ignored files, tests, swig or other non-Go files).
+	// That means the file must be in the build package's GoFiles, CgoFiles,
+	// TestGoFiles or XTestGoFiles list only (no tag-ignored files, swig or
+	// other non-Go files).
 	include := func(info fs.FileInfo) bool {
-		for _, name := range pkg.GoFiles {
-			if name == info.Name() {
-				return true
-			}
-		}
-		for _, name := range pkg.CgoFiles {
-			if name == info.Name() {
-				return true
+		files := [][]string{pkg.GoFiles, pkg.CgoFiles, pkg.TestGoFiles, pkg.XTestGoFiles}
+		for _, f := range files {
+			for _, name := range f {
+				if name == info.Name() {
+					return true
+				}
 			}
 		}
 		return false
@@ -159,12 +158,8 @@ func parsePackage(writer io.Writer, pkg *build.Package, userPath string) *Packag
 	if err != nil {
 		log.Fatal(err)
 	}
-	// Make sure they are all in one package.
 	if len(pkgs) == 0 {
 		log.Fatalf("no source-code package in directory %s", pkg.Dir)
-	}
-	if len(pkgs) > 1 {
-		log.Fatalf("multiple packages in directory %s", pkg.Dir)
 	}
 	astPkg := pkgs[pkg.Name]
 
@@ -180,7 +175,16 @@ func parsePackage(writer io.Writer, pkg *build.Package, userPath string) *Packag
 	if showSrc {
 		mode |= doc.PreserveAST // See comment for Package.emit.
 	}
-	docPkg := doc.New(astPkg, pkg.ImportPath, mode)
+	var allGoFiles []*ast.File
+	for _, p := range pkgs {
+		for _, f := range p.Files {
+			allGoFiles = append(allGoFiles, f)
+		}
+	}
+	docPkg, err := doc.NewFromFiles(fset, allGoFiles, pkg.ImportPath, mode)
+	if err != nil {
+		log.Fatal(err)
+	}
 	typedValue := make(map[*doc.Value]bool)
 	constructor := make(map[*doc.Func]bool)
 	for _, typ := range docPkg.Types {
@@ -202,12 +206,15 @@ func parsePackage(writer io.Writer, pkg *build.Package, userPath string) *Packag
 		}
 	}
 
+	var file *ast.File
+	if astPkg != nil {
+		file = ast.MergePackageFiles(astPkg, 0)
+	}
 	p := &Package{
 		writer:      writer,
 		name:        pkg.Name,
 		userPath:    userPath,
-		pkg:         astPkg,
-		file:        ast.MergePackageFiles(astPkg, 0),
+		file:        file,
 		doc:         docPkg,
 		typedValue:  typedValue,
 		constructor: constructor,
@@ -245,7 +252,7 @@ func (pkg *Package) newlines(n int) {
 func (pkg *Package) emit(comment string, node ast.Node) {
 	if node != nil {
 		var arg any = node
-		if showSrc {
+		if showSrc && pkg.file != nil {
 			// Need an extra little dance to get internal comments to appear.
 			arg = &printer.CommentedNode{
 				Node:     node,
@@ -556,7 +563,7 @@ func (pkg *Package) packageDoc() {
 		pkg.funcsDoc()
 		pkg.typesDoc()
 
-	case pkg.pkg.Name == "main" && !showCmd:
+	case pkg.name == "main" && !showCmd:
 		// Show only package docs for commands.
 		return
 
@@ -568,6 +575,7 @@ func (pkg *Package) packageDoc() {
 		pkg.valueSummary(pkg.doc.Vars, false)
 		pkg.funcSummary(pkg.doc.Funcs, false)
 		pkg.typeSummary()
+		pkg.exampleSummary(pkg.doc.Examples, false)
 	}
 
 	if !short {
@@ -650,7 +658,23 @@ func (pkg *Package) funcSummary(funcs []*doc.Func, showConstructors bool) {
 		if isExported(fun.Name) {
 			if showConstructors || !pkg.constructor[fun] {
 				pkg.Printf("%s\n", pkg.oneLineNode(fun.Decl))
+				if showEx {
+					pkg.exampleSummary(fun.Examples, false)
+				}
 			}
+		}
+	}
+}
+
+// exampleSummary prints a one-line summary for each example.
+func (pkg *Package) exampleSummary(exs []*doc.Example, showDoc bool) {
+	if !showEx {
+		return
+	}
+	for _, ex := range exs {
+		pkg.Printf(indent+"func Example%s()\n", ex.Name)
+		if showDoc && ex.Doc != "" {
+			pkg.ToText(&pkg.buf, ex.Doc, indent+indent, indent+indent)
 		}
 	}
 }
@@ -676,8 +700,10 @@ func (pkg *Package) typeSummary() {
 				for _, constructor := range typ.Funcs {
 					if isExported(constructor.Name) {
 						pkg.Printf(indent+"%s\n", pkg.oneLineNode(constructor.Decl))
+						pkg.exampleSummary(constructor.Examples, false)
 					}
 				}
+				pkg.exampleSummary(typ.Examples, false)
 			}
 		}
 	}
@@ -728,6 +754,40 @@ func (pkg *Package) findTypes(symbol string) (types []*doc.Type) {
 	return
 }
 
+// findExamples finds any examples that describe the symbol.
+func (pkg *Package) findExamples(symbol string) (examples []*doc.Example) {
+	if !strings.HasPrefix(symbol, "Example") {
+		return
+	}
+	symbol = strings.TrimPrefix(symbol, "Example")
+	var all []*doc.Example
+	all = append(all, pkg.doc.Examples...)
+	for _, typ := range pkg.doc.Types {
+		all = append(all, typ.Examples...)
+		for _, fun := range typ.Funcs {
+			all = append(all, fun.Examples...)
+		}
+		for _, fun := range typ.Methods {
+			all = append(all, fun.Examples...)
+		}
+	}
+	for _, fun := range pkg.doc.Funcs {
+		all = append(all, fun.Examples...)
+	}
+
+	// always include unexported in below match(), so Example_one
+	// is still matched despite trimming the Example_ part.
+	u := unexported
+	unexported = true
+	for _, ex := range all {
+		if match(symbol, ex.Name) {
+			examples = append(examples, ex)
+		}
+	}
+	unexported = u
+	return
+}
+
 // findTypeSpec returns the ast.TypeSpec within the declaration that defines the symbol.
 // The name must match exactly.
 func (pkg *Package) findTypeSpec(decl *ast.GenDecl, symbol string) *ast.TypeSpec {
@@ -749,7 +809,17 @@ func (pkg *Package) symbolDoc(symbol string) bool {
 	for _, fun := range pkg.findFuncs(symbol) {
 		// Symbol is a function.
 		decl := fun.Decl
+		found = true
+		if short {
+			pkg.Printf("%s\n", pkg.oneLineNode(decl))
+			pkg.exampleSummary(fun.Examples, false)
+			continue
+		}
 		pkg.emit(fun.Doc, decl)
+		pkg.exampleSummary(fun.Examples, true)
+	}
+	for _, ex := range pkg.findExamples(symbol) {
+		pkg.emitExample(ex)
 		found = true
 	}
 	// Constants and variables behave the same.
@@ -822,8 +892,12 @@ func (pkg *Package) valueDoc(value *doc.Value, printed map[*ast.GenDecl]bool) {
 		return
 	}
 	value.Decl.Specs = specs
-	pkg.emit(value.Doc, value.Decl)
 	printed[value.Decl] = true
+	if short {
+		pkg.Printf("%s\n", pkg.oneLineNode(value.Decl))
+		return
+	}
+	pkg.emit(value.Doc, value.Decl)
 }
 
 // typeDoc prints the docs for a type, including constructors and other items
@@ -835,6 +909,10 @@ func (pkg *Package) typeDoc(typ *doc.Type) {
 	// If there are multiple types defined, reduce to just this one.
 	if len(decl.Specs) > 1 {
 		decl.Specs = []ast.Spec{spec}
+	}
+	if short {
+		pkg.Printf("%s\n", pkg.oneLineNode(spec))
+		return
 	}
 	pkg.emit(typ.Doc, decl)
 	pkg.newlines(2)
@@ -866,6 +944,7 @@ func (pkg *Package) typeDoc(typ *doc.Type) {
 		pkg.valueSummary(typ.Consts, true)
 		pkg.valueSummary(typ.Vars, true)
 		pkg.funcSummary(typ.Funcs, true)
+		pkg.exampleSummary(typ.Examples, false)
 		pkg.funcSummary(typ.Methods, true)
 	}
 }
@@ -1025,6 +1104,7 @@ func (pkg *Package) printMethodDoc(symbol, method string) bool {
 				if match(method, meth.Name) {
 					decl := meth.Decl
 					pkg.emit(meth.Doc, decl)
+					pkg.exampleSummary(meth.Examples, true)
 					found = true
 				}
 			}
@@ -1107,9 +1187,9 @@ func (pkg *Package) printFieldDoc(symbol, fieldName string) bool {
 					// a unit before adding the leading // to each line.
 					docBuf := new(bytes.Buffer)
 					pkg.ToText(docBuf, field.Doc.Text(), "", indent)
-					scanner := bufio.NewScanner(docBuf)
-					for scanner.Scan() {
-						fmt.Fprintf(&pkg.buf, "%s// %s\n", indent, scanner.Bytes())
+					for line := range bytes.Lines(docBuf.Bytes()) {
+						line = bytes.TrimSuffix(line, []byte{'\n'})
+						fmt.Fprintf(&pkg.buf, "%s// %s\n", indent, line)
 					}
 				}
 				s := pkg.oneLineNode(field.Type)
@@ -1165,4 +1245,34 @@ func simpleFold(r rune) rune {
 		}
 		r = r1
 	}
+}
+
+// emitExample prints an example and its output.
+func (pkg *Package) emitExample(ex *doc.Example) {
+	pkg.buf.printed = true // omit the package clause
+	var err error
+	if ex.Play != nil {
+		err = format.Node(&pkg.buf, pkg.fs, ex.Play)
+	} else {
+		// If code is an *ast.BlockStmt, trim the braces and indentation
+		// by just printing the enclosed List of ast.[]Stmt.
+		b, ok := ex.Code.(*ast.BlockStmt)
+		if !ok {
+			err = format.Node(&pkg.buf, pkg.fs, ex.Code)
+		} else {
+			err = format.Node(&pkg.buf, pkg.fs, b.List)
+		}
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+	if ex.Output != "" {
+		pkg.newlines(2)
+		pkg.Printf("Output: ")
+		if strings.Count(ex.Output, "\n") > 1 {
+			pkg.newlines(1)
+		}
+		pkg.Printf("%s", ex.Output)
+	}
+	pkg.newlines(1)
 }

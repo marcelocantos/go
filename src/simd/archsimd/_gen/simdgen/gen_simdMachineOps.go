@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"simd/archsimd/_gen/simdgen/types"
 	"sort"
 	"strings"
 )
@@ -15,26 +16,25 @@ import (
 const simdMachineOpsTmpl = `
 package main
 
-func simdAMD64Ops(v11, v21, v2k, vkv, v2kv, v2kk, v31, v3kv, vgpv, vgp, vfpv, vfpkv, w11, w21, w2k, wkw, w2kw, w2kk, w31, w3kw, wgpw, wgp, wfpw, wfpkw,
-	wkwload, v21load, v31load, v11load, w21load, w31load, w2kload, w2kwload, w11load, w3kwload, w2kkload, v31x0AtIn2 regInfo) []opData {
+func simd{{.SIMDTag}}Ops({{.RegInfoParams}}) []opData {
 	return []opData{
 {{- range .OpsData }}
-		{name: "{{.OpName}}", argLength: {{.OpInLen}}, reg: {{.RegInfo}}, asm: "{{.Asm}}", commutative: {{.Comm}}, typ: "{{.Type}}", resultInArg0: {{.ResultInArg0}}},
+		{name: "{{.OpName}}", argLength: {{.OpInLen}}, reg: {{.RegInfo}}, asm: "{{.Asm}}",{{if .Comm}} commutative: true,{{end}} typ: "{{.Type}}"{{if .ResultInArg0}}, resultInArg0: true{{end}}},
 {{- end }}
 {{- range .OpsDataImm }}
-		{name: "{{.OpName}}", argLength: {{.OpInLen}}, reg: {{.RegInfo}}, asm: "{{.Asm}}", aux: "UInt8", commutative: {{.Comm}}, typ: "{{.Type}}", resultInArg0: {{.ResultInArg0}}},
+		{name: "{{.OpName}}", argLength: {{.OpInLen}}, reg: {{.RegInfo}}, asm: "{{.Asm}}", aux: "UInt8",{{if .Comm}} commutative: true,{{end}} typ: "{{.Type}}"{{if .ResultInArg0}}, resultInArg0: true{{end}}},
 {{- end }}
 {{- range .OpsDataLoad}}
-		{name: "{{.OpName}}", argLength: {{.OpInLen}}, reg: {{.RegInfo}}, asm: "{{.Asm}}", commutative: {{.Comm}}, typ: "{{.Type}}", aux: "SymOff", symEffect: "Read", resultInArg0: {{.ResultInArg0}}},
+		{name: "{{.OpName}}", argLength: {{.OpInLen}}, reg: {{.RegInfo}}, asm: "{{.Asm}}",{{if .Comm}} commutative: true,{{end}} typ: "{{.Type}}", aux: "SymOff", symEffect: "Read"{{if .ResultInArg0}}, resultInArg0: true{{end}}},
 {{- end}}
 {{- range .OpsDataImmLoad}}
-		{name: "{{.OpName}}", argLength: {{.OpInLen}}, reg: {{.RegInfo}}, asm: "{{.Asm}}", commutative: {{.Comm}}, typ: "{{.Type}}", aux: "SymValAndOff", symEffect: "Read", resultInArg0: {{.ResultInArg0}}},
+		{name: "{{.OpName}}", argLength: {{.OpInLen}}, reg: {{.RegInfo}}, asm: "{{.Asm}}",{{if .Comm}} commutative: true,{{end}} typ: "{{.Type}}", aux: "SymValAndOff", symEffect: "Read"{{if .ResultInArg0}}, resultInArg0: true{{end}}},
 {{- end}}
 {{- range .OpsDataMerging }}
-		{name: "{{.OpName}}Merging", argLength: {{.OpInLen}}, reg: {{.RegInfo}}, asm: "{{.Asm}}", commutative: false, typ: "{{.Type}}", resultInArg0: true},
+		{name: "{{.OpName}}Merging", argLength: {{.OpInLen}}, reg: {{.RegInfo}}, asm: "{{.Asm}}", typ: "{{.Type}}", resultInArg0: true},
 {{- end }}
 {{- range .OpsDataImmMerging }}
-		{name: "{{.OpName}}Merging", argLength: {{.OpInLen}}, reg: {{.RegInfo}}, asm: "{{.Asm}}", aux: "UInt8", commutative: false, typ: "{{.Type}}", resultInArg0: true},
+		{name: "{{.OpName}}Merging", argLength: {{.OpInLen}}, reg: {{.RegInfo}}, asm: "{{.Asm}}", aux: "UInt8", typ: "{{.Type}}", resultInArg0: true},
 {{- end }}
 	}
 }
@@ -42,10 +42,15 @@ func simdAMD64Ops(v11, v21, v2k, vkv, v2kv, v2kk, v31, v3kv, vgpv, vgp, vfpv, vf
 
 // writeSIMDMachineOps generates the machine ops and writes it to simdAMD64ops.go
 // within the specified directory.
-func writeSIMDMachineOps(ops []Operation) *bytes.Buffer {
+// isWidthAgnostic reports whether the operation is an SVE width-agnostic
+// bitwise op (see types.RawOperation.WidthAgnostic).
+func isWidthAgnostic(gOp Operation) bool {
+	return gOp.WidthAgnostic != nil && *gOp.WidthAgnostic
+}
+
+func writeSIMDMachineOps(buffer *bytes.Buffer, ops []Operation) {
 	t := templateOf(simdMachineOpsTmpl, "simdAMD64Ops")
-	buffer := new(bytes.Buffer)
-	buffer.WriteString(generatedHeader)
+	buffer.WriteString(generatedHeader())
 
 	type opData struct {
 		OpName       string
@@ -57,6 +62,8 @@ func writeSIMDMachineOps(ops []Operation) *bytes.Buffer {
 		ResultInArg0 bool
 	}
 	type machineOpsData struct {
+		SIMDTag           string
+		RegInfoParams     string
 		OpsData           []opData
 		OpsDataImm        []opData
 		OpsDataLoad       []opData
@@ -65,11 +72,9 @@ func writeSIMDMachineOps(ops []Operation) *bytes.Buffer {
 		OpsDataImmMerging []opData
 	}
 
-	regInfoSet := map[string]bool{
-		"v11": true, "v21": true, "v2k": true, "v2kv": true, "v2kk": true, "vkv": true, "v31": true, "v3kv": true, "vgpv": true, "vgp": true, "vfpv": true, "vfpkv": true,
-		"w11": true, "w21": true, "w2k": true, "w2kw": true, "w2kk": true, "wkw": true, "w31": true, "w3kw": true, "wgpw": true, "wgp": true, "wfpw": true, "wfpkw": true,
-		"wkwload": true, "v21load": true, "v31load": true, "v11load": true, "w21load": true, "w31load": true, "w2kload": true, "w2kwload": true, "w11load": true,
-		"w3kwload": true, "w2kkload": true, "v31x0AtIn2": true}
+	archInfo := CurrentArch()
+
+	regInfoSet := archInfo.RegInfoSet
 	opsData := make([]opData, 0)
 	opsDataImm := make([]opData, 0)
 	opsDataLoad := make([]opData, 0)
@@ -80,7 +85,7 @@ func writeSIMDMachineOps(ops []Operation) *bytes.Buffer {
 	// Determine the "best" version of an instruction to use
 	best := make(map[string]Operation)
 	var mOpOrder []string
-	countOverrides := func(s []Operand) int {
+	countOverrides := func(s []types.Operand) int {
 		a := 0
 		for _, o := range s {
 			if o.OverwriteBase != nil {
@@ -90,8 +95,16 @@ func writeSIMDMachineOps(ops []Operation) *bytes.Buffer {
 		return a
 	}
 	for _, op := range ops {
-		_, _, maskType, _, gOp := op.shape()
+		_, _, maskType, _, gOp, _ := op.shape()
 		asm := machineOpName(maskType, gOp)
+		if isWidthAgnostic(gOp) {
+			// The unpredicated machine op of a width-agnostic bitwise operation
+			// collapses to one .D instruction, but its predicated forms merge at
+			// a real element granularity, so every width's def must survive this
+			// dedup to generate them; the shared unpredicated opData is deduped
+			// at the append instead.
+			asm = fmt.Sprintf("%s#%d", asm, *gOp.Out[0].ElemBits)
+		}
 		other, ok := best[asm]
 		if !ok {
 			best[asm] = op
@@ -110,9 +123,15 @@ func writeSIMDMachineOps(ops []Operation) *bytes.Buffer {
 
 	regInfoErrs := make([]error, 0)
 	regInfoMissing := make(map[string]bool, 0)
+	// sveSeenUnpred dedups the base machine op across the defs that share it:
+	// only SVE produces such sharing (a width-agnostic bitwise operation is one
+	// .D instruction serving every element width); on other architectures every
+	// def has its own machine-op name.
+	sveSeenUnpred := make(map[string]bool)
 	for _, asm := range mOpOrder {
 		op := best[asm]
-		shapeIn, shapeOut, maskType, _, gOp := op.shape()
+		shapeIn, shapeOut, maskType, _, gOp, _ := op.shape()
+		asm = machineOpName(maskType, gOp)
 
 		// TODO: all our masked operations are now zeroing, we need to generate machine ops with merging masks, maybe copy
 		// one here with a name suffix "Merging". The rewrite rules will need them.
@@ -146,9 +165,15 @@ func writeSIMDMachineOps(ops []Operation) *bytes.Buffer {
 			panic(err)
 		}
 		var outType string
-		if shapeOut == OneVregOut || shapeOut == OneVregOutAtIn || gOp.Out[0].OverwriteClass != nil {
+		if shapeOut == OneVregOut || shapeOut == OneVregOutAtIn || shapeOut == OneVregOutScalar || gOp.Out[0].OverwriteClass != nil {
 			// If class overwrite is happening, that's not really a mask but a vreg.
-			outType = fmt.Sprintf("Vec%d", *gOp.Out[0].Bits)
+			if gOp.Out[0].Bits.Scalable {
+				outType = fmt.Sprintf("Vec%d", types.MaxVectorBits)
+			} else {
+				outType = fmt.Sprintf("Vec%d", gOp.Out[0].Bits.N())
+			}
+		} else if shapeOut == OneFpregOut {
+			outType = fmt.Sprintf("Float%d", gOp.Out[0].Bits.N())
 		} else if shapeOut == OneGregOut {
 			outType = gOp.GoType() // this is a straight Go type, not a VecNNN type
 		} else if shapeOut == OneKmaskOut {
@@ -160,9 +185,33 @@ func writeSIMDMachineOps(ops []Operation) *bytes.Buffer {
 		if shapeOut == OneVregOutAtIn {
 			resultInArg0 = true
 		}
+		if CurrentArch().isSVE() {
+			switch idx := gOp.sveInPlaceInput(); {
+			case idx < 0:
+				// Constructive: the destination is independent of the sources.
+			case idx == 0:
+				// The instruction overwrites its first source. A commutative one is
+				// left unconstrained — the ssa-to-prog helper puts the destination in
+				// place by swapping the operands or by prefixing a MOVPRFX. A
+				// non-commutative one cannot be fixed by swapping, so pin the
+				// destination to the first source instead.
+				if !gOp.Commutative {
+					resultInArg0 = true
+				}
+			default:
+				panic(fmt.Errorf("simdgen: %s overwrites input %d; only the first input is supported: %s",
+					gOp.Asm, idx, gOp))
+			}
+		}
 		var memOpData *opData
-		regInfoMerging := regInfo
-		hasMerging := false
+		// AVX-512 only: x86 spells masked merging as an extra merge-source
+		// operand on the K-masked instruction, so it needs a machine-op variant
+		// of its own. An SVE predicated instruction merges into its own first
+		// source instead — its merging forms are the /M machine ops built from
+		// svePredicatedOps below, and avxHasMerging is always false on SVE (see
+		// hasMaskedMerging).
+		avxRegInfoMerging := regInfo
+		avxHasMerging := false
 		if op.MemFeatures != nil && *op.MemFeatures == "vbcst" {
 			// Right now we only have vbcst case
 			// Make a full vec memory variant.
@@ -179,50 +228,124 @@ func writeSIMDMachineOps(ops []Operation) *bytes.Buffer {
 				memOpData = &opData{asm + "load", gOp.Asm, len(gOp.In) + 1, regInfo, false, outType, resultInArg0}
 			}
 		}
-		hasMerging = gOp.hasMaskedMerging(maskType, shapeOut)
-		if hasMerging && !resultInArg0 {
+		avxHasMerging = gOp.hasMaskedMerging(maskType, shapeOut)
+		if avxHasMerging && !resultInArg0 {
 			// We have to copy the slice here because the sort will be visible from other
 			// aliases when no reslicing is happening.
-			newIn := make([]Operand, len(op.In), len(op.In)+1)
+			newIn := make([]types.Operand, len(op.In), len(op.In)+1)
 			copy(newIn, op.In)
 			op.In = newIn
 			op.In = append(op.In, op.Out[0])
 			op.sortOperand()
-			regInfoMerging, err = makeRegInfo(op, NoMem)
+			avxRegInfoMerging, err = makeRegInfo(op, NoMem)
 			if err != nil {
 				panic(err)
 			}
 		}
 
+		// The inVariant implies machine ops only: one predicated instruction
+		// per governing-predicate qualifier the encoding supports, reached by
+		// peephole rather than by any API of its own.
+		appendSVEPredicated := func(target *[]opData) {
+			for _, pred := range gOp.svePredicatedOps() {
+				predRegInfo, err := makeRegInfo(pred, NoMem)
+				if err != nil {
+					panic(err)
+				}
+				predResultInArg0 := false
+				predComm := pred.Commutative
+				switch idx := pred.sveInPlaceInput(); {
+				case idx < 0:
+				case idx == 0:
+					// The first input is the merge source: merging predication
+					// keeps the destination's inactive lanes, and the destination
+					// is the first source. That operand is semantically pinned,
+					// so the result must live in its register, and the sources
+					// must not be swapped even for a commutative operation — CSE
+					// canonicalizes the args of a commutative op, which would
+					// change the value the inactive lanes keep.
+					predResultInArg0 = true
+					predComm = false
+				default:
+					panic(fmt.Errorf("simdgen: %s overwrites input %d; only the first input is supported: %s",
+						pred.Asm, idx, pred))
+				}
+				*target = append(*target, opData{machineOpName(OneMask, pred), pred.Asm, len(pred.In),
+					predRegInfo, predComm, outType, predResultInArg0})
+				// There is no zeroing machine op here for Masked to fold into:
+				// every ARM64 instruction that has both an unpredicated and a
+				// predicated encoding is /M-only. The /Z forms belong to
+				// predicated-only instructions (ABS, NEG, NOT, ...), where
+				// sveImplicitPredPeepholes folds Masked into them.
+				if prefixed := pred.sveMergingPrefixedOp(); prefixed != nil {
+					prefixedRegInfo, err := makeRegInfo(*prefixed, NoMem)
+					if err != nil {
+						panic(err)
+					}
+					// The extra input is the value the destination starts out
+					// holding, so the destination must share its register.
+					*target = append(*target, opData{machineOpName(OneMask, *prefixed), prefixed.Asm, len(prefixed.In),
+						prefixedRegInfo, false, outType, true})
+				}
+			}
+		}
 		if shapeIn == OneImmIn || shapeIn == OneKmaskImmIn {
 			opsDataImm = append(opsDataImm, opData{asm, gOp.Asm, len(gOp.In), regInfo, gOp.Commutative, outType, resultInArg0})
+			appendSVEPredicated(&opsDataImm)
 			if memOpData != nil {
 				if *op.MemFeatures != "vbcst" {
 					panic("simdgen only knows vbcst for mem ops for now")
 				}
 				opsDataImmLoad = append(opsDataImmLoad, *memOpData)
 			}
-			if hasMerging {
+			if avxHasMerging {
 				mergingLen := len(gOp.In)
 				if !resultInArg0 {
 					mergingLen++
 				}
-				opsDataImmMerging = append(opsDataImmMerging, opData{asm, gOp.Asm, mergingLen, regInfoMerging, gOp.Commutative, outType, resultInArg0})
+				opsDataImmMerging = append(opsDataImmMerging, opData{asm, gOp.Asm, mergingLen, avxRegInfoMerging, gOp.Commutative, outType, resultInArg0})
 			}
 		} else {
-			opsData = append(opsData, opData{asm, gOp.Asm, len(gOp.In), regInfo, gOp.Commutative, outType, resultInArg0})
+			if !sveSeenUnpred[asm] {
+				sveSeenUnpred[asm] = true
+				opsData = append(opsData, opData{asm, gOp.Asm, len(gOp.In), regInfo, gOp.Commutative, outType, resultInArg0})
+			}
+			appendSVEPredicated(&opsData)
 			if memOpData != nil {
 				if *op.MemFeatures != "vbcst" {
 					panic("simdgen only knows vbcst for mem ops for now")
 				}
 				opsDataLoad = append(opsDataLoad, *memOpData)
 			}
-			if hasMerging {
+			if avxHasMerging {
 				mergingLen := len(gOp.In)
 				if !resultInArg0 {
 					mergingLen++
 				}
-				opsDataMerging = append(opsDataMerging, opData{asm, gOp.Asm, mergingLen, regInfoMerging, gOp.Commutative, outType, resultInArg0})
+				opsDataMerging = append(opsDataMerging, opData{asm, gOp.Asm, mergingLen, avxRegInfoMerging, gOp.Commutative, outType, resultInArg0})
+			}
+		}
+		// Generate hi-half "2" variant machine op
+		if gOp.HiHalfAsm != nil {
+			opsDataTarget := &opsData
+			if shapeIn == OneImmIn || shapeIn == OneKmaskImmIn {
+				opsDataTarget = &opsDataImm
+			}
+			kind := op.hiHalfKind()
+			asm2Name := hiHalfOpName(*gOp.HiHalfAsm, gOp)
+			argLen2 := len(gOp.In)
+			regInfo2 := regInfo
+			resultInArg02 := false
+			if kind == "narrow" {
+				argLen2++ // extra vreg input for destination
+				regInfo2 = hiHalfRegShape2(regInfo, kind)
+				resultInArg02 = true
+			}
+			if _, ok := regInfoSet[regInfo2]; !ok {
+				regInfoErrs = append(regInfoErrs, fmt.Errorf("unsupported hi-half register constraint: %s for op %s", regInfo2, asm2Name))
+				regInfoMissing[regInfo2] = true
+			} else {
+				*opsDataTarget = append(*opsDataTarget, opData{asm2Name, *gOp.HiHalfAsm, argLen2, regInfo2, gOp.Commutative, outType, resultInArg02})
 			}
 		}
 	}
@@ -250,11 +373,18 @@ func writeSIMDMachineOps(ops []Operation) *bytes.Buffer {
 	sort.Slice(opsDataImmMerging, func(i, j int) bool {
 		return compareNatural(opsDataImmMerging[i].OpName, opsDataImmMerging[j].OpName) < 0
 	})
-	err := t.Execute(buffer, machineOpsData{opsData, opsDataImm, opsDataLoad, opsDataImmLoad,
-		opsDataMerging, opsDataImmMerging})
+
+	err := t.Execute(buffer, machineOpsData{
+		SIMDTag:           archInfo.SIMDTag,
+		RegInfoParams:     archInfo.RegInfoParams,
+		OpsData:           opsData,
+		OpsDataImm:        opsDataImm,
+		OpsDataLoad:       opsDataLoad,
+		OpsDataImmLoad:    opsDataImmLoad,
+		OpsDataMerging:    opsDataMerging,
+		OpsDataImmMerging: opsDataImmMerging,
+	})
 	if err != nil {
 		panic(fmt.Errorf("failed to execute template: %w", err))
 	}
-
-	return buffer
 }

@@ -210,7 +210,13 @@ const (
 	// to a 48-bit address space like every other arm64 platform.
 	//
 	// WebAssembly currently has a limit of 4GB linear memory.
-	heapAddrBits = (_64bit*(1-goarch.IsWasm)*(1-goos.IsIos*goarch.IsArm64))*48 + (1-_64bit+goarch.IsWasm)*(32-(goarch.IsMips+goarch.IsMipsle)) + 40*goos.IsIos*goarch.IsArm64
+	//
+	// OpenBSD/arm64 is limited to 39 bits, according to:
+	// https://github.com/openbsd/src/blob/65a9769f762528944cb8c228592381427b188551/sys/arch/arm64/include/vmparam.h#L93
+	heapAddrBits = (_64bit*(1-goarch.IsWasm)*(1-goos.IsIos*goarch.IsArm64)*(1-goos.IsOpenbsd*goarch.IsArm64))*48 +
+		(1-_64bit+goarch.IsWasm)*(32-(goarch.IsMips+goarch.IsMipsle)) +
+		40*goos.IsIos*goarch.IsArm64 +
+		39*goos.IsOpenbsd*goarch.IsArm64
 
 	// maxAlloc is the maximum size of an allocation. On 64-bit,
 	// it's theoretically possible to allocate 1<<heapAddrBits bytes. On
@@ -234,6 +240,7 @@ const (
 	//       */32-bit         32         4MB           1  1024  (4KB)
 	//     */mips(le)         31         4MB           1   512  (2KB)
 	//           wasm         32       512KB           1  8192 (64KB)
+	//  openbsd/arm64         39         4MB           1  128K  (1MB)
 
 	// heapArenaBytes is the size of a heap arena. The heap
 	// consists of mappings of size heapArenaBytes, aligned to
@@ -256,7 +263,11 @@ const (
 	// logHeapArenaBytes is log_2 of heapArenaBytes. For clarity,
 	// prefer using heapArenaBytes where possible (we need the
 	// constant to compute some other constants).
-	logHeapArenaBytes = (6+20)*(_64bit*(1-goos.IsWindows)*(1-goarch.IsWasm)*(1-goos.IsIos*goarch.IsArm64)) + (2+20)*(_64bit*goos.IsWindows) + (2+20)*(1-_64bit) + (9+10)*goarch.IsWasm + (2+20)*goos.IsIos*goarch.IsArm64
+	logHeapArenaBytes = (6+20)*(_64bit*(1-goos.IsWindows)*(1-goarch.IsWasm)*(1-goos.IsIos*goarch.IsArm64)*(1-goos.IsOpenbsd*goarch.IsArm64)) +
+		(2+20)*(_64bit*goos.IsWindows+goarch.IsArm64*goos.IsOpenbsd) +
+		(2+20)*(1-_64bit) +
+		(9+10)*goarch.IsWasm +
+		(2+20)*goos.IsIos*goarch.IsArm64
 
 	// heapArenaBitmapWords is the size of each heap arena's bitmap in uintptrs.
 	heapArenaBitmapWords = heapArenaWords / (8 * goarch.PtrSize)
@@ -354,9 +365,22 @@ const (
 	// See comment in mallocinit for how the randomization is performed.
 	randomizeHeapBase = goexperiment.RandomizedHeapBase64 && goarch.PtrSize == 8 && !isSbrkPlatform && !raceenabled && !msanenabled && !asanenabled
 
-	// randHeapBasePrefixMask is used to extract the top byte of the randomized
-	// heap base address.
-	randHeapBasePrefixMask = ^uintptr(0xff << (heapAddrBits - 8))
+	// randHeapAddrBits is the number of address bits usable by the randomized
+	// heap base. heapAddrBits is 48 on most platforms, but we only use 47 of
+	// those bits in order to provide a good amount of room for the heap to
+	// grow contiguously. On amd64, there are 48 bits, but the top bit is sign
+	// extended, so we throw away another bit, just to be safe.
+	randHeapAddrBits = heapAddrBits - 1 - goarch.IsAmd64
+
+	// randHeapBasePrefixMask clears the top byte of the randomized heap base
+	// address -- the byte hint generation replaces with randHeapBasePrefix+i.
+	// The prefix occupies bits [randHeapAddrBits-8, randHeapAddrBits), so the
+	// mask must be defined from randHeapAddrBits, not heapAddrBits: a wider
+	// mask would let stray randHeapBase bits overlap the prefix byte in the
+	// OR that hint generation performs, and wherever such a stray bit is 1,
+	// the corresponding bit of every generated prefix is forced to 1,
+	// collapsing distinct prefixes into duplicate hint addresses.
+	randHeapBasePrefixMask = ^uintptr(0xff << (randHeapAddrBits - 8))
 )
 
 // physPageSize is the size in bytes of the OS's physical pages.
@@ -567,11 +591,6 @@ func mallocinit() {
 
 		var randHeapBase uintptr
 		var randHeapBasePrefix byte
-		// heapAddrBits is 48 on most platforms, but we only use 47 of those
-		// bits in order to provide a good amount of room for the heap to grow
-		// contiguously. On amd64, there are 48 bits, but the top bit is sign
-		// extended, so we throw away another bit, just to be safe.
-		randHeapAddrBits := heapAddrBits - 1 - (goarch.IsAmd64 * 1)
 		if randomizeHeapBase {
 			// Generate a random value, and take the bottom heapAddrBits-logHeapArenaBytes
 			// bits, using them as the top bits for randHeapBase.
@@ -788,7 +807,7 @@ func (h *mheap) sysAlloc(n uintptr, hintList **arenaHint, arenaList *[]arenaIdx)
 		// particular, this is already how Windows behaves, so
 		// it would simplify things there.
 		if v != nil {
-			sysFreeOS(v, n)
+			sysUnreserve(v, n)
 		}
 		*hintList = hint.next
 		h.arenaHintAlloc.free(unsafe.Pointer(hint))
@@ -921,58 +940,6 @@ mapped:
 	return
 }
 
-// sysReserveAligned is like sysReserve, but the returned pointer is
-// aligned to align bytes. It may reserve either n or n+align bytes,
-// so it returns the size that was reserved.
-func sysReserveAligned(v unsafe.Pointer, size, align uintptr, vmaName string) (unsafe.Pointer, uintptr) {
-	if isSbrkPlatform {
-		if v != nil {
-			throw("unexpected heap arena hint on sbrk platform")
-		}
-		return sysReserveAlignedSbrk(size, align)
-	}
-	// Since the alignment is rather large in uses of this
-	// function, we're not likely to get it by chance, so we ask
-	// for a larger region and remove the parts we don't need.
-	retries := 0
-retry:
-	p := uintptr(sysReserve(v, size+align, vmaName))
-	switch {
-	case p == 0:
-		return nil, 0
-	case p&(align-1) == 0:
-		return unsafe.Pointer(p), size + align
-	case GOOS == "windows":
-		// On Windows we can't release pieces of a
-		// reservation, so we release the whole thing and
-		// re-reserve the aligned sub-region. This may race,
-		// so we may have to try again.
-		sysFreeOS(unsafe.Pointer(p), size+align)
-		p = alignUp(p, align)
-		p2 := sysReserve(unsafe.Pointer(p), size, vmaName)
-		if p != uintptr(p2) {
-			// Must have raced. Try again.
-			sysFreeOS(p2, size)
-			if retries++; retries == 100 {
-				throw("failed to allocate aligned heap memory; too many retries")
-			}
-			goto retry
-		}
-		// Success.
-		return p2, size
-	default:
-		// Trim off the unaligned parts.
-		pAligned := alignUp(p, align)
-		sysFreeOS(unsafe.Pointer(p), pAligned-p)
-		end := pAligned + size
-		endLen := (p + size + align) - end
-		if endLen > 0 {
-			sysFreeOS(unsafe.Pointer(end), endLen)
-		}
-		return unsafe.Pointer(pAligned), size
-	}
-}
-
 // enableMetadataHugePages enables huge pages for various sources of heap metadata.
 //
 // A note on latency: for sufficiently small heaps (<10s of GiB) this function will take constant
@@ -1085,10 +1052,10 @@ func (c *mcache) nextFree(spc spanClass) (v gclinkptr, s *mspan, checkGCTrigger 
 const doubleCheckMalloc = false
 
 // sizeSpecializedMallocEnabled is the set of conditions where we enable the size-specialized
-// mallocgc implementation: the experiment must be enabled, and none of the sanitizers should
-// be enabled. The tables used to select the size-specialized malloc function do not compile
-// properly on plan9, so size-specialized malloc is also disabled on plan9.
-const sizeSpecializedMallocEnabled = goexperiment.SizeSpecializedMalloc && GOOS != "plan9" && !asanenabled && !raceenabled && !msanenabled && !valgrindenabled
+// mallocgc implementation: none of the sanitizers should be enabled. The tables used to select
+// the size-specialized malloc function do not compile properly on plan9, so
+// size-specialized malloc is also disabled on plan9.
+const sizeSpecializedMallocEnabled = GOOS != "plan9" && !asanenabled && !raceenabled && !msanenabled && !valgrindenabled
 
 // runtimeFreegcEnabled is the set of conditions where we enable the runtime.freegc
 // implementation and the corresponding allocation-related changes: the experiment must be
@@ -1128,9 +1095,12 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 		return unsafe.Pointer(&zerobase)
 	}
 
-	if sizeSpecializedMallocEnabled && heapBitsInSpan(size) {
+	if sizeSpecializedMallocEnabled && size < uintptr(len(mallocNoScanTable)) {
 		if typ == nil || !typ.Pointers() {
-			return mallocNoScanTable[size](size, typ, needzero)
+			if size >= maxTinySize {
+				return mallocNoScanTable[size](size, typ, needzero)
+			}
+			return mallocgcTinySC2(size, typ, needzero)
 		} else {
 			if !needzero {
 				throw("objects with pointers must be zeroed")
@@ -1169,7 +1139,6 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 	var x unsafe.Pointer
 	var elemsize uintptr
 	if sizeSpecializedMallocEnabled {
-		// we know that heapBitsInSpan is false.
 		if size <= maxSmallSize-gc.MallocHeaderSize {
 			if typ == nil || !typ.Pointers() {
 				x, elemsize = mallocgcSmallNoscan(size, typ, needzero)
@@ -1177,7 +1146,11 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 				if !needzero {
 					throw("objects with pointers must be zeroed")
 				}
-				x, elemsize = mallocgcSmallScanHeader(size, typ)
+				if heapBitsInSpan(size) {
+					x, elemsize = mallocgcSmallScanNoHeader(size, typ)
+				} else {
+					x, elemsize = mallocgcSmallScanHeader(size, typ)
+				}
 			}
 		} else {
 			x, elemsize = mallocgcLarge(size, typ, needzero)
@@ -1226,10 +1199,6 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 	if asanenabled {
 		// Poison the space between the end of the requested size of x
 		// and the end of the slot. Unpoison the requested allocation.
-		frag := elemsize - size
-		if typ != nil && typ.Pointers() && !heapBitsInSpan(elemsize) && size <= maxSmallSize-gc.MallocHeaderSize {
-			frag -= gc.MallocHeaderSize
-		}
 		asanpoison(unsafe.Add(x, size-asanRZ), asanRZ)
 		asanunpoison(x, size-asanRZ)
 	}
@@ -1889,28 +1858,6 @@ func postMallocgcDebug(x unsafe.Pointer, elemsize uintptr, typ *_type) {
 	// mark the block as a tiny block.
 	if debug.checkfinalizers != 0 && elemsize == 0 {
 		setTinyBlockContext(unsafe.Pointer(alignDown(uintptr(x), maxTinySize)))
-	}
-}
-
-// deductAssistCredit reduces the current G's assist credit
-// by size bytes, and assists the GC if necessary.
-//
-// Caller must be preemptible.
-func deductAssistCredit(size uintptr) {
-	// Charge the current user G for this allocation.
-	assistG := getg()
-	if assistG.m.curg != nil {
-		assistG = assistG.m.curg
-	}
-	// Charge the allocation against the G. We'll account
-	// for internal fragmentation at the end of mallocgc.
-	assistG.gcAssistBytes -= int64(size)
-
-	if assistG.gcAssistBytes < 0 {
-		// This G is in debt. Assist the GC to correct
-		// this before allocating. This must happen
-		// before disabling preemption.
-		gcAssistAlloc(assistG)
 	}
 }
 
