@@ -1521,10 +1521,9 @@
 //
 // # Dependencies
 //
-// The files that cmd/dist copies for the compiler bootstrap import only
+// The files that cmd/dist compiles for the compiler bootstrap import only
 // math/bits. Conversion to and from binary floating point lives in a file
-// excluded from the bootstrap build (see float.go), because a correctly
-// rounded conversion between binary and decimal is expected to share
+// excluded from the bootstrap build (see float.go), because it shares
 // internal/strconv's exact machinery, which the minimum bootstrap toolchain
 // does not provide, and because the compiler never needs it: constants are
 // exact and are encoded through [Round64] and [Round128].
