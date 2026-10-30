@@ -255,8 +255,9 @@ func ConvertVal(v constant.Value, t *types.Type, explicit bool) constant.Value {
 			v = trunccmplxlit(v, t)
 			return v
 		case t.IsDecimal():
-			// Decimal constants are stored as constant.Float in the IR.
-			// The actual BID encoding happens later in SSA (float64ToBID64).
+			// Decimal constants are stored as constant.Float in the IR, with
+			// their exact value. ir.DecimalConst encodes them when the back
+			// end needs the bits.
 			v = toflt(v)
 			return v
 		}

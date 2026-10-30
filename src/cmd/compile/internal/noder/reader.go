@@ -2647,8 +2647,12 @@ func (r *reader) expr() (res ir.Node) {
 		// spec: "If the type is a type parameter, the constant is converted
 		// into a non-constant value of the type parameter."
 		if dstTypeParam && ir.IsConstNode(x) {
+			val := x.Val()
+			if typ.IsDecimal() && x.Type().Kind() == types.TFLOAT64 {
+				val = ir.LiteralFloat64Val(x)
+			}
 			// ConvertVal only handles conversions to constant types.
-			if v := typecheck.ConvertVal(x.Val(), typ, false); v.Kind() != constant.Unknown {
+			if v := typecheck.ConvertVal(val, typ, false); v.Kind() != constant.Unknown {
 				x = ir.NewBasicLit(x.Pos(), typ, v)
 				// Wrap in an OCONVNOP node to ensure result is non-constant.
 				n := Implicit(ir.NewConvExpr(pos, ir.OCONVNOP, typ, x))

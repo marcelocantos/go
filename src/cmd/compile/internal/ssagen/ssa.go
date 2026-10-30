@@ -1446,6 +1446,17 @@ func (s *state) constFloat64(t *types.Type, c float64) *ssa.Value {
 func (s *state) constDecimal64(t *types.Type, bid uint64) *ssa.Value {
 	return s.f.ConstDecimal64(t, bid)
 }
+
+// constDecimal returns the value of the constant c converted to the decimal
+// type t, encoded by ir.DecimalConst.
+func (s *state) constDecimal(t *types.Type, c ir.Node) *ssa.Value {
+	lo, hi := ir.DecimalConst(t, c)
+	if t.Kind() == types.TDECIMAL128 {
+		u64 := types.Types[types.TUINT64]
+		return s.entryNewValue2(ssaop.OpDecimal128Make, t, s.constInt64(u64, int64(lo)), s.constInt64(u64, int64(hi)))
+	}
+	return s.constDecimal64(t, lo)
+}
 func (s *state) constInt(t *types.Type, c int64) *ssa.Value {
 	if s.config.PtrSize == 8 {
 		return s.constInt64(t, c)
@@ -3287,30 +3298,10 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 		case constant.Bool:
 			return s.constBool(constant.BoolVal(u))
 		case constant.Float:
-			f, _ := constant.Float64Val(u)
 			if n.Type().IsDecimal() {
-				// Use original literal string for quantum-preserving BID encoding
-				// when available (direct literals and same-package named consts).
-				if lit, ok := n.(*ir.BasicLit); ok && lit.OrigLit() != "" {
-					bid := literalToBID64(lit.OrigLit())
-					// Apply sign from the constant value (origLit is always unsigned).
-					if f < 0 {
-						bid |= 1 << 63
-					}
-					d64val := s.constDecimal64(types.Types[types.TDECIMAL64], bid)
-					if n.Type().Kind() == types.TDECIMAL128 {
-						return s.newValueOrSfCall1(ssaop.OpCvt64Dto128D, n.Type(), d64val)
-					}
-					return s.constDecimal64(n.Type(), bid)
-				}
-				// Fallback: computed or cross-package constant.
-				bid := float64ToBID64(f)
-				d64val := s.constDecimal64(types.Types[types.TDECIMAL64], bid)
-				if n.Type().Kind() == types.TDECIMAL128 {
-					return s.newValueOrSfCall1(ssaop.OpCvt64Dto128D, n.Type(), d64val)
-				}
-				return s.constDecimal64(n.Type(), bid)
+				return s.constDecimal(n.Type(), n)
 			}
+			f, _ := constant.Float64Val(u)
 			switch n.Type().Size() {
 			case 4:
 				return s.constFloat32(n.Type(), f)
@@ -3416,20 +3407,11 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 
 	case ir.OCONV:
 		n := n.(*ir.ConvExpr)
-		// For explicit decimal type conversions from constant literals,
-		// use quantum-preserving encoding directly.
+		// The front end folds every conversion of a constant it can. An operand
+		// that is still a literal here encodes at compile time, with its quantum.
 		if n.Type().IsDecimal() {
 			if lit, ok := n.X.(*ir.BasicLit); ok && lit.OrigLit() != "" {
-				bid := literalToBID64(lit.OrigLit())
-				// Apply sign from the constant value.
-				if fv, ok := constant.Float64Val(lit.Val()); ok && fv < 0 {
-					bid |= 1 << 63
-				}
-				d64val := s.constDecimal64(types.Types[types.TDECIMAL64], bid)
-				if n.Type().Kind() == types.TDECIMAL128 {
-					return s.newValueOrSfCall1(ssaop.OpCvt64Dto128D, n.Type(), d64val)
-				}
-				return s.constDecimal64(n.Type(), bid)
+				return s.constDecimal(n.Type(), lit)
 			}
 		}
 		x := s.expr(n.X)
@@ -5027,231 +5009,6 @@ func (s *state) sfcall(op ssaop.Op, args ...*ssa.Value) (*ssa.Value, bool) {
 		return result, true
 	}
 	return nil, false
-}
-
-// float64ToBID64 converts a float64 value to BID64 (IEEE 754-2008 decimal64)
-// encoding at compile time for constant folding.
-func float64ToBID64(f float64) uint64 {
-	const (
-		bid64Bias    = 398
-		bid64MaxCoef = uint64(9999999999999999)
-		bid64SignBit = uint64(1 << 63)
-		bid64Inf     = uint64(0x7800000000000000)
-		bid64NaN     = uint64(0x7C00000000000000)
-	)
-
-	if f != f {
-		return bid64NaN
-	}
-	var sign uint64
-	if f < 0 {
-		sign = bid64SignBit
-		f = -f
-	}
-	if f == 0 {
-		return sign // +0 or -0
-	}
-	// Check for infinity
-	if f > 0 && f+f == f {
-		return sign | bid64Inf
-	}
-
-	// Normalize f to extract 16 significant digits
-	var coeff uint64
-	dexp := 0
-	fval := f
-	for fval >= 10 {
-		dexp++
-		fval /= 10
-	}
-	for fval < 1 {
-		dexp--
-		fval *= 10
-	}
-	for i := 0; i < 16; i++ {
-		digit := uint64(fval)
-		coeff = coeff*10 + digit
-		fval -= float64(digit)
-		fval *= 10
-	}
-	dexp -= 15
-	// Round
-	if uint64(fval) >= 5 {
-		coeff++
-		if coeff > bid64MaxCoef {
-			coeff /= 10
-			dexp++
-		}
-	}
-
-	// Normalize: ensure coeff <= bid64MaxCoef
-	for coeff > bid64MaxCoef {
-		rem := coeff % 10
-		coeff /= 10
-		dexp++
-		if rem > 5 || (rem == 5 && coeff%2 != 0) {
-			coeff++
-		}
-	}
-
-	// Pack BID64
-	biasedExp := dexp + bid64Bias
-	if biasedExp < 0 || biasedExp > 767 {
-		if biasedExp > 767 {
-			return sign | bid64Inf
-		}
-		return sign // underflow to zero
-	}
-	if coeff < (1 << 53) {
-		return sign | uint64(biasedExp)<<53 | coeff
-	}
-	return sign | (3 << 61) | uint64(biasedExp)<<51 | (coeff & ((1 << 51) - 1))
-}
-
-// literalToBID64 parses a Go numeric literal string and returns BID64 bits
-// with quantum preserved. For example, "3.14" → coeff=314, exp=-2.
-func literalToBID64(s string) uint64 {
-	const (
-		bid64MaxCoef = uint64(9999999999999999)
-		bid64SignBit = uint64(1 << 63)
-	)
-
-	// Remove underscores (Go literal syntax allows them).
-	clean := make([]byte, 0, len(s))
-	for i := 0; i < len(s); i++ {
-		if s[i] != '_' {
-			clean = append(clean, s[i])
-		}
-	}
-	s = string(clean)
-
-	// Handle sign.
-	var sign uint64
-	if len(s) > 0 && s[0] == '-' {
-		sign = bid64SignBit
-		s = s[1:]
-	} else if len(s) > 0 && s[0] == '+' {
-		s = s[1:]
-	}
-
-	if len(s) == 0 {
-		return sign // zero
-	}
-
-	// Handle non-decimal bases → integer with exp=0.
-	if len(s) >= 2 && s[0] == '0' {
-		switch s[1] {
-		case 'x', 'X':
-			var n uint64
-			for _, c := range s[2:] {
-				switch {
-				case c >= '0' && c <= '9':
-					n = n*16 + uint64(c-'0')
-				case c >= 'a' && c <= 'f':
-					n = n*16 + uint64(c-'a'+10)
-				case c >= 'A' && c <= 'F':
-					n = n*16 + uint64(c-'A'+10)
-				}
-			}
-			return sign | packBID64(0, n)
-		case 'o', 'O':
-			var n uint64
-			for _, c := range s[2:] {
-				n = n*8 + uint64(c-'0')
-			}
-			return sign | packBID64(0, n)
-		case 'b', 'B':
-			var n uint64
-			for _, c := range s[2:] {
-				n = n*2 + uint64(c-'0')
-			}
-			return sign | packBID64(0, n)
-		}
-	}
-
-	// Parse decimal literal: collect digits, track decimal point.
-	var coeff uint64
-	exp := 0
-	sawDot := false
-	fracDigits := 0
-	eIdx := -1
-
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == '.' {
-			sawDot = true
-			continue
-		}
-		if c == 'e' || c == 'E' {
-			eIdx = i
-			break
-		}
-		if c >= '0' && c <= '9' {
-			coeff = coeff*10 + uint64(c-'0')
-			if sawDot {
-				fracDigits++
-			}
-		}
-	}
-
-	exp = -fracDigits
-
-	// Handle exponent notation.
-	if eIdx >= 0 {
-		eStr := s[eIdx+1:]
-		eNeg := false
-		if len(eStr) > 0 && eStr[0] == '-' {
-			eNeg = true
-			eStr = eStr[1:]
-		} else if len(eStr) > 0 && eStr[0] == '+' {
-			eStr = eStr[1:]
-		}
-		var eVal int
-		for _, c := range eStr {
-			eVal = eVal*10 + int(c-'0')
-		}
-		if eNeg {
-			eVal = -eVal
-		}
-		exp += eVal
-	}
-
-	// Handle zero.
-	if coeff == 0 {
-		return sign | packBID64(exp, 0)
-	}
-
-	// If coefficient exceeds 16 digits, divide and round.
-	for coeff > bid64MaxCoef {
-		rem := coeff % 10
-		coeff /= 10
-		exp++
-		if rem > 5 || (rem == 5 && coeff%2 != 0) {
-			coeff++
-		}
-	}
-
-	return sign | packBID64(exp, coeff)
-}
-
-// packBID64 packs an exponent and coefficient into BID64 format.
-func packBID64(exp int, coeff uint64) uint64 {
-	const (
-		bid64Bias = 398
-		bid64Inf  = uint64(0x7800000000000000)
-	)
-
-	biasedExp := exp + bid64Bias
-	if biasedExp < 0 {
-		return 0 // underflow to zero
-	}
-	if biasedExp > 767 {
-		return bid64Inf
-	}
-	if coeff < (1 << 53) {
-		return uint64(biasedExp)<<53 | coeff
-	}
-	return (3 << 61) | uint64(biasedExp)<<51 | (coeff & ((1 << 51) - 1))
 }
 
 var softDecimalOps map[ssaop.Op]sfRtCallDef

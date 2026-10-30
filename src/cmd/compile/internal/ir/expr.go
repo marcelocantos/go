@@ -804,6 +804,11 @@ func IsZero(n Node) bool {
 		case constant.Bool:
 			return !constant.BoolVal(u)
 		default:
+			// A decimal zero has a quantum, and only one is all bits zero.
+			if n.Type().IsDecimal() {
+				lo, hi := DecimalConst(n.Type(), n)
+				return lo == 0 && hi == 0
+			}
 			return constant.Sign(u) == 0
 		}
 

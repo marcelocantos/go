@@ -217,28 +217,21 @@ func representableConst(x constant.Value, check *Checker, typ *Basic, rounded *c
 		if x.Kind() != constant.Float {
 			return false
 		}
+		var fits bool
 		switch typ.kind {
 		case Decimal64:
-			if rounded == nil {
-				return fitsDecimal64(x)
-			}
-			r := roundDecimal64(x)
-			if r != nil {
-				*rounded = r
-				return true
-			}
+			fits = fitsDecimal(x, maxDecimal64)
 		case Decimal128:
-			if rounded == nil {
-				return fitsDecimal128(x)
-			}
-			r := roundDecimal128(x)
-			if r != nil {
-				*rounded = r
-				return true
-			}
+			fits = fitsDecimal(x, maxDecimal128)
 		default:
 			panic("unreachable")
 		}
+		// A decimal constant keeps its exact value: the compiler rounds it once,
+		// when it encodes it, and no binary precision can hold it on the way.
+		if fits && rounded != nil {
+			*rounded = x
+		}
+		return fits
 
 	case isString(typ):
 		return x.Kind() == constant.String
@@ -294,13 +287,6 @@ func toBigFloat(x constant.Value) *big.Float {
 	}
 }
 
-const (
-	// decimal64: 16 significant decimal digits, ceil(16 * log2(10)) = 54 bits
-	decimal64Prec = 54
-	// decimal128: 34 significant decimal digits, ceil(34 * log2(10)) = 113 bits
-	decimal128Prec = 113
-)
-
 // maxDecimal64 is the maximum finite decimal64 value: 9.999999999999999e+384
 var maxDecimal64 = func() *big.Float {
 	f, _, _ := new(big.Float).SetPrec(256).Parse("9.999999999999999e+384", 10)
@@ -313,7 +299,8 @@ var maxDecimal128 = func() *big.Float {
 	return f
 }()
 
-func fitsDecimal64(x constant.Value) bool {
+// fitsDecimal reports whether the magnitude of x is at most max.
+func fitsDecimal(x constant.Value, max *big.Float) bool {
 	bf := toBigFloat(x)
 	if bf == nil {
 		return false
@@ -322,53 +309,7 @@ func fitsDecimal64(x constant.Value) bool {
 		return true
 	}
 	abs := new(big.Float).SetPrec(256).Abs(bf)
-	return abs.Cmp(maxDecimal64) <= 0
-}
-
-func roundDecimal64(x constant.Value) constant.Value {
-	bf := toBigFloat(x)
-	if bf == nil {
-		return nil
-	}
-	if bf.Sign() == 0 {
-		return constant.MakeFloat64(0)
-	}
-	abs := new(big.Float).SetPrec(256).Abs(bf)
-	if abs.Cmp(maxDecimal64) > 0 {
-		return nil
-	}
-	// Round to decimal64 precision
-	r := new(big.Float).SetPrec(decimal64Prec).SetMode(big.ToNearestEven).Set(bf)
-	return constant.Make(r)
-}
-
-func fitsDecimal128(x constant.Value) bool {
-	bf := toBigFloat(x)
-	if bf == nil {
-		return false
-	}
-	if bf.Sign() == 0 {
-		return true
-	}
-	abs := new(big.Float).SetPrec(256).Abs(bf)
-	return abs.Cmp(maxDecimal128) <= 0
-}
-
-func roundDecimal128(x constant.Value) constant.Value {
-	bf := toBigFloat(x)
-	if bf == nil {
-		return nil
-	}
-	if bf.Sign() == 0 {
-		return constant.MakeFloat64(0)
-	}
-	abs := new(big.Float).SetPrec(256).Abs(bf)
-	if abs.Cmp(maxDecimal128) > 0 {
-		return nil
-	}
-	// Round to decimal128 precision
-	r := new(big.Float).SetPrec(decimal128Prec).SetMode(big.ToNearestEven).Set(bf)
-	return constant.Make(r)
+	return abs.Cmp(max) <= 0
 }
 
 // representable checks that a constant operand is representable in the given
