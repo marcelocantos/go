@@ -111,12 +111,12 @@ func Mod128(x, y Uint128) Uint128 {
 // variant differs only by signaling inexact, which this package does not
 // expose; a caller that needs to know compares the result with x.
 func RoundToIntegral64(x uint64, mode Mode) uint64 {
-	panic(notImplemented)
+	return roundToIntegral64(x, mode)
 }
 
 // RoundToIntegral128 is RoundToIntegral64 for decimal128.
 func RoundToIntegral128(x Uint128, mode Mode) Uint128 {
-	panic(notImplemented)
+	return roundToIntegral128(x, mode)
 }
 
 // Quantize64 returns x with the exponent of y, rounded in mode
@@ -125,12 +125,12 @@ func RoundToIntegral128(x Uint128, mode Mode) Uint128 {
 // Quantize64 never adjusts an exponent out of range; when the result
 // coefficient would not fit, the result is NaN.
 func Quantize64(x, y uint64, mode Mode) uint64 {
-	panic(notImplemented)
+	return quantize64(x, y, mode)
 }
 
 // Quantize128 is Quantize64 for decimal128.
 func Quantize128(x, y Uint128, mode Mode) Uint128 {
-	panic(notImplemented)
+	return quantize128(x, y, mode)
 }
 
 // Reduce64 returns the member of x's cohort with the fewest coefficient
@@ -141,24 +141,24 @@ func Quantize128(x, y Uint128, mode Mode) Uint128 {
 // reduces to a zero of its sign with exponent 0; infinities and NaN are
 // canonicalized.
 func Reduce64(x uint64) uint64 {
-	panic(notImplemented)
+	return reduce64(x)
 }
 
 // Reduce128 is Reduce64 for decimal128.
 func Reduce128(x Uint128) Uint128 {
-	panic(notImplemented)
+	return reduce128(x)
 }
 
 // SameQuantum64 reports whether x and y have the same exponent, or are
 // both infinities, or are both NaN (IEEE 754-2008 clause 5.7.3,
 // sameQuantum).
 func SameQuantum64(x, y uint64) bool {
-	panic(notImplemented)
+	return sameQuantum64(x, y)
 }
 
 // SameQuantum128 is SameQuantum64 for decimal128.
 func SameQuantum128(x, y Uint128) bool {
-	panic(notImplemented)
+	return sameQuantum128(x, y)
 }
 
 // Min64 implements the Go min built-in for decimal64: if either operand is

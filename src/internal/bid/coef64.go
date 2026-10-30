@@ -209,3 +209,8 @@ func cInf64(neg bool) coef64 {
 	}
 	return Inf64
 }
+
+// cNaN64 returns the canonical quiet NaN.
+func cNaN64() coef64 {
+	return NaN64
+}

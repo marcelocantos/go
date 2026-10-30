@@ -238,3 +238,8 @@ func cInf128(neg bool) coef128 {
 	}
 	return Uint128{Hi: Inf128Hi}
 }
+
+// cNaN128 returns the canonical quiet NaN.
+func cNaN128() coef128 {
+	return Uint128{Hi: NaN128Hi}
+}
