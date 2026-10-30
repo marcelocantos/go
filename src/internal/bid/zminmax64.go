@@ -15,9 +15,9 @@ func min64(x, y coef64) coef64 {
 	case c > 0, c == 0 && Signbit64(y) && !Signbit64(x):
 		// Operands of equal value and unlike sign can only be zeros, and
 		// -0 is the lesser.
-		return canonical64(y)
+		return result64(y)
 	}
-	return canonical64(x)
+	return result64(x)
 }
 
 // max64 is Max64: see "Minimum and maximum" in the package documentation.
@@ -27,16 +27,16 @@ func max64(x, y coef64) coef64 {
 	case !ok:
 		return cNaN64()
 	case c < 0, c == 0 && Signbit64(x) && !Signbit64(y):
-		return canonical64(y)
+		return result64(y)
 	}
-	return canonical64(x)
+	return result64(x)
 }
 
-// canonical64 returns the canonical encoding of the non-NaN value x, which
+// result64 returns the canonical encoding of the non-NaN value x, which
 // keeps its coefficient and exponent, a non-canonical encoding reading as
 // the zero Unpack gives. Rounding an exactly representable value changes
 // nothing, so the mode is immaterial.
-func canonical64(x coef64) coef64 {
+func result64(x coef64) coef64 {
 	k, neg, c, e := Unpack64(x)
 	if k == KindInf {
 		return cInf64(neg)

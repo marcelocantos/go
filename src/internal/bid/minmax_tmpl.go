@@ -18,9 +18,9 @@ func minW(x, y coefW) coefW {
 	case c > 0, c == 0 && SignbitW(y) && !SignbitW(x):
 		// Operands of equal value and unlike sign can only be zeros, and
 		// -0 is the lesser.
-		return canonicalW(y)
+		return resultW(y)
 	}
-	return canonicalW(x)
+	return resultW(x)
 }
 
 // maxW is MaxW: see "Minimum and maximum" in the package documentation.
@@ -30,16 +30,16 @@ func maxW(x, y coefW) coefW {
 	case !ok:
 		return cNaNW()
 	case c < 0, c == 0 && SignbitW(x) && !SignbitW(y):
-		return canonicalW(y)
+		return resultW(y)
 	}
-	return canonicalW(x)
+	return resultW(x)
 }
 
-// canonicalW returns the canonical encoding of the non-NaN value x, which
+// resultW returns the canonical encoding of the non-NaN value x, which
 // keeps its coefficient and exponent, a non-canonical encoding reading as
 // the zero Unpack gives. Rounding an exactly representable value changes
 // nothing, so the mode is immaterial.
-func canonicalW(x coefW) coefW {
+func resultW(x coefW) coefW {
 	k, neg, c, e := UnpackW(x)
 	if k == KindInf {
 		return cInfW(neg)

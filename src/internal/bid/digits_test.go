@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package bid
+package bid_test
 
 import (
+	"internal/bid"
 	"math"
 	"math/big"
 	"testing"
@@ -22,55 +23,55 @@ type digitWidth struct {
 	bits   uint
 	tab    int // number of powers of ten below 2^bits
 	digits func(c *big.Int) int
-	shift  func(c *big.Int, k int) (*big.Int, digitClass)
+	shift  func(c *big.Int, k int) (*big.Int, bid.DigitClass)
 	scale  func(c *big.Int, k int) (*big.Int, bool)
 	// reduce is the shift whose quotient must fit half the width, or nil.
-	reduce func(c *big.Int, k int) (*big.Int, digitClass)
+	reduce func(c *big.Int, k int) (*big.Int, bid.DigitClass)
 }
 
 func digitWidths() []digitWidth {
 	return []digitWidth{
 		{
-			name: "64", bits: 64, tab: len(pow10tab64),
-			digits: func(c *big.Int) int { return cDigits64(c.Uint64()) },
-			shift: func(c *big.Int, k int) (*big.Int, digitClass) {
-				q, class := cShift64(c.Uint64(), k)
+			name: "64", bits: 64, tab: len(bid.Pow10tab64),
+			digits: func(c *big.Int) int { return bid.CDigits64(c.Uint64()) },
+			shift: func(c *big.Int, k int) (*big.Int, bid.DigitClass) {
+				q, class := bid.CShift64(c.Uint64(), k)
 				return big64(q), class
 			},
 			scale: func(c *big.Int, k int) (*big.Int, bool) {
-				r, o := cScale64(c.Uint64(), k)
+				r, o := bid.CScale64(c.Uint64(), k)
 				return big64(r), o
 			},
 		},
 		{
-			name: "128", bits: 128, tab: len(pow10tab128),
-			digits: func(c *big.Int) int { return cDigits128(from128(c)) },
-			shift: func(c *big.Int, k int) (*big.Int, digitClass) {
-				q, class := cShift128(from128(c), k)
+			name: "128", bits: 128, tab: len(bid.Pow10tab128),
+			digits: func(c *big.Int) int { return bid.CDigits128(from128(c)) },
+			shift: func(c *big.Int, k int) (*big.Int, bid.DigitClass) {
+				q, class := bid.CShift128(from128(c), k)
 				return bigOf(q), class
 			},
 			scale: func(c *big.Int, k int) (*big.Int, bool) {
-				r, o := cScale128(from128(c), k)
+				r, o := bid.CScale128(from128(c), k)
 				return bigOf(r), o
 			},
-			reduce: func(c *big.Int, k int) (*big.Int, digitClass) {
-				q, class := cReduceClass64(from128(c), k)
+			reduce: func(c *big.Int, k int) (*big.Int, bid.DigitClass) {
+				q, class := bid.CReduceClass64(from128(c), k)
 				return big64(q), class
 			},
 		},
 		{
-			name: "256", bits: 256, tab: len(pow10tab256),
-			digits: func(c *big.Int) int { return cLenFull128(from256(c)) },
-			shift: func(c *big.Int, k int) (*big.Int, digitClass) {
-				q, class := cShiftFull128(from256(c), k)
+			name: "256", bits: 256, tab: len(bid.Pow10tab256),
+			digits: func(c *big.Int) int { return bid.CLenFull128(from256(c)) },
+			shift: func(c *big.Int, k int) (*big.Int, bid.DigitClass) {
+				q, class := bid.CShiftFull128(from256(c), k)
 				return bigOf256(q), class
 			},
 			scale: func(c *big.Int, k int) (*big.Int, bool) {
-				r, o := cScaleFull128(from256(c), k)
+				r, o := bid.CScaleFull128(from256(c), k)
 				return bigOf256(r), o
 			},
-			reduce: func(c *big.Int, k int) (*big.Int, digitClass) {
-				q, class := cReduceClass128(from256(c), k)
+			reduce: func(c *big.Int, k int) (*big.Int, bid.DigitClass) {
+				q, class := bid.CReduceClass128(from256(c), k)
 				return bigOf(q), class
 			},
 		},
@@ -100,20 +101,20 @@ const maxOracleK = 200
 
 // wantShift is the oracle for a shift: the quotient, the remainder and the
 // class of the remainder.
-func wantShift(c *big.Int, k int) (q, r *big.Int, class digitClass) {
+func wantShift(c *big.Int, k int) (q, r *big.Int, class bid.DigitClass) {
 	k = min(k, maxOracleK)
 	p := bigPow10(k)
 	q, r = new(big.Int).QuoRem(c, p, new(big.Int))
 	if r.Sign() == 0 {
-		return q, r, classZero
+		return q, r, bid.ClassZero
 	}
 	switch new(big.Int).Lsh(r, 1).Cmp(p) {
 	case -1:
-		return q, r, classBelowHalf
+		return q, r, bid.ClassBelowHalf
 	case 0:
-		return q, r, classHalf
+		return q, r, bid.ClassHalf
 	}
-	return q, r, classAboveHalf
+	return q, r, bid.ClassAboveHalf
 }
 
 // digitBoundaries returns the values around each power of ten, and those
@@ -191,22 +192,22 @@ func checkDigitValue(t *testing.T, w *digitWidth, c *big.Int, k int) {
 			num.Add(num, big.NewInt(f[0]))
 			num.Lsh(num, 1)
 			den := new(big.Int).Mul(bigPow10(min(k, maxOracleK)), big.NewInt(f[1]))
-			want := classAboveHalf
+			want := bid.ClassAboveHalf
 			switch num.Cmp(den) {
 			case -1:
-				want = classBelowHalf
+				want = bid.ClassBelowHalf
 			case 0:
-				want = classHalf
+				want = bid.ClassHalf
 			}
-			if got := class.withSticky(true); got != want {
+			if got := class.WithSticky(true); got != want {
 				t.Errorf("shift%s(%v, %d) class %d withSticky(%d/%d) = %d, want %d", w.name, c, k, class, f[0], f[1], got, want)
 			}
 		}
-	} else if got := class.withSticky(true); got != classBelowHalf {
+	} else if got := class.WithSticky(true); got != bid.ClassBelowHalf {
 		// At k = 0 sticky is the ε of "Rounding from exact parts".
 		t.Errorf("shift%s(%v, 0) class %d withSticky = %d, want classBelowHalf", w.name, c, class, got)
 	}
-	if got := class.withSticky(false); got != class {
+	if got := class.WithSticky(false); got != class {
 		t.Errorf("class %d withSticky(false) = %d", class, got)
 	}
 
@@ -222,7 +223,7 @@ func checkDigitValue(t *testing.T, w *digitWidth, c *big.Int, k int) {
 		if overflow || r.Cmp(product) != 0 {
 			t.Errorf("scale%s(%v, %d) = %v, %t, want %v", w.name, c, k, r, overflow, product)
 		}
-		if q, class := w.shift(r, k); q.Cmp(c) != 0 || class != classZero {
+		if q, class := w.shift(r, k); q.Cmp(c) != 0 || class != bid.ClassZero {
 			t.Errorf("shift%s(scale(%v, %d)) = %v, %d", w.name, c, k, q, class)
 		}
 	} else if !overflow || r.Sign() != 0 {
@@ -238,7 +239,7 @@ func checkDigitSplit(t *testing.T, w *digitWidth, c *big.Int, a, b int) {
 	q1, class1 := w.shift(c, a)
 	q2, class2 := w.shift(q1, b)
 	q, class := w.shift(c, a+b)
-	if got := class2.withSticky(class1 != classZero); q2.Cmp(q) != 0 || got != class {
+	if got := class2.WithSticky(class1 != bid.ClassZero); q2.Cmp(q) != 0 || got != class {
 		t.Errorf("shift%s(%v) by %d then %d = %v, %d, want %v, %d", w.name, c, a, b, q2, got, q, class)
 	}
 }
@@ -276,14 +277,14 @@ func TestDigitShiftSweep(t *testing.T) {
 // vocabulary are the 128-bit forms.
 func TestDigitWideForwarders(t *testing.T) {
 	for _, p := range edge128() {
-		for k := 0; k <= len(pow10tab128)+1; k++ {
-			q, class := cShiftFull64(p, k)
-			wq, wclass := cShift128(p, k)
+		for k := 0; k <= len(bid.Pow10tab128)+1; k++ {
+			q, class := bid.CShiftFull64(p, k)
+			wq, wclass := bid.CShift128(p, k)
 			if q != wq || class != wclass {
 				t.Errorf("cShiftFull64(%#x:%#x, %d) = %v, %d, want %v, %d", p.Hi, p.Lo, k, q, class, wq, wclass)
 			}
-			r, o := cScaleFull64(p, k)
-			wr, wo := cScale128(p, k)
+			r, o := bid.CScaleFull64(p, k)
+			wr, wo := bid.CScale128(p, k)
 			if r != wr || o != wo {
 				t.Errorf("cScaleFull64(%#x:%#x, %d) = %v, %t, want %v, %t", p.Hi, p.Lo, k, r, o, wr, wo)
 			}
@@ -300,13 +301,13 @@ func TestDigitShiftClasses(t *testing.T) {
 			half := new(big.Int).Rsh(p, 1)
 			for _, tt := range []struct {
 				c    *big.Int
-				want digitClass
+				want bid.DigitClass
 			}{
-				{p, classZero},
-				{new(big.Int).Sub(half, bigOne), classBelowHalf},
-				{half, classHalf},
-				{new(big.Int).Add(half, bigOne), classAboveHalf},
-				{new(big.Int).Sub(p, bigOne), classAboveHalf},
+				{p, bid.ClassZero},
+				{new(big.Int).Sub(half, bigOne), bid.ClassBelowHalf},
+				{half, bid.ClassHalf},
+				{new(big.Int).Add(half, bigOne), bid.ClassAboveHalf},
+				{new(big.Int).Sub(p, bigOne), bid.ClassAboveHalf},
 			} {
 				if _, class := w.shift(tt.c, k); class != tt.want {
 					t.Errorf("shift%s(%v, %d) class = %d, want %d", w.name, tt.c, k, class, tt.want)
@@ -321,14 +322,14 @@ func TestDigitShiftEdges(t *testing.T) {
 	for _, w := range digitWidths() {
 		// k = 0 is the identity with an empty tail.
 		for _, c := range w.keep([]*big.Int{big.NewInt(0), bigOne, big.NewInt(5), bigPow10(18)}) {
-			if q, class := w.shift(c, 0); q.Cmp(c) != 0 || class != classZero {
+			if q, class := w.shift(c, 0); q.Cmp(c) != 0 || class != bid.ClassZero {
 				t.Errorf("shift%s(%v, 0) = %v, %d", w.name, c, q, class)
 			}
 		}
 		// k one past the digit count is below half however large the digits.
 		for d := 1; d < w.tab; d++ {
 			c := new(big.Int).Sub(bigPow10(d), bigOne)
-			if q, class := w.shift(c, d+1); q.Sign() != 0 || class != classBelowHalf {
+			if q, class := w.shift(c, d+1); q.Sign() != 0 || class != bid.ClassBelowHalf {
 				t.Errorf("shift%s(%v, %d) = %v, %d, want 0, below", w.name, c, d+1, q, class)
 			}
 		}
@@ -339,10 +340,10 @@ func TestDigitShiftEdges(t *testing.T) {
 			t.Errorf("2^%d is not below half of 10^%d", w.bits, w.tab)
 		}
 		for _, k := range []int{w.tab, w.tab + 1, 1 << 30, math.MaxInt} {
-			if q, class := w.shift(maxV, k); q.Sign() != 0 || class != classBelowHalf {
+			if q, class := w.shift(maxV, k); q.Sign() != 0 || class != bid.ClassBelowHalf {
 				t.Errorf("shift%s(max, %d) = %v, %d", w.name, k, q, class)
 			}
-			if q, class := w.shift(big.NewInt(0), k); q.Sign() != 0 || class != classZero {
+			if q, class := w.shift(big.NewInt(0), k); q.Sign() != 0 || class != bid.ClassZero {
 				t.Errorf("shift%s(0, %d) = %v, %d", w.name, k, q, class)
 			}
 			if r, o := w.scale(big.NewInt(0), k); r.Sign() != 0 || o {
@@ -384,17 +385,17 @@ func TestDigitShiftSplit(t *testing.T) {
 
 // TestDigitClassSticky is the combination's truth table, stated directly.
 func TestDigitClassSticky(t *testing.T) {
-	for _, tt := range []struct{ in, want digitClass }{
-		{classZero, classBelowHalf},
-		{classBelowHalf, classBelowHalf},
-		{classHalf, classAboveHalf},
-		{classAboveHalf, classAboveHalf},
+	for _, tt := range []struct{ in, want bid.DigitClass }{
+		{bid.ClassZero, bid.ClassBelowHalf},
+		{bid.ClassBelowHalf, bid.ClassBelowHalf},
+		{bid.ClassHalf, bid.ClassAboveHalf},
+		{bid.ClassAboveHalf, bid.ClassAboveHalf},
 	} {
-		if got := tt.in.withSticky(true); got != tt.want {
-			t.Errorf("%d.withSticky(true) = %d, want %d", tt.in, got, tt.want)
+		if got := tt.in.WithSticky(true); got != tt.want {
+			t.Errorf("%d.WithSticky(true) = %d, want %d", tt.in, got, tt.want)
 		}
-		if got := tt.in.withSticky(false); got != tt.in {
-			t.Errorf("%d.withSticky(false) = %d", tt.in, got)
+		if got := tt.in.WithSticky(false); got != tt.in {
+			t.Errorf("%d.WithSticky(false) = %d", tt.in, got)
 		}
 	}
 }
@@ -415,13 +416,13 @@ func TestDigitCountEstimate(t *testing.T) {
 			t.Errorf("bit length %d: estimate %d, largest value has %d digits", b, est, d)
 		}
 	}
-	if last := 64 * 1233 >> 12; last >= len(pow10tab64) {
+	if last := 64 * 1233 >> 12; last >= len(bid.Pow10tab64) {
 		t.Errorf("64-bit estimate %d is off the table", last)
 	}
-	if last := 128 * 1233 >> 12; last >= len(pow10tab128) {
+	if last := 128 * 1233 >> 12; last >= len(bid.Pow10tab128) {
 		t.Errorf("128-bit estimate %d is off the table", last)
 	}
-	if last := 256 * 1233 >> 12; last >= len(pow10tab256) {
+	if last := 256 * 1233 >> 12; last >= len(bid.Pow10tab256) {
 		t.Errorf("256-bit estimate %d is off the table", last)
 	}
 }
@@ -445,10 +446,10 @@ func TestDigitCount(t *testing.T) {
 // decimal128 coefficients is below 10^68, and the table must reach that.
 // TestPow10Tables recomputes every entry.
 func TestPow10Through68(t *testing.T) {
-	if len(pow10tab256) <= 68 {
-		t.Fatalf("pow10tab256 has %d entries, want at least 69", len(pow10tab256))
+	if len(bid.Pow10tab256) <= 68 {
+		t.Fatalf("pow10tab256 has %d entries, want at least 69", len(bid.Pow10tab256))
 	}
-	if got, want := bigOf256(pow10tab256[68]), bigPow10(68); got.Cmp(want) != 0 {
+	if got, want := bigOf256(bid.Pow10tab256[68]), bigPow10(68); got.Cmp(want) != 0 {
 		t.Errorf("pow10tab256[68] = %v, want %v", got, want)
 	}
 }
@@ -502,7 +503,7 @@ func digitFuzzK(k uint16, w *digitWidth) int {
 func FuzzDigits64(f *testing.F) {
 	w := digitWidths()[0]
 	for _, c := range w.keep(digitBoundaries()) {
-		f.Add(c.Uint64(), uint16(cDigits64(c.Uint64())), uint8(3), 1)
+		f.Add(c.Uint64(), uint16(bid.CDigits64(c.Uint64())), uint8(3), 1)
 	}
 	f.Add(uint64(math.MaxUint64), uint16(19), uint8(3), 7)
 	f.Fuzz(func(t *testing.T, c uint64, k uint16, tail uint8, a int) {
@@ -514,11 +515,11 @@ func FuzzDigits128(f *testing.F) {
 	w := digitWidths()[1]
 	for _, c := range w.keep(digitBoundaries()) {
 		v := from128(c)
-		f.Add(v.Hi, v.Lo, uint16(cDigits128(v)), uint8(3), 1)
+		f.Add(v.Hi, v.Lo, uint16(bid.CDigits128(v)), uint8(3), 1)
 	}
 	f.Add(uint64(math.MaxUint64), uint64(math.MaxUint64), uint16(38), uint8(3), 7)
 	f.Fuzz(func(t *testing.T, hi, lo uint64, k uint16, tail uint8, a int) {
-		digitFuzz(t, &w, bigOf(Uint128{Hi: hi, Lo: lo}), digitFuzzK(k, &w), tail, max(a, 0))
+		digitFuzz(t, &w, bigOf(bid.Uint128{Hi: hi, Lo: lo}), digitFuzzK(k, &w), tail, max(a, 0))
 	})
 }
 
@@ -526,11 +527,11 @@ func FuzzDigits256(f *testing.F) {
 	w := digitWidths()[2]
 	for _, c := range w.keep(digitBoundaries()) {
 		v := from256(c)
-		f.Add(v.Hi.Hi, v.Hi.Lo, v.Lo.Hi, v.Lo.Lo, uint16(cLenFull128(v)), uint8(3), 1)
+		f.Add(v.Hi.Hi, v.Hi.Lo, v.Lo.Hi, v.Lo.Lo, uint16(bid.CLenFull128(v)), uint8(3), 1)
 	}
 	f.Add(uint64(math.MaxUint64), uint64(math.MaxUint64), uint64(math.MaxUint64), uint64(math.MaxUint64), uint16(77), uint8(3), 7)
 	f.Fuzz(func(t *testing.T, w3, w2, w1, w0 uint64, k uint16, tail uint8, a int) {
-		c := Uint256{Hi: Uint128{Hi: w3, Lo: w2}, Lo: Uint128{Hi: w1, Lo: w0}}
+		c := bid.Uint256{Hi: bid.Uint128{Hi: w3, Lo: w2}, Lo: bid.Uint128{Hi: w1, Lo: w0}}
 		digitFuzz(t, &w, bigOf256(c), digitFuzzK(k, &w), tail, max(a, 0))
 	})
 }
@@ -538,31 +539,31 @@ func FuzzDigits256(f *testing.F) {
 // TestDigitZeroAllocs asserts that no primitive allocates, across the k at
 // which each changes method.
 func TestDigitZeroAllocs(t *testing.T) {
-	a := Uint128{Hi: 0x0123456789ABCDEF, Lo: 0xFEDCBA9876543210}
-	w := Uint256{Hi: a, Lo: a}
-	var sinkClass digitClass
+	a := bid.Uint128{Hi: 0x0123456789ABCDEF, Lo: 0xFEDCBA9876543210}
+	w := bid.Uint256{Hi: a, Lo: a}
+	var sinkClass bid.DigitClass
 	tests := []struct {
 		name string
 		f    func()
 	}{
-		{"cShift64", func() { sinkU64, sinkClass = cShift64(a.Lo, 7) }},
-		{"cShift64 past table", func() { sinkU64, sinkClass = cShift64(a.Lo, 25) }},
-		{"cShiftFull64", func() { sinkU128, sinkClass = cShiftFull64(a, 25) }},
-		{"cReduceClass64", func() { sinkU64, sinkClass = cReduceClass64(Uint128{Lo: a.Lo}, 7) }},
-		{"cReduceClass64 past table", func() { sinkU64, sinkClass = cReduceClass64(a, 25) }},
-		{"cScale64", func() { sinkU64, sinkBool = cScale64(123, 7) }},
-		{"cScaleFull64", func() { sinkU128, sinkBool = cScaleFull64(a, 3) }},
-		{"cShift128", func() { sinkU128, sinkClass = cShift128(a, 25) }},
-		{"cShift128 past table", func() { sinkU128, sinkClass = cShift128(a, 45) }},
-		{"cShiftFull128", func() { sinkU256, sinkClass = cShiftFull128(w, 25) }},
-		{"cShiftFull128 one step past", func() { sinkU256, sinkClass = cShiftFull128(w, 45) }},
-		{"cShiftFull128 two steps past", func() { sinkU256, sinkClass = cShiftFull128(w, 77) }},
-		{"cShiftFull128 past table", func() { sinkU256, sinkClass = cShiftFull128(w, 90) }},
-		{"cReduceClass128", func() { sinkU128, sinkClass = cReduceClass128(w, 60) }},
-		{"cScale128", func() { sinkU128, sinkBool = cScale128(Uint128{Lo: 123}, 25) }},
-		{"cScaleFull128", func() { sinkU256, sinkBool = cScaleFull128(Uint256{Lo: a}, 25) }},
-		{"cScaleFull128 wide power", func() { sinkU256, sinkBool = cScaleFull128(Uint256{Lo: Uint128{Lo: 7}}, 60) }},
-		{"withSticky", func() { sinkClass = sinkClass.withSticky(sinkBool) }},
+		{"cShift64", func() { sinkU64, sinkClass = bid.CShift64(a.Lo, 7) }},
+		{"cShift64 past table", func() { sinkU64, sinkClass = bid.CShift64(a.Lo, 25) }},
+		{"cShiftFull64", func() { sinkU128, sinkClass = bid.CShiftFull64(a, 25) }},
+		{"cReduceClass64", func() { sinkU64, sinkClass = bid.CReduceClass64(bid.Uint128{Lo: a.Lo}, 7) }},
+		{"cReduceClass64 past table", func() { sinkU64, sinkClass = bid.CReduceClass64(a, 25) }},
+		{"cScale64", func() { sinkU64, sinkBool = bid.CScale64(123, 7) }},
+		{"cScaleFull64", func() { sinkU128, sinkBool = bid.CScaleFull64(a, 3) }},
+		{"cShift128", func() { sinkU128, sinkClass = bid.CShift128(a, 25) }},
+		{"cShift128 past table", func() { sinkU128, sinkClass = bid.CShift128(a, 45) }},
+		{"cShiftFull128", func() { sinkU256, sinkClass = bid.CShiftFull128(w, 25) }},
+		{"cShiftFull128 one step past", func() { sinkU256, sinkClass = bid.CShiftFull128(w, 45) }},
+		{"cShiftFull128 two steps past", func() { sinkU256, sinkClass = bid.CShiftFull128(w, 77) }},
+		{"cShiftFull128 past table", func() { sinkU256, sinkClass = bid.CShiftFull128(w, 90) }},
+		{"cReduceClass128", func() { sinkU128, sinkClass = bid.CReduceClass128(w, 60) }},
+		{"cScale128", func() { sinkU128, sinkBool = bid.CScale128(bid.Uint128{Lo: 123}, 25) }},
+		{"cScaleFull128", func() { sinkU256, sinkBool = bid.CScaleFull128(bid.Uint256{Lo: a}, 25) }},
+		{"cScaleFull128 wide power", func() { sinkU256, sinkBool = bid.CScaleFull128(bid.Uint256{Lo: bid.Uint128{Lo: 7}}, 60) }},
+		{"withSticky", func() { sinkClass = sinkClass.WithSticky(sinkBool) }},
 	}
 	for _, tt := range tests {
 		if got := testing.AllocsPerRun(100, tt.f); got != 0 {
@@ -573,13 +574,13 @@ func TestDigitZeroAllocs(t *testing.T) {
 }
 
 func TestClassComplement(t *testing.T) {
-	for c, want := range map[digitClass]digitClass{
-		classZero:      classZero,
-		classBelowHalf: classAboveHalf,
-		classHalf:      classHalf,
-		classAboveHalf: classBelowHalf,
+	for c, want := range map[bid.DigitClass]bid.DigitClass{
+		bid.ClassZero:      bid.ClassZero,
+		bid.ClassBelowHalf: bid.ClassAboveHalf,
+		bid.ClassHalf:      bid.ClassHalf,
+		bid.ClassAboveHalf: bid.ClassBelowHalf,
 	} {
-		if got := c.complement(); got != want {
+		if got := c.Complement(); got != want {
 			t.Errorf("class %d complement = %d, want %d", c, got, want)
 		}
 	}

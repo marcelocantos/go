@@ -15,9 +15,9 @@ func min128(x, y coef128) coef128 {
 	case c > 0, c == 0 && Signbit128(y) && !Signbit128(x):
 		// Operands of equal value and unlike sign can only be zeros, and
 		// -0 is the lesser.
-		return canonical128(y)
+		return result128(y)
 	}
-	return canonical128(x)
+	return result128(x)
 }
 
 // max128 is Max128: see "Minimum and maximum" in the package documentation.
@@ -27,16 +27,16 @@ func max128(x, y coef128) coef128 {
 	case !ok:
 		return cNaN128()
 	case c < 0, c == 0 && Signbit128(x) && !Signbit128(y):
-		return canonical128(y)
+		return result128(y)
 	}
-	return canonical128(x)
+	return result128(x)
 }
 
-// canonical128 returns the canonical encoding of the non-NaN value x, which
+// result128 returns the canonical encoding of the non-NaN value x, which
 // keeps its coefficient and exponent, a non-canonical encoding reading as
 // the zero Unpack gives. Rounding an exactly representable value changes
 // nothing, so the mode is immaterial.
-func canonical128(x coef128) coef128 {
+func result128(x coef128) coef128 {
 	k, neg, c, e := Unpack128(x)
 	if k == KindInf {
 		return cInf128(neg)

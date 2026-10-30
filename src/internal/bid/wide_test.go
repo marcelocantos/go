@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package bid
+package bid_test
 
 import (
 	"fmt"
+	"internal/bid"
 	"math"
 	"math/big"
-	"math/bits"
+	mbits "math/bits"
 	"math/rand/v2"
 	"testing"
 )
@@ -20,7 +21,6 @@ import (
 // division) are checked on every run; fuzzing only adds to them.
 
 var (
-	bigOne    = big.NewInt(1)
 	bigTwo64  = new(big.Int).Lsh(bigOne, 64)
 	bigTwo128 = new(big.Int).Lsh(bigOne, 128)
 	bigTwo256 = new(big.Int).Lsh(bigOne, 256)
@@ -30,44 +30,44 @@ func bigPow10(n int) *big.Int {
 	return new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(n)), nil)
 }
 
-func bigOf256(a Uint256) *big.Int {
+func bigOf256(a bid.Uint256) *big.Int {
 	n := bigOf(a.Hi)
 	n.Lsh(n, 128)
 	return n.Or(n, bigOf(a.Lo))
 }
 
 // from128 converts x, which must be in [0, 2^128), to a Uint128.
-func from128(x *big.Int) Uint128 {
+func from128(x *big.Int) bid.Uint128 {
 	if x.Sign() < 0 || x.Cmp(bigTwo128) >= 0 {
 		panic(fmt.Sprintf("%v does not fit 128 bits", x))
 	}
 	m := new(big.Int).SetUint64(math.MaxUint64)
-	return Uint128{
+	return bid.Uint128{
 		Hi: new(big.Int).And(new(big.Int).Rsh(x, 64), m).Uint64(),
 		Lo: new(big.Int).And(x, m).Uint64(),
 	}
 }
 
 // from256 converts x, which must be in [0, 2^256), to a Uint256.
-func from256(x *big.Int) Uint256 {
+func from256(x *big.Int) bid.Uint256 {
 	if x.Sign() < 0 || x.Cmp(bigTwo256) >= 0 {
 		panic(fmt.Sprintf("%v does not fit 256 bits", x))
 	}
 	m := new(big.Int).Sub(bigTwo128, bigOne)
-	return Uint256{
+	return bid.Uint256{
 		Hi: from128(new(big.Int).And(new(big.Int).Rsh(x, 128), m)),
 		Lo: from128(new(big.Int).And(x, m)),
 	}
 }
 
-func eq128(t testing.TB, what string, got Uint128, want *big.Int) {
+func eq128(t testing.TB, what string, got bid.Uint128, want *big.Int) {
 	t.Helper()
 	if bigOf(got).Cmp(want) != 0 {
 		t.Errorf("%s = %#x:%#x, want %v", what, got.Hi, got.Lo, want)
 	}
 }
 
-func eq256(t testing.TB, what string, got Uint256, want *big.Int) {
+func eq256(t testing.TB, what string, got bid.Uint256, want *big.Int) {
 	t.Helper()
 	if bigOf256(got).Cmp(want) != 0 {
 		t.Errorf("%s = %#x:%#x:%#x:%#x, want %v", what, got.Hi.Hi, got.Hi.Lo, got.Lo.Hi, got.Lo.Lo, want)
@@ -83,11 +83,11 @@ func eqCarry(t testing.TB, what string, got uint64, want bool) {
 
 // edge128 holds the 128-bit values at which carries, borrows, shifts,
 // digit counts and quotient estimates change behaviour.
-func edge128() []Uint128 {
-	var vs []Uint128
+func edge128() []bid.Uint128 {
+	var vs []bid.Uint128
 	for _, hi := range []uint64{0, 1, 2, 1 << 62, 1 << 63, 1<<63 + 1, math.MaxUint64 - 1, math.MaxUint64} {
 		for _, lo := range []uint64{0, 1, 2, 9, 10, 1 << 32, 1<<63 - 1, 1 << 63, math.MaxUint64 - 1, math.MaxUint64} {
-			vs = append(vs, Uint128{Hi: hi, Lo: lo})
+			vs = append(vs, bid.Uint128{Hi: hi, Lo: lo})
 		}
 	}
 	for _, n := range []int{18, 19, 20, 33, 34, 37, 38} { // around the powers of ten that bound coefficients
@@ -106,25 +106,25 @@ func TestU128AddSub(t *testing.T) {
 	}
 }
 
-func checkU128AddSub(t *testing.T, a, b Uint128) {
+func checkU128AddSub(t *testing.T, a, b bid.Uint128) {
 	t.Helper()
 	A, B := bigOf(a), bigOf(b)
 
-	sum, carry := u128Add(a, b)
+	sum, carry := bid.U128Add(a, b)
 	S := new(big.Int).Add(A, B)
 	eq128(t, "u128Add sum", sum, new(big.Int).Mod(S, bigTwo128))
 	eqCarry(t, "u128Add carry", carry, S.Cmp(bigTwo128) >= 0)
 
-	diff, borrow := u128Sub(a, b)
+	diff, borrow := bid.U128Sub(a, b)
 	D := new(big.Int).Sub(A, B)
 	eq128(t, "u128Sub diff", diff, new(big.Int).Mod(D, bigTwo128))
 	eqCarry(t, "u128Sub borrow", borrow, D.Sign() < 0)
 
 	want := A.Cmp(B)
-	if got := u128Cmp(a, b); got != want {
+	if got := bid.U128Cmp(a, b); got != want {
 		t.Errorf("u128Cmp(%v, %v) = %d, want %d", A, B, got, want)
 	}
-	if got := u128Lt(a, b); got != (want < 0) {
+	if got := bid.U128Lt(a, b); got != (want < 0) {
 		t.Errorf("u128Lt(%v, %v) = %t", A, B, got)
 	}
 }
@@ -136,17 +136,17 @@ func FuzzU128AddSub(f *testing.F) {
 		f.Add(a.Hi, a.Lo, uint64(0), uint64(1))
 	}
 	f.Fuzz(func(t *testing.T, ah, al, bh, bl uint64) {
-		checkU128AddSub(t, Uint128{ah, al}, Uint128{bh, bl})
+		checkU128AddSub(t, bid.Uint128{ah, al}, bid.Uint128{bh, bl})
 	})
 }
 
-func checkU128Shift(t *testing.T, a Uint128, n uint) {
+func checkU128Shift(t *testing.T, a bid.Uint128, n uint) {
 	t.Helper()
 	A := bigOf(a)
 	l := new(big.Int).Lsh(A, n)
-	eq128(t, "u128Shl", u128Shl(a, n), l.Mod(l, bigTwo128))
-	eq128(t, "u128Shr", u128Shr(a, n), new(big.Int).Rsh(A, n))
-	if got, want := u128Len(a), A.BitLen(); got != want {
+	eq128(t, "u128Shl", bid.U128Shl(a, n), l.Mod(l, bigTwo128))
+	eq128(t, "u128Shr", bid.U128Shr(a, n), new(big.Int).Rsh(A, n))
+	if got, want := bid.U128Len(a), A.BitLen(); got != want {
 		t.Errorf("u128Len(%v) = %d, want %d", A, got, want)
 	}
 }
@@ -166,17 +166,17 @@ func FuzzU128Shift(f *testing.F) {
 		}
 	}
 	f.Fuzz(func(t *testing.T, hi, lo uint64, n uint16) {
-		checkU128Shift(t, Uint128{hi, lo}, uint(n))
+		checkU128Shift(t, bid.Uint128{hi, lo}, uint(n))
 	})
 }
 
-func checkU128Mul(t *testing.T, a, b Uint128) {
+func checkU128Mul(t *testing.T, a, b bid.Uint128) {
 	t.Helper()
 	A, B := bigOf(a), bigOf(b)
 
 	// The full 128×64 product, and in particular its high word: the
 	// wrapping product is what the strawman returned (audit R1).
-	p, hi := u128Mul64(a, b.Lo)
+	p, hi := bid.U128Mul64(a, b.Lo)
 	P := new(big.Int).Mul(A, new(big.Int).SetUint64(b.Lo))
 	got := new(big.Int).SetUint64(hi)
 	got.Lsh(got, 128)
@@ -185,7 +185,7 @@ func checkU128Mul(t *testing.T, a, b Uint128) {
 		t.Errorf("u128Mul64(%v, %d) = %d:%v, want %v", A, b.Lo, hi, bigOf(p), P)
 	}
 
-	eq256(t, "u128Mul", u128Mul(a, b), new(big.Int).Mul(A, B))
+	eq256(t, "u128Mul", bid.U128Mul(a, b), new(big.Int).Mul(A, B))
 }
 
 func TestU128Mul(t *testing.T) {
@@ -204,24 +204,24 @@ func FuzzU128Mul(f *testing.F) {
 		f.Add(a.Hi, a.Lo, uint64(0), uint64(math.MaxUint64))
 	}
 	f.Fuzz(func(t *testing.T, ah, al, bh, bl uint64) {
-		checkU128Mul(t, Uint128{ah, al}, Uint128{bh, bl})
+		checkU128Mul(t, bid.Uint128{ah, al}, bid.Uint128{bh, bl})
 	})
 }
 
-func checkU128Div(t *testing.T, a, d Uint128) {
+func checkU128Div(t *testing.T, a, d bid.Uint128) {
 	t.Helper()
 	A, D := bigOf(a), bigOf(d)
-	if d == (Uint128{}) {
-		mustPanic(t, "u128Div by zero", func() { u128Div(a, d) })
+	if d == (bid.Uint128{}) {
+		mustPanic(t, "u128Div by zero", func() { bid.U128Div(a, d) })
 		return
 	}
 	q, r := new(big.Int).DivMod(A, D, new(big.Int))
-	gq, gr := u128Div(a, d)
+	gq, gr := bid.U128Div(a, d)
 	eq128(t, "u128Div q", gq, q)
 	eq128(t, "u128Div r", gr, r)
 
 	if d.Hi == 0 {
-		q64, r64 := u128Div64(a, d.Lo)
+		q64, r64 := bid.U128Div64(a, d.Lo)
 		eq128(t, "u128Div64 q", q64, q)
 		if r64 != r.Uint64() {
 			t.Errorf("u128Div64(%v, %v) remainder = %d, want %v", A, D, r64, r)
@@ -236,7 +236,7 @@ func TestU128Div(t *testing.T) {
 			checkU128Div(t, a, d)
 		}
 	}
-	mustPanic(t, "u128Div64 by zero", func() { u128Div64(Uint128{Lo: 1}, 0) })
+	mustPanic(t, "u128Div64 by zero", func() { bid.U128Div64(bid.Uint128{Lo: 1}, 0) })
 }
 
 func FuzzU128Div(f *testing.F) {
@@ -249,47 +249,47 @@ func FuzzU128Div(f *testing.F) {
 		f.Add(a.Hi, a.Lo, uint64(0), uint64(0))
 	}
 	f.Fuzz(func(t *testing.T, ah, al, dh, dl uint64) {
-		checkU128Div(t, Uint128{ah, al}, Uint128{dh, dl})
+		checkU128Div(t, bid.Uint128{ah, al}, bid.Uint128{dh, dl})
 	})
 }
 
 // edge256 holds 256-bit values around the word and half boundaries.
-func edge256() []Uint256 {
-	var vs []Uint256
+func edge256() []bid.Uint256 {
+	var vs []bid.Uint256
 	for _, h := range edge128() {
-		for _, l := range []Uint128{{}, {Lo: 1}, {Hi: 1 << 63}, {Hi: math.MaxUint64, Lo: math.MaxUint64}} {
-			vs = append(vs, Uint256{Hi: h, Lo: l})
+		for _, l := range []bid.Uint128{{}, {Lo: 1}, {Hi: 1 << 63}, {Hi: math.MaxUint64, Lo: math.MaxUint64}} {
+			vs = append(vs, bid.Uint256{Hi: h, Lo: l})
 		}
 	}
 	return vs
 }
 
-func checkU256Ops(t *testing.T, a, b Uint256, n uint) {
+func checkU256Ops(t *testing.T, a, b bid.Uint256, n uint) {
 	t.Helper()
 	A, B := bigOf256(a), bigOf256(b)
 
-	sum, carry := u256Add(a, b)
+	sum, carry := bid.U256Add(a, b)
 	S := new(big.Int).Add(A, B)
 	eq256(t, "u256Add sum", sum, new(big.Int).Mod(S, bigTwo256))
 	eqCarry(t, "u256Add carry", carry, S.Cmp(bigTwo256) >= 0)
 
-	diff, borrow := u256Sub(a, b)
+	diff, borrow := bid.U256Sub(a, b)
 	D := new(big.Int).Sub(A, B)
 	eq256(t, "u256Sub diff", diff, new(big.Int).Mod(D, bigTwo256))
 	eqCarry(t, "u256Sub borrow", borrow, D.Sign() < 0)
 
 	want := A.Cmp(B)
-	if got := u256Cmp(a, b); got != want {
+	if got := bid.U256Cmp(a, b); got != want {
 		t.Errorf("u256Cmp(%v, %v) = %d, want %d", A, B, got, want)
 	}
-	if got := u256Lt(a, b); got != (want < 0) {
+	if got := bid.U256Lt(a, b); got != (want < 0) {
 		t.Errorf("u256Lt(%v, %v) = %t", A, B, got)
 	}
 
 	l := new(big.Int).Lsh(A, n)
-	eq256(t, "u256Shl", u256Shl(a, n), l.Mod(l, bigTwo256))
-	eq256(t, "u256Shr", u256Shr(a, n), new(big.Int).Rsh(A, n))
-	if got, want := u256Len(a), A.BitLen(); got != want {
+	eq256(t, "u256Shl", bid.U256Shl(a, n), l.Mod(l, bigTwo256))
+	eq256(t, "u256Shr", bid.U256Shr(a, n), new(big.Int).Rsh(A, n))
+	if got, want := bid.U256Len(a), A.BitLen(); got != want {
 		t.Errorf("u256Len(%v) = %d, want %d", A, got, want)
 	}
 }
@@ -313,8 +313,8 @@ func FuzzU256Ops(f *testing.F) {
 		f.Add(a.Hi.Hi, a.Hi.Lo, a.Lo.Hi, a.Lo.Lo, a.Hi.Hi, a.Hi.Lo, a.Lo.Hi, a.Lo.Lo, uint16(i%3*64))
 	}
 	f.Fuzz(func(t *testing.T, a3, a2, a1, a0, b3, b2, b1, b0 uint64, n uint16) {
-		a := Uint256{Uint128{a3, a2}, Uint128{a1, a0}}
-		b := Uint256{Uint128{b3, b2}, Uint128{b1, b0}}
+		a := bid.Uint256{bid.Uint128{a3, a2}, bid.Uint128{a1, a0}}
+		b := bid.Uint256{bid.Uint128{b3, b2}, bid.Uint128{b1, b0}}
 		checkU256Ops(t, a, b, uint(n))
 	})
 }
@@ -323,8 +323,8 @@ func FuzzU256Ops(f *testing.F) {
 // u256Div128 for a divisor d with a non-zero high word and n.Hi < d, and
 // returns by how much each exceeds the true quotient word. A non-zero entry
 // is a case in which the add-back correction of div3by2 runs.
-func qEstimates(n Uint256, d Uint128) (excess [2]int) {
-	s := uint(bits.LeadingZeros64(d.Hi))
+func qEstimates(n bid.Uint256, d bid.Uint128) (excess [2]int) {
+	s := uint(mbits.LeadingZeros64(d.Hi))
 	N := new(big.Int).Lsh(bigOf256(n), s)
 	V := new(big.Int).Lsh(bigOf(d), s)
 	v1 := new(big.Int).Rsh(V, 64)
@@ -351,24 +351,24 @@ func qEstimates(n Uint256, d Uint128) (excess [2]int) {
 // TestDivSeedsTriggerAddBack re-derives their excess with qEstimates, which
 // shares no code with the division, so they stay seeds for the add-back path
 // if the division changes.
-func addBackSeeds(want1, want2 int) (ns []Uint256, ds []Uint128) {
+func addBackSeeds(want1, want2 int) (ns []bid.Uint256, ds []bid.Uint128) {
 	rng := rand.New(rand.NewPCG(20261030, 128))
 	var got1, got2 int
 	for range 1 << 22 {
 		if got1 >= want1 && got2 >= want2 {
 			break
 		}
-		d := Uint128{Hi: rng.Uint64() | 1<<63, Lo: rng.Uint64()}
+		d := bid.Uint128{Hi: rng.Uint64() | 1<<63, Lo: rng.Uint64()}
 		if rng.IntN(2) == 0 {
 			// A divisor barely over 2^127 makes the estimate far too large
 			// far more often.
 			d.Hi = 1<<63 | rng.Uint64()>>uint(1+rng.IntN(62))
 		}
-		n := Uint256{
-			Hi: Uint128{Hi: rng.Uint64() % (d.Hi + 1), Lo: rng.Uint64()},
-			Lo: Uint128{Hi: rng.Uint64(), Lo: rng.Uint64()},
+		n := bid.Uint256{
+			Hi: bid.Uint128{Hi: rng.Uint64() % (d.Hi + 1), Lo: rng.Uint64()},
+			Lo: bid.Uint128{Hi: rng.Uint64(), Lo: rng.Uint64()},
 		}
-		if !u128Lt(n.Hi, d) {
+		if !bid.U128Lt(n.Hi, d) {
 			continue
 		}
 		e := qEstimates(n, d)
@@ -393,13 +393,13 @@ func addBackSeeds(want1, want2 int) (ns []Uint256, ds []Uint128) {
 // under, at and just over a multiple of the divisor, quotients at the
 // limit of 128 bits and one past it, and the add-back cases of
 // addBackSeeds.
-func divSeeds() (ns []Uint256, ds []Uint128) {
-	add := func(n Uint256, d Uint128) {
+func divSeeds() (ns []bid.Uint256, ds []bid.Uint128) {
+	add := func(n bid.Uint256, d bid.Uint128) {
 		ns = append(ns, n)
 		ds = append(ds, d)
 	}
-	max128 := Uint128{math.MaxUint64, math.MaxUint64}
-	divisors := []Uint128{
+	max128 := bid.Uint128{math.MaxUint64, math.MaxUint64}
+	divisors := []bid.Uint128{
 		{Lo: 1}, {Lo: 10}, {Lo: 1<<63 + 1}, {Lo: math.MaxUint64}, // zero high word
 		{Hi: 1}, {Hi: 1, Lo: 1}, {Hi: 1, Lo: math.MaxUint64}, {Hi: 2, Lo: 3},
 		{Hi: 1 << 62, Lo: 5},
@@ -436,12 +436,12 @@ func divSeeds() (ns []Uint256, ds []Uint128) {
 				add(from256(n), d)
 			}
 		}
-		hi, _ := u128Sub(d, Uint128{Lo: 1})
-		add(Uint256{Hi: hi, Lo: max128}, d) // the largest n with a 128-bit quotient
-		add(Uint256{Hi: d}, d)              // the smallest n without one
-		add(Uint256{Hi: max128, Lo: max128}, d)
+		hi, _ := bid.U128Sub(d, bid.Uint128{Lo: 1})
+		add(bid.Uint256{Hi: hi, Lo: max128}, d) // the largest n with a 128-bit quotient
+		add(bid.Uint256{Hi: d}, d)              // the smallest n without one
+		add(bid.Uint256{Hi: max128, Lo: max128}, d)
 	}
-	add(Uint256{Lo: Uint128{Lo: 5}}, Uint128{})
+	add(bid.Uint256{Lo: bid.Uint128{Lo: 5}}, bid.Uint128{})
 	an, ad := addBackSeeds(12, 6)
 	for i := range an {
 		add(an[i], ad[i])
@@ -449,19 +449,19 @@ func divSeeds() (ns []Uint256, ds []Uint128) {
 	return ns, ds
 }
 
-func checkU256Div(t *testing.T, n Uint256, d Uint128) {
+func checkU256Div(t *testing.T, n bid.Uint256, d bid.Uint128) {
 	t.Helper()
 	N, D := bigOf256(n), bigOf(d)
-	fits := d != (Uint128{}) && bigOf(n.Hi).Cmp(D) < 0
+	fits := d != (bid.Uint128{}) && bigOf(n.Hi).Cmp(D) < 0
 
-	q, r, ok := u256Div128(n, d)
+	q, r, ok := bid.U256Div128(n, d)
 	if ok != fits {
 		t.Errorf("u256Div128(%v, %v) ok = %t, want %t", N, D, ok, fits)
 	}
 	if !ok {
 		// Nothing fits, so nothing is returned, in particular no truncated
 		// quotient (audit R2).
-		if q != (Uint128{}) || r != (Uint128{}) {
+		if q != (bid.Uint128{}) || r != (bid.Uint128{}) {
 			t.Errorf("u256Div128(%v, %v) = %v, %v with ok false; want zeros", N, D, q, r)
 		}
 	} else {
@@ -470,12 +470,12 @@ func checkU256Div(t *testing.T, n Uint256, d Uint128) {
 		eq128(t, "u256Div128 r", r, wr)
 	}
 
-	if d == (Uint128{}) {
-		mustPanic(t, "u256DivMod128 by zero", func() { u256DivMod128(n, d) })
+	if d == (bid.Uint128{}) {
+		mustPanic(t, "u256DivMod128 by zero", func() { bid.U256DivMod128(n, d) })
 		return
 	}
 	wq, wr := new(big.Int).DivMod(N, D, new(big.Int))
-	fq, fr := u256DivMod128(n, d)
+	fq, fr := bid.U256DivMod128(n, d)
 	eq256(t, "u256DivMod128 q", fq, wq)
 	eq128(t, "u256DivMod128 r", fr, wr)
 }
@@ -494,14 +494,14 @@ func FuzzU256Div128(f *testing.F) {
 		f.Add(n.Hi.Hi, n.Hi.Lo, n.Lo.Hi, n.Lo.Lo, d.Hi, d.Lo)
 	}
 	f.Fuzz(func(t *testing.T, n3, n2, n1, n0, d1, d0 uint64) {
-		n := Uint256{Uint128{n3, n2}, Uint128{n1, n0}}
-		d := Uint128{d1, d0}
+		n := bid.Uint256{bid.Uint128{n3, n2}, bid.Uint128{n1, n0}}
+		d := bid.Uint128{d1, d0}
 		checkU256Div(t, n, d)
-		if d != (Uint128{}) {
+		if d != (bid.Uint128{}) {
 			// Random input rarely fits a 128-bit quotient when d is small, so
 			// also divide n reduced to fit: its high half modulo d.
-			_, rh := u128Div(n.Hi, d)
-			checkU256Div(t, Uint256{Hi: rh, Lo: n.Lo}, d)
+			_, rh := bid.U128Div(n.Hi, d)
+			checkU256Div(t, bid.Uint256{Hi: rh, Lo: n.Lo}, d)
 		}
 	})
 }
@@ -540,38 +540,38 @@ func mustPanic(t testing.TB, what string, f func()) {
 // The primitives allocate nothing. The results are kept in package
 // variables so that the compiler cannot discard the calls.
 var (
-	sinkU128 Uint128
-	sinkU256 Uint256
+	sinkU128 bid.Uint128
+	sinkU256 bid.Uint256
 	sinkU64  uint64
 	sinkInt  int
 	sinkBool bool
 )
 
 func TestWideZeroAllocs(t *testing.T) {
-	a := Uint128{Hi: 0x0123456789ABCDEF, Lo: 0xFEDCBA9876543210}
-	b := Uint128{Hi: 0x8000000000000001, Lo: 0x1122334455667788}
-	n := Uint256{Hi: Uint128{Hi: 0x7000000000000000, Lo: 1}, Lo: a}
-	w := Uint256{Hi: a, Lo: b}
+	a := bid.Uint128{Hi: 0x0123456789ABCDEF, Lo: 0xFEDCBA9876543210}
+	b := bid.Uint128{Hi: 0x8000000000000001, Lo: 0x1122334455667788}
+	n := bid.Uint256{Hi: bid.Uint128{Hi: 0x7000000000000000, Lo: 1}, Lo: a}
+	w := bid.Uint256{Hi: a, Lo: b}
 	tests := []struct {
 		name string
 		f    func()
 	}{
-		{"u128Add", func() { sinkU128, sinkU64 = u128Add(a, b) }},
-		{"u128Sub", func() { sinkU128, sinkU64 = u128Sub(a, b) }},
-		{"u128Cmp", func() { sinkInt = u128Cmp(a, b) }},
-		{"u128Shl", func() { sinkU128 = u128Shl(a, 77) }},
-		{"u128Shr", func() { sinkU128 = u128Shr(a, 77) }},
-		{"u128Mul64", func() { sinkU128, sinkU64 = u128Mul64(a, b.Lo) }},
-		{"u128Mul", func() { sinkU256 = u128Mul(a, b) }},
-		{"u128Div64", func() { sinkU128, sinkU64 = u128Div64(a, b.Lo) }},
-		{"u128Div", func() { sinkU128, sinkU128 = u128Div(a, b) }},
-		{"u256Add", func() { sinkU256, sinkU64 = u256Add(w, n) }},
-		{"u256Sub", func() { sinkU256, sinkU64 = u256Sub(w, n) }},
-		{"u256Cmp", func() { sinkInt = u256Cmp(w, n) }},
-		{"u256Shl", func() { sinkU256 = u256Shl(w, 77) }},
-		{"u256Shr", func() { sinkU256 = u256Shr(w, 177) }},
-		{"u256Div128", func() { sinkU128, sinkU128, sinkBool = u256Div128(n, b) }},
-		{"u256DivMod128", func() { sinkU256, sinkU128 = u256DivMod128(w, b) }},
+		{"u128Add", func() { sinkU128, sinkU64 = bid.U128Add(a, b) }},
+		{"u128Sub", func() { sinkU128, sinkU64 = bid.U128Sub(a, b) }},
+		{"u128Cmp", func() { sinkInt = bid.U128Cmp(a, b) }},
+		{"u128Shl", func() { sinkU128 = bid.U128Shl(a, 77) }},
+		{"u128Shr", func() { sinkU128 = bid.U128Shr(a, 77) }},
+		{"u128Mul64", func() { sinkU128, sinkU64 = bid.U128Mul64(a, b.Lo) }},
+		{"u128Mul", func() { sinkU256 = bid.U128Mul(a, b) }},
+		{"u128Div64", func() { sinkU128, sinkU64 = bid.U128Div64(a, b.Lo) }},
+		{"u128Div", func() { sinkU128, sinkU128 = bid.U128Div(a, b) }},
+		{"u256Add", func() { sinkU256, sinkU64 = bid.U256Add(w, n) }},
+		{"u256Sub", func() { sinkU256, sinkU64 = bid.U256Sub(w, n) }},
+		{"u256Cmp", func() { sinkInt = bid.U256Cmp(w, n) }},
+		{"u256Shl", func() { sinkU256 = bid.U256Shl(w, 77) }},
+		{"u256Shr", func() { sinkU256 = bid.U256Shr(w, 177) }},
+		{"u256Div128", func() { sinkU128, sinkU128, sinkBool = bid.U256Div128(n, b) }},
+		{"u256DivMod128", func() { sinkU256, sinkU128 = bid.U256DivMod128(w, b) }},
 	}
 	for _, tt := range tests {
 		if got := testing.AllocsPerRun(100, tt.f); got != 0 {

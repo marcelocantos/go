@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package bid
+package bid_test
 
 import (
+	"internal/bid"
 	"math/big"
-	"math/bits"
+	mbits "math/bits"
 	"math/rand/v2"
 	"testing"
 )
@@ -23,20 +24,20 @@ func TestLog10Pow2(t *testing.T) {
 			// (a power of two is not a power of ten), so 10^-d < 2^n < 10^(1-d).
 			want = -len(new(big.Int).Lsh(big.NewInt(1), uint(-n)).String())
 		}
-		if got := log10Pow2(n); got != want {
+		if got := bid.Log10Pow2(n); got != want {
 			t.Errorf("log10Pow2(%d) = %d, want %d", n, got, want)
 		}
 	}
 }
 
-func bigOfNat(x *floatNat) *big.Int {
+func bigOfNat(x *bid.FloatNat) *big.Int {
 	n := new(big.Int)
-	for i := x.n - 1; i >= 0; i-- {
+	for i := x.Len() - 1; i >= 0; i-- {
 		n.Lsh(n, 64)
-		n.Or(n, new(big.Int).SetUint64(x.w[i]))
+		n.Or(n, new(big.Int).SetUint64(x.Words()[i]))
 	}
-	for i := x.n; i < len(x.w); i++ {
-		if x.w[i] != 0 {
+	for i := x.Len(); i < len(x.Words()); i++ {
+		if x.Words()[i] != 0 {
 			panic("floatNat has a non-zero word above n")
 		}
 	}
@@ -59,13 +60,13 @@ func TestFloatNat(t *testing.T) {
 
 		e := r.IntN(972)
 		if i < 3 {
-			e = []int{0, 971, 1023 - bits.Len64(m) + 1}[i]
+			e = []int{0, 971, 1023 - mbits.Len64(m) + 1}[i]
 		}
-		if bits.Len64(m)+e > 1024 {
-			e = 1024 - bits.Len64(m)
+		if mbits.Len64(m)+e > 1024 {
+			e = 1024 - mbits.Len64(m)
 		}
-		var x floatNat
-		x.setShl(m, e)
+		var x bid.FloatNat
+		x.SetShl(m, e)
 		want := new(big.Int).Lsh(bm, uint(e))
 		if got := bigOfNat(&x); got.Cmp(want) != 0 {
 			t.Fatalf("setShl(%d, %d) = %v, want %v", m, e, got, want)
@@ -73,14 +74,14 @@ func TestFloatNat(t *testing.T) {
 		k := r.IntN(310)
 		p := new(big.Int).Exp(five, big.NewInt(int64(k)), nil)
 		q, rem := new(big.Int).QuoRem(want, p, new(big.Int))
-		sticky := x.divPow5(k)
+		sticky := x.DivPow5(k)
 		if got := bigOfNat(&x); got.Cmp(q) != 0 || sticky != (rem.Sign() != 0) {
 			t.Fatalf("divPow5(%v, %d) = %v sticky %v, want %v sticky %v", want, k, got, sticky, q, rem.Sign() != 0)
 		}
 
 		s := r.IntN(359)
-		var y floatNat
-		y.setMulPow5(m, s)
+		var y bid.FloatNat
+		y.SetMulPow5(m, s)
 		want = new(big.Int).Mul(bm, new(big.Int).Exp(five, big.NewInt(int64(s)), nil))
 		if got := bigOfNat(&y); got.Cmp(want) != 0 {
 			t.Fatalf("setMulPow5(%d, %d) = %v, want %v", m, s, got, want)
@@ -91,7 +92,7 @@ func TestFloatNat(t *testing.T) {
 		if q.BitLen() > 128 {
 			continue
 		}
-		if got := bigOf(y.shr128(sh)); got.Cmp(q) != 0 {
+		if got := bigOf(y.Shr128(sh)); got.Cmp(q) != 0 {
 			t.Fatalf("shr128(%v, %d) = %v, want %v", want, sh, got, q)
 		}
 	}
@@ -99,29 +100,29 @@ func TestFloatNat(t *testing.T) {
 
 // TestPow5 checks 5^k for every k the multiword operations use.
 func TestPow5(t *testing.T) {
-	for k := 0; k <= pow5Step; k++ {
+	for k := 0; k <= bid.Pow5Step; k++ {
 		want := new(big.Int).Exp(big.NewInt(5), big.NewInt(int64(k)), nil)
-		if got := pow5(k); got != want.Uint64() {
+		if got := bid.Pow5(k); got != want.Uint64() {
 			t.Errorf("pow5(%d) = %d, want %v", k, got, want)
 		}
 	}
-	if new(big.Int).Exp(big.NewInt(5), big.NewInt(pow5Step+1), nil).IsUint64() {
-		t.Errorf("5^%d fits a word; pow5Step is not the largest", pow5Step+1)
+	if new(big.Int).Exp(big.NewInt(5), big.NewInt(bid.Pow5Step+1), nil).IsUint64() {
+		t.Errorf("5^%d fits a word; pow5Step is not the largest", bid.Pow5Step+1)
 	}
 }
 
 // TestFloatNatOverflowPanics checks that a quotient too large for 128 bits
 // panics rather than truncating.
 func TestFloatNatOverflowPanics(t *testing.T) {
-	var x floatNat
-	x.setMulPow5(1<<53-1, 100)
+	var x bid.FloatNat
+	x.SetMulPow5(1<<53-1, 100)
 	for _, fn := range []func(){
-		func() { x.shr128(10) },
-		func() { x.lo128() },
+		func() { x.Shr128(10) },
+		func() { x.Lo128() },
 	} {
 		func() {
 			defer func() {
-				if recover() != errQuotientOverflow {
+				if recover() != bid.ErrQuotientOverflow {
 					t.Error("a 128-bit overflow did not panic with errQuotientOverflow")
 				}
 			}()
