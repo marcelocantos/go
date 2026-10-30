@@ -106,6 +106,13 @@ func (c digitClass) withSticky(sticky bool) digitClass {
 	return c
 }
 
+// complement returns the class of 1 - f, for a fraction f of class c: what a
+// subtraction of v + f has left once it has borrowed the unit. Half is its
+// own complement, and a zero fraction borrows nothing.
+func (c digitClass) complement() digitClass {
+	return c ^ c<<1&classHalf
+}
+
 // class64 classifies the remainder r of a division by 10^k, where half is
 // 10^k >> 1. The test for zero comes first because at k = 0 half is also
 // zero, and an empty tail is not a tie.
@@ -146,6 +153,12 @@ func reduceClass64(p Uint128, k int) (q uint64, class digitClass) {
 		return wq.Lo, class
 	}
 	d := pow10tab64[k]
+	if p.Hi == 0 {
+		// A sum never needs the high word, and a word division is much the
+		// cheaper: bits.Div64 is software on some ports and slow on others.
+		q = p.Lo / d
+		return q, class64(p.Lo-q*d, d>>1)
+	}
 	if p.Hi >= d {
 		panic(errQuotientOverflow)
 	}

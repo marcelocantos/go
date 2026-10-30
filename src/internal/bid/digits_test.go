@@ -571,3 +571,16 @@ func TestDigitZeroAllocs(t *testing.T) {
 	}
 	_ = sinkClass
 }
+
+func TestClassComplement(t *testing.T) {
+	for c, want := range map[digitClass]digitClass{
+		classZero:      classZero,
+		classBelowHalf: classAboveHalf,
+		classHalf:      classHalf,
+		classAboveHalf: classBelowHalf,
+	} {
+		if got := c.complement(); got != want {
+			t.Errorf("class %d complement = %d, want %d", c, got, want)
+		}
+	}
+}

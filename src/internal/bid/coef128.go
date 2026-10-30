@@ -164,6 +164,9 @@ func cShiftFull128(p wide128, k int) (q wide128, class digitClass) {
 // coefficient. A quotient that does not fit panics rather than truncates. It
 // holds whenever the caller chose k to leave at most 38 digits of p.
 func cReduceClass128(p wide128, k int) (q coef128, class digitClass) {
+	if p.Hi == (Uint128{}) {
+		return cShift128(p.Lo, k) // a sum never needs the high half
+	}
 	wq, class := cShiftFull128(p, k)
 	if wq.Hi != (Uint128{}) {
 		panic(errQuotientOverflow)

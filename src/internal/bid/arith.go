@@ -19,12 +19,12 @@ package bid
 // Add64 returns x + y rounded in mode (IEEE 754-2008 clause 5.4.1,
 // addition).
 func Add64(x, y uint64, mode Mode) uint64 {
-	panic(notImplemented)
+	return add64(x, y, mode)
 }
 
 // Add128 is Add64 for decimal128.
 func Add128(x, y Uint128, mode Mode) Uint128 {
-	panic(notImplemented)
+	return add128(x, y, mode)
 }
 
 // Sub64 returns x - y rounded in mode (IEEE 754-2008 clause 5.4.1,
@@ -32,12 +32,12 @@ func Add128(x, y Uint128, mode Mode) Uint128 {
 // negated; the distinction is invisible because NaN signs are not
 // propagated.
 func Sub64(x, y uint64, mode Mode) uint64 {
-	panic(notImplemented)
+	return add64(x, Neg64(y), mode)
 }
 
 // Sub128 is Sub64 for decimal128.
 func Sub128(x, y Uint128, mode Mode) Uint128 {
-	panic(notImplemented)
+	return add128(x, Neg128(y), mode)
 }
 
 // Mul64 returns x × y rounded in mode (IEEE 754-2008 clause 5.4.1,
