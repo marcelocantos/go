@@ -1465,9 +1465,11 @@
 //     arith_tmpl.go (//go:build ignore), written once in the template
 //     vocabulary below. gen_arith.go (//go:build ignore, run by
 //     "//go:generate go run gen_arith.go" in arith.go) writes zarith64.go
-//     and zarith128.go, which are committed. Nobody edits a z*.go file. A
-//     test, TestGenerated, guarded by testenv.MustHaveGoRun, regenerates
-//     into memory and fails on any difference from the committed files.
+//     and zarith128.go, which are committed, and zpow10.go, the tables of
+//     powers of ten that the helpers below index. Nobody edits a z*.go
+//     file. A test, TestGenerated, guarded by testenv.MustHaveGoRun,
+//     regenerates into a scratch directory and fails on any difference from
+//     the committed files.
 //  2. The width suffix rule. In the template every width-dependent
 //     identifier ends in a capital W and no other identifier does. The
 //     generator replaces that final W with 64 or 128 and does nothing
@@ -1491,7 +1493,8 @@
 //     cPow10W(k), cMulFullW(a, b) wideW, cReduceW(p wideW, k) (q coefW,
 //     sticky bool) and cLenFullW(p wideW) int, extended as division and
 //     the other operations need. Every coef64.go helper must inline;
-//     check with -gcflags=-m after changing one (no "cannot inline c…64").
+//     check with -gcflags=-m=2 after changing one (no "cannot inline
+//     c…64"; plain -m does not print "cannot inline" lines).
 //     coef128.go is where T1.3.1's 128- and 256-bit arithmetic goes; it
 //     may call unexported Uint128 and Uint256 functions freely.
 //  5. The generated functions are unexported (add64, add128, round64,

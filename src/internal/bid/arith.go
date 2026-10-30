@@ -4,6 +4,8 @@
 
 package bid
 
+//go:generate go run gen_arith.go
+
 // The arithmetic operations of IEEE 754-2008 clause 5.4.1 and the
 // homogeneous operations of clause 5.3, for both widths. Each computes its
 // result exactly and rounds it once in the given mode; each returns the

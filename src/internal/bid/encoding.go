@@ -4,8 +4,6 @@
 
 package bid
 
-import "math/bits"
-
 // notImplemented is the panic value of every operation that has been
 // declared but not yet implemented. It is temporary: when the package is
 // complete no function panics on any input.
@@ -384,72 +382,12 @@ const maxNaNPayload64 = 1_000_000_000_000_000 // 10^15
 
 var maxNaNPayload128 = Uint128{Hi: 0x0000314DC6448D93, Lo: 0x38C15B0A00000000} // 10^33
 
-func u128GtMaxCoeff(c Uint128) bool {
-	if c.Hi > MaxCoeff128Hi {
-		return true
-	}
-	if c.Hi < MaxCoeff128Hi {
-		return false
-	}
-	return c.Lo > MaxCoeff128Lo
-}
-
-func u128Lt(a, b Uint128) bool {
-	if a.Hi != b.Hi {
-		return a.Hi < b.Hi
-	}
-	return a.Lo < b.Lo
-}
-
+// digits64 returns the number of decimal digits of c, 0 for zero.
 func digits64(c uint64) int {
-	if c == 0 {
-		return 0
-	}
-	d := int(float64(bits.Len64(c)-1)*0.3010299956639812) + 1
-	if c >= pow10u64(d) {
-		d++
-	}
-	return d
+	return cDigits64(c)
 }
 
+// digits128 returns the number of decimal digits of c, 0 for zero.
 func digits128(c Uint128) int {
-	if c.Hi == 0 {
-		return digits64(c.Lo)
-	}
-	bitLen := bits.Len64(c.Hi) + 64
-	d := int(float64(bitLen-1)*0.3010299956639812) + 1
-	for u128GePow10(c, d) {
-		d++
-	}
-	return d
-}
-
-func pow10u64(n int) uint64 {
-	p := uint64(1)
-	for i := 0; i < n; i++ {
-		p *= 10
-	}
-	return p
-}
-
-// u128GePow10 reports whether c >= 10^n.
-func u128GePow10(c Uint128, n int) bool {
-	p := Uint128{Lo: 1}
-	for i := 0; i < n; i++ {
-		var carry uint64
-		carry, p.Lo = bits.Mul64(p.Lo, 10)
-		overflow, hi := bits.Mul64(p.Hi, 10)
-		if overflow != 0 {
-			return false // 10^n exceeds every Uint128
-		}
-		var c2 uint64
-		p.Hi, c2 = bits.Add64(hi, carry, 0)
-		if c2 != 0 {
-			return false
-		}
-	}
-	if c.Hi != p.Hi {
-		return c.Hi > p.Hi
-	}
-	return c.Lo >= p.Lo
+	return cDigits128(c)
 }
