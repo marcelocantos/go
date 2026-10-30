@@ -1,0 +1,455 @@
+# Copyright 2026 The Go Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# Addition and subtraction (IEEE 754-2008 clause 5.4.1). Derived from
+# "Exponent of a result", "Sign of a result", "Overflow", "Underflow and
+# subnormal results" and "NaN and infinity operands" in the package
+# documentation. The preferred exponent is min(Q(x), Q(y)).
+
+# --- Add64 ---
+
+# exact: the preferred exponent, or the cohort member nearest it
+Add64 even exact 1.0 2.00 -> 3.00
+Add64 even exact 12 7.00 -> 19.00
+Add64 even exact 1E+2 1E+4 -> 1.01E+4
+Add64 even exact 1E+5 1 -> 100001
+Add64 even exact 0.5 0.5 -> 1.0
+Add64 even exact -1.5 2.25 -> 0.75
+Add64 even exact 123.456 -123.4 -> 0.056
+Add64 even exact 1E+369 1E+369 -> 2E+369
+Add64 even exact 1E+16 0 -> 1.000000000000000E+16
+Add64 even exact 9999999999999999 -9999999999999998 -> 1
+Add64 even exact 123456789012345 1E-1 -> 123456789012345.1
+Add64 zero exact 123456789012345 -1E-1 -> 123456789012344.9
+Add64 even exact 1E-383 -1E-398 -> 9.99999999999999E-384
+
+# inexact: a non-tie fraction is discarded; the result has 16 digits
+Add64 even inexact 1E+16 1 -> 1.000000000000000E+16
+Add64 away inexact 1E+16 1 -> 1.000000000000000E+16
+Add64 zero inexact 1E+16 1 -> 1.000000000000000E+16
+Add64 up inexact 1E+16 1 -> 1.000000000000001E+16
+Add64 down inexact 1E+16 1 -> 1.000000000000000E+16
+Add64 even inexact 1E+16 16 -> 1.000000000000002E+16
+Add64 zero inexact 1E+16 16 -> 1.000000000000001E+16
+Add64 even inexact -1E+16 -1 -> -1.000000000000000E+16
+Add64 up inexact -1E+16 -1 -> -1.000000000000000E+16
+Add64 down inexact -1E+16 -1 -> -1.000000000000001E+16
+Add64 zero inexact -1E+16 -1 -> -1.000000000000000E+16
+Add64 even inexact 1 1E-20 -> 1.000000000000000
+Add64 up inexact 1 1E-20 -> 1.000000000000001
+Add64 down inexact 1 1E-20 -> 1.000000000000000
+Add64 even inexact 9999999999999999 0.4 -> 9999999999999999
+Add64 even inexact 1.0E+370 1 -> 1.000000000000000E+370
+Add64 even inexact 1234567890123456 0.7 -> 1234567890123457
+Add64 even inexact 1234567890123456 1E-5 -> 1234567890123456
+Add64 up inexact 1234567890123456 1E-5 -> 1234567890123457
+Add64 down inexact 1234567890123456 0.7 -> 1234567890123456
+
+# tie: exactly halfway, under all five modes
+Add64 even tie 1E+16 5 -> 1.000000000000000E+16
+Add64 away tie 1E+16 5 -> 1.000000000000001E+16
+Add64 zero tie 1E+16 5 -> 1.000000000000000E+16
+Add64 up tie 1E+16 5 -> 1.000000000000001E+16
+Add64 down tie 1E+16 5 -> 1.000000000000000E+16
+Add64 even tie -1E+16 -5 -> -1.000000000000000E+16
+Add64 away tie -1E+16 -5 -> -1.000000000000001E+16
+Add64 zero tie -1E+16 -5 -> -1.000000000000000E+16
+Add64 up tie -1E+16 -5 -> -1.000000000000000E+16
+Add64 down tie -1E+16 -5 -> -1.000000000000001E+16
+Add64 even tie 1E+16 15 -> 1.000000000000002E+16
+Add64 even tie 1E+16 25 -> 1.000000000000002E+16
+Add64 away tie 1E+16 25 -> 1.000000000000003E+16
+# a Mode outside the five behaves as ToNearestEven
+Add64 7 tie 1E+16 5 -> 1.000000000000000E+16
+Add64 255 tie 1E+16 25 -> 1.000000000000002E+16
+
+# carry: rounding carries into a new digit and raises the exponent
+Add64 even carry 9999999999999999 1 -> 1.000000000000000E+16
+Add64 even carry 9999999999999999 0.5 -> 1.000000000000000E+16
+Add64 up carry 9999999999999999 0.4 -> 1.000000000000000E+16
+Add64 zero carry 9999999999999999 0.4 -> 9999999999999999
+Add64 up carry 999.9999999999999 1E-14 -> 1000.000000000000
+Add64 even carry 999.9999999999999 1E-14 -> 999.9999999999999
+Add64 even carry 0.9999999999999999 1E-16 -> 1.000000000000000
+Add64 even carry -9999999999999999 -1 -> -1.000000000000000E+16
+
+# overflow: decided after rounding, by mode and sign
+Add64 even overflow 9.999999999999999E+384 1E+369 -> Infinity
+Add64 away overflow 9.999999999999999E+384 1E+369 -> Infinity
+Add64 zero overflow 9.999999999999999E+384 1E+369 -> 9.999999999999999E+384
+Add64 up overflow 9.999999999999999E+384 1E+369 -> Infinity
+Add64 down overflow 9.999999999999999E+384 1E+369 -> 9.999999999999999E+384
+Add64 even overflow -9.999999999999999E+384 -1E+369 -> -Infinity
+Add64 away overflow -9.999999999999999E+384 -1E+369 -> -Infinity
+Add64 zero overflow -9.999999999999999E+384 -1E+369 -> -9.999999999999999E+384
+Add64 up overflow -9.999999999999999E+384 -1E+369 -> -9.999999999999999E+384
+Add64 down overflow -9.999999999999999E+384 -1E+369 -> -Infinity
+Add64 even overflow 9.999999999999999E+384 1E+368 -> 9.999999999999999E+384
+Add64 up overflow 9.999999999999999E+384 1E+368 -> Infinity
+Add64 even overflow 9.999999999999999E+384 5E+368 -> Infinity
+Add64 zero overflow 9.999999999999999E+384 5E+368 -> 9.999999999999999E+384
+Add64 even overflow 1.000000000000000E+384 9.000000000000000E+384 -> Infinity
+Add64 zero overflow 1.000000000000000E+384 9.000000000000000E+384 -> 9.999999999999999E+384
+Add64 even overflow 9.999999999999999E+384 9.999999999999999E+384 -> Infinity
+
+# underflow: the subnormal edge (sums at MinExp are always exact)
+Add64 even underflow 1E-398 1E-398 -> 2E-398
+Add64 even underflow 9.99999999999999E-384 1E-398 -> 1.000000000000000E-383
+Add64 even underflow 1E-398 -2E-398 -> -1E-398
+Add64 down underflow 5E-398 4E-398 -> 9E-398
+Add64 even underflow 1.000000000000000E-383 -1E-398 -> 9.99999999999999E-384
+
+# clamp: results at the exponent bounds
+Add64 even clamp 1.0E+370 1.0E+370 -> 2.0E+370
+Add64 even clamp 1E+369 9E+369 -> 1.0E+370
+Add64 even clamp 0E+369 0E+369 -> 0E+369
+Add64 down clamp 0E+369 -0E+369 -> -0E+369
+Add64 even clamp 9E+369 9E+369 -> 1.8E+370
+Add64 even clamp 0E-398 -0E-398 -> 0E-398
+
+# zero: the sign of an exact zero sum
+Add64 even zero 1 -1 -> 0
+Add64 away zero 1 -1 -> 0
+Add64 zero zero 1 -1 -> 0
+Add64 up zero 1 -1 -> 0
+Add64 down zero 1 -1 -> -0
+Add64 down zero -1 1 -> -0
+Add64 even zero 1.00 -1 -> 0.00
+Add64 down zero 1E+3 -1E+3 -> -0E+3
+Add64 even zero 0 -0 -> 0
+Add64 down zero 0 -0 -> -0
+Add64 even zero -0 0 -> 0
+Add64 down zero -0 0 -> -0
+Add64 even zero 0 0 -> 0
+Add64 down zero 0 0 -> 0
+Add64 even zero -0 -0 -> -0
+Add64 up zero -0 -0 -> -0
+Add64 even zero 1E-398 -1E-398 -> 0E-398
+Add64 down zero 1E-398 -1E-398 -> -0E-398
+Add64 even zero 0E+5 0E+3 -> 0E+3
+Add64 even zero -0E+5 -0E+3 -> -0E+3
+Add64 even zero 0 1.50 -> 1.50
+Add64 even zero -0 -1.50 -> -1.50
+Add64 even zero 0E+5 1.50 -> 1.50
+
+# inf
+Add64 even inf Infinity -Infinity -> NaN
+Add64 even inf -Infinity Infinity -> NaN
+Add64 even inf Infinity Infinity -> Infinity
+Add64 even inf -Infinity -Infinity -> -Infinity
+Add64 even inf Infinity -9.999999999999999E+384 -> Infinity
+Add64 even inf -Infinity 9.999999999999999E+384 -> -Infinity
+Add64 down inf 1 Infinity -> Infinity
+Add64 even inf Infinity 0 -> Infinity
+Add64 even inf -0 -Infinity -> -Infinity
+
+# nan: every NaN operand gives the canonical quiet NaN
+Add64 even nan 1 NaN -> NaN
+Add64 even nan NaN Infinity -> NaN
+Add64 even nan sNaN 1 -> NaN
+Add64 even nan -NaN 1 -> NaN
+Add64 even nan 1 -sNaN -> NaN
+Add64 even nan NaN NaN -> NaN
+Add64 even nan 0x7c00000000000001 1 -> NaN
+Add64 even nan 1 0xfe0000000001e240 -> NaN
+Add64 even nan 0x7c038d7ea4c68000 1 -> NaN
+
+# noncanon: a coefficient field above 10^16-1 reads as zero
+Add64 even noncanon 0x6c77ffffffffffff 1 -> 1
+Add64 even noncanon 1 0x6c7386f26fc10000 -> 1
+Add64 even noncanon 0xec9fffffffffffff 0E+3 -> 0E+3
+Add64 even noncanon 0xec9fffffffffffff -0E+2 -> -0E+2
+Add64 down noncanon 0xec9fffffffffffff 0E+7 -> -0E+5
+Add64 even noncanon 0x6007ffffffffffff 1E-398 -> 1E-398
+Add64 even noncanon 0x77ffffffffffffff 2.5 -> 2.5
+
+# --- Add128 ---
+
+Add128 even exact 1.0 2.00 -> 3.00
+Add128 even exact 12 7.00 -> 19.00
+Add128 even exact 1E+2 1E+4 -> 1.01E+4
+Add128 even exact 1E+5 1 -> 100001
+Add128 even exact 1234567890123456789012345678901234 1 -> 1234567890123456789012345678901235
+Add128 even exact 1E+34 0 -> 1.000000000000000000000000000000000E+34
+Add128 even exact 9999999999999999 9999999999999999 -> 19999999999999998
+Add128 even exact 1E+6111 1E+6111 -> 2E+6111
+Add128 even exact 1E-6143 -1E-6176 -> 9.99999999999999999999999999999999E-6144
+
+Add128 even inexact 1E+34 1 -> 1.000000000000000000000000000000000E+34
+Add128 up inexact 1E+34 1 -> 1.000000000000000000000000000000001E+34
+Add128 down inexact 1E+34 1 -> 1.000000000000000000000000000000000E+34
+Add128 zero inexact 1E+34 1 -> 1.000000000000000000000000000000000E+34
+Add128 away inexact 1E+34 1 -> 1.000000000000000000000000000000000E+34
+Add128 even inexact -1E+34 -1 -> -1.000000000000000000000000000000000E+34
+Add128 down inexact -1E+34 -1 -> -1.000000000000000000000000000000001E+34
+Add128 even inexact 1 1E-40 -> 1.000000000000000000000000000000000
+Add128 up inexact 1 1E-40 -> 1.000000000000000000000000000000001
+
+Add128 even tie 1E+34 5 -> 1.000000000000000000000000000000000E+34
+Add128 away tie 1E+34 5 -> 1.000000000000000000000000000000001E+34
+Add128 zero tie 1E+34 5 -> 1.000000000000000000000000000000000E+34
+Add128 up tie 1E+34 5 -> 1.000000000000000000000000000000001E+34
+Add128 down tie 1E+34 5 -> 1.000000000000000000000000000000000E+34
+Add128 even tie -1E+34 -5 -> -1.000000000000000000000000000000000E+34
+Add128 away tie -1E+34 -5 -> -1.000000000000000000000000000000001E+34
+Add128 up tie -1E+34 -5 -> -1.000000000000000000000000000000000E+34
+Add128 down tie -1E+34 -5 -> -1.000000000000000000000000000000001E+34
+Add128 even tie 1E+34 25 -> 1.000000000000000000000000000000002E+34
+Add128 away tie 1E+34 25 -> 1.000000000000000000000000000000003E+34
+Add128 9 tie 1E+34 25 -> 1.000000000000000000000000000000002E+34
+
+Add128 even carry 9999999999999999999999999999999999 1 -> 1.000000000000000000000000000000000E+34
+Add128 even carry 9999999999999999999999999999999999 0.5 -> 1.000000000000000000000000000000000E+34
+Add128 up carry 9999999999999999999999999999999999 0.4 -> 1.000000000000000000000000000000000E+34
+Add128 zero carry 9999999999999999999999999999999999 0.4 -> 9999999999999999999999999999999999
+Add128 even carry -9999999999999999999999999999999999 -1 -> -1.000000000000000000000000000000000E+34
+
+Add128 even overflow 9.999999999999999999999999999999999E+6144 1E+6111 -> Infinity
+Add128 away overflow 9.999999999999999999999999999999999E+6144 1E+6111 -> Infinity
+Add128 zero overflow 9.999999999999999999999999999999999E+6144 1E+6111 -> 9.999999999999999999999999999999999E+6144
+Add128 up overflow 9.999999999999999999999999999999999E+6144 1E+6111 -> Infinity
+Add128 down overflow 9.999999999999999999999999999999999E+6144 1E+6111 -> 9.999999999999999999999999999999999E+6144
+Add128 even overflow -9.999999999999999999999999999999999E+6144 -1E+6111 -> -Infinity
+Add128 zero overflow -9.999999999999999999999999999999999E+6144 -1E+6111 -> -9.999999999999999999999999999999999E+6144
+Add128 up overflow -9.999999999999999999999999999999999E+6144 -1E+6111 -> -9.999999999999999999999999999999999E+6144
+Add128 down overflow -9.999999999999999999999999999999999E+6144 -1E+6111 -> -Infinity
+Add128 even overflow 9.999999999999999999999999999999999E+6144 1E+6110 -> 9.999999999999999999999999999999999E+6144
+Add128 even overflow 9.999999999999999999999999999999999E+6144 5E+6110 -> Infinity
+
+Add128 even underflow 1E-6176 1E-6176 -> 2E-6176
+Add128 even underflow 9.99999999999999999999999999999999E-6144 1E-6176 -> 1.000000000000000000000000000000000E-6143
+Add128 even underflow 1E-6176 -2E-6176 -> -1E-6176
+
+Add128 even clamp 1.0E+6112 1.0E+6112 -> 2.0E+6112
+Add128 even clamp 1E+6111 9E+6111 -> 1.0E+6112
+Add128 down clamp 0E+6111 -0E+6111 -> -0E+6111
+Add128 even clamp 0E-6176 -0E-6176 -> 0E-6176
+
+Add128 even zero 1 -1 -> 0
+Add128 down zero 1 -1 -> -0
+Add128 up zero 1 -1 -> 0
+Add128 even zero 1.00 -1 -> 0.00
+Add128 even zero 0 -0 -> 0
+Add128 down zero 0 -0 -> -0
+Add128 even zero -0 -0 -> -0
+Add128 down zero 0 0 -> 0
+Add128 even zero 0E+5 0E+3 -> 0E+3
+Add128 down zero 1E-6176 -1E-6176 -> -0E-6176
+Add128 even zero -0 2.50 -> 2.50
+
+Add128 even inf Infinity -Infinity -> NaN
+Add128 even inf -Infinity Infinity -> NaN
+Add128 even inf Infinity Infinity -> Infinity
+Add128 even inf -Infinity -Infinity -> -Infinity
+Add128 even inf Infinity -9.999999999999999999999999999999999E+6144 -> Infinity
+Add128 even inf 1 -Infinity -> -Infinity
+
+Add128 even nan 1 NaN -> NaN
+Add128 even nan NaN Infinity -> NaN
+Add128 even nan sNaN 1 -> NaN
+Add128 even nan -NaN 1 -> NaN
+Add128 even nan 0x7c000000000000010000000000000000 1 -> NaN
+Add128 even nan 1 0xfe000000000000000000000000000005 -> NaN
+
+Add128 even noncanon 0x3041ed09bead87c0378d8e6400000000 1 -> 1
+Add128 even noncanon 1 0x3041ffffffffffffffffffffffffffff -> 1
+Add128 even noncanon 0x6c100000000000000000000000000000 2.5 -> 2.5
+Add128 even noncanon 0xb047ed09bead87c0378d8e6400000000 0E+5 -> 0E+3
+Add128 down noncanon 0xb047ed09bead87c0378d8e6400000000 0E+5 -> -0E+3
+Add128 even noncanon 0xe0000000000000000000000000000001 1E-6176 -> 1E-6176
+
+# --- Sub64 ---
+
+Sub64 even exact 1.3 1.07 -> 0.23
+Sub64 even exact 1.30 1.3 -> 0.00
+Sub64 even exact 1E+2 1 -> 99
+Sub64 even exact 1E+16 1E+16 -> 0
+Sub64 even exact 1E+16 1 -> 9999999999999999
+Sub64 even exact 1 -1 -> 2
+Sub64 even exact -1.5 2.25 -> -3.75
+Sub64 even exact 1E+5 1 -> 99999
+Sub64 even exact 1.000000000000000E-383 1E-398 -> 9.99999999999999E-384
+
+Sub64 even inexact 1E+16 -1 -> 1.000000000000000E+16
+Sub64 up inexact 1E+16 -1 -> 1.000000000000001E+16
+Sub64 even inexact 1 1E-20 -> 1.000000000000000
+Sub64 down inexact 1 1E-20 -> 0.9999999999999999
+Sub64 zero inexact 1 1E-20 -> 0.9999999999999999
+Sub64 up inexact 1 1E-20 -> 1.000000000000000
+Sub64 away inexact 1 1E-20 -> 1.000000000000000
+Sub64 even inexact -1 1E-20 -> -1.000000000000000
+Sub64 up inexact -1 1E-20 -> -0.9999999999999999
+Sub64 down inexact -1 1E-20 -> -1.000000000000000
+Sub64 even inexact 1234567890123456 -0.7 -> 1234567890123457
+Sub64 zero inexact 1234567890123456 -0.7 -> 1234567890123456
+
+Sub64 even tie 1E+16 -5 -> 1.000000000000000E+16
+Sub64 away tie 1E+16 -5 -> 1.000000000000001E+16
+Sub64 zero tie 1E+16 -5 -> 1.000000000000000E+16
+Sub64 up tie 1E+16 -5 -> 1.000000000000001E+16
+Sub64 down tie 1E+16 -5 -> 1.000000000000000E+16
+Sub64 even tie 1E+16 5 -> 9999999999999995
+Sub64 even tie 1.000000000000001E+16 5 -> 1.000000000000000E+16
+Sub64 away tie 1.000000000000001E+16 5 -> 1.000000000000001E+16
+Sub64 even tie 1.000000000000002E+16 15 -> 1.000000000000000E+16
+Sub64 even exact 1.000000000000001E+16 15 -> 9999999999999995
+Sub64 even tie 1.000000000000002E+16 5 -> 1.000000000000002E+16
+Sub64 down tie 1.000000000000002E+16 5 -> 1.000000000000001E+16
+Sub64 zero tie -1.000000000000002E+16 -5 -> -1.000000000000001E+16
+
+Sub64 even carry 9999999999999999 -1 -> 1.000000000000000E+16
+Sub64 even carry 9999999999999999 -0.5 -> 1.000000000000000E+16
+Sub64 up carry 9999999999999999 -0.4 -> 1.000000000000000E+16
+Sub64 even carry 1 -0.9999999999999999 -> 2.000000000000000
+Sub64 even carry 1.000000000000000E+16 1 -> 9999999999999999
+Sub64 even carry 1.000000000000000E+16 0.6 -> 9999999999999999
+Sub64 up carry 1.000000000000000E+16 0.6 -> 1.000000000000000E+16
+Sub64 even carry -9999999999999999 1 -> -1.000000000000000E+16
+
+Sub64 even overflow 9.999999999999999E+384 -1E+369 -> Infinity
+Sub64 away overflow 9.999999999999999E+384 -1E+369 -> Infinity
+Sub64 zero overflow 9.999999999999999E+384 -1E+369 -> 9.999999999999999E+384
+Sub64 up overflow 9.999999999999999E+384 -1E+369 -> Infinity
+Sub64 down overflow 9.999999999999999E+384 -1E+369 -> 9.999999999999999E+384
+Sub64 even overflow -9.999999999999999E+384 1E+369 -> -Infinity
+Sub64 away overflow -9.999999999999999E+384 1E+369 -> -Infinity
+Sub64 zero overflow -9.999999999999999E+384 1E+369 -> -9.999999999999999E+384
+Sub64 up overflow -9.999999999999999E+384 1E+369 -> -9.999999999999999E+384
+Sub64 down overflow -9.999999999999999E+384 1E+369 -> -Infinity
+Sub64 even overflow 9.999999999999999E+384 -5E+368 -> Infinity
+Sub64 even overflow 9.999999999999999E+384 -4E+368 -> 9.999999999999999E+384
+
+Sub64 even underflow 1E-398 -1E-398 -> 2E-398
+Sub64 even underflow 2E-398 1E-398 -> 1E-398
+Sub64 even underflow 1.000000000000000E-383 1E-398 -> 9.99999999999999E-384
+Sub64 even underflow 9.99999999999999E-384 -1E-398 -> 1.000000000000000E-383
+Sub64 up underflow 1E-398 3E-398 -> -2E-398
+
+Sub64 even clamp 1.0E+370 -1.0E+370 -> 2.0E+370
+Sub64 even clamp 2.0E+370 1.0E+370 -> 1.0E+370
+Sub64 down clamp 0E+369 0E+369 -> -0E+369
+Sub64 even clamp 1E+369 -9E+369 -> 1.0E+370
+
+Sub64 even zero 1 1 -> 0
+Sub64 away zero 1 1 -> 0
+Sub64 zero zero 1 1 -> 0
+Sub64 up zero 1 1 -> 0
+Sub64 down zero 1 1 -> -0
+Sub64 down zero -1 -1 -> -0
+Sub64 even zero 0 0 -> 0
+Sub64 down zero 0 0 -> -0
+Sub64 even zero -0 -0 -> 0
+Sub64 down zero -0 -0 -> -0
+Sub64 even zero 0 -0 -> 0
+Sub64 down zero 0 -0 -> 0
+Sub64 even zero -0 0 -> -0
+Sub64 up zero -0 0 -> -0
+Sub64 even zero 1.00 1 -> 0.00
+Sub64 down zero 1E+3 1E+3 -> -0E+3
+Sub64 even zero 0 1.50 -> -1.50
+Sub64 even zero 1.50 0E+5 -> 1.50
+Sub64 even zero 0E+5 0E+3 -> 0E+3
+
+Sub64 even inf Infinity Infinity -> NaN
+Sub64 even inf -Infinity -Infinity -> NaN
+Sub64 even inf -Infinity Infinity -> -Infinity
+Sub64 even inf Infinity -Infinity -> Infinity
+Sub64 even inf 1 Infinity -> -Infinity
+Sub64 even inf 1 -Infinity -> Infinity
+Sub64 even inf Infinity 9.999999999999999E+384 -> Infinity
+Sub64 even inf -0 Infinity -> -Infinity
+
+Sub64 even nan 1 NaN -> NaN
+Sub64 even nan NaN 1 -> NaN
+Sub64 even nan sNaN Infinity -> NaN
+Sub64 even nan 1 -sNaN -> NaN
+Sub64 even nan -NaN -NaN -> NaN
+Sub64 even nan 0x7c00000000000001 1 -> NaN
+Sub64 even nan 1 0xfe0000000001e240 -> NaN
+
+Sub64 even noncanon 1 0x6c77ffffffffffff -> 1
+Sub64 even noncanon 0x6c77ffffffffffff 1 -> -1
+Sub64 even noncanon 0xec9fffffffffffff 0E+3 -> -0E+3
+Sub64 even noncanon 0x6c7386f26fc10000 0x6c77ffffffffffff -> 0
+Sub64 down noncanon 0x6c7386f26fc10000 0x6c77ffffffffffff -> -0
+Sub64 even noncanon 0x77ffffffffffffff -0E+369 -> 0E+369
+
+# --- Sub128 ---
+
+Sub128 even exact 1.3 1.07 -> 0.23
+Sub128 even exact 1.30 1.3 -> 0.00
+Sub128 even exact 1E+34 1 -> 9999999999999999999999999999999999
+Sub128 even exact 1E+34 1E+34 -> 0
+Sub128 even exact 1 -1 -> 2
+Sub128 even exact 1.000000000000000000000000000000000E-6143 1E-6176 -> 9.99999999999999999999999999999999E-6144
+
+Sub128 even inexact 1E+34 -1 -> 1.000000000000000000000000000000000E+34
+Sub128 up inexact 1E+34 -1 -> 1.000000000000000000000000000000001E+34
+Sub128 even inexact 1 1E-40 -> 1.000000000000000000000000000000000
+Sub128 down inexact 1 1E-40 -> 0.9999999999999999999999999999999999
+Sub128 zero inexact 1 1E-40 -> 0.9999999999999999999999999999999999
+Sub128 up inexact 1 1E-40 -> 1.000000000000000000000000000000000
+Sub128 up inexact -1 1E-40 -> -0.9999999999999999999999999999999999
+Sub128 down inexact -1 1E-40 -> -1.000000000000000000000000000000000
+
+Sub128 even tie 1E+34 -5 -> 1.000000000000000000000000000000000E+34
+Sub128 away tie 1E+34 -5 -> 1.000000000000000000000000000000001E+34
+Sub128 zero tie 1E+34 -5 -> 1.000000000000000000000000000000000E+34
+Sub128 up tie 1E+34 -5 -> 1.000000000000000000000000000000001E+34
+Sub128 down tie 1E+34 -5 -> 1.000000000000000000000000000000000E+34
+Sub128 even tie 1.000000000000000000000000000000001E+34 5 -> 1.000000000000000000000000000000000E+34
+Sub128 away tie 1.000000000000000000000000000000001E+34 5 -> 1.000000000000000000000000000000001E+34
+Sub128 even tie 1.000000000000000000000000000000002E+34 5 -> 1.000000000000000000000000000000002E+34
+
+Sub128 even carry 9999999999999999999999999999999999 -1 -> 1.000000000000000000000000000000000E+34
+Sub128 up carry 9999999999999999999999999999999999 -0.4 -> 1.000000000000000000000000000000000E+34
+Sub128 even carry 1.000000000000000000000000000000000E+34 1 -> 9999999999999999999999999999999999
+Sub128 even carry 1.000000000000000000000000000000000E+34 0.6 -> 9999999999999999999999999999999999
+Sub128 even carry -9999999999999999999999999999999999 1 -> -1.000000000000000000000000000000000E+34
+
+Sub128 even overflow 9.999999999999999999999999999999999E+6144 -1E+6111 -> Infinity
+Sub128 away overflow 9.999999999999999999999999999999999E+6144 -1E+6111 -> Infinity
+Sub128 zero overflow 9.999999999999999999999999999999999E+6144 -1E+6111 -> 9.999999999999999999999999999999999E+6144
+Sub128 up overflow 9.999999999999999999999999999999999E+6144 -1E+6111 -> Infinity
+Sub128 down overflow 9.999999999999999999999999999999999E+6144 -1E+6111 -> 9.999999999999999999999999999999999E+6144
+Sub128 even overflow -9.999999999999999999999999999999999E+6144 1E+6111 -> -Infinity
+Sub128 up overflow -9.999999999999999999999999999999999E+6144 1E+6111 -> -9.999999999999999999999999999999999E+6144
+Sub128 down overflow -9.999999999999999999999999999999999E+6144 1E+6111 -> -Infinity
+
+Sub128 even underflow 1E-6176 -1E-6176 -> 2E-6176
+Sub128 even underflow 2E-6176 1E-6176 -> 1E-6176
+Sub128 even underflow 9.99999999999999999999999999999999E-6144 -1E-6176 -> 1.000000000000000000000000000000000E-6143
+
+Sub128 even clamp 1.0E+6112 -1.0E+6112 -> 2.0E+6112
+Sub128 even clamp 2.0E+6112 1.0E+6112 -> 1.0E+6112
+Sub128 down clamp 0E+6111 0E+6111 -> -0E+6111
+
+Sub128 even zero 1 1 -> 0
+Sub128 down zero 1 1 -> -0
+Sub128 down zero -1 -1 -> -0
+Sub128 even zero 0 0 -> 0
+Sub128 down zero 0 0 -> -0
+Sub128 even zero -0 -0 -> 0
+Sub128 even zero 0 -0 -> 0
+Sub128 down zero 0 -0 -> 0
+Sub128 even zero -0 0 -> -0
+Sub128 even zero 1.00 1 -> 0.00
+Sub128 down zero 1E+3 1E+3 -> -0E+3
+
+Sub128 even inf Infinity Infinity -> NaN
+Sub128 even inf -Infinity -Infinity -> NaN
+Sub128 even inf -Infinity Infinity -> -Infinity
+Sub128 even inf 1 Infinity -> -Infinity
+Sub128 even inf Infinity 9.999999999999999999999999999999999E+6144 -> Infinity
+
+Sub128 even nan 1 NaN -> NaN
+Sub128 even nan NaN 1 -> NaN
+Sub128 even nan sNaN Infinity -> NaN
+Sub128 even nan 1 -sNaN -> NaN
+Sub128 even nan 0x7c000000000000010000000000000000 1 -> NaN
+
+Sub128 even noncanon 1 0x3041ed09bead87c0378d8e6400000000 -> 1
+Sub128 even noncanon 0x3041ed09bead87c0378d8e6400000000 1 -> -1
+Sub128 even noncanon 0x6c100000000000000000000000000000 0x3041ffffffffffffffffffffffffffff -> 0
+Sub128 even noncanon 0x77ff800000000000000000000000007b -0E+6111 -> 0E+6111

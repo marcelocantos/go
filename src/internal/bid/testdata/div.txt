@@ -1,0 +1,275 @@
+# Copyright 2026 The Go Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# Division (IEEE 754-2008 clause 5.4.1 and 7.3). The preferred exponent is
+# Q(x) - Q(y); a finite x divided by an infinity is a zero at MinExp. A
+# quotient of two Precision-digit coefficients is never within one unit
+# of the last place below a power of ten unless it is exact, so division
+# has no carry class (see README).
+
+# --- Div64 ---
+
+Div64 even exact 1 4 -> 0.25
+Div64 even exact 8.00 2 -> 4.00
+Div64 even exact 2.400 2.0 -> 1.20
+Div64 even exact 1000 100 -> 10
+Div64 even exact 1000 1 -> 1000
+Div64 even exact 2.40E+6 2 -> 1.20E+6
+Div64 even exact 12 12 -> 1
+Div64 even exact 1 8 -> 0.125
+Div64 even exact -6 3 -> -2
+Div64 even exact 1E+16 1 -> 1E+16
+Div64 even exact 1E+16 2 -> 5E+15
+Div64 even exact 1E+16 4 -> 2.5E+15
+Div64 even exact 9999999999999999 1 -> 9999999999999999
+Div64 even exact 9999999999999999 0.9999999999999999 -> 1E+16
+Div64 even exact 1 1E-16 -> 1E+16
+Div64 even exact 100 1E-14 -> 1.00E+16
+Div64 even exact 1.5 0.5 -> 3
+Div64 up exact 1 4 -> 0.25
+Div64 even exact 1 0.001 -> 1E+3
+Div64 even exact 1.000 0.001 -> 1000
+
+Div64 even inexact 1 3 -> 0.3333333333333333
+Div64 away inexact 1 3 -> 0.3333333333333333
+Div64 zero inexact 1 3 -> 0.3333333333333333
+Div64 up inexact 1 3 -> 0.3333333333333334
+Div64 down inexact 1 3 -> 0.3333333333333333
+Div64 even inexact -1 3 -> -0.3333333333333333
+Div64 up inexact -1 3 -> -0.3333333333333333
+Div64 down inexact -1 3 -> -0.3333333333333334
+Div64 zero inexact -1 3 -> -0.3333333333333333
+Div64 even inexact 2 3 -> 0.6666666666666667
+Div64 zero inexact 2 3 -> 0.6666666666666666
+Div64 down inexact 2 3 -> 0.6666666666666666
+Div64 even inexact 1E+300 3 -> 3.333333333333333E+299
+Div64 even inexact 1 7 -> 0.1428571428571429
+Div64 zero inexact 1 7 -> 0.1428571428571428
+Div64 even inexact 22 7 -> 3.142857142857143
+Div64 down inexact 22 7 -> 3.142857142857142
+Div64 even inexact 1E+16 3 -> 3333333333333333
+Div64 up inexact 1E+16 3 -> 3333333333333334
+Div64 even inexact 1 1.000000000000001 -> 0.9999999999999990
+Div64 up inexact 1 1.000000000000001 -> 0.9999999999999991
+
+Div64 even tie 2000000000000001 2 -> 1000000000000000
+Div64 away tie 2000000000000001 2 -> 1000000000000001
+Div64 zero tie 2000000000000001 2 -> 1000000000000000
+Div64 up tie 2000000000000001 2 -> 1000000000000001
+Div64 down tie 2000000000000001 2 -> 1000000000000000
+Div64 even tie -2000000000000001 2 -> -1000000000000000
+Div64 away tie -2000000000000001 2 -> -1000000000000001
+Div64 zero tie -2000000000000001 2 -> -1000000000000000
+Div64 up tie -2000000000000001 2 -> -1000000000000000
+Div64 down tie -2000000000000001 2 -> -1000000000000001
+Div64 even tie 2000000000000003 2 -> 1000000000000002
+Div64 zero tie 2000000000000003 2 -> 1000000000000001
+Div64 even tie 2000000000000001 0.2 -> 1.000000000000000E+16
+Div64 away tie 2000000000000001 0.2 -> 1.000000000000001E+16
+Div64 4 tie 2000000000000001 2 -> 1000000000000000
+
+Div64 even overflow 1E+300 1E-300 -> Infinity
+Div64 away overflow 1E+300 1E-300 -> Infinity
+Div64 zero overflow 1E+300 1E-300 -> 9.999999999999999E+384
+Div64 up overflow 1E+300 1E-300 -> Infinity
+Div64 down overflow 1E+300 1E-300 -> 9.999999999999999E+384
+Div64 even overflow -1E+300 1E-300 -> -Infinity
+Div64 away overflow -1E+300 1E-300 -> -Infinity
+Div64 zero overflow -1E+300 1E-300 -> -9.999999999999999E+384
+Div64 up overflow -1E+300 1E-300 -> -9.999999999999999E+384
+Div64 down overflow -1E+300 1E-300 -> -Infinity
+Div64 even overflow 1 1E-398 -> Infinity
+Div64 zero overflow 1 1E-398 -> 9.999999999999999E+384
+Div64 even overflow 1E+369 1E-16 -> Infinity
+Div64 even overflow 9.999999999999999E+384 0.9999999999999999 -> Infinity
+Div64 zero overflow 9.999999999999999E+384 0.9999999999999999 -> 9.999999999999999E+384
+Div64 even overflow 9.999999999999999E+384 1 -> 9.999999999999999E+384
+
+Div64 even underflow 1E-398 3 -> 0E-398
+Div64 away underflow 1E-398 3 -> 0E-398
+Div64 zero underflow 1E-398 3 -> 0E-398
+Div64 up underflow 1E-398 3 -> 1E-398
+Div64 down underflow 1E-398 3 -> 0E-398
+Div64 even underflow 2E-398 3 -> 1E-398
+Div64 even underflow -1E-398 3 -> -0E-398
+Div64 down underflow -1E-398 3 -> -1E-398
+Div64 up underflow -1E-398 3 -> -0E-398
+Div64 even underflow 1E-398 2 -> 0E-398
+Div64 away underflow 1E-398 2 -> 1E-398
+Div64 up underflow 1E-398 2 -> 1E-398
+Div64 even underflow 3E-398 2 -> 2E-398
+Div64 zero underflow 3E-398 2 -> 1E-398
+Div64 even underflow 1.234567891E-380 1E+10 -> 1.23456789E-390
+Div64 up underflow 1.234567891E-380 1E+10 -> 1.23456790E-390
+Div64 even underflow 1E-383 10 -> 1E-384
+Div64 even underflow 1E-300 1E+98 -> 1E-398
+Div64 even underflow 1E-300 1E+99 -> 0E-398
+Div64 up underflow 1E-300 1E+99 -> 1E-398
+Div64 even underflow 5E-300 1E+99 -> 0E-398
+Div64 away underflow 5E-300 1E+99 -> 1E-398
+Div64 even underflow 1.000000000000000E-383 1.000000000000001 -> 9.99999999999999E-384
+Div64 up underflow 1.000000000000000E-383 1.000000000000001 -> 1.000000000000000E-383
+
+Div64 even clamp 0 1E+300 -> 0E-300
+Div64 even clamp 0 1E-300 -> 0E+300
+Div64 even clamp 0 1E-398 -> 0E+369
+Div64 even clamp 0E-398 1E+300 -> 0E-398
+Div64 even clamp -0 1E-398 -> -0E+369
+Div64 even clamp 1E+300 1E-69 -> 1E+369
+Div64 even clamp 1E+300 1E-70 -> 1.0E+370
+Div64 even clamp 1E+300 1E-84 -> 1.000000000000000E+384
+Div64 even clamp 1E+369 1E-15 -> 1.000000000000000E+384
+Div64 even clamp 1E-300 1E+98 -> 1E-398
+Div64 even clamp 1.5E+300 1E-70 -> 1.5E+370
+Div64 even clamp 1E-398 1E-300 -> 1E-98
+
+Div64 even zero 0 -2 -> -0
+Div64 even zero -0 2 -> -0
+Div64 even zero -0 -2 -> 0
+Div64 even zero 0.00 5 -> 0.00
+Div64 down zero 0 5 -> 0
+Div64 even zero -1E-398 3 -> -0E-398
+Div64 even zero 0 5E+3 -> 0.000
+Div64 even zero -0.0 -1E+2 -> 0.000
+
+Div64 even inf 0 0 -> NaN
+Div64 even inf -0 0 -> NaN
+Div64 even inf Infinity Infinity -> NaN
+Div64 even inf -Infinity Infinity -> NaN
+Div64 even inf 1 0 -> Infinity
+Div64 even inf 1 -0 -> -Infinity
+Div64 even inf -1 0 -> -Infinity
+Div64 even inf -1 -0 -> Infinity
+Div64 zero inf 1E-398 0 -> Infinity
+Div64 even inf Infinity 0 -> Infinity
+Div64 even inf Infinity -0 -> -Infinity
+Div64 even inf Infinity 5 -> Infinity
+Div64 even inf Infinity -5 -> -Infinity
+Div64 even inf -Infinity -5 -> Infinity
+Div64 even inf 1 Infinity -> 0E-398
+Div64 even inf -1 Infinity -> -0E-398
+Div64 even inf 1 -Infinity -> -0E-398
+Div64 down inf -1000 -Infinity -> 0E-398
+Div64 even inf 0 Infinity -> 0E-398
+Div64 even inf -0 Infinity -> -0E-398
+Div64 even inf 9.999999999999999E+384 Infinity -> 0E-398
+
+Div64 even nan NaN 0 -> NaN
+Div64 even nan 0 NaN -> NaN
+Div64 even nan sNaN 1 -> NaN
+Div64 even nan 1 -sNaN -> NaN
+Div64 even nan Infinity NaN -> NaN
+Div64 even nan 0x7c00000000000001 1 -> NaN
+Div64 even nan 1 0xfe0000000001e240 -> NaN
+
+Div64 even noncanon 0x6c77ffffffffffff 2 -> 0
+Div64 even noncanon 1 0x6c77ffffffffffff -> Infinity
+Div64 even noncanon -1 0x6c7386f26fc10000 -> -Infinity
+Div64 even noncanon 0x6c77ffffffffffff 0x6c7386f26fc10000 -> NaN
+Div64 even noncanon 0xec9fffffffffffff 1E+2 -> -0E+3
+Div64 even noncanon 0x6c77ffffffffffff Infinity -> 0E-398
+
+# --- Div128 ---
+
+Div128 even exact 1 4 -> 0.25
+Div128 even exact 8.00 2 -> 4.00
+Div128 even exact 2.400 2.0 -> 1.20
+Div128 even exact 1000 100 -> 10
+Div128 even exact 2.40E+6 2 -> 1.20E+6
+Div128 even exact 12 12 -> 1
+Div128 even exact 1E+34 1 -> 1E+34
+Div128 even exact 1E+34 2 -> 5E+33
+Div128 even exact 9999999999999999999999999999999999 0.9999999999999999999999999999999999 -> 1E+34
+Div128 even exact 1 1E-34 -> 1E+34
+
+Div128 even inexact 1 3 -> 0.3333333333333333333333333333333333
+Div128 away inexact 1 3 -> 0.3333333333333333333333333333333333
+Div128 zero inexact 1 3 -> 0.3333333333333333333333333333333333
+Div128 up inexact 1 3 -> 0.3333333333333333333333333333333334
+Div128 down inexact 1 3 -> 0.3333333333333333333333333333333333
+Div128 even inexact -1 3 -> -0.3333333333333333333333333333333333
+Div128 down inexact -1 3 -> -0.3333333333333333333333333333333334
+Div128 up inexact -1 3 -> -0.3333333333333333333333333333333333
+Div128 even inexact 2 3 -> 0.6666666666666666666666666666666667
+Div128 zero inexact 2 3 -> 0.6666666666666666666666666666666666
+Div128 even inexact 1 7 -> 0.1428571428571428571428571428571429
+Div128 zero inexact 1 7 -> 0.1428571428571428571428571428571428
+Div128 even inexact 22 7 -> 3.142857142857142857142857142857143
+Div128 down inexact 22 7 -> 3.142857142857142857142857142857142
+Div128 even inexact 1E+6000 3 -> 3.333333333333333333333333333333333E+5999
+
+Div128 even tie 2000000000000000000000000000000001 2 -> 1000000000000000000000000000000000
+Div128 away tie 2000000000000000000000000000000001 2 -> 1000000000000000000000000000000001
+Div128 zero tie 2000000000000000000000000000000001 2 -> 1000000000000000000000000000000000
+Div128 up tie 2000000000000000000000000000000001 2 -> 1000000000000000000000000000000001
+Div128 down tie 2000000000000000000000000000000001 2 -> 1000000000000000000000000000000000
+Div128 even tie -2000000000000000000000000000000001 2 -> -1000000000000000000000000000000000
+Div128 away tie -2000000000000000000000000000000001 2 -> -1000000000000000000000000000000001
+Div128 up tie -2000000000000000000000000000000001 2 -> -1000000000000000000000000000000000
+Div128 down tie -2000000000000000000000000000000001 2 -> -1000000000000000000000000000000001
+Div128 even tie 2000000000000000000000000000000003 2 -> 1000000000000000000000000000000002
+Div128 zero tie 2000000000000000000000000000000003 2 -> 1000000000000000000000000000000001
+
+Div128 even overflow 1E+3000 1E-3200 -> Infinity
+Div128 away overflow 1E+3000 1E-3200 -> Infinity
+Div128 zero overflow 1E+3000 1E-3200 -> 9.999999999999999999999999999999999E+6144
+Div128 up overflow 1E+3000 1E-3200 -> Infinity
+Div128 down overflow 1E+3000 1E-3200 -> 9.999999999999999999999999999999999E+6144
+Div128 even overflow -1E+3000 1E-3200 -> -Infinity
+Div128 zero overflow -1E+3000 1E-3200 -> -9.999999999999999999999999999999999E+6144
+Div128 up overflow -1E+3000 1E-3200 -> -9.999999999999999999999999999999999E+6144
+Div128 down overflow -1E+3000 1E-3200 -> -Infinity
+Div128 even overflow 1 1E-6176 -> Infinity
+Div128 even overflow 1E+6111 1E-34 -> Infinity
+
+Div128 even underflow 1E-6176 3 -> 0E-6176
+Div128 up underflow 1E-6176 3 -> 1E-6176
+Div128 down underflow 1E-6176 3 -> 0E-6176
+Div128 even underflow 2E-6176 3 -> 1E-6176
+Div128 down underflow -1E-6176 3 -> -1E-6176
+Div128 even underflow 1E-6176 2 -> 0E-6176
+Div128 away underflow 1E-6176 2 -> 1E-6176
+Div128 even underflow 3E-6176 2 -> 2E-6176
+Div128 zero underflow 3E-6176 2 -> 1E-6176
+Div128 even underflow 1E-6143 10 -> 1E-6144
+Div128 even underflow 1E-3000 1E+3176 -> 1E-6176
+Div128 even underflow 1E-3000 1E+3177 -> 0E-6176
+Div128 up underflow 1E-3000 1E+3177 -> 1E-6176
+
+Div128 even clamp 0 1E+3000 -> 0E-3000
+Div128 even clamp 0 1E-3000 -> 0E+3000
+Div128 even clamp 0 1E-6176 -> 0E+6111
+Div128 even clamp 0E-6176 1E+3000 -> 0E-6176
+Div128 even clamp 1E+3000 1E-3111 -> 1E+6111
+Div128 even clamp 1E+3000 1E-3112 -> 1.0E+6112
+Div128 even clamp 1E+6111 1E-33 -> 1.000000000000000000000000000000000E+6144
+Div128 even clamp 1E-3000 1E+3176 -> 1E-6176
+
+Div128 even zero 0 -2 -> -0
+Div128 even zero -0 2 -> -0
+Div128 even zero -0 -2 -> 0
+Div128 even zero 0.00 5 -> 0.00
+Div128 even zero -1E-6176 3 -> -0E-6176
+
+Div128 even inf 0 0 -> NaN
+Div128 even inf Infinity Infinity -> NaN
+Div128 even inf 1 0 -> Infinity
+Div128 even inf 1 -0 -> -Infinity
+Div128 even inf -1 0 -> -Infinity
+Div128 even inf Infinity 0 -> Infinity
+Div128 even inf Infinity -5 -> -Infinity
+Div128 even inf 1 Infinity -> 0E-6176
+Div128 even inf -1 Infinity -> -0E-6176
+Div128 even inf 1 -Infinity -> -0E-6176
+Div128 even inf 0 Infinity -> 0E-6176
+
+Div128 even nan NaN 0 -> NaN
+Div128 even nan 0 NaN -> NaN
+Div128 even nan sNaN 1 -> NaN
+Div128 even nan 0x7c000000000000010000000000000000 1 -> NaN
+
+Div128 even noncanon 0x3041ed09bead87c0378d8e6400000000 2 -> 0
+Div128 even noncanon 1 0x3041ed09bead87c0378d8e6400000000 -> Infinity
+Div128 even noncanon 0x6c100000000000000000000000000000 0x3041ffffffffffffffffffffffffffff -> NaN
+Div128 even noncanon 0xb047ed09bead87c0378d8e6400000000 1E+2 -> -0E+1

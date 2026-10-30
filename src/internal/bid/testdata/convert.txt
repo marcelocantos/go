@@ -1,0 +1,505 @@
+# Copyright 2026 The Go Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# Format and integer conversions ("Format conversions", "Integer
+# conversions"). Widen is exact. Narrow has preferred exponent Q(x).
+# Int64To64 and Uint64To64 round with preferred exponent 0; the decimal128
+# forms are exact. The From conversions round to an integer in the mode
+# and report Exact, Inexact, Inexact|Overflow (saturated) or Invalid.
+
+# --- Widen ---
+
+Widen - exact 1.50 -> 1.50
+Widen - exact 1.0E+370 -> 1.0E+370
+Widen - exact 9.999999999999999E+384 -> 9.999999999999999E+384
+Widen - exact 1234567890123456 -> 1234567890123456
+Widen - exact 0.000001 -> 0.000001
+Widen - exact -1E+369 -> -1E+369
+Widen - exact 9007199254740992 -> 9007199254740992
+Widen - exact 1E+16 -> 1E+16
+
+Widen - underflow 0E-398 -> 0E-398
+Widen - underflow 1E-398 -> 1E-398
+Widen - underflow 9.99999999999999E-384 -> 9.99999999999999E-384
+Widen - underflow -1E-398 -> -1E-398
+
+Widen - zero -0 -> -0
+Widen - zero 0 -> 0
+Widen - zero -0E+369 -> -0E+369
+Widen - zero 0.00 -> 0.00
+
+Widen - inf Infinity -> Infinity
+Widen - inf -Infinity -> -Infinity
+
+Widen - nan NaN -> NaN
+Widen - nan sNaN -> NaN
+Widen - nan -NaN -> NaN
+Widen - nan -sNaN -> NaN
+Widen - nan 0x7c00000000000001 -> NaN
+Widen - nan 0xfe0000000001e240 -> NaN
+
+Widen - noncanon 0x6c77ffffffffffff -> 0
+Widen - noncanon 0xec9fffffffffffff -> -0E+5
+Widen - noncanon 0x6c7386f26fc10000 -> 0
+Widen - noncanon 0x6007ffffffffffff -> 0E-398
+Widen - noncanon 0x77ffffffffffffff -> 0E+369
+Widen - noncanon 0x7c038d7ea4c68000 -> NaN
+
+# --- Narrow ---
+
+Narrow even exact 1.50 -> 1.50
+Narrow even exact 1E-398 -> 1E-398
+Narrow even exact 1.23456789E-390 -> 1.23456789E-390
+Narrow even exact 1234567890123456 -> 1234567890123456
+Narrow even exact 9.999999999999999E+384 -> 9.999999999999999E+384
+Narrow even exact 1E+369 -> 1E+369
+Narrow even exact 123E+368 -> 1.23E+370
+Narrow up exact 1.50 -> 1.50
+Narrow even exact 1.000000000000000E+16 -> 1.000000000000000E+16
+
+Narrow even inexact 0.3333333333333333333333333333333333 -> 0.3333333333333333
+Narrow up inexact 0.3333333333333333333333333333333333 -> 0.3333333333333334
+Narrow zero inexact 0.3333333333333333333333333333333333 -> 0.3333333333333333
+Narrow down inexact -0.3333333333333333333333333333333333 -> -0.3333333333333334
+Narrow up inexact -0.3333333333333333333333333333333333 -> -0.3333333333333333
+Narrow even inexact 0.6666666666666666666666666666666667 -> 0.6666666666666667
+Narrow zero inexact 0.6666666666666666666666666666666667 -> 0.6666666666666666
+Narrow even inexact 1.0000000000000001 -> 1.000000000000000
+Narrow up inexact 1.0000000000000001 -> 1.000000000000001
+Narrow even inexact 12345678901234567 -> 1.234567890123457E+16
+Narrow zero inexact 12345678901234567 -> 1.234567890123456E+16
+Narrow even inexact 1.234567890123456789012345678901234E+300 -> 1.234567890123457E+300
+
+Narrow even tie 1.0000000000000005 -> 1.000000000000000
+Narrow even tie 1.0000000000000015 -> 1.000000000000002
+Narrow away tie 1.0000000000000005 -> 1.000000000000001
+Narrow down tie -1.0000000000000005 -> -1.000000000000001
+Narrow zero tie -1.0000000000000005 -> -1.000000000000000
+Narrow up tie 1.0000000000000005 -> 1.000000000000001
+Narrow down tie 1.0000000000000005 -> 1.000000000000000
+Narrow zero tie 1.0000000000000005 -> 1.000000000000000
+Narrow up tie -1.0000000000000005 -> -1.000000000000000
+Narrow away tie -1.0000000000000005 -> -1.000000000000001
+Narrow even tie 12345678901234565 -> 1.234567890123456E+16
+Narrow away tie 12345678901234565 -> 1.234567890123457E+16
+Narrow 7 tie 1.0000000000000005 -> 1.000000000000000
+
+Narrow even carry 9.9999999999999995 -> 10.00000000000000
+Narrow zero carry 9.9999999999999995 -> 9.999999999999999
+Narrow even carry 99999999999999999 -> 1.000000000000000E+17
+Narrow zero carry 99999999999999999 -> 9.999999999999999E+16
+Narrow even carry 0.99999999999999999 -> 1.000000000000000
+Narrow down carry 0.99999999999999999 -> 0.9999999999999999
+Narrow up carry 9999999999999999.1 -> 1.000000000000000E+16
+Narrow even carry -9.9999999999999995 -> -10.00000000000000
+
+Narrow even overflow 1E+500 -> Infinity
+Narrow away overflow 1E+500 -> Infinity
+Narrow zero overflow 1E+500 -> 9.999999999999999E+384
+Narrow up overflow 1E+500 -> Infinity
+Narrow down overflow 1E+500 -> 9.999999999999999E+384
+Narrow even overflow -1E+500 -> -Infinity
+Narrow away overflow -1E+500 -> -Infinity
+Narrow zero overflow -1E+500 -> -9.999999999999999E+384
+Narrow up overflow -1E+500 -> -9.999999999999999E+384
+Narrow down overflow -1E+500 -> -Infinity
+Narrow even overflow 1E+385 -> Infinity
+Narrow even overflow 9.9999999999999995E+384 -> Infinity
+Narrow zero overflow 9.9999999999999995E+384 -> 9.999999999999999E+384
+Narrow even overflow 9.9999999999999994E+384 -> 9.999999999999999E+384
+Narrow up overflow 9.9999999999999994E+384 -> Infinity
+Narrow even overflow 1E+6111 -> Infinity
+Narrow even overflow 9.999999999999999999999999999999999E+6144 -> Infinity
+Narrow zero overflow -9.999999999999999999999999999999999E+6144 -> -9.999999999999999E+384
+
+Narrow even underflow 1E-400 -> 0E-398
+Narrow up underflow 1E-400 -> 1E-398
+Narrow down underflow 1E-400 -> 0E-398
+Narrow zero underflow 1E-400 -> 0E-398
+Narrow away underflow 1E-400 -> 0E-398
+Narrow even underflow 1.5E-398 -> 2E-398
+Narrow even underflow 2.5E-398 -> 2E-398
+Narrow away underflow 2.5E-398 -> 3E-398
+Narrow even underflow 5E-399 -> 0E-398
+Narrow away underflow 5E-399 -> 1E-398
+Narrow down underflow -1E-399 -> -1E-398
+Narrow up underflow -1E-399 -> -0E-398
+Narrow even underflow 1.234567891E-390 -> 1.23456789E-390
+Narrow up underflow 1.234567891E-390 -> 1.23456790E-390
+Narrow even underflow 9.999999999999999E-384 -> 1.000000000000000E-383
+Narrow zero underflow 9.999999999999999E-384 -> 9.99999999999999E-384
+Narrow even underflow 1E-6176 -> 0E-398
+Narrow up underflow 1E-6176 -> 1E-398
+Narrow even underflow 100E-400 -> 1E-398
+Narrow even underflow 1E-383 -> 1E-383
+Narrow even underflow 9.99999999999999E-384 -> 9.99999999999999E-384
+
+Narrow even clamp 1E+370 -> 1.0E+370
+Narrow even clamp 1E+384 -> 1.000000000000000E+384
+Narrow even clamp 0E+1000 -> 0E+369
+Narrow even clamp -0E-1000 -> -0E-398
+Narrow even clamp 1.5E+370 -> 1.5E+370
+Narrow even clamp 0E+6111 -> 0E+369
+Narrow even clamp 0E-6176 -> 0E-398
+Narrow even clamp 1E-398 -> 1E-398
+Narrow even clamp 10E-399 -> 1E-398
+Narrow even clamp 1.000E+384 -> 1.000000000000000E+384
+
+Narrow even zero -0 -> -0
+Narrow even zero 0.00 -> 0.00
+Narrow even zero -0E+1000 -> -0E+369
+Narrow even zero 0E-1000 -> 0E-398
+Narrow even zero -1E-400 -> -0E-398
+Narrow up zero -1E-400 -> -0E-398
+Narrow even zero 0 -> 0
+
+Narrow even inf Infinity -> Infinity
+Narrow even inf -Infinity -> -Infinity
+Narrow zero inf Infinity -> Infinity
+
+Narrow even nan NaN -> NaN
+Narrow even nan sNaN -> NaN
+Narrow even nan -NaN -> NaN
+Narrow even nan -sNaN -> NaN
+Narrow even nan 0x7c000000000000010000000000000000 -> NaN
+Narrow even nan 0xfe000000000000000000000000000005 -> NaN
+
+Narrow even noncanon 0x3041ed09bead87c0378d8e6400000000 -> 0
+Narrow even noncanon 0xb047ed09bead87c0378d8e6400000000 -> -0E+3
+Narrow even noncanon 0x6c100000000000000000000000000000 -> 0
+Narrow even noncanon 0xe0000000000000000000000000000001 -> -0E-398
+Narrow even noncanon 0x77ff800000000000000000000000007b -> 0E+369
+Narrow even noncanon 0x3041ffffffffffffffffffffffffffff -> 0
+
+# --- Int64To64 ---
+
+Int64To64 even exact 123 -> 123
+Int64To64 even exact -1000 -> -1000
+Int64To64 even exact 9999999999999999 -> 9999999999999999
+Int64To64 even exact -9999999999999999 -> -9999999999999999
+Int64To64 even exact 10000000000000000 -> 1.000000000000000E+16
+Int64To64 even exact 1000000000000000000 -> 1.000000000000000E+18
+Int64To64 even exact 1 -> 1
+Int64To64 even exact -1 -> -1
+Int64To64 zero exact 123456789012345600 -> 1.234567890123456E+17
+
+Int64To64 even inexact 9223372036854775807 -> 9.223372036854776E+18
+Int64To64 even inexact -9223372036854775808 -> -9.223372036854776E+18
+Int64To64 zero inexact -9223372036854775808 -> -9.223372036854775E+18
+Int64To64 up inexact -9223372036854775808 -> -9.223372036854775E+18
+Int64To64 down inexact -9223372036854775808 -> -9.223372036854776E+18
+Int64To64 away inexact -9223372036854775808 -> -9.223372036854776E+18
+Int64To64 up inexact 9223372036854775807 -> 9.223372036854776E+18
+Int64To64 zero inexact 9223372036854775807 -> 9.223372036854775E+18
+Int64To64 even inexact 12345678901234567 -> 1.234567890123457E+16
+Int64To64 zero inexact 12345678901234567 -> 1.234567890123456E+16
+Int64To64 even inexact -12345678901234567 -> -1.234567890123457E+16
+Int64To64 up inexact 12345678901234561 -> 1.234567890123457E+16
+
+Int64To64 even tie 12345678901234565 -> 1.234567890123456E+16
+Int64To64 away tie 12345678901234565 -> 1.234567890123457E+16
+Int64To64 zero tie 12345678901234565 -> 1.234567890123456E+16
+Int64To64 up tie 12345678901234565 -> 1.234567890123457E+16
+Int64To64 down tie 12345678901234565 -> 1.234567890123456E+16
+Int64To64 even tie -12345678901234565 -> -1.234567890123456E+16
+Int64To64 away tie -12345678901234565 -> -1.234567890123457E+16
+Int64To64 up tie -12345678901234565 -> -1.234567890123456E+16
+Int64To64 down tie -12345678901234565 -> -1.234567890123457E+16
+Int64To64 even tie 12345678901234575 -> 1.234567890123458E+16
+Int64To64 7 tie 12345678901234565 -> 1.234567890123456E+16
+
+Int64To64 even carry 99999999999999995 -> 1.000000000000000E+17
+Int64To64 zero carry 99999999999999995 -> 9.999999999999999E+16
+Int64To64 even carry 99999999999999999 -> 1.000000000000000E+17
+Int64To64 even carry -99999999999999995 -> -1.000000000000000E+17
+Int64To64 up carry 99999999999999991 -> 1.000000000000000E+17
+Int64To64 down carry 99999999999999991 -> 9.999999999999999E+16
+Int64To64 even carry 999999999999999950 -> 1.000000000000000E+18
+
+Int64To64 even zero 0 -> 0
+Int64To64 down zero 0 -> 0
+
+# --- Int64To128 ---
+
+Int64To128 - exact 123 -> 123
+Int64To128 - exact -1000 -> -1000
+Int64To128 - exact -9223372036854775808 -> -9223372036854775808
+Int64To128 - exact 9223372036854775807 -> 9223372036854775807
+Int64To128 - exact 1000000000000000000 -> 1000000000000000000
+Int64To128 - exact -1 -> -1
+
+Int64To128 - zero 0 -> 0
+
+# --- Uint64To64 ---
+
+Uint64To64 even exact 123 -> 123
+Uint64To64 even exact 9999999999999999 -> 9999999999999999
+Uint64To64 even exact 10000000000000000 -> 1.000000000000000E+16
+Uint64To64 even exact 10000000000000000000 -> 1.000000000000000E+19
+
+Uint64To64 even inexact 18446744073709551615 -> 1.844674407370955E+19
+Uint64To64 up inexact 18446744073709551615 -> 1.844674407370956E+19
+Uint64To64 zero inexact 18446744073709551615 -> 1.844674407370955E+19
+Uint64To64 down inexact 18446744073709551615 -> 1.844674407370955E+19
+Uint64To64 away inexact 18446744073709551615 -> 1.844674407370955E+19
+Uint64To64 even inexact 12345678901234567 -> 1.234567890123457E+16
+
+Uint64To64 even tie 12345678901234565 -> 1.234567890123456E+16
+Uint64To64 away tie 12345678901234565 -> 1.234567890123457E+16
+Uint64To64 zero tie 12345678901234565 -> 1.234567890123456E+16
+Uint64To64 up tie 12345678901234565 -> 1.234567890123457E+16
+Uint64To64 down tie 12345678901234565 -> 1.234567890123456E+16
+Uint64To64 even tie 12345678901234575 -> 1.234567890123458E+16
+
+Uint64To64 even carry 99999999999999995 -> 1.000000000000000E+17
+Uint64To64 zero carry 99999999999999995 -> 9.999999999999999E+16
+Uint64To64 even carry 9999999999999999999 -> 1.000000000000000E+19
+Uint64To64 up carry 99999999999999991 -> 1.000000000000000E+17
+
+Uint64To64 even zero 0 -> 0
+
+# --- Uint64To128 ---
+
+Uint64To128 - exact 18446744073709551615 -> 18446744073709551615
+Uint64To128 - exact 1 -> 1
+Uint64To128 - exact 9223372036854775808 -> 9223372036854775808
+
+Uint64To128 - zero 0 -> 0
+
+# --- Int64From64 ---
+
+Int64From64 zero exact 1E+2 -> 100 Exact
+Int64From64 zero exact 9.223372036854775E+18 -> 9223372036854775000 Exact
+Int64From64 zero exact -9.223372036854775E+18 -> -9223372036854775000 Exact
+Int64From64 even exact 1234567890123456 -> 1234567890123456 Exact
+Int64From64 zero exact -1 -> -1 Exact
+Int64From64 up exact 2.00 -> 2 Exact
+Int64From64 zero exact 1.000000000000000E+16 -> 10000000000000000 Exact
+
+Int64From64 zero inexact 1.5 -> 1 Inexact
+Int64From64 zero inexact -1.5 -> -1 Inexact
+Int64From64 even inexact 2.1 -> 2 Inexact
+Int64From64 up inexact 2.1 -> 3 Inexact
+Int64From64 down inexact -2.1 -> -3 Inexact
+Int64From64 up inexact -2.1 -> -2 Inexact
+Int64From64 zero inexact 0.001 -> 0 Inexact
+Int64From64 zero inexact -0.001 -> 0 Inexact
+Int64From64 away inexact 2.1 -> 2 Inexact
+Int64From64 even inexact 123456789012345.7 -> 123456789012346 Inexact
+
+Int64From64 even tie 1.5 -> 2 Inexact
+Int64From64 even tie 2.5 -> 2 Inexact
+Int64From64 away tie 2.5 -> 3 Inexact
+Int64From64 zero tie 2.5 -> 2 Inexact
+Int64From64 up tie 2.5 -> 3 Inexact
+Int64From64 down tie 2.5 -> 2 Inexact
+Int64From64 even tie -1.5 -> -2 Inexact
+Int64From64 away tie -1.5 -> -2 Inexact
+Int64From64 down tie -1.5 -> -2 Inexact
+Int64From64 up tie -1.5 -> -1 Inexact
+Int64From64 zero tie -1.5 -> -1 Inexact
+Int64From64 even tie 0.5 -> 0 Inexact
+Int64From64 away tie -0.5 -> -1 Inexact
+
+Int64From64 even carry 9.5 -> 10 Inexact
+Int64From64 even carry 99.5 -> 100 Inexact
+Int64From64 even carry 999999999999999.9 -> 1000000000000000 Inexact
+Int64From64 up carry 9.1 -> 10 Inexact
+Int64From64 even carry -9.5 -> -10 Inexact
+
+Int64From64 zero overflow 9.223372036854776E+18 -> 9223372036854775807 Inexact|Overflow
+Int64From64 zero overflow 1E+19 -> 9223372036854775807 Inexact|Overflow
+Int64From64 zero overflow -1E+19 -> -9223372036854775808 Inexact|Overflow
+Int64From64 zero overflow -9.223372036854776E+18 -> -9223372036854775808 Inexact|Overflow
+Int64From64 zero overflow 9.999999999999999E+384 -> 9223372036854775807 Inexact|Overflow
+Int64From64 zero overflow -9.999999999999999E+384 -> -9223372036854775808 Inexact|Overflow
+Int64From64 up overflow 1E+19 -> 9223372036854775807 Inexact|Overflow
+Int64From64 down overflow 1E+19 -> 9223372036854775807 Inexact|Overflow
+Int64From64 even overflow 1E+19 -> 9223372036854775807 Inexact|Overflow
+
+Int64From64 zero underflow 1E-398 -> 0 Inexact
+Int64From64 up underflow 1E-398 -> 1 Inexact
+Int64From64 down underflow -1E-398 -> -1 Inexact
+Int64From64 up underflow -1E-398 -> 0 Inexact
+Int64From64 even underflow 9.99999999999999E-384 -> 0 Inexact
+
+Int64From64 zero zero -0 -> 0 Exact
+Int64From64 zero zero 0 -> 0 Exact
+Int64From64 zero zero 0E+369 -> 0 Exact
+Int64From64 even zero -0.5 -> 0 Inexact
+Int64From64 even zero -0.4 -> 0 Inexact
+Int64From64 zero zero 0.00 -> 0 Exact
+Int64From64 even zero -0E-398 -> 0 Exact
+
+Int64From64 zero inf Infinity -> 9223372036854775807 Invalid
+Int64From64 zero inf -Infinity -> -9223372036854775808 Invalid
+Int64From64 even inf Infinity -> 9223372036854775807 Invalid
+Int64From64 down inf -Infinity -> -9223372036854775808 Invalid
+
+Int64From64 zero nan NaN -> 0 Invalid
+Int64From64 zero nan sNaN -> 0 Invalid
+Int64From64 zero nan -NaN -> 0 Invalid
+Int64From64 even nan 0x7c00000000000001 -> 0 Invalid
+Int64From64 zero nan 0xfe0000000001e240 -> 0 Invalid
+
+Int64From64 zero noncanon 0x6c77ffffffffffff -> 0 Exact
+Int64From64 zero noncanon 0xec9fffffffffffff -> 0 Exact
+Int64From64 even noncanon 0x6c7386f26fc10000 -> 0 Exact
+
+# --- Int64From128 ---
+
+Int64From128 zero exact 9223372036854775807 -> 9223372036854775807 Exact
+Int64From128 zero exact -9223372036854775808 -> -9223372036854775808 Exact
+Int64From128 zero exact 1E+2 -> 100 Exact
+Int64From128 even exact 1234567890123456 -> 1234567890123456 Exact
+
+Int64From128 zero inexact 9223372036854775807.5 -> 9223372036854775807 Inexact
+Int64From128 down inexact 9223372036854775807.5 -> 9223372036854775807 Inexact
+Int64From128 zero inexact -9223372036854775808.5 -> -9223372036854775808 Inexact
+Int64From128 zero inexact 1.5 -> 1 Inexact
+Int64From128 up inexact 2.1 -> 3 Inexact
+Int64From128 zero inexact 0.001 -> 0 Inexact
+
+Int64From128 even tie 9223372036854775806.5 -> 9223372036854775806 Inexact
+Int64From128 away tie 9223372036854775806.5 -> 9223372036854775807 Inexact
+Int64From128 even tie 2.5 -> 2 Inexact
+Int64From128 away tie 2.5 -> 3 Inexact
+Int64From128 even tie -1.5 -> -2 Inexact
+Int64From128 up tie -1.5 -> -1 Inexact
+Int64From128 down tie -1.5 -> -2 Inexact
+Int64From128 zero tie -1.5 -> -1 Inexact
+
+Int64From128 even carry 9.5 -> 10 Inexact
+Int64From128 even carry 999999999999999999.9 -> 1000000000000000000 Inexact
+
+Int64From128 even overflow 9223372036854775807.5 -> 9223372036854775807 Inexact|Overflow
+Int64From128 away overflow 9223372036854775807.5 -> 9223372036854775807 Inexact|Overflow
+Int64From128 up overflow 9223372036854775807.5 -> 9223372036854775807 Inexact|Overflow
+Int64From128 zero overflow 9223372036854775808 -> 9223372036854775807 Inexact|Overflow
+Int64From128 down overflow -9223372036854775808.5 -> -9223372036854775808 Inexact|Overflow
+Int64From128 zero overflow -9223372036854775809 -> -9223372036854775808 Inexact|Overflow
+Int64From128 zero overflow 1E+34 -> 9223372036854775807 Inexact|Overflow
+Int64From128 zero overflow -9.999999999999999999999999999999999E+6144 -> -9223372036854775808 Inexact|Overflow
+
+Int64From128 up underflow 1E-6176 -> 1 Inexact
+Int64From128 zero underflow 1E-6176 -> 0 Inexact
+Int64From128 down underflow -1E-6176 -> -1 Inexact
+
+Int64From128 zero zero -0 -> 0 Exact
+Int64From128 zero zero 0E+6111 -> 0 Exact
+Int64From128 even zero -0.5 -> 0 Inexact
+
+Int64From128 zero inf Infinity -> 9223372036854775807 Invalid
+Int64From128 zero inf -Infinity -> -9223372036854775808 Invalid
+
+Int64From128 zero nan NaN -> 0 Invalid
+Int64From128 zero nan sNaN -> 0 Invalid
+Int64From128 zero nan 0x7c000000000000010000000000000000 -> 0 Invalid
+
+Int64From128 zero noncanon 0x3041ed09bead87c0378d8e6400000000 -> 0 Exact
+Int64From128 zero noncanon 0xb047ed09bead87c0378d8e6400000000 -> 0 Exact
+Int64From128 zero noncanon 0x6c100000000000000000000000000000 -> 0 Exact
+
+# --- Uint64From64 ---
+
+Uint64From64 zero exact 1.844674407370955E+19 -> 18446744073709550000 Exact
+Uint64From64 zero exact 1E+19 -> 10000000000000000000 Exact
+Uint64From64 zero exact 1E+2 -> 100 Exact
+Uint64From64 even exact 1234567890123456 -> 1234567890123456 Exact
+
+Uint64From64 zero inexact 1.5 -> 1 Inexact
+Uint64From64 up inexact 2.1 -> 3 Inexact
+Uint64From64 down inexact 2.9 -> 2 Inexact
+Uint64From64 even inexact 2.9 -> 3 Inexact
+Uint64From64 zero inexact 0.001 -> 0 Inexact
+
+Uint64From64 even tie 2.5 -> 2 Inexact
+Uint64From64 away tie 2.5 -> 3 Inexact
+Uint64From64 even tie 0.5 -> 0 Inexact
+Uint64From64 away tie 0.5 -> 1 Inexact
+Uint64From64 up tie 2.5 -> 3 Inexact
+Uint64From64 down tie 2.5 -> 2 Inexact
+Uint64From64 zero tie 3.5 -> 3 Inexact
+Uint64From64 even tie 3.5 -> 4 Inexact
+
+Uint64From64 even carry 9.5 -> 10 Inexact
+Uint64From64 up carry 9.1 -> 10 Inexact
+Uint64From64 even carry 999999999999999.9 -> 1000000000000000 Inexact
+
+Uint64From64 zero overflow 2E+19 -> 18446744073709551615 Inexact|Overflow
+Uint64From64 zero overflow 1.844674407370956E+19 -> 18446744073709551615 Inexact|Overflow
+Uint64From64 zero overflow -1 -> 0 Inexact|Overflow
+Uint64From64 zero overflow -1.5 -> 0 Inexact|Overflow
+Uint64From64 away overflow -0.5 -> 0 Inexact|Overflow
+Uint64From64 down overflow -0.4 -> 0 Inexact|Overflow
+Uint64From64 zero overflow 9.999999999999999E+384 -> 18446744073709551615 Inexact|Overflow
+Uint64From64 zero overflow -9.999999999999999E+384 -> 0 Inexact|Overflow
+Uint64From64 down overflow -1E-398 -> 0 Inexact|Overflow
+
+Uint64From64 up underflow 1E-398 -> 1 Inexact
+Uint64From64 zero underflow 1E-398 -> 0 Inexact
+Uint64From64 up underflow -1E-398 -> 0 Inexact
+Uint64From64 even underflow -1E-398 -> 0 Inexact
+
+Uint64From64 zero zero -0 -> 0 Exact
+Uint64From64 zero zero 0 -> 0 Exact
+Uint64From64 zero zero -0.5 -> 0 Inexact
+Uint64From64 even zero -0.5 -> 0 Inexact
+Uint64From64 up zero -0.5 -> 0 Inexact
+Uint64From64 zero zero 0E+369 -> 0 Exact
+
+Uint64From64 zero inf -Infinity -> 0 Invalid
+Uint64From64 zero inf Infinity -> 18446744073709551615 Invalid
+
+Uint64From64 zero nan NaN -> 0 Invalid
+Uint64From64 zero nan sNaN -> 0 Invalid
+Uint64From64 zero nan -NaN -> 0 Invalid
+Uint64From64 zero nan 0x7c00000000000001 -> 0 Invalid
+
+Uint64From64 zero noncanon 0x6c77ffffffffffff -> 0 Exact
+Uint64From64 zero noncanon 0xec9fffffffffffff -> 0 Exact
+
+# --- Uint64From128 ---
+
+Uint64From128 zero exact 18446744073709551615 -> 18446744073709551615 Exact
+Uint64From128 zero exact 1E+2 -> 100 Exact
+Uint64From128 zero exact 9223372036854775808 -> 9223372036854775808 Exact
+
+Uint64From128 zero inexact 18446744073709551615.5 -> 18446744073709551615 Inexact
+Uint64From128 zero inexact 1.5 -> 1 Inexact
+Uint64From128 up inexact 2.1 -> 3 Inexact
+
+Uint64From128 even tie 18446744073709551614.5 -> 18446744073709551614 Inexact
+Uint64From128 away tie 18446744073709551614.5 -> 18446744073709551615 Inexact
+Uint64From128 even tie 2.5 -> 2 Inexact
+Uint64From128 away tie 2.5 -> 3 Inexact
+Uint64From128 even tie 0.5 -> 0 Inexact
+
+Uint64From128 even carry 9.5 -> 10 Inexact
+Uint64From128 even carry 9999999999999999999.9 -> 10000000000000000000 Inexact
+
+Uint64From128 zero overflow 18446744073709551616 -> 18446744073709551615 Inexact|Overflow
+Uint64From128 even overflow 18446744073709551615.5 -> 18446744073709551615 Inexact|Overflow
+Uint64From128 up overflow 18446744073709551615.5 -> 18446744073709551615 Inexact|Overflow
+Uint64From128 zero overflow -1 -> 0 Inexact|Overflow
+Uint64From128 away overflow -0.5 -> 0 Inexact|Overflow
+Uint64From128 zero overflow 1E+34 -> 18446744073709551615 Inexact|Overflow
+
+Uint64From128 up underflow 1E-6176 -> 1 Inexact
+Uint64From128 zero underflow 1E-6176 -> 0 Inexact
+Uint64From128 up underflow -1E-6176 -> 0 Inexact
+
+Uint64From128 zero zero -0 -> 0 Exact
+Uint64From128 zero zero -0.5 -> 0 Inexact
+Uint64From128 zero zero 0E-6176 -> 0 Exact
+
+Uint64From128 zero inf Infinity -> 18446744073709551615 Invalid
+Uint64From128 zero inf -Infinity -> 0 Invalid
+
+Uint64From128 zero nan NaN -> 0 Invalid
+Uint64From128 zero nan sNaN -> 0 Invalid
+Uint64From128 zero nan 0xfe000000000000000000000000000005 -> 0 Invalid
+
+Uint64From128 zero noncanon 0x3041ed09bead87c0378d8e6400000000 -> 0 Exact
+Uint64From128 zero noncanon 0x6c100000000000000000000000000000 -> 0 Exact

@@ -1,0 +1,531 @@
+# Copyright 2026 The Go Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# Encoding (IEEE 754-2008 clause 3.5.2), the predicates of clause 5.7.2 and
+# the sign operations of clause 5.5.1 ("Sign operations"). Unpack results
+# are kind neg coeff exp; Pack operands are neg coeff exp and its results
+# the encoding and ok. The sign operations copy bits: they keep a
+# non-canonical coefficient, a NaN payload and the signaling bit, so their
+# expected results are written in hex where the character form could not
+# show the difference.
+#
+# For Pack the overflow class holds the operands it refuses: a coefficient
+# above MaxCoeff or an exponent outside [MinExp, MaxExp].
+
+# --- Unpack64 ---
+
+Unpack64 - exact 1.50 -> finite false 150 -2
+Unpack64 - exact -1.50 -> finite true 150 -2
+Unpack64 - exact 9.999999999999999E+384 -> finite false 9999999999999999 369
+Unpack64 - exact 9007199254740992 -> finite false 9007199254740992 0
+Unpack64 - exact 1234567890123456 -> finite false 1234567890123456 0
+Unpack64 - exact 1E+369 -> finite false 1 369
+Unpack64 - exact 1.0E+370 -> finite false 10 369
+
+Unpack64 - underflow 1E-398 -> finite false 1 -398
+Unpack64 - underflow -9.99999999999999E-384 -> finite true 999999999999999 -398
+
+Unpack64 - zero 0 -> finite false 0 0
+Unpack64 - zero -0E+5 -> finite true 0 5
+Unpack64 - zero 0E-398 -> finite false 0 -398
+Unpack64 - zero 0E+369 -> finite false 0 369
+
+Unpack64 - inf Infinity -> inf false 0 0
+Unpack64 - inf -Infinity -> inf true 0 0
+Unpack64 - inf 0x7800000000000001 -> inf false 0 0
+
+Unpack64 - nan NaN -> nan false 0 0
+Unpack64 - nan -NaN -> nan true 0 0
+Unpack64 - nan sNaN -> nan false 0 0
+Unpack64 - nan -sNaN -> nan true 0 0
+Unpack64 - nan 0x7c00000000000001 -> nan false 0 0
+Unpack64 - nan 0xfe0000000001e240 -> nan true 0 0
+
+Unpack64 - noncanon 0x6c77ffffffffffff -> finite false 0 0
+Unpack64 - noncanon 0xec9fffffffffffff -> finite true 0 5
+Unpack64 - noncanon 0x6c7386f26fc10000 -> finite false 0 0
+Unpack64 - noncanon 0x6007ffffffffffff -> finite false 0 -398
+Unpack64 - noncanon 0x77ffffffffffffff -> finite false 0 369
+Unpack64 - noncanon 0x6c7386f26fc0ffff -> finite false 9999999999999999 0
+
+# --- Unpack128 ---
+
+Unpack128 - exact 1.50 -> finite false 150 -2
+Unpack128 - exact -1.50E+6000 -> finite true 150 5998
+Unpack128 - exact 9.999999999999999999999999999999999E+6144 -> finite false 9999999999999999999999999999999999 6111
+Unpack128 - exact 1234567890123456789012345678901234 -> finite false 1234567890123456789012345678901234 0
+Unpack128 - exact 18446744073709551616 -> finite false 18446744073709551616 0
+
+Unpack128 - underflow 1E-6176 -> finite false 1 -6176
+Unpack128 - underflow -9.99999999999999999999999999999999E-6144 -> finite true 999999999999999999999999999999999 -6176
+
+Unpack128 - zero 0 -> finite false 0 0
+Unpack128 - zero -0E+5 -> finite true 0 5
+Unpack128 - zero 0E-6176 -> finite false 0 -6176
+Unpack128 - zero 0E+6111 -> finite false 0 6111
+
+Unpack128 - inf Infinity -> inf false 0 0
+Unpack128 - inf -Infinity -> inf true 0 0
+
+Unpack128 - nan NaN -> nan false 0 0
+Unpack128 - nan -NaN -> nan true 0 0
+Unpack128 - nan sNaN -> nan false 0 0
+Unpack128 - nan 0x7c000000000000010000000000000000 -> nan false 0 0
+Unpack128 - nan 0xfe000000000000000000000000000005 -> nan true 0 0
+
+Unpack128 - noncanon 0x3041ed09bead87c0378d8e6400000000 -> finite false 0 0
+Unpack128 - noncanon 0xb047ed09bead87c0378d8e6400000000 -> finite true 0 3
+Unpack128 - noncanon 0x3041ffffffffffffffffffffffffffff -> finite false 0 0
+Unpack128 - noncanon 0x6c100000000000000000000000000000 -> finite false 0 0
+Unpack128 - noncanon 0xe0000000000000000000000000000001 -> finite true 0 -6176
+Unpack128 - noncanon 0x77ff800000000000000000000000007b -> finite false 0 6111
+Unpack128 - noncanon 0x3041ed09bead87c0378d8e63ffffffff -> finite false 9999999999999999999999999999999999 0
+
+# --- Pack64 ---
+
+Pack64 - exact false 150 -2 -> 1.50 true
+Pack64 - exact true 150 -2 -> -1.50 true
+Pack64 - exact false 9999999999999999 369 -> 9.999999999999999E+384 true
+Pack64 - exact false 9007199254740992 0 -> 9007199254740992 true
+Pack64 - exact false 1234567890123456 0 -> 1234567890123456 true
+Pack64 - exact false 1 369 -> 1E+369 true
+Pack64 - exact false 10 369 -> 1.0E+370 true
+Pack64 - exact false 9007199254740991 0 -> 9007199254740991 true
+
+Pack64 - underflow false 1 -398 -> 1E-398 true
+Pack64 - underflow true 999999999999999 -398 -> -9.99999999999999E-384 true
+
+Pack64 - overflow false 10000000000000000 0 -> NaN false
+Pack64 - overflow false 1 370 -> NaN false
+Pack64 - overflow false 1 -399 -> NaN false
+Pack64 - overflow true 1 400 -> NaN false
+Pack64 - overflow false 0 400 -> NaN false
+Pack64 - overflow false 0 -399 -> NaN false
+Pack64 - overflow false 18446744073709551615 0 -> NaN false
+
+Pack64 - zero false 0 0 -> 0 true
+Pack64 - zero true 0 5 -> -0E+5 true
+Pack64 - zero false 0 -398 -> 0E-398 true
+Pack64 - zero false 0 369 -> 0E+369 true
+Pack64 - zero true 0 0 -> -0 true
+
+# --- Pack128 ---
+
+Pack128 - exact false 150 -2 -> 1.50 true
+Pack128 - exact true 150 5998 -> -1.50E+6000 true
+Pack128 - exact false 9999999999999999999999999999999999 6111 -> 9.999999999999999999999999999999999E+6144 true
+Pack128 - exact false 1234567890123456789012345678901234 0 -> 1234567890123456789012345678901234 true
+Pack128 - exact false 18446744073709551616 0 -> 18446744073709551616 true
+
+Pack128 - underflow false 1 -6176 -> 1E-6176 true
+Pack128 - underflow true 999999999999999999999999999999999 -6176 -> -9.99999999999999999999999999999999E-6144 true
+
+Pack128 - overflow false 10000000000000000000000000000000000 0 -> NaN false
+Pack128 - overflow false 1 6112 -> NaN false
+Pack128 - overflow false 1 -6177 -> NaN false
+Pack128 - overflow false 0 6112 -> NaN false
+Pack128 - overflow false 340282366920938463463374607431768211455 0 -> NaN false
+
+Pack128 - zero false 0 0 -> 0 true
+Pack128 - zero true 0 5 -> -0E+5 true
+Pack128 - zero false 0 -6176 -> 0E-6176 true
+Pack128 - zero false 0 6111 -> 0E+6111 true
+
+# --- IsNaN64 ---
+
+IsNaN64 - exact 1.50 -> false
+IsNaN64 - exact 9.999999999999999E+384 -> false
+IsNaN64 - underflow 1E-398 -> false
+IsNaN64 - zero 0 -> false
+IsNaN64 - zero -0 -> false
+IsNaN64 - inf Infinity -> false
+IsNaN64 - inf -Infinity -> false
+IsNaN64 - nan NaN -> true
+IsNaN64 - nan -NaN -> true
+IsNaN64 - nan sNaN -> true
+IsNaN64 - nan -sNaN -> true
+IsNaN64 - nan 0x7c00000000000001 -> true
+IsNaN64 - nan 0x7c038d7ea4c68000 -> true
+IsNaN64 - nan 0x7c40000000000000 -> true
+IsNaN64 - noncanon 0x6c77ffffffffffff -> false
+IsNaN64 - noncanon 0xec9fffffffffffff -> false
+
+# --- IsNaN128 ---
+
+IsNaN128 - exact 1.50 -> false
+IsNaN128 - underflow 1E-6176 -> false
+IsNaN128 - zero 0 -> false
+IsNaN128 - inf Infinity -> false
+IsNaN128 - nan NaN -> true
+IsNaN128 - nan -NaN -> true
+IsNaN128 - nan sNaN -> true
+IsNaN128 - nan 0x7c000000000000010000000000000000 -> true
+IsNaN128 - nan 0xfe000000000000000000000000000005 -> true
+IsNaN128 - noncanon 0x3041ed09bead87c0378d8e6400000000 -> false
+IsNaN128 - noncanon 0x6c100000000000000000000000000000 -> false
+
+# --- IsSignaling64 ---
+
+IsSignaling64 - exact 1.50 -> false
+IsSignaling64 - underflow 1E-398 -> false
+IsSignaling64 - zero 0 -> false
+IsSignaling64 - inf Infinity -> false
+IsSignaling64 - inf -Infinity -> false
+IsSignaling64 - nan sNaN -> true
+IsSignaling64 - nan -sNaN -> true
+IsSignaling64 - nan NaN -> false
+IsSignaling64 - nan -NaN -> false
+IsSignaling64 - nan 0xfe0000000001e240 -> true
+IsSignaling64 - nan 0x7c00000000000001 -> false
+IsSignaling64 - noncanon 0x6c77ffffffffffff -> false
+IsSignaling64 - noncanon 0x77ffffffffffffff -> false
+
+# --- IsSignaling128 ---
+
+IsSignaling128 - exact 1.50 -> false
+IsSignaling128 - underflow 1E-6176 -> false
+IsSignaling128 - zero -0 -> false
+IsSignaling128 - inf Infinity -> false
+IsSignaling128 - nan sNaN -> true
+IsSignaling128 - nan -sNaN -> true
+IsSignaling128 - nan NaN -> false
+IsSignaling128 - nan 0xfe000000000000000000000000000005 -> true
+IsSignaling128 - nan 0x7c000000000000010000000000000000 -> false
+IsSignaling128 - noncanon 0x3041ed09bead87c0378d8e6400000000 -> false
+
+# --- IsInf64 ---
+
+IsInf64 - exact 1.50 -> false
+IsInf64 - exact 9.999999999999999E+384 -> false
+IsInf64 - underflow 1E-398 -> false
+IsInf64 - zero 0 -> false
+IsInf64 - inf Infinity -> true
+IsInf64 - inf -Infinity -> true
+IsInf64 - inf 0x7800000000000001 -> true
+IsInf64 - inf 0x7a00000000000000 -> true
+IsInf64 - nan NaN -> false
+IsInf64 - nan sNaN -> false
+IsInf64 - noncanon 0x6c77ffffffffffff -> false
+IsInf64 - noncanon 0x77ffffffffffffff -> false
+
+# --- IsInf128 ---
+
+IsInf128 - exact 1.50 -> false
+IsInf128 - underflow 1E-6176 -> false
+IsInf128 - zero 0 -> false
+IsInf128 - inf Infinity -> true
+IsInf128 - inf -Infinity -> true
+IsInf128 - inf 0x78000000000000000000000000000001 -> true
+IsInf128 - nan NaN -> false
+IsInf128 - noncanon 0x3041ed09bead87c0378d8e6400000000 -> false
+IsInf128 - noncanon 0x77ff800000000000000000000000007b -> false
+
+# --- IsFinite64 ---
+
+IsFinite64 - exact 1.50 -> true
+IsFinite64 - exact 9.999999999999999E+384 -> true
+IsFinite64 - underflow 1E-398 -> true
+IsFinite64 - zero 0 -> true
+IsFinite64 - zero -0E+5 -> true
+IsFinite64 - inf Infinity -> false
+IsFinite64 - inf -Infinity -> false
+IsFinite64 - nan NaN -> false
+IsFinite64 - nan sNaN -> false
+IsFinite64 - nan 0x7c00000000000001 -> false
+IsFinite64 - noncanon 0x6c77ffffffffffff -> true
+IsFinite64 - noncanon 0xec9fffffffffffff -> true
+
+# --- IsFinite128 ---
+
+IsFinite128 - exact 1.50 -> true
+IsFinite128 - underflow 1E-6176 -> true
+IsFinite128 - zero 0 -> true
+IsFinite128 - inf Infinity -> false
+IsFinite128 - inf -Infinity -> false
+IsFinite128 - nan NaN -> false
+IsFinite128 - nan sNaN -> false
+IsFinite128 - noncanon 0x3041ed09bead87c0378d8e6400000000 -> true
+IsFinite128 - noncanon 0x6c100000000000000000000000000000 -> true
+
+# --- IsZero64 ---
+
+IsZero64 - exact 1.50 -> false
+IsZero64 - exact 1E+369 -> false
+IsZero64 - underflow 1E-398 -> false
+IsZero64 - zero 0 -> true
+IsZero64 - zero -0 -> true
+IsZero64 - zero 0E+369 -> true
+IsZero64 - zero 0.00 -> true
+IsZero64 - zero -0E-398 -> true
+IsZero64 - inf Infinity -> false
+IsZero64 - inf -Infinity -> false
+IsZero64 - nan NaN -> false
+IsZero64 - nan sNaN -> false
+IsZero64 - noncanon 0x6c77ffffffffffff -> true
+IsZero64 - noncanon 0xec9fffffffffffff -> true
+IsZero64 - noncanon 0x6c7386f26fc10000 -> true
+IsZero64 - noncanon 0x6c7386f26fc0ffff -> false
+
+# --- IsZero128 ---
+
+IsZero128 - exact 1.50 -> false
+IsZero128 - underflow 1E-6176 -> false
+IsZero128 - zero 0 -> true
+IsZero128 - zero -0 -> true
+IsZero128 - zero 0E+6111 -> true
+IsZero128 - inf Infinity -> false
+IsZero128 - nan NaN -> false
+IsZero128 - noncanon 0x3041ed09bead87c0378d8e6400000000 -> true
+IsZero128 - noncanon 0x6c100000000000000000000000000000 -> true
+IsZero128 - noncanon 0xe0000000000000000000000000000001 -> true
+IsZero128 - noncanon 0x3041ed09bead87c0378d8e63ffffffff -> false
+
+# --- IsSubnormal64 ---
+
+IsSubnormal64 - exact 1.50 -> false
+IsSubnormal64 - exact 1E-383 -> false
+IsSubnormal64 - exact 1.000000000000000E-383 -> false
+IsSubnormal64 - exact 9.999999999999999E+384 -> false
+IsSubnormal64 - underflow 1E-398 -> true
+IsSubnormal64 - underflow 9.99999999999999E-384 -> true
+IsSubnormal64 - underflow 100E-398 -> true
+IsSubnormal64 - underflow 1.23456789E-390 -> true
+IsSubnormal64 - underflow -1E-398 -> true
+IsSubnormal64 - zero 0E-398 -> false
+IsSubnormal64 - zero 0 -> false
+IsSubnormal64 - zero -0E-398 -> false
+IsSubnormal64 - inf Infinity -> false
+IsSubnormal64 - nan NaN -> false
+IsSubnormal64 - noncanon 0x6007ffffffffffff -> false
+IsSubnormal64 - noncanon 0x6c77ffffffffffff -> false
+
+# --- IsSubnormal128 ---
+
+IsSubnormal128 - exact 1.50 -> false
+IsSubnormal128 - exact 1E-6143 -> false
+IsSubnormal128 - exact 1.000000000000000000000000000000000E-6143 -> false
+IsSubnormal128 - underflow 1E-6176 -> true
+IsSubnormal128 - underflow 9.99999999999999999999999999999999E-6144 -> true
+IsSubnormal128 - underflow -1E-6176 -> true
+IsSubnormal128 - zero 0E-6176 -> false
+IsSubnormal128 - zero 0 -> false
+IsSubnormal128 - inf -Infinity -> false
+IsSubnormal128 - nan sNaN -> false
+IsSubnormal128 - noncanon 0xe0000000000000000000000000000001 -> false
+
+# --- IsCanonical64 ---
+
+IsCanonical64 - exact 1.50 -> true
+IsCanonical64 - exact 9.999999999999999E+384 -> true
+IsCanonical64 - exact 9007199254740992 -> true
+IsCanonical64 - exact 0x6c7386f26fc0ffff -> true
+IsCanonical64 - underflow 1E-398 -> true
+IsCanonical64 - zero 0 -> true
+IsCanonical64 - zero -0E+5 -> true
+IsCanonical64 - inf Infinity -> true
+IsCanonical64 - inf -Infinity -> true
+IsCanonical64 - inf 0x7800000000000001 -> false
+IsCanonical64 - inf 0x7a00000000000000 -> false
+IsCanonical64 - nan NaN -> true
+IsCanonical64 - nan sNaN -> true
+IsCanonical64 - nan -NaN -> true
+IsCanonical64 - nan 0x7c00000000000001 -> true
+IsCanonical64 - nan 0xfe0000000001e240 -> true
+IsCanonical64 - nan 0x7c038d7ea4c68000 -> false
+IsCanonical64 - nan 0x7c038d7ea4c67fff -> true
+IsCanonical64 - nan 0x7c40000000000000 -> false
+IsCanonical64 - noncanon 0x6c77ffffffffffff -> false
+IsCanonical64 - noncanon 0xec9fffffffffffff -> false
+IsCanonical64 - noncanon 0x6c7386f26fc10000 -> false
+IsCanonical64 - noncanon 0x6007ffffffffffff -> false
+IsCanonical64 - noncanon 0x77ffffffffffffff -> false
+
+# --- IsCanonical128 ---
+
+IsCanonical128 - exact 1.50 -> true
+IsCanonical128 - exact 9.999999999999999999999999999999999E+6144 -> true
+IsCanonical128 - exact 0x3041ed09bead87c0378d8e63ffffffff -> true
+IsCanonical128 - underflow 1E-6176 -> true
+IsCanonical128 - zero 0 -> true
+IsCanonical128 - zero -0 -> true
+IsCanonical128 - inf Infinity -> true
+IsCanonical128 - inf 0x78000000000000000000000000000001 -> false
+IsCanonical128 - nan NaN -> true
+IsCanonical128 - nan sNaN -> true
+IsCanonical128 - nan 0x7c000000000000010000000000000000 -> true
+IsCanonical128 - nan 0xfe000000000000000000000000000005 -> true
+IsCanonical128 - nan 0x7c00314dc6448d9338c15b0a00000000 -> false
+IsCanonical128 - nan 0x7c00314dc6448d9338c15b09ffffffff -> true
+IsCanonical128 - nan 0x7c004000000000000000000000000000 -> false
+IsCanonical128 - noncanon 0x3041ed09bead87c0378d8e6400000000 -> false
+IsCanonical128 - noncanon 0xb047ed09bead87c0378d8e6400000000 -> false
+IsCanonical128 - noncanon 0x3041ffffffffffffffffffffffffffff -> false
+IsCanonical128 - noncanon 0x6c100000000000000000000000000000 -> false
+IsCanonical128 - noncanon 0xe0000000000000000000000000000001 -> false
+IsCanonical128 - noncanon 0x77ff800000000000000000000000007b -> false
+
+# --- Signbit64 ---
+
+Signbit64 - exact 1.50 -> false
+Signbit64 - exact -1.50 -> true
+Signbit64 - underflow -1E-398 -> true
+Signbit64 - zero 0 -> false
+Signbit64 - zero -0 -> true
+Signbit64 - zero -0E+5 -> true
+Signbit64 - inf Infinity -> false
+Signbit64 - inf -Infinity -> true
+Signbit64 - nan NaN -> false
+Signbit64 - nan -NaN -> true
+Signbit64 - nan sNaN -> false
+Signbit64 - nan -sNaN -> true
+Signbit64 - nan 0xfe0000000001e240 -> true
+Signbit64 - noncanon 0xec9fffffffffffff -> true
+Signbit64 - noncanon 0x6c77ffffffffffff -> false
+
+# --- Signbit128 ---
+
+Signbit128 - exact 1.50 -> false
+Signbit128 - exact -1.50 -> true
+Signbit128 - underflow -1E-6176 -> true
+Signbit128 - zero 0 -> false
+Signbit128 - zero -0 -> true
+Signbit128 - inf -Infinity -> true
+Signbit128 - inf Infinity -> false
+Signbit128 - nan NaN -> false
+Signbit128 - nan -NaN -> true
+Signbit128 - nan 0xfe000000000000000000000000000005 -> true
+Signbit128 - noncanon 0xb047ed09bead87c0378d8e6400000000 -> true
+Signbit128 - noncanon 0x3041ed09bead87c0378d8e6400000000 -> false
+
+# --- Neg64 ---
+
+Neg64 - exact 1.50 -> -1.50
+Neg64 - exact -1.50 -> 1.50
+Neg64 - exact 9.999999999999999E+384 -> -9.999999999999999E+384
+Neg64 - exact 9007199254740992 -> -9007199254740992
+Neg64 - underflow 1E-398 -> -1E-398
+Neg64 - underflow -1E-398 -> 1E-398
+Neg64 - zero -0 -> 0
+Neg64 - zero 0 -> -0
+Neg64 - zero 0E+5 -> -0E+5
+Neg64 - inf Infinity -> -Infinity
+Neg64 - inf -Infinity -> Infinity
+Neg64 - inf 0x7800000000000001 -> 0xf800000000000001
+Neg64 - nan NaN -> -NaN
+Neg64 - nan -NaN -> NaN
+Neg64 - nan sNaN -> -sNaN
+Neg64 - nan -sNaN -> sNaN
+Neg64 - nan 0x7c00000000000001 -> 0xfc00000000000001
+Neg64 - nan 0xfe0000000001e240 -> 0x7e0000000001e240
+Neg64 - noncanon 0x6c77ffffffffffff -> 0xec77ffffffffffff
+Neg64 - noncanon 0xec9fffffffffffff -> 0x6c9fffffffffffff
+Neg64 - noncanon 0x7c038d7ea4c68000 -> 0xfc038d7ea4c68000
+
+# --- Neg128 ---
+
+Neg128 - exact 1.50 -> -1.50
+Neg128 - exact -1.50E+6000 -> 1.50E+6000
+Neg128 - underflow 1E-6176 -> -1E-6176
+Neg128 - zero -0 -> 0
+Neg128 - zero 0 -> -0
+Neg128 - inf Infinity -> -Infinity
+Neg128 - inf -Infinity -> Infinity
+Neg128 - nan NaN -> -NaN
+Neg128 - nan sNaN -> -sNaN
+Neg128 - nan -sNaN -> sNaN
+Neg128 - nan 0x7c000000000000010000000000000000 -> 0xfc000000000000010000000000000000
+Neg128 - nan 0xfe000000000000000000000000000005 -> 0x7e000000000000000000000000000005
+Neg128 - noncanon 0x3041ed09bead87c0378d8e6400000000 -> 0xb041ed09bead87c0378d8e6400000000
+Neg128 - noncanon 0x6c100000000000000000000000000000 -> 0xec100000000000000000000000000000
+Neg128 - noncanon 0xe0000000000000000000000000000001 -> 0x60000000000000000000000000000001
+
+# --- Abs64 ---
+
+Abs64 - exact -1.50 -> 1.50
+Abs64 - exact 1.50 -> 1.50
+Abs64 - exact -9.999999999999999E+384 -> 9.999999999999999E+384
+Abs64 - exact -9007199254740992 -> 9007199254740992
+Abs64 - underflow -1E-398 -> 1E-398
+Abs64 - zero -0E+5 -> 0E+5
+Abs64 - zero -0 -> 0
+Abs64 - zero 0 -> 0
+Abs64 - inf -Infinity -> Infinity
+Abs64 - inf Infinity -> Infinity
+Abs64 - inf 0xf800000000000001 -> 0x7800000000000001
+Abs64 - nan -NaN -> NaN
+Abs64 - nan NaN -> NaN
+Abs64 - nan -sNaN -> sNaN
+Abs64 - nan sNaN -> sNaN
+Abs64 - nan 0xfe0000000001e240 -> 0x7e0000000001e240
+Abs64 - nan 0xfc00000000000001 -> 0x7c00000000000001
+Abs64 - noncanon 0xec9fffffffffffff -> 0x6c9fffffffffffff
+Abs64 - noncanon 0x6c77ffffffffffff -> 0x6c77ffffffffffff
+Abs64 - noncanon 0xfc038d7ea4c68000 -> 0x7c038d7ea4c68000
+
+# --- Abs128 ---
+
+Abs128 - exact -1.50 -> 1.50
+Abs128 - exact 1.50E+6000 -> 1.50E+6000
+Abs128 - underflow -1E-6176 -> 1E-6176
+Abs128 - zero -0E+5 -> 0E+5
+Abs128 - zero -0 -> 0
+Abs128 - inf -Infinity -> Infinity
+Abs128 - inf Infinity -> Infinity
+Abs128 - nan -NaN -> NaN
+Abs128 - nan -sNaN -> sNaN
+Abs128 - nan sNaN -> sNaN
+Abs128 - nan 0xfe000000000000000000000000000005 -> 0x7e000000000000000000000000000005
+Abs128 - noncanon 0xb047ed09bead87c0378d8e6400000000 -> 0x3047ed09bead87c0378d8e6400000000
+Abs128 - noncanon 0xe0000000000000000000000000000001 -> 0x60000000000000000000000000000001
+Abs128 - noncanon 0x6c100000000000000000000000000000 -> 0x6c100000000000000000000000000000
+
+# --- CopySign64 ---
+
+CopySign64 - exact 1.50 -0 -> -1.50
+CopySign64 - exact -1.50 2 -> 1.50
+CopySign64 - exact 1.50 2 -> 1.50
+CopySign64 - exact -1.50 -2 -> -1.50
+CopySign64 - exact 1.50 -Infinity -> -1.50
+CopySign64 - exact 9.999999999999999E+384 -NaN -> -9.999999999999999E+384
+CopySign64 - underflow 1E-398 -1 -> -1E-398
+CopySign64 - underflow -1E-398 1 -> 1E-398
+CopySign64 - zero 0 -0 -> -0
+CopySign64 - zero -0 0 -> 0
+CopySign64 - zero 0E+5 -1 -> -0E+5
+CopySign64 - zero 1 -0 -> -1
+CopySign64 - zero -1 0 -> 1
+CopySign64 - inf Infinity -NaN -> -Infinity
+CopySign64 - inf -Infinity 1 -> Infinity
+CopySign64 - inf Infinity Infinity -> Infinity
+CopySign64 - inf 0x7800000000000001 -1 -> 0xf800000000000001
+CopySign64 - nan -sNaN 1 -> sNaN
+CopySign64 - nan sNaN -1 -> -sNaN
+CopySign64 - nan NaN -0 -> -NaN
+CopySign64 - nan -NaN 0 -> NaN
+CopySign64 - nan 0x7c00000000000001 -1 -> 0xfc00000000000001
+CopySign64 - nan 0xfe0000000001e240 1 -> 0x7e0000000001e240
+CopySign64 - nan 1 -sNaN -> -1
+CopySign64 - noncanon 0x6c77ffffffffffff -0 -> 0xec77ffffffffffff
+CopySign64 - noncanon 0xec9fffffffffffff 1 -> 0x6c9fffffffffffff
+CopySign64 - noncanon NaN 0xec9fffffffffffff -> -NaN
+CopySign64 - noncanon 1 0x6c77ffffffffffff -> 1
+
+# --- CopySign128 ---
+
+CopySign128 - exact 1.50 -0 -> -1.50
+CopySign128 - exact -1.50 2 -> 1.50
+CopySign128 - exact 1.50E+6000 -Infinity -> -1.50E+6000
+CopySign128 - underflow 1E-6176 -1 -> -1E-6176
+CopySign128 - zero 0 -0 -> -0
+CopySign128 - zero -0 0 -> 0
+CopySign128 - zero 1 -0 -> -1
+CopySign128 - inf Infinity -NaN -> -Infinity
+CopySign128 - inf -Infinity 1 -> Infinity
+CopySign128 - nan -sNaN 1 -> sNaN
+CopySign128 - nan NaN -0 -> -NaN
+CopySign128 - nan 0x7c000000000000010000000000000000 -1 -> 0xfc000000000000010000000000000000
+CopySign128 - nan 0xfe000000000000000000000000000005 1 -> 0x7e000000000000000000000000000005
+CopySign128 - noncanon 0x3041ed09bead87c0378d8e6400000000 -0 -> 0xb041ed09bead87c0378d8e6400000000
+CopySign128 - noncanon 0xb047ed09bead87c0378d8e6400000000 1 -> 0x3047ed09bead87c0378d8e6400000000
+CopySign128 - noncanon NaN 0xb047ed09bead87c0378d8e6400000000 -> -NaN

@@ -1,0 +1,246 @@
+# Copyright 2026 The Go Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# Round64 and Round128 ("Rounding from exact parts"): the operands are
+# neg, coeff, exp and sticky in declaration order; the results are the
+# encoding and the Status. The input is a value in parts, so the inf, nan
+# and noncanon classes do not apply; an infinite result is overflow.
+
+# --- Round64 ---
+
+Round64 even exact false 1 0 false -> 1 Exact
+Round64 even exact false 10000000000000000 0 false -> 1.000000000000000E+16 Exact
+Round64 even exact false 100 -400 false -> 1E-398 Exact
+Round64 even exact false 150 -2 false -> 1.50 Exact
+Round64 even exact true 5 1 false -> -5E+1 Exact
+Round64 even exact false 12345678901234560 0 false -> 1.234567890123456E+16 Exact
+Round64 even exact false 1000000000000000000 0 false -> 1.000000000000000E+18 Exact
+Round64 even exact false 9999999999999999 0 false -> 9999999999999999 Exact
+Round64 even exact false 9999999999999999 369 false -> 9.999999999999999E+384 Exact
+Round64 even exact true 1234567890123456 -20 false -> -0.00001234567890123456 Exact
+Round64 up exact false 150 -2 false -> 1.50 Exact
+Round64 7 exact false 150 -2 false -> 1.50 Exact
+
+Round64 even inexact false 12345678901234567 0 false -> 1.234567890123457E+16 Inexact
+Round64 zero inexact false 12345678901234567 0 false -> 1.234567890123456E+16 Inexact
+Round64 down inexact false 12345678901234567 0 false -> 1.234567890123456E+16 Inexact
+Round64 up inexact false 12345678901234561 0 false -> 1.234567890123457E+16 Inexact
+Round64 even inexact false 1 0 true -> 1.000000000000000 Inexact
+Round64 up inexact false 1 0 true -> 1.000000000000001 Inexact
+Round64 down inexact false 1 0 true -> 1.000000000000000 Inexact
+Round64 zero inexact false 1 0 true -> 1.000000000000000 Inexact
+Round64 away inexact false 1 0 true -> 1.000000000000000 Inexact
+Round64 up inexact true 1 0 true -> -1.000000000000000 Inexact
+Round64 down inexact true 1 0 true -> -1.000000000000001 Inexact
+Round64 even inexact true 1 0 true -> -1.000000000000000 Inexact
+Round64 even inexact false 123 0 true -> 123.0000000000000 Inexact
+Round64 up inexact false 123 0 true -> 123.0000000000001 Inexact
+Round64 even inexact false 18446744073709551615 0 false -> 1.844674407370955E+19 Inexact
+Round64 even inexact false 18446744073709551615 -19 false -> 1.844674407370955 Inexact
+Round64 up inexact false 18446744073709551615 0 false -> 1.844674407370956E+19 Inexact
+Round64 even inexact false 12345678901234567 0 true -> 1.234567890123457E+16 Inexact
+Round64 zero inexact false 12345678901234567 0 true -> 1.234567890123456E+16 Inexact
+Round64 even inexact false 10000000000000001 -20 false -> 0.0001000000000000000 Inexact
+Round64 up inexact false 10000000000000001 -20 false -> 0.0001000000000000001 Inexact
+
+Round64 even tie false 12345678901234565 0 false -> 1.234567890123456E+16 Inexact
+Round64 away tie false 12345678901234565 0 false -> 1.234567890123457E+16 Inexact
+Round64 zero tie false 12345678901234565 0 false -> 1.234567890123456E+16 Inexact
+Round64 up tie false 12345678901234565 0 false -> 1.234567890123457E+16 Inexact
+Round64 down tie false 12345678901234565 0 false -> 1.234567890123456E+16 Inexact
+Round64 even tie true 12345678901234565 0 false -> -1.234567890123456E+16 Inexact
+Round64 away tie true 12345678901234565 0 false -> -1.234567890123457E+16 Inexact
+Round64 zero tie true 12345678901234565 0 false -> -1.234567890123456E+16 Inexact
+Round64 up tie true 12345678901234565 0 false -> -1.234567890123456E+16 Inexact
+Round64 down tie true 12345678901234565 0 false -> -1.234567890123457E+16 Inexact
+Round64 even tie false 12345678901234565 0 true -> 1.234567890123457E+16 Inexact
+Round64 even tie false 12345678901234575 0 false -> 1.234567890123458E+16 Inexact
+Round64 even tie false 25 -1 false -> 2.5 Exact
+Round64 even tie false 100000000000000050 0 false -> 1.000000000000000E+17 Inexact
+Round64 away tie false 100000000000000050 0 false -> 1.000000000000001E+17 Inexact
+Round64 even tie false 100000000000000150 0 false -> 1.000000000000002E+17 Inexact
+Round64 even inexact false 100000000000000005 0 false -> 1.000000000000000E+17 Inexact
+Round64 away inexact false 100000000000000005 0 false -> 1.000000000000000E+17 Inexact
+Round64 up inexact false 100000000000000005 0 false -> 1.000000000000001E+17 Inexact
+Round64 9 tie false 12345678901234565 0 false -> 1.234567890123456E+16 Inexact
+
+Round64 even carry false 99999999999999995 0 false -> 1.000000000000000E+17 Inexact
+Round64 zero carry false 99999999999999995 0 false -> 9.999999999999999E+16 Inexact
+Round64 down carry false 99999999999999995 0 false -> 9.999999999999999E+16 Inexact
+Round64 up carry false 99999999999999995 0 false -> 1.000000000000000E+17 Inexact
+Round64 away carry false 99999999999999995 0 false -> 1.000000000000000E+17 Inexact
+Round64 even carry false 99999999999999999 0 false -> 1.000000000000000E+17 Inexact
+Round64 even carry true 99999999999999995 0 false -> -1.000000000000000E+17 Inexact
+Round64 up carry true 99999999999999995 0 false -> -9.999999999999999E+16 Inexact
+Round64 even carry false 9999999999999999 0 true -> 9999999999999999 Inexact
+Round64 up carry false 9999999999999999 0 true -> 1.000000000000000E+16 Inexact
+Round64 down carry true 9999999999999999 0 true -> -1.000000000000000E+16 Inexact
+Round64 even carry false 99999999999999999 -17 false -> 1.000000000000000 Inexact
+Round64 zero carry false 99999999999999999 -17 false -> 0.9999999999999999 Inexact
+
+Round64 even overflow false 1 400 false -> Infinity Inexact|Overflow
+Round64 away overflow false 1 400 false -> Infinity Inexact|Overflow
+Round64 zero overflow false 1 400 false -> 9.999999999999999E+384 Inexact|Overflow
+Round64 up overflow false 1 400 false -> Infinity Inexact|Overflow
+Round64 down overflow false 1 400 false -> 9.999999999999999E+384 Inexact|Overflow
+Round64 even overflow true 1 400 false -> -Infinity Inexact|Overflow
+Round64 away overflow true 1 400 false -> -Infinity Inexact|Overflow
+Round64 zero overflow true 1 400 false -> -9.999999999999999E+384 Inexact|Overflow
+Round64 up overflow true 1 400 false -> -9.999999999999999E+384 Inexact|Overflow
+Round64 down overflow true 1 400 false -> -Infinity Inexact|Overflow
+Round64 even overflow false 1 385 false -> Infinity Inexact|Overflow
+Round64 even overflow false 10000000000000000 369 false -> Infinity Inexact|Overflow
+Round64 zero overflow false 10000000000000000 369 false -> 9.999999999999999E+384 Inexact|Overflow
+# decided after rounding
+Round64 even overflow false 99999999999999995 368 false -> Infinity Inexact|Overflow
+Round64 zero overflow false 99999999999999995 368 false -> 9.999999999999999E+384 Inexact
+Round64 down overflow false 99999999999999995 368 false -> 9.999999999999999E+384 Inexact
+Round64 up overflow false 99999999999999995 368 false -> Infinity Inexact|Overflow
+Round64 even overflow false 99999999999999994 368 false -> 9.999999999999999E+384 Inexact
+Round64 up overflow false 99999999999999994 368 false -> Infinity Inexact|Overflow
+Round64 even overflow false 9999999999999999 369 true -> 9.999999999999999E+384 Inexact
+Round64 up overflow false 9999999999999999 369 true -> Infinity Inexact|Overflow
+Round64 even overflow false 1 2147483647 false -> Infinity Inexact|Overflow
+
+Round64 even underflow false 15 -399 false -> 2E-398 Inexact|Underflow
+Round64 up underflow false 1 -399 false -> 1E-398 Inexact|Underflow
+Round64 even underflow false 1 -399 false -> 0E-398 Inexact|Underflow
+Round64 away underflow false 1 -399 false -> 0E-398 Inexact|Underflow
+Round64 zero underflow false 1 -399 false -> 0E-398 Inexact|Underflow
+Round64 down underflow false 1 -399 false -> 0E-398 Inexact|Underflow
+Round64 even underflow false 5 -399 false -> 0E-398 Inexact|Underflow
+Round64 away underflow false 5 -399 false -> 1E-398 Inexact|Underflow
+Round64 even underflow false 25 -399 false -> 2E-398 Inexact|Underflow
+Round64 away underflow false 25 -399 false -> 3E-398 Inexact|Underflow
+Round64 even underflow false 0 0 true -> 0E-398 Inexact|Underflow
+Round64 up underflow false 0 0 true -> 1E-398 Inexact|Underflow
+Round64 down underflow false 0 0 true -> 0E-398 Inexact|Underflow
+Round64 zero underflow false 0 0 true -> 0E-398 Inexact|Underflow
+Round64 away underflow false 0 0 true -> 0E-398 Inexact|Underflow
+Round64 up underflow true 0 0 true -> -0E-398 Inexact|Underflow
+Round64 down underflow true 0 0 true -> -1E-398 Inexact|Underflow
+Round64 even underflow false 0 300 true -> 0E-398 Inexact|Underflow
+Round64 even underflow false 1 -398 false -> 1E-398 Exact
+Round64 even underflow false 1234567891 -399 false -> 1.23456789E-390 Inexact|Underflow
+Round64 up underflow false 1234567891 -399 false -> 1.23456790E-390 Inexact|Underflow
+Round64 even underflow false 9999999999999999 -399 false -> 1.000000000000000E-383 Inexact|Underflow
+Round64 zero underflow false 9999999999999999 -399 false -> 9.99999999999999E-384 Inexact|Underflow
+Round64 even underflow false 1000000000000000 -398 false -> 1.000000000000000E-383 Exact
+Round64 even underflow false 999999999999999 -398 false -> 9.99999999999999E-384 Exact
+Round64 even underflow false 101 -400 false -> 1E-398 Inexact|Underflow
+Round64 even underflow false 1 -398 true -> 1E-398 Inexact|Underflow
+Round64 up underflow false 1 -398 true -> 2E-398 Inexact|Underflow
+Round64 even underflow false 1 -2147483648 false -> 0E-398 Inexact|Underflow
+Round64 even underflow false 10000000000000000 -399 false -> 1.000000000000000E-383 Exact
+
+Round64 even clamp false 1 370 false -> 1.0E+370 Exact
+Round64 even clamp false 0 400 false -> 0E+369 Exact
+Round64 even clamp true 0 -500 false -> -0E-398 Exact
+Round64 even clamp false 1 384 false -> 1.000000000000000E+384 Exact
+Round64 even clamp false 100000000000000 370 false -> 1.000000000000000E+384 Exact
+Round64 even clamp false 12 369 false -> 1.2E+370 Exact
+Round64 even clamp false 1 369 false -> 1E+369 Exact
+Round64 even clamp false 10 -399 false -> 1E-398 Exact
+Round64 even clamp false 0 2147483647 false -> 0E+369 Exact
+Round64 even clamp true 0 -2147483648 false -> -0E-398 Exact
+Round64 even clamp false 1000000000000000 370 false -> Infinity Inexact|Overflow
+Round64 even clamp false 123 400 false -> Infinity Inexact|Overflow
+
+Round64 even zero false 0 0 false -> 0 Exact
+Round64 even zero true 0 0 false -> -0 Exact
+Round64 even zero true 0 5 false -> -0E+5 Exact
+Round64 even zero false 0 -2 false -> 0.00 Exact
+Round64 down zero false 0 0 false -> 0 Exact
+Round64 even zero true 1 -399 false -> -0E-398 Inexact|Underflow
+Round64 up zero true 1 -399 false -> -0E-398 Inexact|Underflow
+Round64 even zero true 0 0 true -> -0E-398 Inexact|Underflow
+Round64 zero zero true 0 0 true -> -0E-398 Inexact|Underflow
+Round64 even zero false 0 -398 false -> 0E-398 Exact
+
+# --- Round128 ---
+
+Round128 even exact false 1 0 false -> 1 Exact
+Round128 even exact false 10000000000000000000000000000000000 0 false -> 1.000000000000000000000000000000000E+34 Exact
+Round128 even exact false 100 -6178 false -> 1E-6176 Exact
+Round128 even exact false 150 -2 false -> 1.50 Exact
+Round128 even exact false 9999999999999999999999999999999999 6111 false -> 9.999999999999999999999999999999999E+6144 Exact
+Round128 even exact false 18446744073709551615 0 false -> 18446744073709551615 Exact
+
+Round128 even inexact false 12345678901234567890123456789012345 0 false -> 1.234567890123456789012345678901234E+34 Inexact
+Round128 even inexact false 12345678901234567890123456789012347 0 false -> 1.234567890123456789012345678901235E+34 Inexact
+Round128 zero inexact false 12345678901234567890123456789012347 0 false -> 1.234567890123456789012345678901234E+34 Inexact
+Round128 even inexact false 1 0 true -> 1.000000000000000000000000000000000 Inexact
+Round128 up inexact false 1 0 true -> 1.000000000000000000000000000000001 Inexact
+Round128 down inexact false 1 0 true -> 1.000000000000000000000000000000000 Inexact
+Round128 up inexact true 1 0 true -> -1.000000000000000000000000000000000 Inexact
+Round128 down inexact true 1 0 true -> -1.000000000000000000000000000000001 Inexact
+Round128 even inexact false 340282366920938463463374607431768211455 0 false -> 3.402823669209384634633746074317682E+38 Inexact
+Round128 even inexact false 340282366920938463463374607431768211455 -39 false -> 0.3402823669209384634633746074317682 Inexact
+Round128 up inexact false 340282366920938463463374607431768211455 0 false -> 3.402823669209384634633746074317683E+38 Inexact
+
+Round128 even tie false 12345678901234567890123456789012345 0 false -> 1.234567890123456789012345678901234E+34 Inexact
+Round128 away tie false 12345678901234567890123456789012345 0 false -> 1.234567890123456789012345678901235E+34 Inexact
+Round128 zero tie false 12345678901234567890123456789012345 0 false -> 1.234567890123456789012345678901234E+34 Inexact
+Round128 up tie false 12345678901234567890123456789012345 0 false -> 1.234567890123456789012345678901235E+34 Inexact
+Round128 down tie false 12345678901234567890123456789012345 0 false -> 1.234567890123456789012345678901234E+34 Inexact
+Round128 even tie true 12345678901234567890123456789012345 0 false -> -1.234567890123456789012345678901234E+34 Inexact
+Round128 away tie true 12345678901234567890123456789012345 0 false -> -1.234567890123456789012345678901235E+34 Inexact
+Round128 up tie true 12345678901234567890123456789012345 0 false -> -1.234567890123456789012345678901234E+34 Inexact
+Round128 down tie true 12345678901234567890123456789012345 0 false -> -1.234567890123456789012345678901235E+34 Inexact
+Round128 even tie false 12345678901234567890123456789012345 0 true -> 1.234567890123456789012345678901235E+34 Inexact
+Round128 even tie false 12345678901234567890123456789012355 0 false -> 1.234567890123456789012345678901236E+34 Inexact
+
+Round128 even carry false 99999999999999999999999999999999995 0 false -> 1.000000000000000000000000000000000E+35 Inexact
+Round128 zero carry false 99999999999999999999999999999999995 0 false -> 9.999999999999999999999999999999999E+34 Inexact
+Round128 up carry false 99999999999999999999999999999999995 0 false -> 1.000000000000000000000000000000000E+35 Inexact
+Round128 down carry false 99999999999999999999999999999999995 0 false -> 9.999999999999999999999999999999999E+34 Inexact
+Round128 even carry true 99999999999999999999999999999999995 0 false -> -1.000000000000000000000000000000000E+35 Inexact
+Round128 up carry false 9999999999999999999999999999999999 0 true -> 1.000000000000000000000000000000000E+34 Inexact
+Round128 even carry false 9999999999999999999999999999999999 0 true -> 9999999999999999999999999999999999 Inexact
+
+Round128 even overflow false 1 6200 false -> Infinity Inexact|Overflow
+Round128 away overflow false 1 6200 false -> Infinity Inexact|Overflow
+Round128 zero overflow false 1 6200 false -> 9.999999999999999999999999999999999E+6144 Inexact|Overflow
+Round128 up overflow false 1 6200 false -> Infinity Inexact|Overflow
+Round128 down overflow false 1 6200 false -> 9.999999999999999999999999999999999E+6144 Inexact|Overflow
+Round128 even overflow true 1 6200 false -> -Infinity Inexact|Overflow
+Round128 zero overflow true 1 6200 false -> -9.999999999999999999999999999999999E+6144 Inexact|Overflow
+Round128 up overflow true 1 6200 false -> -9.999999999999999999999999999999999E+6144 Inexact|Overflow
+Round128 down overflow true 1 6200 false -> -Infinity Inexact|Overflow
+Round128 even overflow false 1 6145 false -> Infinity Inexact|Overflow
+Round128 even overflow false 99999999999999999999999999999999995 6110 false -> Infinity Inexact|Overflow
+Round128 zero overflow false 99999999999999999999999999999999995 6110 false -> 9.999999999999999999999999999999999E+6144 Inexact
+Round128 even overflow false 99999999999999999999999999999999994 6110 false -> 9.999999999999999999999999999999999E+6144 Inexact
+Round128 up overflow false 99999999999999999999999999999999994 6110 false -> Infinity Inexact|Overflow
+
+Round128 even underflow false 15 -6177 false -> 2E-6176 Inexact|Underflow
+Round128 up underflow false 1 -6177 false -> 1E-6176 Inexact|Underflow
+Round128 even underflow false 1 -6177 false -> 0E-6176 Inexact|Underflow
+Round128 down underflow false 1 -6177 false -> 0E-6176 Inexact|Underflow
+Round128 even underflow false 5 -6177 false -> 0E-6176 Inexact|Underflow
+Round128 away underflow false 5 -6177 false -> 1E-6176 Inexact|Underflow
+Round128 even underflow false 0 0 true -> 0E-6176 Inexact|Underflow
+Round128 up underflow false 0 0 true -> 1E-6176 Inexact|Underflow
+Round128 up underflow true 0 0 true -> -0E-6176 Inexact|Underflow
+Round128 down underflow true 0 0 true -> -1E-6176 Inexact|Underflow
+Round128 even underflow false 1 -6176 false -> 1E-6176 Exact
+Round128 even underflow false 9999999999999999999999999999999999 -6177 false -> 1.000000000000000000000000000000000E-6143 Inexact|Underflow
+Round128 zero underflow false 9999999999999999999999999999999999 -6177 false -> 9.99999999999999999999999999999999E-6144 Inexact|Underflow
+Round128 even underflow false 1000000000000000000000000000000000 -6176 false -> 1.000000000000000000000000000000000E-6143 Exact
+
+Round128 even clamp false 1 6112 false -> 1.0E+6112 Exact
+Round128 even clamp false 0 7000 false -> 0E+6111 Exact
+Round128 even clamp true 0 -7000 false -> -0E-6176 Exact
+Round128 even clamp false 1 6144 false -> 1.000000000000000000000000000000000E+6144 Exact
+Round128 even clamp false 1 6111 false -> 1E+6111 Exact
+Round128 even clamp false 10 -6177 false -> 1E-6176 Exact
+Round128 even clamp false 1000000000000000000000000000000000 6112 false -> Infinity Inexact|Overflow
+
+Round128 even zero false 0 0 false -> 0 Exact
+Round128 even zero true 0 0 false -> -0 Exact
+Round128 even zero true 0 5 false -> -0E+5 Exact
+Round128 even zero false 0 -2 false -> 0.00 Exact
+Round128 even zero true 1 -6177 false -> -0E-6176 Inexact|Underflow
+Round128 up zero true 1 -6177 false -> -0E-6176 Inexact|Underflow
+Round128 even zero true 0 0 true -> -0E-6176 Inexact|Underflow

@@ -1,0 +1,449 @@
+# Copyright 2026 The Go Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# Character conversions ("Values, cohorts and the character form",
+# "Character conversions"). Parse operands and Append results are Go
+# quoted strings. Append is exact and writes every NaN as "NaN"; the
+# grammar class holds the strings Parse must reject (Status Syntax, result
+# NaN) and the accepted spellings at the edge of the grammar.
+
+# --- Append64 ---
+
+Append64 - exact 1.50 -> "1.50"
+Append64 - exact 1.5E+3 -> "1.5E+3"
+Append64 - exact 123 -> "123"
+Append64 - exact 1.23E+3 -> "1.23E+3"
+Append64 - exact 0.000001 -> "0.000001"
+Append64 - exact 1E-7 -> "1E-7"
+Append64 - exact 0.0012345 -> "0.0012345"
+Append64 - exact 1.0E+370 -> "1.0E+370"
+Append64 - exact -1.50 -> "-1.50"
+Append64 - exact 9.999999999999999E+384 -> "9.999999999999999E+384"
+Append64 - exact 1234567890123456 -> "1234567890123456"
+Append64 - exact 1.234567890123456E+16 -> "1.234567890123456E+16"
+Append64 - exact 0.1000000000000000 -> "0.1000000000000000"
+Append64 - exact 1E+1 -> "1E+1"
+Append64 - exact 1.0 -> "1.0"
+Append64 - exact 0.100 -> "0.100"
+Append64 - exact 0.00001234567890123456 -> "0.00001234567890123456"
+Append64 - exact 1.234567890123456E-7 -> "1.234567890123456E-7"
+Append64 - exact 1E+369 -> "1E+369"
+Append64 - exact 9007199254740992 -> "9007199254740992"
+Append64 - exact 123E+3 -> "1.23E+5"
+Append64 - exact 1.000000000000000E+16 -> "1.000000000000000E+16"
+Append64 - exact -1E-6 -> "-0.000001"
+Append64 - exact 100 -> "100"
+
+Append64 - underflow 1E-398 -> "1E-398"
+Append64 - underflow 9.99999999999999E-384 -> "9.99999999999999E-384"
+Append64 - underflow -1E-398 -> "-1E-398"
+Append64 - underflow 1.23456789E-390 -> "1.23456789E-390"
+
+Append64 - zero 0 -> "0"
+Append64 - zero 0.00 -> "0.00"
+Append64 - zero 0E+1 -> "0E+1"
+Append64 - zero 0E-398 -> "0E-398"
+Append64 - zero -0 -> "-0"
+Append64 - zero -0E+5 -> "-0E+5"
+Append64 - zero 0E+369 -> "0E+369"
+Append64 - zero -0.00 -> "-0.00"
+Append64 - zero 0.000000 -> "0.000000"
+Append64 - zero 0E-7 -> "0E-7"
+
+Append64 - inf Infinity -> "Infinity"
+Append64 - inf -Infinity -> "-Infinity"
+Append64 - inf 0x7800000000000001 -> "Infinity"
+
+Append64 - nan NaN -> "NaN"
+Append64 - nan -NaN -> "NaN"
+Append64 - nan sNaN -> "NaN"
+Append64 - nan -sNaN -> "NaN"
+Append64 - nan 0x7c00000000000001 -> "NaN"
+Append64 - nan 0xfe0000000001e240 -> "NaN"
+Append64 - nan 0x7c038d7ea4c68000 -> "NaN"
+
+Append64 - noncanon 0x6c77ffffffffffff -> "0"
+Append64 - noncanon 0xec9fffffffffffff -> "-0E+5"
+Append64 - noncanon 0x6007ffffffffffff -> "0E-398"
+Append64 - noncanon 0x77ffffffffffffff -> "0E+369"
+Append64 - noncanon 0x6c7386f26fc10000 -> "0"
+Append64 - noncanon 0x6c7386f26fc0ffff -> "9999999999999999"
+
+# --- Append128 ---
+
+Append128 - exact 1.50 -> "1.50"
+Append128 - exact 1.5E+3 -> "1.5E+3"
+Append128 - exact 123 -> "123"
+Append128 - exact 0.000001 -> "0.000001"
+Append128 - exact 1E-7 -> "1E-7"
+Append128 - exact 9.999999999999999999999999999999999E+6144 -> "9.999999999999999999999999999999999E+6144"
+Append128 - exact 1234567890123456789012345678901234 -> "1234567890123456789012345678901234"
+Append128 - exact 1.234567890123456789012345678901234E+34 -> "1.234567890123456789012345678901234E+34"
+Append128 - exact 0.1000000000000000055511151231257827 -> "0.1000000000000000055511151231257827"
+Append128 - exact 1.0E+6112 -> "1.0E+6112"
+Append128 - exact -1.50 -> "-1.50"
+Append128 - exact 0.00001234567890123456789012345678901234 -> "0.00001234567890123456789012345678901234"
+Append128 - exact 1.234567890123456789012345678901234E-7 -> "1.234567890123456789012345678901234E-7"
+
+Append128 - underflow 1E-6176 -> "1E-6176"
+Append128 - underflow 9.99999999999999999999999999999999E-6144 -> "9.99999999999999999999999999999999E-6144"
+Append128 - underflow -1E-6176 -> "-1E-6176"
+
+Append128 - zero 0 -> "0"
+Append128 - zero 0.00 -> "0.00"
+Append128 - zero 0E+1 -> "0E+1"
+Append128 - zero 0E-6176 -> "0E-6176"
+Append128 - zero -0 -> "-0"
+Append128 - zero 0E+6111 -> "0E+6111"
+
+Append128 - inf Infinity -> "Infinity"
+Append128 - inf -Infinity -> "-Infinity"
+
+Append128 - nan NaN -> "NaN"
+Append128 - nan -NaN -> "NaN"
+Append128 - nan sNaN -> "NaN"
+Append128 - nan 0x7c000000000000010000000000000000 -> "NaN"
+Append128 - nan 0xfe000000000000000000000000000005 -> "NaN"
+
+Append128 - noncanon 0x3041ed09bead87c0378d8e6400000000 -> "0"
+Append128 - noncanon 0xb047ed09bead87c0378d8e6400000000 -> "-0E+3"
+Append128 - noncanon 0x6c100000000000000000000000000000 -> "0"
+Append128 - noncanon 0xe0000000000000000000000000000001 -> "-0E-6176"
+Append128 - noncanon 0x77ff800000000000000000000000007b -> "0E+6111"
+Append128 - noncanon 0x3041ed09bead87c0378d8e63ffffffff -> "9999999999999999999999999999999999"
+
+# --- Parse64 ---
+
+Parse64 even exact "1.50" -> 1.50 Exact
+Parse64 even exact "1.5E+3" -> 1.5E+3 Exact
+Parse64 even exact "1.5e3" -> 1.5E+3 Exact
+Parse64 even exact "123E+1" -> 1.23E+3 Exact
+Parse64 even exact "1.00E5" -> 1.00E+5 Exact
+Parse64 even exact "0.000001" -> 0.000001 Exact
+Parse64 even exact "0.0000001" -> 1E-7 Exact
+Parse64 even exact "10E-7" -> 0.0000010 Exact
+Parse64 even exact "12345678901234560" -> 1.234567890123456E+16 Exact
+Parse64 even exact "0.1000000000000000000" -> 0.1000000000000000 Exact
+Parse64 even exact "100" -> 100 Exact
+Parse64 even exact "1E+2" -> 1E+2 Exact
+Parse64 even exact "1.0E+2" -> 1.0E+2 Exact
+Parse64 even exact "1E-7" -> 1E-7 Exact
+Parse64 even exact "1e5" -> 1E+5 Exact
+Parse64 even exact "00001" -> 1 Exact
+Parse64 even exact "0001.500" -> 1.500 Exact
+Parse64 even exact "1E+0" -> 1 Exact
+Parse64 even exact "1E-0" -> 1 Exact
+Parse64 even exact "1e+00002" -> 1E+2 Exact
+Parse64 even exact "9999999999999999" -> 9999999999999999 Exact
+Parse64 even exact "9999999999999999E+369" -> 9.999999999999999E+384 Exact
+Parse64 even exact "1000000000000000000000" -> 1.000000000000000E+21 Exact
+Parse64 even exact "-123.456" -> -123.456 Exact
+Parse64 up exact "1.50" -> 1.50 Exact
+Parse64 7 exact "1.50" -> 1.50 Exact
+Parse64 even exact "9007199254740992" -> 9007199254740992 Exact
+Parse64 even exact "123.4560000000000000000" -> 123.4560000000000 Exact
+
+Parse64 even inexact "12345678901234567" -> 1.234567890123457E+16 Inexact
+Parse64 zero inexact "12345678901234567" -> 1.234567890123456E+16 Inexact
+Parse64 up inexact "12345678901234561" -> 1.234567890123457E+16 Inexact
+Parse64 down inexact "12345678901234567" -> 1.234567890123456E+16 Inexact
+Parse64 even inexact "0.33333333333333333" -> 0.3333333333333333 Inexact
+Parse64 up inexact "0.33333333333333333" -> 0.3333333333333334 Inexact
+Parse64 even inexact "-0.33333333333333333" -> -0.3333333333333333 Inexact
+Parse64 down inexact "-0.33333333333333333" -> -0.3333333333333334 Inexact
+Parse64 even inexact "1.0000000000000001" -> 1.000000000000000 Inexact
+Parse64 up inexact "1.0000000000000001" -> 1.000000000000001 Inexact
+Parse64 even inexact "123.45600000000000001" -> 123.4560000000000 Inexact
+Parse64 even inexact "3.14159265358979323846" -> 3.141592653589793 Inexact
+Parse64 up inexact "3.14159265358979323846" -> 3.141592653589794 Inexact
+
+Parse64 even tie "12345678901234565" -> 1.234567890123456E+16 Inexact
+Parse64 away tie "12345678901234565" -> 1.234567890123457E+16 Inexact
+Parse64 zero tie "12345678901234565" -> 1.234567890123456E+16 Inexact
+Parse64 up tie "12345678901234565" -> 1.234567890123457E+16 Inexact
+Parse64 down tie "12345678901234565" -> 1.234567890123456E+16 Inexact
+Parse64 even tie "-12345678901234565" -> -1.234567890123456E+16 Inexact
+Parse64 away tie "-12345678901234565" -> -1.234567890123457E+16 Inexact
+Parse64 up tie "-12345678901234565" -> -1.234567890123456E+16 Inexact
+Parse64 down tie "-12345678901234565" -> -1.234567890123457E+16 Inexact
+Parse64 even tie "12345678901234575" -> 1.234567890123458E+16 Inexact
+Parse64 even tie "1.00000000000000050" -> 1.000000000000000 Inexact
+Parse64 even tie "1.00000000000000150" -> 1.000000000000002 Inexact
+Parse64 even tie "12345678901234565000" -> 1.234567890123456E+19 Inexact
+Parse64 9 tie "12345678901234565" -> 1.234567890123456E+16 Inexact
+Parse64 even tie "123456789012345650000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" -> 1.234567890123456E+119 Inexact
+
+Parse64 even carry "99999999999999995" -> 1.000000000000000E+17 Inexact
+Parse64 zero carry "99999999999999995" -> 9.999999999999999E+16 Inexact
+Parse64 up carry "99999999999999991" -> 1.000000000000000E+17 Inexact
+Parse64 down carry "99999999999999999" -> 9.999999999999999E+16 Inexact
+Parse64 even carry "99999999999999999" -> 1.000000000000000E+17 Inexact
+Parse64 even carry "-99999999999999995" -> -1.000000000000000E+17 Inexact
+Parse64 even carry "0.99999999999999999" -> 1.000000000000000 Inexact
+Parse64 zero carry "0.99999999999999999" -> 0.9999999999999999 Inexact
+Parse64 even carry "9.9999999999999995" -> 10.00000000000000 Inexact
+
+Parse64 even overflow "1E+385" -> Infinity Inexact|Overflow
+Parse64 away overflow "1E+385" -> Infinity Inexact|Overflow
+Parse64 zero overflow "1E+385" -> 9.999999999999999E+384 Inexact|Overflow
+Parse64 up overflow "1E+385" -> Infinity Inexact|Overflow
+Parse64 down overflow "1E+385" -> 9.999999999999999E+384 Inexact|Overflow
+Parse64 even overflow "-1E+385" -> -Infinity Inexact|Overflow
+Parse64 away overflow "-1E+385" -> -Infinity Inexact|Overflow
+Parse64 zero overflow "-1E+385" -> -9.999999999999999E+384 Inexact|Overflow
+Parse64 up overflow "-1E+385" -> -9.999999999999999E+384 Inexact|Overflow
+Parse64 down overflow "-1E+385" -> -Infinity Inexact|Overflow
+Parse64 even overflow "99999999999999995E+368" -> Infinity Inexact|Overflow
+Parse64 zero overflow "99999999999999995E+368" -> 9.999999999999999E+384 Inexact
+Parse64 down overflow "99999999999999995E+368" -> 9.999999999999999E+384 Inexact
+Parse64 up overflow "99999999999999994E+368" -> Infinity Inexact|Overflow
+Parse64 even overflow "99999999999999994E+368" -> 9.999999999999999E+384 Inexact
+Parse64 even overflow "1E+99999999999" -> Infinity Inexact|Overflow
+Parse64 zero overflow "1E+99999999999" -> 9.999999999999999E+384 Inexact|Overflow
+Parse64 even overflow "10000000000000000E+369" -> Infinity Inexact|Overflow
+Parse64 even overflow "1E+999999999999999999999999" -> Infinity Inexact|Overflow
+
+Parse64 even underflow "1E-398" -> 1E-398 Exact
+Parse64 even underflow "1.23456789E-390" -> 1.23456789E-390 Exact
+Parse64 even underflow "1.234567891E-390" -> 1.23456789E-390 Inexact|Underflow
+Parse64 up underflow "1.234567891E-390" -> 1.23456790E-390 Inexact|Underflow
+Parse64 even underflow "1E-399" -> 0E-398 Inexact|Underflow
+Parse64 away underflow "1E-399" -> 0E-398 Inexact|Underflow
+Parse64 zero underflow "1E-399" -> 0E-398 Inexact|Underflow
+Parse64 up underflow "1E-399" -> 1E-398 Inexact|Underflow
+Parse64 down underflow "1E-399" -> 0E-398 Inexact|Underflow
+Parse64 up underflow "-1E-399" -> -0E-398 Inexact|Underflow
+Parse64 down underflow "-1E-399" -> -1E-398 Inexact|Underflow
+Parse64 even underflow "5E-399" -> 0E-398 Inexact|Underflow
+Parse64 away underflow "5E-399" -> 1E-398 Inexact|Underflow
+Parse64 even underflow "15E-399" -> 2E-398 Inexact|Underflow
+Parse64 even underflow "25E-399" -> 2E-398 Inexact|Underflow
+Parse64 away underflow "25E-399" -> 3E-398 Inexact|Underflow
+Parse64 even underflow "9.999999999999999E-384" -> 1.000000000000000E-383 Inexact|Underflow
+Parse64 zero underflow "9.999999999999999E-384" -> 9.99999999999999E-384 Inexact|Underflow
+Parse64 even underflow "1E-99999999999" -> 0E-398 Inexact|Underflow
+Parse64 up underflow "1E-99999999999" -> 1E-398 Inexact|Underflow
+Parse64 even underflow "100E-400" -> 1E-398 Exact
+Parse64 even underflow "101E-400" -> 1E-398 Inexact|Underflow
+Parse64 even underflow "1E-383" -> 1E-383 Exact
+Parse64 even underflow "9.99999999999999E-384" -> 9.99999999999999E-384 Exact
+Parse64 even underflow "1E-999999999999999999999999" -> 0E-398 Inexact|Underflow
+
+Parse64 even clamp "1E+370" -> 1.0E+370 Exact
+Parse64 even clamp "1E+384" -> 1.000000000000000E+384 Exact
+Parse64 even clamp "0E+400" -> 0E+369 Exact
+Parse64 even clamp "-0E+400" -> -0E+369 Exact
+Parse64 even clamp "0E-500" -> 0E-398 Exact
+Parse64 even clamp "0E+99999999999" -> 0E+369 Exact
+Parse64 even clamp "100E-400" -> 1E-398 Exact
+Parse64 even clamp "1.5E+370" -> 1.5E+370 Exact
+Parse64 even clamp "0E-99999999999" -> 0E-398 Exact
+Parse64 even clamp "0E+999999999999999999999999" -> 0E+369 Exact
+Parse64 even clamp "123E+368" -> 1.23E+370 Exact
+Parse64 even clamp "1E+369" -> 1E+369 Exact
+
+Parse64 even zero "0.00" -> 0.00 Exact
+Parse64 even zero "0" -> 0 Exact
+Parse64 even zero "0E+1" -> 0E+1 Exact
+Parse64 even zero "-0" -> -0 Exact
+Parse64 even zero "-0.00" -> -0.00 Exact
+Parse64 even zero "-0E-500" -> -0E-398 Exact
+Parse64 even zero "-1E-399" -> -0E-398 Inexact|Underflow
+Parse64 even zero "+0" -> 0 Exact
+Parse64 even zero "0e0" -> 0 Exact
+Parse64 even zero "000.000" -> 0.000 Exact
+Parse64 down zero "0" -> 0 Exact
+Parse64 even zero "-000" -> -0 Exact
+
+Parse64 even inf "inf" -> Infinity Exact
+Parse64 even inf "-Infinity" -> -Infinity Exact
+Parse64 even inf "+INF" -> Infinity Exact
+Parse64 even inf "Infinity" -> Infinity Exact
+Parse64 even inf "INFINITY" -> Infinity Exact
+Parse64 even inf "-inf" -> -Infinity Exact
+Parse64 even inf "Inf" -> Infinity Exact
+Parse64 zero inf "infinity" -> Infinity Exact
+
+Parse64 even nan "nan" -> NaN Exact
+Parse64 even nan "-NaN" -> NaN Exact
+Parse64 even nan "snan" -> NaN Exact
+Parse64 even nan "sNaN" -> NaN Exact
+Parse64 even nan "NaN" -> NaN Exact
+Parse64 even nan "NAN" -> NaN Exact
+Parse64 even nan "+nan" -> NaN Exact
+Parse64 even nan "-sNaN" -> NaN Exact
+Parse64 even nan "SNAN" -> NaN Exact
+
+Parse64 even grammar "" -> NaN Syntax
+Parse64 even grammar "-" -> NaN Syntax
+Parse64 even grammar "+" -> NaN Syntax
+Parse64 even grammar "." -> NaN Syntax
+Parse64 even grammar "1e" -> NaN Syntax
+Parse64 even grammar "1e+" -> NaN Syntax
+Parse64 even grammar "1E-" -> NaN Syntax
+Parse64 even grammar "e5" -> NaN Syntax
+Parse64 even grammar "E5" -> NaN Syntax
+Parse64 even grammar " 1" -> NaN Syntax
+Parse64 even grammar "1 " -> NaN Syntax
+Parse64 even grammar "1_000" -> NaN Syntax
+Parse64 even grammar "0x10" -> NaN Syntax
+Parse64 even grammar "1.2.3" -> NaN Syntax
+Parse64 even grammar "nan123" -> NaN Syntax
+Parse64 even grammar "infinit" -> NaN Syntax
+Parse64 even grammar "Infinity1" -> NaN Syntax
+Parse64 even grammar "+-1" -> NaN Syntax
+Parse64 even grammar "--1" -> NaN Syntax
+Parse64 even grammar "1e5.0" -> NaN Syntax
+Parse64 even grammar "1E" -> NaN Syntax
+Parse64 even grammar ".." -> NaN Syntax
+Parse64 even grammar "1.." -> NaN Syntax
+Parse64 even grammar "in" -> NaN Syntax
+Parse64 even grammar "n" -> NaN Syntax
+Parse64 even grammar "s" -> NaN Syntax
+Parse64 even grammar "snan1" -> NaN Syntax
+Parse64 even grammar "NaN(123)" -> NaN Syntax
+Parse64 even grammar "1,000" -> NaN Syntax
+Parse64 even grammar "١" -> NaN Syntax
+Parse64 even grammar "1e+5e" -> NaN Syntax
+Parse64 even grammar "0b1" -> NaN Syntax
+Parse64 even grammar "inf inity" -> NaN Syntax
+Parse64 even grammar "1.5E" -> NaN Syntax
+Parse64 even grammar "1.5E-" -> NaN Syntax
+Parse64 even grammar "+." -> NaN Syntax
+Parse64 even grammar "-.e5" -> NaN Syntax
+Parse64 even grammar ".e5" -> NaN Syntax
+Parse64 even grammar ".E+5" -> NaN Syntax
+Parse64 even grammar "1 e5" -> NaN Syntax
+Parse64 even grammar "1e 5" -> NaN Syntax
+Parse64 even grammar "1e+ 5" -> NaN Syntax
+Parse64 even grammar "\t1" -> NaN Syntax
+Parse64 even grammar "1\n" -> NaN Syntax
+Parse64 even grammar "1\x00" -> NaN Syntax
+Parse64 even grammar "Infinity " -> NaN Syntax
+Parse64 even grammar " NaN" -> NaN Syntax
+Parse64 even grammar "-s" -> NaN Syntax
+Parse64 even grammar "nans" -> NaN Syntax
+Parse64 even grammar "ssnan" -> NaN Syntax
+Parse64 even grammar "infinityy" -> NaN Syntax
+Parse64 even grammar "1e5e5" -> NaN Syntax
+Parse64 even grammar "1E+-5" -> NaN Syntax
+Parse64 even grammar "0x1p-2" -> NaN Syntax
+Parse64 even grammar "1d5" -> NaN Syntax
+Parse64 even grammar "１" -> NaN Syntax
+Parse64 zero grammar "" -> NaN Syntax
+Parse64 even grammar "+1" -> 1 Exact
+Parse64 even grammar ".5" -> 0.5 Exact
+Parse64 even grammar "5." -> 5 Exact
+Parse64 even grammar "-.5" -> -0.5 Exact
+Parse64 even grammar "+.5E+1" -> 5 Exact
+Parse64 even grammar "5.E-1" -> 0.5 Exact
+Parse64 even grammar "1e+5" -> 1E+5 Exact
+Parse64 even grammar "1E-5" -> 0.00001 Exact
+Parse64 even grammar "0.0" -> 0.0 Exact
+Parse64 even grammar "00" -> 0 Exact
+
+# --- Parse128 ---
+
+Parse128 even exact "1.50" -> 1.50 Exact
+Parse128 even exact "1.5E+3" -> 1.5E+3 Exact
+Parse128 even exact "0.1000000000000000055511151231257827" -> 0.1000000000000000055511151231257827 Exact
+Parse128 even exact "1234567890123456789012345678901234" -> 1234567890123456789012345678901234 Exact
+Parse128 even exact "12345678901234567890123456789012340" -> 1.234567890123456789012345678901234E+34 Exact
+Parse128 even exact "9999999999999999999999999999999999E+6111" -> 9.999999999999999999999999999999999E+6144 Exact
+Parse128 even exact "1E+6111" -> 1E+6111 Exact
+Parse128 even exact "0.0000001" -> 1E-7 Exact
+Parse128 even exact "100" -> 100 Exact
+Parse128 up exact "1.50" -> 1.50 Exact
+
+Parse128 even inexact "12345678901234567890123456789012347" -> 1.234567890123456789012345678901235E+34 Inexact
+Parse128 zero inexact "12345678901234567890123456789012347" -> 1.234567890123456789012345678901234E+34 Inexact
+Parse128 even inexact "0.33333333333333333333333333333333333" -> 0.3333333333333333333333333333333333 Inexact
+Parse128 up inexact "0.33333333333333333333333333333333333" -> 0.3333333333333333333333333333333334 Inexact
+Parse128 down inexact "-0.33333333333333333333333333333333333" -> -0.3333333333333333333333333333333334 Inexact
+Parse128 even inexact "1.0000000000000000000000000000000001" -> 1.000000000000000000000000000000000 Inexact
+Parse128 up inexact "1.0000000000000000000000000000000001" -> 1.000000000000000000000000000000001 Inexact
+
+Parse128 even tie "12345678901234567890123456789012345" -> 1.234567890123456789012345678901234E+34 Inexact
+Parse128 away tie "12345678901234567890123456789012345" -> 1.234567890123456789012345678901235E+34 Inexact
+Parse128 zero tie "12345678901234567890123456789012345" -> 1.234567890123456789012345678901234E+34 Inexact
+Parse128 up tie "12345678901234567890123456789012345" -> 1.234567890123456789012345678901235E+34 Inexact
+Parse128 down tie "12345678901234567890123456789012345" -> 1.234567890123456789012345678901234E+34 Inexact
+Parse128 even tie "-12345678901234567890123456789012345" -> -1.234567890123456789012345678901234E+34 Inexact
+Parse128 away tie "-12345678901234567890123456789012345" -> -1.234567890123456789012345678901235E+34 Inexact
+Parse128 up tie "-12345678901234567890123456789012345" -> -1.234567890123456789012345678901234E+34 Inexact
+Parse128 down tie "-12345678901234567890123456789012345" -> -1.234567890123456789012345678901235E+34 Inexact
+Parse128 even tie "12345678901234567890123456789012355" -> 1.234567890123456789012345678901236E+34 Inexact
+
+Parse128 even carry "99999999999999999999999999999999995" -> 1.000000000000000000000000000000000E+35 Inexact
+Parse128 zero carry "99999999999999999999999999999999995" -> 9.999999999999999999999999999999999E+34 Inexact
+Parse128 up carry "99999999999999999999999999999999991" -> 1.000000000000000000000000000000000E+35 Inexact
+Parse128 even carry "0.99999999999999999999999999999999999" -> 1.000000000000000000000000000000000 Inexact
+Parse128 even carry "-99999999999999999999999999999999995" -> -1.000000000000000000000000000000000E+35 Inexact
+
+Parse128 even overflow "1E+6145" -> Infinity Inexact|Overflow
+Parse128 away overflow "1E+6145" -> Infinity Inexact|Overflow
+Parse128 zero overflow "1E+6145" -> 9.999999999999999999999999999999999E+6144 Inexact|Overflow
+Parse128 up overflow "1E+6145" -> Infinity Inexact|Overflow
+Parse128 down overflow "1E+6145" -> 9.999999999999999999999999999999999E+6144 Inexact|Overflow
+Parse128 even overflow "-1E+6145" -> -Infinity Inexact|Overflow
+Parse128 up overflow "-1E+6145" -> -9.999999999999999999999999999999999E+6144 Inexact|Overflow
+Parse128 down overflow "-1E+6145" -> -Infinity Inexact|Overflow
+Parse128 even overflow "99999999999999999999999999999999995E+6110" -> Infinity Inexact|Overflow
+Parse128 zero overflow "99999999999999999999999999999999995E+6110" -> 9.999999999999999999999999999999999E+6144 Inexact
+Parse128 even overflow "1E+99999999999" -> Infinity Inexact|Overflow
+
+Parse128 even underflow "1E-6176" -> 1E-6176 Exact
+Parse128 even underflow "1E-6177" -> 0E-6176 Inexact|Underflow
+Parse128 up underflow "1E-6177" -> 1E-6176 Inexact|Underflow
+Parse128 down underflow "1E-6177" -> 0E-6176 Inexact|Underflow
+Parse128 down underflow "-1E-6177" -> -1E-6176 Inexact|Underflow
+Parse128 even underflow "5E-6177" -> 0E-6176 Inexact|Underflow
+Parse128 away underflow "5E-6177" -> 1E-6176 Inexact|Underflow
+Parse128 even underflow "15E-6177" -> 2E-6176 Inexact|Underflow
+Parse128 even underflow "9.999999999999999999999999999999999E-6144" -> 1.000000000000000000000000000000000E-6143 Inexact|Underflow
+Parse128 zero underflow "9.999999999999999999999999999999999E-6144" -> 9.99999999999999999999999999999999E-6144 Inexact|Underflow
+Parse128 even underflow "1E-99999999999" -> 0E-6176 Inexact|Underflow
+Parse128 even underflow "100E-6178" -> 1E-6176 Exact
+
+Parse128 even clamp "1E+6112" -> 1.0E+6112 Exact
+Parse128 even clamp "1E+6144" -> 1.000000000000000000000000000000000E+6144 Exact
+Parse128 even clamp "0E-7000" -> 0E-6176 Exact
+Parse128 even clamp "0E+7000" -> 0E+6111 Exact
+Parse128 even clamp "-0E+7000" -> -0E+6111 Exact
+Parse128 even clamp "0E+99999999999" -> 0E+6111 Exact
+Parse128 even clamp "100E-6178" -> 1E-6176 Exact
+
+Parse128 even zero "0.00" -> 0.00 Exact
+Parse128 even zero "-0" -> -0 Exact
+Parse128 even zero "-0.00" -> -0.00 Exact
+Parse128 even zero "-1E-6177" -> -0E-6176 Inexact|Underflow
+Parse128 even zero "0E+1" -> 0E+1 Exact
+
+Parse128 even inf "inf" -> Infinity Exact
+Parse128 even inf "-Infinity" -> -Infinity Exact
+Parse128 even inf "+INF" -> Infinity Exact
+
+Parse128 even nan "nan" -> NaN Exact
+Parse128 even nan "-NaN" -> NaN Exact
+Parse128 even nan "snan" -> NaN Exact
+Parse128 even nan "sNaN" -> NaN Exact
+
+Parse128 even grammar "" -> NaN Syntax
+Parse128 even grammar "-" -> NaN Syntax
+Parse128 even grammar "." -> NaN Syntax
+Parse128 even grammar "1e" -> NaN Syntax
+Parse128 even grammar "1e+" -> NaN Syntax
+Parse128 even grammar "e5" -> NaN Syntax
+Parse128 even grammar " 1" -> NaN Syntax
+Parse128 even grammar "1 " -> NaN Syntax
+Parse128 even grammar "1_000" -> NaN Syntax
+Parse128 even grammar "0x10" -> NaN Syntax
+Parse128 even grammar "1.2.3" -> NaN Syntax
+Parse128 even grammar "nan123" -> NaN Syntax
+Parse128 even grammar "infinit" -> NaN Syntax
+Parse128 even grammar "Infinity1" -> NaN Syntax
+Parse128 even grammar "NaN(123)" -> NaN Syntax
+Parse128 even grammar "+1" -> 1 Exact
+Parse128 even grammar ".5" -> 0.5 Exact
+Parse128 even grammar "5." -> 5 Exact

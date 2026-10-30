@@ -1,0 +1,197 @@
+# Copyright 2026 The Go Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# RoundToIntegral (IEEE 754-2008 clause 5.3.1, 5.9). The result has the
+# fixed exponent max(Q(x), 0) and the sign of x, including a zero result.
+# It can neither overflow nor need clamping.
+
+# --- RoundToIntegral64 ---
+
+RoundToIntegral64 even exact 1E+3 -> 1E+3
+RoundToIntegral64 even exact 100.0 -> 100
+RoundToIntegral64 even exact 1.0E+6 -> 1.0E+6
+RoundToIntegral64 even exact 7.89E+77 -> 7.89E+77
+RoundToIntegral64 even exact 0.00 -> 0
+RoundToIntegral64 even exact 0E+2 -> 0E+2
+RoundToIntegral64 even exact 9999999999999999 -> 9999999999999999
+RoundToIntegral64 even exact 2.0 -> 2
+RoundToIntegral64 even exact -3.00 -> -3
+RoundToIntegral64 even exact 123.000 -> 123
+RoundToIntegral64 even exact 9.999999999999999E+384 -> 9.999999999999999E+384
+RoundToIntegral64 even exact 1.000000000000000E+16 -> 1.000000000000000E+16
+RoundToIntegral64 up exact 2.0 -> 2
+RoundToIntegral64 down exact -2.0 -> -2
+RoundToIntegral64 even exact 1234567890123456 -> 1234567890123456
+RoundToIntegral64 even exact 1.000000000000001E+16 -> 1.000000000000001E+16
+
+RoundToIntegral64 even inexact 2.1 -> 2
+RoundToIntegral64 even inexact -2.1 -> -2
+RoundToIntegral64 up inexact 2.1 -> 3
+RoundToIntegral64 down inexact -2.1 -> -3
+RoundToIntegral64 zero inexact 2.9 -> 2
+RoundToIntegral64 zero inexact -2.9 -> -2
+RoundToIntegral64 even inexact 2.9 -> 3
+RoundToIntegral64 away inexact 2.1 -> 2
+RoundToIntegral64 even inexact 0.1 -> 0
+RoundToIntegral64 even inexact 0.9 -> 1
+RoundToIntegral64 even inexact 1.000000000000001 -> 1
+RoundToIntegral64 up inexact 1.000000000000001 -> 2
+RoundToIntegral64 away inexact 123.456 -> 123
+RoundToIntegral64 up inexact 123.456 -> 124
+RoundToIntegral64 down inexact 123.456 -> 123
+RoundToIntegral64 down inexact -123.456 -> -124
+RoundToIntegral64 up inexact -123.456 -> -123
+RoundToIntegral64 even inexact 123456789012345.7 -> 123456789012346
+RoundToIntegral64 zero inexact 123456789012345.7 -> 123456789012345
+
+RoundToIntegral64 even tie 1.5 -> 2
+RoundToIntegral64 even tie 2.5 -> 2
+RoundToIntegral64 away tie 2.5 -> 3
+RoundToIntegral64 zero tie 2.5 -> 2
+RoundToIntegral64 up tie 2.5 -> 3
+RoundToIntegral64 down tie 2.5 -> 2
+RoundToIntegral64 even tie -1.5 -> -2
+RoundToIntegral64 away tie -1.5 -> -2
+RoundToIntegral64 zero tie -1.5 -> -1
+RoundToIntegral64 up tie -1.5 -> -1
+RoundToIntegral64 down tie -1.5 -> -2
+RoundToIntegral64 even tie 101.5 -> 102
+RoundToIntegral64 even tie -101.5 -> -102
+RoundToIntegral64 even tie 0.5 -> 0
+RoundToIntegral64 away tie 0.5 -> 1
+RoundToIntegral64 away tie -0.5 -> -1
+RoundToIntegral64 up tie 0.5 -> 1
+RoundToIntegral64 down tie 0.5 -> 0
+RoundToIntegral64 zero tie 0.5 -> 0
+RoundToIntegral64 even tie 2.50 -> 2
+RoundToIntegral64 even tie 3.5 -> 4
+RoundToIntegral64 down tie -2.5 -> -3
+RoundToIntegral64 even tie 123456789012344.5 -> 123456789012344
+RoundToIntegral64 away tie 123456789012344.5 -> 123456789012345
+RoundToIntegral64 8 tie 2.5 -> 2
+
+RoundToIntegral64 even carry 999999999999999.9 -> 1000000000000000
+RoundToIntegral64 even carry 999999999999999.5 -> 1000000000000000
+RoundToIntegral64 zero carry 999999999999999.9 -> 999999999999999
+RoundToIntegral64 even carry 9.5 -> 10
+RoundToIntegral64 zero carry 9.5 -> 9
+RoundToIntegral64 even carry 99.5 -> 100
+RoundToIntegral64 even carry -9.5 -> -10
+RoundToIntegral64 zero carry -9.5 -> -9
+RoundToIntegral64 up carry 99.99 -> 100
+RoundToIntegral64 up carry 9.1 -> 10
+RoundToIntegral64 down carry -9.1 -> -10
+RoundToIntegral64 even carry 9.9 -> 10
+
+RoundToIntegral64 even underflow 1E-398 -> 0
+RoundToIntegral64 down underflow -1E-398 -> -1
+RoundToIntegral64 up underflow 1E-398 -> 1
+RoundToIntegral64 even underflow 5E-398 -> 0
+RoundToIntegral64 even underflow 1.23456789E-390 -> 0
+RoundToIntegral64 up underflow 9.99999999999999E-384 -> 1
+RoundToIntegral64 zero underflow 9.99999999999999E-384 -> 0
+
+RoundToIntegral64 even zero -0.4 -> -0
+RoundToIntegral64 even zero -0.5 -> -0
+RoundToIntegral64 zero zero -0.1 -> -0
+RoundToIntegral64 up zero -0.1 -> -0
+RoundToIntegral64 down zero 0.1 -> 0
+RoundToIntegral64 even zero -0.00 -> -0
+RoundToIntegral64 up zero -1E-398 -> -0
+RoundToIntegral64 even zero 0 -> 0
+RoundToIntegral64 even zero -0 -> -0
+RoundToIntegral64 even zero 0E+5 -> 0E+5
+RoundToIntegral64 even zero -0E+5 -> -0E+5
+RoundToIntegral64 even zero -0.000 -> -0
+RoundToIntegral64 down zero 0.9 -> 0
+RoundToIntegral64 up zero -0.9 -> -0
+RoundToIntegral64 even zero 0E-398 -> 0
+
+RoundToIntegral64 even inf Infinity -> Infinity
+RoundToIntegral64 zero inf -Infinity -> -Infinity
+RoundToIntegral64 down inf Infinity -> Infinity
+RoundToIntegral64 up inf -Infinity -> -Infinity
+
+RoundToIntegral64 even nan NaN -> NaN
+RoundToIntegral64 even nan sNaN -> NaN
+RoundToIntegral64 even nan -NaN -> NaN
+RoundToIntegral64 zero nan 0x7c00000000000001 -> NaN
+RoundToIntegral64 even nan 0xfe0000000001e240 -> NaN
+
+RoundToIntegral64 even noncanon 0x6c77ffffffffffff -> 0
+RoundToIntegral64 even noncanon 0xec9fffffffffffff -> -0E+5
+RoundToIntegral64 even noncanon 0x6007ffffffffffff -> 0
+RoundToIntegral64 even noncanon 0x77ffffffffffffff -> 0E+369
+RoundToIntegral64 up noncanon 0x6c7386f26fc10000 -> 0
+
+# --- RoundToIntegral128 ---
+
+RoundToIntegral128 even exact 1E+3 -> 1E+3
+RoundToIntegral128 even exact 100.0 -> 100
+RoundToIntegral128 even exact 1.0E+6 -> 1.0E+6
+RoundToIntegral128 even exact 0.00 -> 0
+RoundToIntegral128 even exact 0E+2 -> 0E+2
+RoundToIntegral128 even exact 9999999999999999999999999999999999 -> 9999999999999999999999999999999999
+RoundToIntegral128 even exact -3.00 -> -3
+RoundToIntegral128 even exact 9.999999999999999999999999999999999E+6144 -> 9.999999999999999999999999999999999E+6144
+RoundToIntegral128 even exact 1.000000000000000000000000000000000E+34 -> 1.000000000000000000000000000000000E+34
+
+RoundToIntegral128 even inexact 2.1 -> 2
+RoundToIntegral128 up inexact 2.1 -> 3
+RoundToIntegral128 down inexact -2.1 -> -3
+RoundToIntegral128 zero inexact 2.9 -> 2
+RoundToIntegral128 even inexact 2.9 -> 3
+RoundToIntegral128 even inexact 1.000000000000000000000000000000001 -> 1
+RoundToIntegral128 up inexact 1.000000000000000000000000000000001 -> 2
+RoundToIntegral128 even inexact 123456789012345678901234567890123.7 -> 123456789012345678901234567890124
+
+RoundToIntegral128 even tie 1.5 -> 2
+RoundToIntegral128 even tie 2.5 -> 2
+RoundToIntegral128 away tie 2.5 -> 3
+RoundToIntegral128 zero tie 2.5 -> 2
+RoundToIntegral128 up tie 2.5 -> 3
+RoundToIntegral128 down tie 2.5 -> 2
+RoundToIntegral128 even tie -1.5 -> -2
+RoundToIntegral128 away tie -1.5 -> -2
+RoundToIntegral128 zero tie -1.5 -> -1
+RoundToIntegral128 up tie -1.5 -> -1
+RoundToIntegral128 down tie -1.5 -> -2
+RoundToIntegral128 even tie 0.5 -> 0
+RoundToIntegral128 away tie 0.5 -> 1
+RoundToIntegral128 even tie 123456789012345678901234567890123.5 -> 123456789012345678901234567890124
+
+RoundToIntegral128 even carry 999999999999999999999999999999999.9 -> 1000000000000000000000000000000000
+RoundToIntegral128 even carry 999999999999999999999999999999999.5 -> 1000000000000000000000000000000000
+RoundToIntegral128 zero carry 999999999999999999999999999999999.9 -> 999999999999999999999999999999999
+RoundToIntegral128 even carry 9.5 -> 10
+RoundToIntegral128 even carry -9.5 -> -10
+RoundToIntegral128 up carry 9.1 -> 10
+
+RoundToIntegral128 even underflow 1E-6176 -> 0
+RoundToIntegral128 down underflow -1E-6176 -> -1
+RoundToIntegral128 up underflow 1E-6176 -> 1
+RoundToIntegral128 even underflow 5E-6176 -> 0
+
+RoundToIntegral128 even zero -0.4 -> -0
+RoundToIntegral128 even zero -0.5 -> -0
+RoundToIntegral128 zero zero -0.1 -> -0
+RoundToIntegral128 up zero -0.1 -> -0
+RoundToIntegral128 down zero 0.1 -> 0
+RoundToIntegral128 even zero -0.00 -> -0
+RoundToIntegral128 up zero -1E-6176 -> -0
+RoundToIntegral128 even zero 0E+5 -> 0E+5
+RoundToIntegral128 even zero -0 -> -0
+
+RoundToIntegral128 even inf Infinity -> Infinity
+RoundToIntegral128 zero inf -Infinity -> -Infinity
+
+RoundToIntegral128 even nan NaN -> NaN
+RoundToIntegral128 even nan sNaN -> NaN
+RoundToIntegral128 even nan -NaN -> NaN
+RoundToIntegral128 even nan 0x7c000000000000010000000000000000 -> NaN
+
+RoundToIntegral128 even noncanon 0x3041ed09bead87c0378d8e6400000000 -> 0
+RoundToIntegral128 even noncanon 0xb047ed09bead87c0378d8e6400000000 -> -0E+3
+RoundToIntegral128 even noncanon 0x6c100000000000000000000000000000 -> 0
+RoundToIntegral128 even noncanon 0x77ff800000000000000000000000007b -> 0E+6111

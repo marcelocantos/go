@@ -1,0 +1,219 @@
+# Conformance suite for internal/bid
+
+The files `*.txt` in this directory fix the expected result of every
+operation of package `internal/bid` at every boundary that the package
+documentation (`doc.go`, the contract of the package) names. They were
+written from that documentation and from the text of IEEE 754-2008, by
+hand or with small generators that share no code with the kernel or with
+the reference oracle in `ref_test.go`. Nothing here was copied or
+transcribed from decTest, from Intel's test suite or from any other
+library's tests, and no expected result was computed with another decimal
+library. The suite is therefore an independent check: when it disagrees
+with the kernel or the oracle, the disagreement is settled against the
+contract and the standard, not against this suite.
+
+`conformance_test.go` reads the suite and runs it against the kernel in
+`TestConformance`. A vector whose operation still panics with
+`internal/bid: not implemented` is skipped and counted per operation;
+every other mismatch fails. `TestConformanceREADME` checks the table at the
+end of this file against the suite, so the table cannot drift.
+
+## Format
+
+A vector is one line:
+
+    Op mode class operand... -> result...
+
+Blank lines and lines starting with `#` are ignored. Tokens are separated
+by spaces; a Go quoted string (`" 1"`, `"1\n"`) is one token.
+
+`Op` is the exported function, width suffix included (`Add64`, `Narrow`,
+`Int64From128`). `mode` is the rounding mode:
+
+| token | Mode |
+|---|---|
+| `even` | ToNearestEven |
+| `away` | ToNearestAway |
+| `zero` | TowardZero |
+| `up` | TowardPositive |
+| `down` | TowardNegative |
+| a number | `Mode(n)`; the contract says any value outside the five behaves as ToNearestEven |
+| `-` | the operation takes no mode |
+
+`class` is the boundary class the vector exercises (next section). The
+operands and results are typed by the operation's signature:
+
+- A decimal value is written in the character form of the contract
+  (`1.50`, `-0E+5`, `1.234567890123456E+16`, `Infinity`, `-Infinity`,
+  `NaN`), extended by `-NaN`, `sNaN` and `-sNaN` for the NaN encodings
+  the character form does not distinguish. The spelling fixes the
+  quantum: `1.50` is coefficient 150 with exponent -2. A value may also
+  be written as its bit pattern, `0x` followed by 16 hex digits for
+  decimal64 or 32 for decimal128; that is how non-canonical encodings,
+  NaN payloads and the results of the sign operations (which copy bits)
+  are stated. A result written in either form is compared bit for bit, so
+  `NaN` as a result means the canonical quiet NaN and `0` means +0 with
+  exponent 0.
+- A `Status` is `Exact`, or the flag names joined with `|`:
+  `Inexact|Overflow`.
+- Integers (`int64`, `uint64`, `int` exponents, `Uint128` coefficients)
+  are decimal; booleans are `true` and `false`; a `Kind` is `finite`,
+  `inf` or `nan`.
+- A `Key` result is four tokens: `coeff exp kind neg`.
+- A binary float is a Go literal read with Go's semantics (the nearest
+  float64 or float32), including the hexadecimal form (`0x1p-24`), with
+  `+Inf`, `-Inf`, `NaN` and `-0`. The exact value of every binary operand
+  that is not exactly representable in decimal is given in a comment. A
+  `NaN` result is the quiet NaN with the sign bit clear and a zero
+  payload, the only NaN the contract lets a conversion produce.
+- A string (Parse operand, Append result) is a Go quoted string.
+
+The operands follow the Go signature in order. `Round64 even tie false
+12345678901234565 0 false -> 1.234567890123456E+16 Inexact` is
+`Round64(false, 12345678901234565, 0, false, ToNearestEven)`.
+
+## Boundary classes
+
+Every vector names one class. The classes, and what a vector in each one
+exercises:
+
+| class | exercises |
+|---|---|
+| `exact` | an exact result: the preferred exponent, or the cohort member nearest it when the preferred exponent is not available |
+| `inexact` | a result that discards a non-tie fraction, under the modes that differ |
+| `tie` | a result exactly halfway between two representable values, under all five modes; for Rem, a quotient halfway between two integers |
+| `carry` | a rounding that carries into a new digit (`9999999999999999` + 1), or into the next binade for a binary result |
+| `overflow` | a result too large for the format: an infinity or the largest finite value by mode and sign, including the cases decided only after rounding; for Pack, an operand it refuses |
+| `underflow` | the subnormal edge: exact subnormals, inexact subnormals, tiny results rounding to zero and tiny results rounding up to the smallest normal |
+| `clamp` | an exact result whose exponent would leave `[MinExp, MaxExp]` and is re-encoded at the bound, and zeros at the bounds |
+| `zero` | the sign and exponent of a zero result, zero operands, and a zero divisor |
+| `inf` | infinite operands and results, including the invalid operations on infinities |
+| `nan` | NaN operands of every kind (quiet, signaling, negative, with payload, non-canonical) and NaN results, including the invalid operations that produce them |
+| `noncanon` | non-canonical encodings as operands: a coefficient field above `MaxCoeff`, a second-form decimal128, an infinity with coefficient bits |
+| `grammar` | strings at the edge of the Parse grammar: everything it must reject with `Syntax`, and the accepted spellings next to them |
+
+A `-` in the table below declares that a class does not apply to an
+operation, and the test requires such a cell to have no vectors:
+
+- `grammar` applies only to Parse, and `noncanon` not to Parse, Round or
+  the conversions from binary or integer operands, whose inputs are not
+  encodings.
+- The exact operations (Rem, Mod, Reduce, SameQuantum, Min, Max, the
+  comparisons, Key, Widen, Append, Unpack, Pack, the predicates, the sign
+  operations and the decimal128 integer conversions) have no `inexact`,
+  `tie` or `carry` class, except that Rem has `tie` for a halfway
+  quotient. They cannot overflow; Reduce has `clamp` because its exponent
+  stops at MaxExp.
+- RoundToIntegral and Quantize have a fixed result exponent, so they
+  neither overflow nor clamp (a Quantize whose coefficient would not fit
+  is a NaN, in `nan`).
+- Division has no `carry` class: a quotient of two coefficients of at most
+  Precision digits is never within one unit in the last place below a
+  power of ten unless it is exact (write the quotient as A/B with A =
+  10^k B - r; the required closeness forces B > 10^(Precision-k) while A
+  < 10^Precision forces B < 10^(Precision-k)).
+- `Float64To128`, `Float32To64` and `Float32To128` have no `carry` class:
+  the floats just below every power of ten in range were enumerated and
+  none has 34 (float64) or 16 (float32) leading nines. The conversions
+  from binary to decimal cannot overflow, underflow or clamp, since every
+  float64 is a normal decimal64 value; those from integers likewise.
+- Round takes a value in parts, so it has no `inf`, `nan` or `noncanon`
+  operand class; its infinite results are in `overflow`.
+- The conversions to integers and to binary have no `clamp` class, since
+  their results have no decimal exponent.
+
+## Vector counts
+
+<!-- counts:begin -->
+| Operation | exact | inexact | tie | carry | overflow | underflow | clamp | zero | inf | nan | noncanon | grammar | Total |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Add64 | 13 | 20 | 15 | 8 | 17 | 5 | 6 | 23 | 9 | 9 | 7 | - | 132 |
+| Add128 | 9 | 9 | 12 | 5 | 11 | 3 | 4 | 11 | 6 | 6 | 6 | - | 82 |
+| Sub64 | 10 | 12 | 12 | 8 | 12 | 5 | 4 | 19 | 8 | 7 | 6 | - | 103 |
+| Sub128 | 6 | 8 | 8 | 5 | 8 | 3 | 3 | 11 | 5 | 5 | 4 | - | 66 |
+| Mul64 | 14 | 16 | 16 | 15 | 24 | 22 | 11 | 12 | 11 | 7 | 6 | - | 154 |
+| Mul128 | 10 | 8 | 11 | 9 | 14 | 12 | 6 | 7 | 7 | 4 | 4 | - | 92 |
+| Div64 | 20 | 21 | 15 | - | 16 | 24 | 12 | 8 | 21 | 7 | 6 | - | 150 |
+| Div128 | 10 | 15 | 11 | - | 11 | 13 | 8 | 5 | 11 | 4 | 4 | - | 92 |
+| FMA64 | 12 | 15 | 16 | 11 | 18 | 14 | 9 | 20 | 13 | 7 | 5 | - | 140 |
+| FMA128 | 7 | 7 | 12 | 6 | 12 | 9 | 6 | 10 | 8 | 4 | 4 | - | 85 |
+| Rem64 | 29 | - | 14 | - | - | 7 | - | 15 | 10 | 7 | 5 | - | 87 |
+| Rem128 | 14 | - | 7 | - | - | 4 | - | 8 | 6 | 4 | 4 | - | 47 |
+| Mod64 | 29 | - | - | - | - | 6 | - | 9 | 7 | 5 | 4 | - | 60 |
+| Mod128 | 13 | - | - | - | - | 3 | - | 6 | 4 | 4 | 3 | - | 33 |
+| RoundToIntegral64 | 16 | 19 | 25 | 12 | - | 7 | - | 15 | 4 | 5 | 5 | - | 108 |
+| RoundToIntegral128 | 9 | 8 | 14 | 6 | - | 4 | - | 9 | 2 | 4 | 4 | - | 60 |
+| Quantize64 | 19 | 19 | 21 | 11 | - | 10 | - | 13 | 8 | 13 | 6 | - | 120 |
+| Quantize128 | 9 | 9 | 12 | 6 | - | 6 | - | 7 | 4 | 7 | 4 | - | 64 |
+| Reduce64 | 14 | - | - | - | - | 5 | 7 | 7 | 2 | 6 | 5 | - | 46 |
+| Reduce128 | 8 | - | - | - | - | 3 | 5 | 5 | 2 | 5 | 5 | - | 33 |
+| SameQuantum64 | 7 | - | - | - | - | 3 | - | 5 | 5 | 6 | 5 | - | 31 |
+| SameQuantum128 | 3 | - | - | - | - | 2 | - | 3 | 3 | 3 | 4 | - | 18 |
+| Min64 | 11 | - | - | - | - | 4 | - | 9 | 6 | 7 | 6 | - | 43 |
+| Min128 | 6 | - | - | - | - | 2 | - | 5 | 3 | 4 | 4 | - | 24 |
+| Max64 | 11 | - | - | - | - | 4 | - | 9 | 6 | 7 | 6 | - | 43 |
+| Max128 | 6 | - | - | - | - | 2 | - | 5 | 3 | 4 | 4 | - | 24 |
+| Round64 | 12 | 24 | 17 | 13 | 22 | 30 | 12 | 10 | - | - | - | - | 140 |
+| Round128 | 6 | 11 | 11 | 7 | 14 | 14 | 7 | 7 | - | - | - | - | 77 |
+| Equal64 | 9 | - | - | - | - | 4 | - | 5 | 4 | 7 | 6 | - | 35 |
+| Equal128 | 4 | - | - | - | - | 2 | - | 3 | 2 | 4 | 4 | - | 19 |
+| Less64 | 9 | - | - | - | - | 5 | - | 4 | 5 | 5 | 4 | - | 32 |
+| Less128 | 4 | - | - | - | - | 2 | - | 2 | 3 | 3 | 3 | - | 17 |
+| LessEqual64 | 5 | - | - | - | - | 3 | - | 4 | 4 | 4 | 4 | - | 24 |
+| LessEqual128 | 3 | - | - | - | - | 2 | - | 2 | 2 | 2 | 2 | - | 13 |
+| Compare64 | 6 | - | - | - | - | 3 | - | 4 | 4 | 5 | 4 | - | 26 |
+| Compare128 | 3 | - | - | - | - | 2 | - | 2 | 2 | 3 | 2 | - | 14 |
+| TotalOrder64 | 16 | - | - | - | - | 7 | - | 9 | 7 | 18 | 7 | - | 64 |
+| TotalOrder128 | 7 | - | - | - | - | 3 | - | 5 | 3 | 10 | 5 | - | 33 |
+| Key64 | 11 | - | - | - | - | 4 | - | 5 | 2 | 6 | 4 | - | 32 |
+| Key128 | 10 | - | - | - | - | 4 | - | 4 | 2 | 4 | 4 | - | 28 |
+| Widen | 8 | - | - | - | - | 4 | - | 4 | 2 | 6 | 6 | - | 30 |
+| Narrow | 9 | 12 | 13 | 8 | 18 | 21 | 10 | 7 | 3 | 6 | 6 | - | 113 |
+| Int64To64 | 9 | 12 | 11 | 7 | - | - | - | 2 | - | - | - | - | 41 |
+| Int64To128 | 6 | - | - | - | - | - | - | 1 | - | - | - | - | 7 |
+| Uint64To64 | 4 | 6 | 6 | 4 | - | - | - | 1 | - | - | - | - | 21 |
+| Uint64To128 | 3 | - | - | - | - | - | - | 1 | - | - | - | - | 4 |
+| Int64From64 | 7 | 10 | 13 | 5 | 9 | 5 | - | 7 | 4 | 5 | 3 | - | 68 |
+| Int64From128 | 4 | 6 | 8 | 2 | 8 | 3 | - | 3 | 2 | 3 | 3 | - | 42 |
+| Uint64From64 | 4 | 5 | 8 | 3 | 9 | 4 | - | 6 | 2 | 4 | 2 | - | 47 |
+| Uint64From128 | 3 | 3 | 5 | 2 | 6 | 3 | - | 3 | 2 | 3 | 2 | - | 32 |
+| Float64To64 | 14 | 17 | 12 | 12 | - | - | - | 4 | 3 | 2 | - | - | 64 |
+| Float64To128 | 9 | 12 | 9 | - | - | - | - | 3 | 2 | 2 | - | - | 37 |
+| Float32To64 | 8 | 10 | 9 | - | - | - | - | 2 | 2 | 2 | - | - | 33 |
+| Float32To128 | 6 | 6 | 7 | - | - | - | - | 2 | 2 | 1 | - | - | 24 |
+| Float64From64 | 10 | 13 | 12 | 9 | 15 | 14 | - | 5 | 3 | 5 | 3 | - | 89 |
+| Float64From128 | 6 | 6 | 10 | 6 | 11 | 11 | - | 3 | 2 | 3 | 3 | - | 61 |
+| Float32From64 | 6 | 8 | 12 | 8 | 14 | 12 | - | 4 | 2 | 4 | 2 | - | 72 |
+| Float32From128 | 4 | 4 | 8 | 5 | 7 | 7 | - | 3 | 2 | 3 | 2 | - | 45 |
+| Append64 | 24 | - | - | - | - | 4 | - | 10 | 3 | 7 | 6 | - | 54 |
+| Append128 | 13 | - | - | - | - | 3 | - | 6 | 2 | 5 | 6 | - | 35 |
+| Parse64 | 28 | 13 | 15 | 9 | 19 | 25 | 12 | 12 | 8 | 9 | - | 67 | 217 |
+| Parse128 | 10 | 7 | 10 | 5 | 11 | 12 | 7 | 5 | 3 | 4 | - | 18 | 92 |
+| Unpack64 | 7 | - | - | - | - | 2 | - | 4 | 3 | 6 | 6 | - | 28 |
+| Unpack128 | 5 | - | - | - | - | 2 | - | 4 | 2 | 5 | 7 | - | 25 |
+| Pack64 | 8 | - | - | - | 7 | 2 | - | 5 | - | - | - | - | 22 |
+| Pack128 | 5 | - | - | - | 5 | 2 | - | 4 | - | - | - | - | 16 |
+| IsNaN64 | 2 | - | - | - | - | 1 | - | 2 | 2 | 7 | 2 | - | 16 |
+| IsNaN128 | 1 | - | - | - | - | 1 | - | 1 | 1 | 5 | 2 | - | 11 |
+| IsSignaling64 | 1 | - | - | - | - | 1 | - | 1 | 2 | 6 | 2 | - | 13 |
+| IsSignaling128 | 1 | - | - | - | - | 1 | - | 1 | 1 | 5 | 1 | - | 10 |
+| IsInf64 | 2 | - | - | - | - | 1 | - | 1 | 4 | 2 | 2 | - | 12 |
+| IsInf128 | 1 | - | - | - | - | 1 | - | 1 | 3 | 1 | 2 | - | 9 |
+| IsFinite64 | 2 | - | - | - | - | 1 | - | 2 | 2 | 3 | 2 | - | 12 |
+| IsFinite128 | 1 | - | - | - | - | 1 | - | 1 | 2 | 2 | 2 | - | 9 |
+| IsZero64 | 2 | - | - | - | - | 1 | - | 5 | 2 | 2 | 4 | - | 16 |
+| IsZero128 | 1 | - | - | - | - | 1 | - | 3 | 1 | 1 | 4 | - | 11 |
+| IsSubnormal64 | 4 | - | - | - | - | 5 | - | 3 | 1 | 1 | 2 | - | 16 |
+| IsSubnormal128 | 3 | - | - | - | - | 3 | - | 2 | 1 | 1 | 1 | - | 11 |
+| IsCanonical64 | 4 | - | - | - | - | 1 | - | 2 | 4 | 8 | 5 | - | 24 |
+| IsCanonical128 | 3 | - | - | - | - | 1 | - | 2 | 2 | 7 | 6 | - | 21 |
+| Signbit64 | 2 | - | - | - | - | 1 | - | 3 | 2 | 5 | 2 | - | 15 |
+| Signbit128 | 2 | - | - | - | - | 1 | - | 2 | 2 | 3 | 2 | - | 12 |
+| Neg64 | 4 | - | - | - | - | 2 | - | 3 | 3 | 6 | 3 | - | 21 |
+| Neg128 | 2 | - | - | - | - | 1 | - | 2 | 2 | 5 | 3 | - | 15 |
+| Abs64 | 4 | - | - | - | - | 1 | - | 3 | 3 | 6 | 3 | - | 20 |
+| Abs128 | 2 | - | - | - | - | 1 | - | 2 | 2 | 4 | 3 | - | 14 |
+| CopySign64 | 6 | - | - | - | - | 2 | - | 5 | 4 | 7 | 4 | - | 28 |
+| CopySign128 | 3 | - | - | - | - | 1 | - | 3 | 2 | 4 | 3 | - | 16 |
+| Total | 693 | 371 | 417 | 207 | 318 | 433 | 129 | 483 | 316 | 398 | 292 | 85 | 4142 |
+<!-- counts:end -->

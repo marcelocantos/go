@@ -1,0 +1,271 @@
+# Copyright 2026 The Go Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# Remainder (IEEE 754-2008 clause 5.3.1) and truncated modulo (GDA
+# remainder). Both are exact for every finite pair, so they have no
+# inexact, carry, overflow or clamp class; the result has exponent
+# min(Q(x), Q(y)) and a zero result has the sign of x. "tie" for Rem is a
+# quotient exactly halfway between two integers, where n is the even one.
+# A zero divisor is invalid (NaN); those vectors are in the zero class.
+
+# --- Rem64 ---
+
+Rem64 - exact 10 3 -> 1
+Rem64 - exact 10.0 3 -> 1.0
+Rem64 - exact 10 3.00 -> 1.00
+Rem64 - exact 11 3 -> -1
+Rem64 - exact -10 3 -> -1
+Rem64 - exact 10 -3 -> 1
+Rem64 - exact -10 -3 -> -1
+Rem64 - exact 10 6 -> -2
+Rem64 - exact 10.0 6 -> -2.0
+Rem64 - exact 2.1 3 -> -0.9
+Rem64 - exact 10.2 1 -> 0.2
+Rem64 - exact 10 0.3 -> 0.1
+Rem64 - exact 3.6 1.3 -> -0.3
+Rem64 - exact 1 3 -> 1
+Rem64 - exact 1E+2 3 -> 1
+Rem64 - exact 1E+16 3 -> 1
+Rem64 - exact 1E+30 3 -> 1
+Rem64 - exact 1E+30 6 -> -2
+Rem64 - exact 1E+30 7 -> 1
+Rem64 - exact 1.000000000000000E+384 3 -> 1
+Rem64 - exact 1234567890123456 0.1 -> 0.0
+Rem64 - exact 1234567890123456 7 -> 1
+Rem64 - exact -1234567890123456 7 -> -1
+Rem64 - exact 9999999999999999 1E+15 -> -1
+Rem64 - exact 1E+16 7 -> -2
+Rem64 - exact 1.5E+2 7 -> 3
+Rem64 - exact 100 2.5 -> 0.0
+Rem64 - exact 1 0.3 -> 0.1
+Rem64 - exact 1 0.7 -> 0.3
+
+Rem64 - tie 2.5 1 -> 0.5
+Rem64 - tie 3.5 1 -> -0.5
+Rem64 - tie 7.5 5 -> -2.5
+Rem64 - tie 1.5 3 -> 1.5
+Rem64 - tie 4.5 3 -> -1.5
+Rem64 - tie 5 2 -> 1
+Rem64 - tie 7 2 -> -1
+Rem64 - tie -7 2 -> 1
+Rem64 - tie -5 2 -> -1
+Rem64 - tie 15 10 -> -5
+Rem64 - tie 25 10 -> 5
+Rem64 - tie -2.5 1 -> -0.5
+Rem64 - tie 0.5 1 -> 0.5
+Rem64 - tie -0.5 1 -> -0.5
+
+Rem64 - underflow 5E-398 3E-398 -> -1E-398
+Rem64 - underflow 1 1E-398 -> 0E-398
+Rem64 - underflow 1E-398 1 -> 1E-398
+Rem64 - underflow 3E-398 2E-398 -> -1E-398
+Rem64 - underflow 1E-383 3E-398 -> 1E-398
+Rem64 - underflow 7E-398 4E-398 -> -1E-398
+Rem64 - underflow -1E-398 1E-383 -> -1E-398
+
+Rem64 - zero 6 3 -> 0
+Rem64 - zero -6 3 -> -0
+Rem64 - zero 6.0 3 -> 0.0
+Rem64 - zero -0 1 -> -0
+Rem64 - zero 0.00 3 -> 0.00
+Rem64 - zero 0 -3 -> 0
+Rem64 - zero -6 -3 -> -0
+Rem64 - zero 1.000000000000000E+384 1 -> 0
+Rem64 - zero 9.999999999999999E+384 2 -> 0
+Rem64 - zero 0 1E+5 -> 0
+Rem64 - zero 0E+5 1 -> 0
+Rem64 - zero 1 0 -> NaN
+Rem64 - zero 0 0 -> NaN
+Rem64 - zero 1 -0 -> NaN
+Rem64 - zero -0 0.00 -> NaN
+
+Rem64 - inf Infinity 1 -> NaN
+Rem64 - inf -Infinity Infinity -> NaN
+Rem64 - inf -Infinity 2 -> NaN
+Rem64 - inf Infinity 0 -> NaN
+Rem64 - inf 1 Infinity -> 1
+Rem64 - inf -1000 Infinity -> -1000
+Rem64 - inf -0 Infinity -> -0
+Rem64 - inf 1.50 -Infinity -> 1.50
+Rem64 - inf 0 Infinity -> 0
+Rem64 - inf 9.999999999999999E+384 -Infinity -> 9.999999999999999E+384
+
+Rem64 - nan 1 NaN -> NaN
+Rem64 - nan NaN 1 -> NaN
+Rem64 - nan sNaN 1 -> NaN
+Rem64 - nan 1 -sNaN -> NaN
+Rem64 - nan NaN Infinity -> NaN
+Rem64 - nan 0x7c00000000000001 1 -> NaN
+Rem64 - nan 1 0xfe0000000001e240 -> NaN
+
+Rem64 - noncanon 0x6c77ffffffffffff 3 -> 0
+Rem64 - noncanon 1 0x6c77ffffffffffff -> NaN
+Rem64 - noncanon 0xec9fffffffffffff 1 -> -0
+Rem64 - noncanon 7 0xec9fffffffffffff -> NaN
+Rem64 - noncanon 0x6c7386f26fc10000 Infinity -> 0
+
+# --- Rem128 ---
+
+Rem128 - exact 10 3 -> 1
+Rem128 - exact 10.0 3 -> 1.0
+Rem128 - exact 11 3 -> -1
+Rem128 - exact -10 3 -> -1
+Rem128 - exact 10 -3 -> 1
+Rem128 - exact 10 6 -> -2
+Rem128 - exact 2.1 3 -> -0.9
+Rem128 - exact 1E+6000 7 -> 1
+Rem128 - exact 1E+6000 6 -> -2
+Rem128 - exact 1E+34 3 -> 1
+Rem128 - exact 1E+34 7 -> -2
+Rem128 - exact 1.000000000000000000000000000000000E+6144 3 -> 1
+Rem128 - exact 1234567890123456789012345678901234 7 -> -2
+Rem128 - exact 1234567890123456789012345678901234 0.1 -> 0.0
+
+Rem128 - tie 2.5 1 -> 0.5
+Rem128 - tie 3.5 1 -> -0.5
+Rem128 - tie 7.5 5 -> -2.5
+Rem128 - tie 5 2 -> 1
+Rem128 - tie 7 2 -> -1
+Rem128 - tie -7 2 -> 1
+Rem128 - tie 15 10 -> -5
+
+Rem128 - underflow 5E-6176 3E-6176 -> -1E-6176
+Rem128 - underflow 1 1E-6176 -> 0E-6176
+Rem128 - underflow 1E-6176 1 -> 1E-6176
+Rem128 - underflow 1E-6143 3E-6176 -> 1E-6176
+
+Rem128 - zero 6 3 -> 0
+Rem128 - zero -6 3 -> -0
+Rem128 - zero 6.0 3 -> 0.0
+Rem128 - zero -0 1 -> -0
+Rem128 - zero 0.00 3 -> 0.00
+Rem128 - zero 1 0 -> NaN
+Rem128 - zero 0 0 -> NaN
+Rem128 - zero 1 -0 -> NaN
+
+Rem128 - inf Infinity 1 -> NaN
+Rem128 - inf -Infinity Infinity -> NaN
+Rem128 - inf 1 Infinity -> 1
+Rem128 - inf -1000 Infinity -> -1000
+Rem128 - inf -0 Infinity -> -0
+Rem128 - inf 1.50 -Infinity -> 1.50
+
+Rem128 - nan 1 NaN -> NaN
+Rem128 - nan NaN 1 -> NaN
+Rem128 - nan sNaN 1 -> NaN
+Rem128 - nan 1 0x7c000000000000010000000000000000 -> NaN
+
+Rem128 - noncanon 0x3041ed09bead87c0378d8e6400000000 3 -> 0
+Rem128 - noncanon 1 0x3041ed09bead87c0378d8e6400000000 -> NaN
+Rem128 - noncanon 0xb047ed09bead87c0378d8e6400000000 1 -> -0
+Rem128 - noncanon 0x6c100000000000000000000000000000 Infinity -> 0
+
+# --- Mod64 ---
+
+Mod64 - exact 10 3 -> 1
+Mod64 - exact 10.0 3 -> 1.0
+Mod64 - exact 11 3 -> 2
+Mod64 - exact -10 3 -> -1
+Mod64 - exact 10 -3 -> 1
+Mod64 - exact -10 -3 -> -1
+Mod64 - exact 10 6 -> 4
+Mod64 - exact 10.0 6 -> 4.0
+Mod64 - exact 10 6.0 -> 4.0
+Mod64 - exact 2.1 3 -> 2.1
+Mod64 - exact 10.2 1 -> 0.2
+Mod64 - exact 10 0.3 -> 0.1
+Mod64 - exact 3.6 1.3 -> 1.0
+Mod64 - exact 7 2 -> 1
+Mod64 - exact -7 2 -> -1
+Mod64 - exact 7.5 2 -> 1.5
+Mod64 - exact 1E+2 3 -> 1
+Mod64 - exact 1E+30 6 -> 4
+Mod64 - exact 1E+30 7 -> 1
+Mod64 - exact 1.000000000000000E+384 7 -> 1
+Mod64 - exact 1234567890123456 0.1 -> 0.0
+Mod64 - exact 2.5 1 -> 0.5
+Mod64 - exact 3.5 1 -> 0.5
+Mod64 - exact 5 2 -> 1
+Mod64 - exact 1 3 -> 1
+Mod64 - exact 1E+16 7 -> 5
+Mod64 - exact 9999999999999999 1E+15 -> 999999999999999
+Mod64 - exact -2.5 1 -> -0.5
+Mod64 - exact 1 0.7 -> 0.3
+
+Mod64 - underflow 1 1E-398 -> 0E-398
+Mod64 - underflow 5E-398 3E-398 -> 2E-398
+Mod64 - underflow 3E-398 2E-398 -> 1E-398
+Mod64 - underflow 1E-398 1 -> 1E-398
+Mod64 - underflow 1E-383 3E-398 -> 1E-398
+Mod64 - underflow -7E-398 4E-398 -> -3E-398
+
+Mod64 - zero -6 3 -> -0
+Mod64 - zero 6 -3 -> 0
+Mod64 - zero -0 1 -> -0
+Mod64 - zero 0.00 3 -> 0.00
+Mod64 - zero 6.0 3 -> 0.0
+Mod64 - zero 9.999999999999999E+384 2 -> 0
+Mod64 - zero 1 0 -> NaN
+Mod64 - zero 0 0 -> NaN
+Mod64 - zero 1 -0 -> NaN
+
+Mod64 - inf Infinity 1 -> NaN
+Mod64 - inf -Infinity -Infinity -> NaN
+Mod64 - inf Infinity 0 -> NaN
+Mod64 - inf 1 Infinity -> 1
+Mod64 - inf -0 Infinity -> -0
+Mod64 - inf 1 -Infinity -> 1
+Mod64 - inf -1000 Infinity -> -1000
+
+Mod64 - nan 1 NaN -> NaN
+Mod64 - nan NaN 1 -> NaN
+Mod64 - nan sNaN 1 -> NaN
+Mod64 - nan 1 -sNaN -> NaN
+Mod64 - nan 0x7c00000000000001 1 -> NaN
+
+Mod64 - noncanon 0x6c77ffffffffffff 3 -> 0
+Mod64 - noncanon 1 0x6c77ffffffffffff -> NaN
+Mod64 - noncanon 0xec9fffffffffffff 1 -> -0
+Mod64 - noncanon 0x6c7386f26fc10000 Infinity -> 0
+
+# --- Mod128 ---
+
+Mod128 - exact 10 3 -> 1
+Mod128 - exact 11 3 -> 2
+Mod128 - exact -10 3 -> -1
+Mod128 - exact 10 -3 -> 1
+Mod128 - exact 10 6 -> 4
+Mod128 - exact 10.0 6 -> 4.0
+Mod128 - exact 2.1 3 -> 2.1
+Mod128 - exact 3.6 1.3 -> 1.0
+Mod128 - exact 1E+6000 6 -> 4
+Mod128 - exact 1E+6000 7 -> 1
+Mod128 - exact 1E+34 7 -> 5
+Mod128 - exact 1234567890123456789012345678901234 7 -> 5
+Mod128 - exact 7.5 2 -> 1.5
+
+Mod128 - underflow 1 1E-6176 -> 0E-6176
+Mod128 - underflow 5E-6176 3E-6176 -> 2E-6176
+Mod128 - underflow 1E-6176 1 -> 1E-6176
+
+Mod128 - zero -6 3 -> -0
+Mod128 - zero 6 -3 -> 0
+Mod128 - zero -0 1 -> -0
+Mod128 - zero 0.00 3 -> 0.00
+Mod128 - zero 1 0 -> NaN
+Mod128 - zero 0 0 -> NaN
+
+Mod128 - inf Infinity 1 -> NaN
+Mod128 - inf 1 Infinity -> 1
+Mod128 - inf -0 Infinity -> -0
+Mod128 - inf -1000 -Infinity -> -1000
+
+Mod128 - nan 1 NaN -> NaN
+Mod128 - nan NaN 1 -> NaN
+Mod128 - nan sNaN 1 -> NaN
+Mod128 - nan 1 0xfe000000000000000000000000000005 -> NaN
+
+Mod128 - noncanon 0x3041ed09bead87c0378d8e6400000000 3 -> 0
+Mod128 - noncanon 1 0x3041ed09bead87c0378d8e6400000000 -> NaN
+Mod128 - noncanon 0xb047ed09bead87c0378d8e6400000000 1 -> -0

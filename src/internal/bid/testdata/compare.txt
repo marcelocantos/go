@@ -1,0 +1,442 @@
+# Copyright 2026 The Go Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# Comparisons ("Comparisons and ordering"): the quiet predicates compare
+# values, TotalOrder compares values then exponents and NaNs by sign bit
+# alone, and Key is the hash key of a value. None rounds, so the classes
+# are exact, underflow (subnormal operands), zero, inf, nan and noncanon.
+# A Key result is coeff exp kind neg.
+
+# --- Equal64 ---
+
+Equal64 - exact 1.0 1.00 -> true
+Equal64 - exact 1 1.000000000000001 -> false
+Equal64 - exact 1E+2 100 -> true
+Equal64 - exact 1.5E+3 1500 -> true
+Equal64 - exact 9.999999999999999E+384 9.999999999999999E+384 -> true
+Equal64 - exact -1 1 -> false
+Equal64 - exact 123.456 123.456 -> true
+Equal64 - exact 1E+369 1.0E+370 -> false
+Equal64 - exact 1.0E+370 1.0E+370 -> true
+
+Equal64 - underflow 1E-398 1E-398 -> true
+Equal64 - underflow 1E-398 2E-398 -> false
+Equal64 - underflow 1E-398 0 -> false
+Equal64 - underflow 1E-383 1.000000000000000E-383 -> true
+
+Equal64 - zero 0 -0 -> true
+Equal64 - zero 0E+369 -0E-398 -> true
+Equal64 - zero 0 0.00 -> true
+Equal64 - zero 0 1E-398 -> false
+Equal64 - zero -0 -0.0 -> true
+
+Equal64 - inf Infinity Infinity -> true
+Equal64 - inf Infinity -Infinity -> false
+Equal64 - inf Infinity 9.999999999999999E+384 -> false
+Equal64 - inf -Infinity -Infinity -> true
+
+Equal64 - nan NaN NaN -> false
+Equal64 - nan sNaN sNaN -> false
+Equal64 - nan NaN 1 -> false
+Equal64 - nan 1 NaN -> false
+Equal64 - nan NaN Infinity -> false
+Equal64 - nan -NaN -NaN -> false
+Equal64 - nan 0x7c00000000000001 0x7c00000000000001 -> false
+
+Equal64 - noncanon 0x6c77ffffffffffff 0 -> true
+Equal64 - noncanon 0x6c77ffffffffffff -0 -> true
+Equal64 - noncanon 0x6c77ffffffffffff 0x6c77ffffffffffff -> true
+Equal64 - noncanon 0xec9fffffffffffff 0 -> true
+Equal64 - noncanon 0x6c77ffffffffffff 1 -> false
+Equal64 - noncanon 0x6c7386f26fc10000 0x6c7386f26fc0ffff -> false
+
+# --- Equal128 ---
+
+Equal128 - exact 1.0 1.00 -> true
+Equal128 - exact 1 1.000000000000000000000000000000001 -> false
+Equal128 - exact 1E+2 100 -> true
+Equal128 - exact -1 1 -> false
+
+Equal128 - underflow 1E-6176 1E-6176 -> true
+Equal128 - underflow 1E-6176 2E-6176 -> false
+
+Equal128 - zero 0 -0 -> true
+Equal128 - zero 0E+6111 -0E-6176 -> true
+Equal128 - zero 0 1E-6176 -> false
+
+Equal128 - inf Infinity Infinity -> true
+Equal128 - inf Infinity -Infinity -> false
+
+Equal128 - nan NaN NaN -> false
+Equal128 - nan sNaN sNaN -> false
+Equal128 - nan NaN 1 -> false
+Equal128 - nan 0x7c000000000000010000000000000000 0x7c000000000000010000000000000000 -> false
+
+Equal128 - noncanon 0x3041ed09bead87c0378d8e6400000000 0 -> true
+Equal128 - noncanon 0x6c100000000000000000000000000000 -0 -> true
+Equal128 - noncanon 0xb047ed09bead87c0378d8e6400000000 0 -> true
+Equal128 - noncanon 0x3041ffffffffffffffffffffffffffff 1 -> false
+
+# --- Less64 ---
+
+Less64 - exact 1 2 -> true
+Less64 - exact 2 1 -> false
+Less64 - exact 1.0 1 -> false
+Less64 - exact 1E+2 101 -> true
+Less64 - exact 99 1E+2 -> true
+Less64 - exact -2 -1 -> true
+Less64 - exact -1 -2 -> false
+Less64 - exact 1 1.000000000000001 -> true
+Less64 - exact 1E+369 1.0E+370 -> true
+
+Less64 - underflow 1E-398 2E-398 -> true
+Less64 - underflow 2E-398 1E-398 -> false
+Less64 - underflow 0 1E-398 -> true
+Less64 - underflow -1E-398 0 -> true
+Less64 - underflow 9.99999999999999E-384 1E-383 -> true
+
+Less64 - zero -0 0 -> false
+Less64 - zero 0 -0 -> false
+Less64 - zero -1 -0 -> true
+Less64 - zero 0E+369 0E-398 -> false
+
+Less64 - inf -Infinity -9.999999999999999E+384 -> true
+Less64 - inf 9.999999999999999E+384 Infinity -> true
+Less64 - inf Infinity Infinity -> false
+Less64 - inf -Infinity Infinity -> true
+Less64 - inf Infinity -Infinity -> false
+
+Less64 - nan 1 NaN -> false
+Less64 - nan NaN 1 -> false
+Less64 - nan NaN NaN -> false
+Less64 - nan sNaN Infinity -> false
+Less64 - nan -Infinity -NaN -> false
+
+Less64 - noncanon 0x6c77ffffffffffff 1 -> true
+Less64 - noncanon -1 0x6c77ffffffffffff -> true
+Less64 - noncanon 0x6c77ffffffffffff 0 -> false
+Less64 - noncanon 0xec9fffffffffffff 1E-398 -> true
+
+# --- Less128 ---
+
+Less128 - exact 1 2 -> true
+Less128 - exact 2 1 -> false
+Less128 - exact 1.0 1 -> false
+Less128 - exact -2 -1 -> true
+
+Less128 - underflow 1E-6176 2E-6176 -> true
+Less128 - underflow 0 1E-6176 -> true
+
+Less128 - zero -0 0 -> false
+Less128 - zero 0 -0 -> false
+
+Less128 - inf -Infinity -9.999999999999999999999999999999999E+6144 -> true
+Less128 - inf 9.999999999999999999999999999999999E+6144 Infinity -> true
+Less128 - inf Infinity Infinity -> false
+
+Less128 - nan 1 NaN -> false
+Less128 - nan NaN 1 -> false
+Less128 - nan sNaN Infinity -> false
+
+Less128 - noncanon 0x3041ed09bead87c0378d8e6400000000 1 -> true
+Less128 - noncanon -1 0x6c100000000000000000000000000000 -> true
+Less128 - noncanon 0x3041ed09bead87c0378d8e6400000000 0 -> false
+
+# --- LessEqual64 ---
+
+LessEqual64 - exact 1.0 1 -> true
+LessEqual64 - exact 1 2 -> true
+LessEqual64 - exact 2 1 -> false
+LessEqual64 - exact -1 -1.00 -> true
+LessEqual64 - exact 1E+2 100 -> true
+
+LessEqual64 - underflow 1E-398 1E-398 -> true
+LessEqual64 - underflow 2E-398 1E-398 -> false
+LessEqual64 - underflow 1E-398 2E-398 -> true
+
+LessEqual64 - zero -0 0 -> true
+LessEqual64 - zero 0 -0 -> true
+LessEqual64 - zero 0 1E-398 -> true
+LessEqual64 - zero 1E-398 -0 -> false
+
+LessEqual64 - inf Infinity Infinity -> true
+LessEqual64 - inf -Infinity Infinity -> true
+LessEqual64 - inf Infinity -Infinity -> false
+LessEqual64 - inf 9.999999999999999E+384 Infinity -> true
+
+LessEqual64 - nan 1 NaN -> false
+LessEqual64 - nan NaN 1 -> false
+LessEqual64 - nan NaN NaN -> false
+LessEqual64 - nan sNaN sNaN -> false
+
+LessEqual64 - noncanon 0x6c77ffffffffffff 0 -> true
+LessEqual64 - noncanon 0 0x6c77ffffffffffff -> true
+LessEqual64 - noncanon 0x6c77ffffffffffff -1 -> false
+LessEqual64 - noncanon 0xec9fffffffffffff 0E+369 -> true
+
+# --- LessEqual128 ---
+
+LessEqual128 - exact 1.0 1 -> true
+LessEqual128 - exact 2 1 -> false
+LessEqual128 - exact 1 2 -> true
+
+LessEqual128 - underflow 1E-6176 1E-6176 -> true
+LessEqual128 - underflow 2E-6176 1E-6176 -> false
+
+LessEqual128 - zero -0 0 -> true
+LessEqual128 - zero 0 -0 -> true
+
+LessEqual128 - inf Infinity Infinity -> true
+LessEqual128 - inf Infinity -Infinity -> false
+
+LessEqual128 - nan 1 NaN -> false
+LessEqual128 - nan NaN NaN -> false
+
+LessEqual128 - noncanon 0x3041ed09bead87c0378d8e6400000000 0 -> true
+LessEqual128 - noncanon 0x6c100000000000000000000000000000 -1 -> false
+
+# --- Compare64 ---
+
+Compare64 - exact 1 2 -> -1 true
+Compare64 - exact 2 1 -> 1 true
+Compare64 - exact 1.0 1 -> 0 true
+Compare64 - exact -1 -2 -> 1 true
+Compare64 - exact 1E+2 100 -> 0 true
+Compare64 - exact 9.999999999999999E+384 1E+369 -> 1 true
+
+Compare64 - underflow -1E-398 1E-398 -> -1 true
+Compare64 - underflow 1E-398 0 -> 1 true
+Compare64 - underflow 1E-398 1E-398 -> 0 true
+
+Compare64 - zero -0 0 -> 0 true
+Compare64 - zero 0 0.00 -> 0 true
+Compare64 - zero 0 -1E-398 -> 1 true
+Compare64 - zero -0 0E+369 -> 0 true
+
+Compare64 - inf -Infinity Infinity -> -1 true
+Compare64 - inf Infinity -Infinity -> 1 true
+Compare64 - inf Infinity Infinity -> 0 true
+Compare64 - inf -Infinity -9.999999999999999E+384 -> -1 true
+
+Compare64 - nan 1 NaN -> 0 false
+Compare64 - nan NaN NaN -> 0 false
+Compare64 - nan sNaN 1 -> 0 false
+Compare64 - nan Infinity -NaN -> 0 false
+Compare64 - nan 0x7c00000000000001 1 -> 0 false
+
+Compare64 - noncanon 0x6c77ffffffffffff 0 -> 0 true
+Compare64 - noncanon 0x6c77ffffffffffff 1 -> -1 true
+Compare64 - noncanon 0xec9fffffffffffff 0 -> 0 true
+Compare64 - noncanon 1 0x6c7386f26fc10000 -> 1 true
+
+# --- Compare128 ---
+
+Compare128 - exact 1 2 -> -1 true
+Compare128 - exact 2 1 -> 1 true
+Compare128 - exact 1.0 1 -> 0 true
+
+Compare128 - underflow -1E-6176 1E-6176 -> -1 true
+Compare128 - underflow 1E-6176 0 -> 1 true
+
+Compare128 - zero -0 0 -> 0 true
+Compare128 - zero 0 0.00 -> 0 true
+
+Compare128 - inf -Infinity Infinity -> -1 true
+Compare128 - inf Infinity Infinity -> 0 true
+
+Compare128 - nan 1 NaN -> 0 false
+Compare128 - nan sNaN 1 -> 0 false
+Compare128 - nan NaN NaN -> 0 false
+
+Compare128 - noncanon 0x3041ed09bead87c0378d8e6400000000 0 -> 0 true
+Compare128 - noncanon 0x6c100000000000000000000000000000 1 -> -1 true
+
+# --- TotalOrder64 ---
+
+TotalOrder64 - exact 1.0 1 -> true
+TotalOrder64 - exact 1 1.0 -> false
+TotalOrder64 - exact -1 -1.0 -> true
+TotalOrder64 - exact -1.0 -1 -> false
+TotalOrder64 - exact 1.0 1.0 -> true
+TotalOrder64 - exact 1 2 -> true
+TotalOrder64 - exact 2 1 -> false
+TotalOrder64 - exact -2 -1 -> true
+TotalOrder64 - exact -1 -2 -> false
+TotalOrder64 - exact 1 1 -> true
+TotalOrder64 - exact 1.00 1.0 -> true
+TotalOrder64 - exact 1.0 1.00 -> false
+TotalOrder64 - exact 1E+2 100 -> false
+TotalOrder64 - exact 100 1E+2 -> true
+TotalOrder64 - exact -1 1 -> true
+TotalOrder64 - exact 1 -1 -> false
+
+TotalOrder64 - underflow 1E-398 2E-398 -> true
+TotalOrder64 - underflow 2E-398 1E-398 -> false
+TotalOrder64 - underflow -0 1E-398 -> true
+TotalOrder64 - underflow -1E-398 -0 -> true
+TotalOrder64 - underflow 0 1E-398 -> true
+TotalOrder64 - underflow 1E-398 0 -> false
+TotalOrder64 - underflow 1E-398 1E-383 -> true
+
+TotalOrder64 - zero -0 0 -> true
+TotalOrder64 - zero 0 -0 -> false
+TotalOrder64 - zero 0E+369 0E-398 -> false
+TotalOrder64 - zero 0E-398 0E+369 -> true
+TotalOrder64 - zero -0E-398 -0E+369 -> false
+TotalOrder64 - zero -0E+369 -0E-398 -> true
+TotalOrder64 - zero 0 0 -> true
+TotalOrder64 - zero -0 -0 -> true
+TotalOrder64 - zero -0 -1E-398 -> false
+
+TotalOrder64 - inf -Infinity -9.999999999999999E+384 -> true
+TotalOrder64 - inf 9.999999999999999E+384 Infinity -> true
+TotalOrder64 - inf Infinity 9.999999999999999E+384 -> false
+TotalOrder64 - inf -Infinity Infinity -> true
+TotalOrder64 - inf Infinity -Infinity -> false
+TotalOrder64 - inf Infinity Infinity -> true
+TotalOrder64 - inf -Infinity -Infinity -> true
+
+TotalOrder64 - nan Infinity NaN -> true
+TotalOrder64 - nan NaN Infinity -> false
+TotalOrder64 - nan -NaN -Infinity -> true
+TotalOrder64 - nan -Infinity -NaN -> false
+TotalOrder64 - nan -NaN NaN -> true
+TotalOrder64 - nan NaN -NaN -> false
+TotalOrder64 - nan NaN NaN -> true
+TotalOrder64 - nan sNaN NaN -> true
+TotalOrder64 - nan NaN sNaN -> true
+TotalOrder64 - nan -sNaN -NaN -> true
+TotalOrder64 - nan -NaN -sNaN -> true
+TotalOrder64 - nan 0x7c00000000000001 NaN -> true
+TotalOrder64 - nan NaN 0x7c00000000000001 -> true
+TotalOrder64 - nan 0xfe0000000001e240 -NaN -> true
+TotalOrder64 - nan -NaN 0xfe0000000001e240 -> true
+TotalOrder64 - nan 0xfe0000000001e240 NaN -> true
+TotalOrder64 - nan 1 NaN -> true
+TotalOrder64 - nan -NaN 1 -> true
+
+TotalOrder64 - noncanon 0x6c77ffffffffffff 0 -> true
+TotalOrder64 - noncanon 0 0x6c77ffffffffffff -> true
+TotalOrder64 - noncanon 0xec9fffffffffffff -0 -> true
+TotalOrder64 - noncanon -0 0xec9fffffffffffff -> false
+TotalOrder64 - noncanon 0x6c77ffffffffffff 0E+1 -> true
+TotalOrder64 - noncanon 0E+1 0x6c77ffffffffffff -> false
+TotalOrder64 - noncanon 0x6c77ffffffffffff 1E-398 -> true
+
+# --- TotalOrder128 ---
+
+TotalOrder128 - exact 1.0 1 -> true
+TotalOrder128 - exact 1 1.0 -> false
+TotalOrder128 - exact -1 -1.0 -> true
+TotalOrder128 - exact -1.0 -1 -> false
+TotalOrder128 - exact 1 2 -> true
+TotalOrder128 - exact 2 1 -> false
+TotalOrder128 - exact -2 -1 -> true
+
+TotalOrder128 - underflow 1E-6176 2E-6176 -> true
+TotalOrder128 - underflow -0 1E-6176 -> true
+TotalOrder128 - underflow 1E-6176 0 -> false
+
+TotalOrder128 - zero -0 0 -> true
+TotalOrder128 - zero 0 -0 -> false
+TotalOrder128 - zero 0E+6111 0E-6176 -> false
+TotalOrder128 - zero 0E-6176 0E+6111 -> true
+TotalOrder128 - zero -0E+6111 -0E-6176 -> true
+
+TotalOrder128 - inf -Infinity -9.999999999999999999999999999999999E+6144 -> true
+TotalOrder128 - inf 9.999999999999999999999999999999999E+6144 Infinity -> true
+TotalOrder128 - inf Infinity -Infinity -> false
+
+TotalOrder128 - nan Infinity NaN -> true
+TotalOrder128 - nan NaN Infinity -> false
+TotalOrder128 - nan -NaN -Infinity -> true
+TotalOrder128 - nan -NaN NaN -> true
+TotalOrder128 - nan NaN -NaN -> false
+TotalOrder128 - nan NaN NaN -> true
+TotalOrder128 - nan sNaN NaN -> true
+TotalOrder128 - nan NaN sNaN -> true
+TotalOrder128 - nan 0x7c000000000000010000000000000000 NaN -> true
+TotalOrder128 - nan 0xfe000000000000000000000000000005 -NaN -> true
+
+TotalOrder128 - noncanon 0x3041ed09bead87c0378d8e6400000000 0 -> true
+TotalOrder128 - noncanon 0 0x3041ed09bead87c0378d8e6400000000 -> true
+TotalOrder128 - noncanon 0xb047ed09bead87c0378d8e6400000000 -0 -> true
+TotalOrder128 - noncanon -0 0xb047ed09bead87c0378d8e6400000000 -> false
+TotalOrder128 - noncanon 0x6c100000000000000000000000000000 0E+1 -> true
+
+# --- Key64 ---
+
+Key64 - exact 1.50 -> 15 -1 finite false
+Key64 - exact 1.5 -> 15 -1 finite false
+Key64 - exact 1.500 -> 15 -1 finite false
+Key64 - exact 100 -> 1 2 finite false
+Key64 - exact 1E+2 -> 1 2 finite false
+Key64 - exact -100 -> 1 2 finite true
+Key64 - exact 1234567890123456 -> 1234567890123456 0 finite false
+Key64 - exact 9.999999999999999E+384 -> 9999999999999999 369 finite false
+Key64 - exact 1.000000000000000E+16 -> 1 16 finite false
+Key64 - exact -1.0E+370 -> 1 370 finite true
+Key64 - exact 0.000001 -> 1 -6 finite false
+
+Key64 - underflow 1E-398 -> 1 -398 finite false
+Key64 - underflow 100E-398 -> 1 -396 finite false
+Key64 - underflow -2E-398 -> 2 -398 finite true
+Key64 - underflow 9.99999999999999E-384 -> 999999999999999 -398 finite false
+
+Key64 - zero 0 -> 0 0 finite false
+Key64 - zero -0 -> 0 0 finite false
+Key64 - zero 0E+369 -> 0 0 finite false
+Key64 - zero -0.00 -> 0 0 finite false
+Key64 - zero 0E-398 -> 0 0 finite false
+
+Key64 - inf Infinity -> 0 0 inf false
+Key64 - inf -Infinity -> 0 0 inf true
+
+Key64 - nan NaN -> 0 0 nan false
+Key64 - nan -NaN -> 0 0 nan false
+Key64 - nan sNaN -> 0 0 nan false
+Key64 - nan -sNaN -> 0 0 nan false
+Key64 - nan 0x7c00000000000001 -> 0 0 nan false
+Key64 - nan 0xfe0000000001e240 -> 0 0 nan false
+
+Key64 - noncanon 0x6c77ffffffffffff -> 0 0 finite false
+Key64 - noncanon 0xec9fffffffffffff -> 0 0 finite false
+Key64 - noncanon 0x6c7386f26fc10000 -> 0 0 finite false
+Key64 - noncanon 0x6c7386f26fc0ffff -> 9999999999999999 0 finite false
+
+# --- Key128 ---
+
+Key128 - exact 1.50 -> 15 -1 finite false
+Key128 - exact 1.5 -> 15 -1 finite false
+Key128 - exact 100 -> 1 2 finite false
+Key128 - exact -100 -> 1 2 finite true
+Key128 - exact 1234567890123456 -> 1234567890123456 0 finite false
+Key128 - exact 9.999999999999999E+384 -> 9999999999999999 369 finite false
+Key128 - exact 1234567890123456789012345678901234 -> 1234567890123456789012345678901234 0 finite false
+Key128 - exact 9.999999999999999999999999999999999E+6144 -> 9999999999999999999999999999999999 6111 finite false
+Key128 - exact 1.000000000000000000000000000000000E+34 -> 1 34 finite false
+Key128 - exact -1.0E+370 -> 1 370 finite true
+
+Key128 - underflow 1E-398 -> 1 -398 finite false
+Key128 - underflow 1E-6176 -> 1 -6176 finite false
+Key128 - underflow 100E-6176 -> 1 -6174 finite false
+Key128 - underflow -2E-6176 -> 2 -6176 finite true
+
+Key128 - zero 0 -> 0 0 finite false
+Key128 - zero -0 -> 0 0 finite false
+Key128 - zero 0E+6111 -> 0 0 finite false
+Key128 - zero -0E-6176 -> 0 0 finite false
+
+Key128 - inf Infinity -> 0 0 inf false
+Key128 - inf -Infinity -> 0 0 inf true
+
+Key128 - nan NaN -> 0 0 nan false
+Key128 - nan -NaN -> 0 0 nan false
+Key128 - nan sNaN -> 0 0 nan false
+Key128 - nan 0x7c000000000000010000000000000000 -> 0 0 nan false
+
+Key128 - noncanon 0x3041ed09bead87c0378d8e6400000000 -> 0 0 finite false
+Key128 - noncanon 0xb047ed09bead87c0378d8e6400000000 -> 0 0 finite false
+Key128 - noncanon 0x6c100000000000000000000000000000 -> 0 0 finite false
+Key128 - noncanon 0x3041ed09bead87c0378d8e63ffffffff -> 9999999999999999999999999999999999 0 finite false
