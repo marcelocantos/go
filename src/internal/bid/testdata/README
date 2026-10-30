@@ -15,7 +15,12 @@ contract and the standard, not against this suite.
 `conformance_test.go` reads the suite and runs it against the kernel in
 `TestConformance`. A vector whose operation still panics with
 `internal/bid: not implemented` is skipped and counted per operation;
-every other mismatch fails. `TestConformanceREADME` checks the table at the
+every other mismatch fails. `TestConformanceReference` in
+`agreement_test.go` runs the same suite against the reference oracle, with
+no skip for an unimplemented operation. A vector whose disagreement waits
+on a decision about the contract may be listed there by position, with its
+reason; a listed vector that passes fails the test, so a stale entry
+cannot linger. `TestConformanceREADME` checks the table at the
 end of this file against the suite, so the table cannot drift.
 
 ## Format

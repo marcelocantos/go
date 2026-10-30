@@ -1142,12 +1142,27 @@ func loadConformance(t *testing.T) []vector {
 	return vectors
 }
 
+// conformanceRun configures runConformance. The zero value is the run
+// against the kernel: a vector whose operation is not implemented is
+// skipped and counted. In a strict run nothing may be skipped for that
+// reason, because the implementation has no operation it does not
+// implement; a not-implemented operation is a failure. Known names vectors
+// (by position, file:line) that are expected to fail and the reason; each
+// is reported and counted as a skip, and one that passes fails the run, so
+// a stale entry cannot linger.
+type conformanceRun struct {
+	strict bool
+	known  map[string]string
+}
+
 // runConformance runs every vector against ops. Vectors whose operation
-// is not implemented are skipped and the skips are reported per operation;
-// every other vector must match exactly.
-func runConformance(t *testing.T, vectors []vector, ops *conformanceOps) {
+// is not implemented are skipped and the skips are reported per operation,
+// unless the run is strict; every other vector must match exactly.
+func runConformance(t *testing.T, vectors []vector, ops *conformanceOps, run conformanceRun) {
 	skipped := make(map[string]int)
 	ran := make(map[string]int)
+	known := make(map[string]int)
+	seen := make(map[string]bool)
 	failures := 0
 	for i := range vectors {
 		v := &vectors[i]
@@ -1158,17 +1173,38 @@ func runConformance(t *testing.T, vectors []vector, ops *conformanceOps) {
 			continue
 		}
 		if skip {
+			if run.strict {
+				t.Errorf("%s: %s is not implemented", v.pos, v.op)
+				failures++
+				continue
+			}
 			skipped[v.op]++
 			continue
 		}
 		ran[v.op]++
-		if strings.Join(got, "; ") != strings.Join(want, "; ") {
+		mismatch := strings.Join(got, "; ") != strings.Join(want, "; ")
+		if reason, ok := run.known[v.pos]; ok {
+			seen[v.pos] = true
+			if !mismatch {
+				t.Errorf("%s: %s(%s) passes but is listed as a known failure (%s)", v.pos, v.op, strings.Join(v.args, ", "), reason)
+				failures++
+				continue
+			}
+			known[reason]++
+			continue
+		}
+		if mismatch {
 			t.Errorf("%s: %s(%s) [%s]\n\t got %s\n\twant %s", v.pos, v.op, strings.Join(v.args, ", "), v.class,
 				strings.Join(got, "; "), strings.Join(want, "; "))
 			failures++
 			if failures > 200 {
 				t.Fatalf("too many failures; stopping")
 			}
+		}
+	}
+	for pos, reason := range run.known {
+		if !seen[pos] {
+			t.Errorf("known failure %s (%s) names no vector", pos, reason)
 		}
 	}
 	var skippedOps, ranOps []string
@@ -1187,6 +1223,9 @@ func runConformance(t *testing.T, vectors []vector, ops *conformanceOps) {
 	if s > 0 {
 		t.Logf("%d skipped, not implemented: %s", s, strings.Join(skippedOps, " "))
 	}
+	for reason, c := range known {
+		t.Logf("%d known failures skipped: %s", c, reason)
+	}
 }
 
 func TestConformance(t *testing.T) {
@@ -1194,7 +1233,7 @@ func TestConformance(t *testing.T) {
 	if t.Failed() {
 		t.FailNow()
 	}
-	runConformance(t, vectors, &kernelOps)
+	runConformance(t, vectors, &kernelOps, conformanceRun{})
 }
 
 // TestConformanceModel checks the suite's own reader and writer against
