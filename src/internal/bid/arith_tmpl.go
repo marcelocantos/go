@@ -17,22 +17,6 @@
 // identifier with that capital letter unless it is meant to be replaced.
 package bid
 
-// mulReduceW multiplies two coefficients and reduces the exact product to
-// at most PrecisionW+1 digits, the first step of a multiplication. The
-// returned q is ⌊a × b / 10^k⌋, k is the number of digits dropped (the
-// amount by which the exponent of the product rises), and sticky reports
-// whether any dropped digit was non-zero. One digit beyond the precision is
-// kept so that a single later rounding sees the digit that decides it and,
-// in sticky, whether anything lies below. Nothing is rounded here.
-//
-// Precondition: a and b are at most MaxCoeffW (a decimal coefficient).
-func mulReduceW(a, b coefW) (q coefW, k int, sticky bool) {
-	p := cMulFullW(a, b)
-	k = max(cLenFullW(p)-(PrecisionW+1), 0)
-	q, sticky = cReduceW(p, k)
-	return q, k, sticky
-}
-
 // magCmpW compares the magnitudes of two non-zero finite values, returning
 // -1, 0 or +1. The values are decided by adjusted exponent first: a value
 // whose leading digit lies in a higher decimal place is the larger, whatever
@@ -258,8 +242,9 @@ func keyW(x coefW) (kind Kind, neg bool, c coefW, exp int) {
 //     p must have more than PrecisionW digits. roundW then discards at
 //     least one digit of p itself, and withSticky combines the two
 //     discarded parts exactly. A caller meets this by keeping PrecisionW+1
-//     digits or more (mulReduceW keeps exactly that), or by scaling its
-//     exact part up to that many digits before truncating the rest.
+//     digits or more, or by scaling its exact part up to that many digits
+//     before truncating the rest, or by passing the whole exact product, as
+//     mulW does.
 //   - If class is not classZero and p has PrecisionW digits or fewer,
 //     the result is that of rounding p + ε for an arbitrarily small ε > 0
 //     ("Rounding from exact parts"): the fraction is taken to be below

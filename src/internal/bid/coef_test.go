@@ -166,17 +166,6 @@ func checkCoef64(t *testing.T, a, b uint64, k int) {
 	} else {
 		mustPanic(t, "cReduce64 quotient overflow", func() { cReduce64(p, k) })
 	}
-
-	// The generated function, on coefficients.
-	ca, cb := a%(MaxCoeff64+1), b%(MaxCoeff64+1)
-	CA, CB := big64(ca), big64(cb)
-	prod := new(big.Int).Mul(CA, CB)
-	wk := max(bigDigits(prod)-(Precision64+1), 0)
-	wq, wr = new(big.Int).DivMod(prod, bigPow10(wk), new(big.Int))
-	gq, gk, gs := mulReduce64(ca, cb)
-	if big64(gq).Cmp(wq) != 0 || gk != wk || gs != (wr.Sign() != 0) {
-		t.Errorf("mulReduce64(%d, %d) = %d, %d, %t, want %v, %d, %t", ca, cb, gq, gk, gs, wq, wk, wr.Sign() != 0)
-	}
 }
 
 func TestCoef64(t *testing.T) {
@@ -290,23 +279,6 @@ func checkCoef128(t *testing.T, a, b Uint128, k int) {
 	} else {
 		mustPanic(t, "cReduce128 quotient overflow", func() { cReduce128(p, k2) })
 	}
-
-	// The generated function, on coefficients.
-	maxCoeff := Uint128{MaxCoeff128Hi, MaxCoeff128Lo}
-	ca, cb := a, b
-	for u128Lt(maxCoeff, ca) {
-		ca, _ = u128Div(ca, Uint128{Lo: 10})
-	}
-	for u128Lt(maxCoeff, cb) {
-		cb, _ = u128Div(cb, Uint128{Lo: 10})
-	}
-	cprod := new(big.Int).Mul(bigOf(ca), bigOf(cb))
-	wk := max(bigDigits(cprod)-(Precision128+1), 0)
-	wq, wr = new(big.Int).DivMod(cprod, bigPow10(wk), new(big.Int))
-	gq, gk, gs := mulReduce128(ca, cb)
-	if bigOf(gq).Cmp(wq) != 0 || gk != wk || gs != (wr.Sign() != 0) {
-		t.Errorf("mulReduce128(%v, %v) = %v, %d, %t, want %v, %d, %t", bigOf(ca), bigOf(cb), bigOf(gq), gk, gs, wq, wk, wr.Sign() != 0)
-	}
 }
 
 func TestCoef128(t *testing.T) {
@@ -353,14 +325,12 @@ func TestCoefZeroAllocs(t *testing.T) {
 		{"cMulFull64", func() { sinkU128 = cMulFull64(a64, b64) }},
 		{"cReduce64", func() { sinkU64, sinkBool = cReduce64(cMulFull64(a64, b64), 15) }},
 		{"cLenFull64", func() { sinkInt = cLenFull64(cMulFull64(a64, b64)) }},
-		{"mulReduce64", func() { sinkU64, sinkInt, sinkBool = mulReduce64(a64, b64) }},
 		{"cDigits128", func() { sinkInt = cDigits128(a) }},
 		{"cMulPow10128", func() { sinkU128 = cMulPow10128(Uint128{Lo: 123}, 30) }},
 		{"cDivPow10128", func() { sinkU128, sinkU128 = cDivPow10128(a, 30) }},
 		{"cMulFull128", func() { sinkU256 = cMulFull128(a, b) }},
 		{"cReduce128", func() { sinkU128, sinkBool = cReduce128(p, 40) }},
 		{"cLenFull128", func() { sinkInt = cLenFull128(p) }},
-		{"mulReduce128", func() { sinkU128, sinkInt, sinkBool = mulReduce128(a, b) }},
 	}
 	for _, tt := range tests {
 		if got := testing.AllocsPerRun(100, tt.f); got != 0 {

@@ -1494,8 +1494,8 @@
 //     sticky bool) and cLenFullW(p wideW) int, with the decimal-digit
 //     primitives cShiftW, cShiftFullW, cReduceClassW, cScaleW and cScaleFullW
 //     (digits.go says what a caller may assume of them) and the rounding
-//     routine's cLoW(p wideW) coefW, cIncW, cMaxW() and cInfW(neg), extended
-//     as division and the other operations need. Every coef64.go helper must
+//     routine's cLoW(p wideW) coefW, cIncW, cMaxW(), cInfW(neg) and cNaNW(),
+//     extended as division and the other operations need. Every coef64.go helper must
 //     inline;
 //     check with -gcflags=-m=2 after changing one (no "cannot inline
 //     c…64"; plain -m does not print "cannot inline" lines).

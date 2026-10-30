@@ -43,12 +43,12 @@ func Sub128(x, y Uint128, mode Mode) Uint128 {
 // Mul64 returns x × y rounded in mode (IEEE 754-2008 clause 5.4.1,
 // multiplication).
 func Mul64(x, y uint64, mode Mode) uint64 {
-	panic(notImplemented)
+	return mul64(x, y, mode)
 }
 
 // Mul128 is Mul64 for decimal128.
 func Mul128(x, y Uint128, mode Mode) Uint128 {
-	panic(notImplemented)
+	return mul128(x, y, mode)
 }
 
 // Div64 returns x / y rounded in mode (IEEE 754-2008 clause 5.4.1,
