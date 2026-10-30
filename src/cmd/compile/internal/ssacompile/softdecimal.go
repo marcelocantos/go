@@ -11,9 +11,10 @@ import (
 	"cmd/compile/internal/types"
 )
 
-// softdecimal converts decimal64/decimal128 SSA operations to runtime calls.
-// Unlike softfloat, this pass always runs since no consumer hardware has
-// decimal floating-point instructions.
+// softdecimal removes the decimal64 and decimal128 types from the values that
+// remain after ssagen, which has already lowered every decimal operator and
+// conversion to a runtime call. Unlike softfloat, this pass always runs since
+// no target has decimal floating-point instructions.
 //
 // For decimal64 (8 bytes), values are retyped to uint64.
 // For decimal128 (16 bytes), decomposition into two uint64 halves is handled

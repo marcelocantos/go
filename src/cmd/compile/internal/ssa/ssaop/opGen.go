@@ -6893,8 +6893,6 @@ const (
 	OpAddPtr
 	OpAdd32F
 	OpAdd64F
-	OpAdd64D
-	OpAdd128D
 	OpSub8
 	OpSub16
 	OpSub32
@@ -6902,20 +6900,14 @@ const (
 	OpSubPtr
 	OpSub32F
 	OpSub64F
-	OpSub64D
-	OpSub128D
 	OpMul8
 	OpMul16
 	OpMul32
 	OpMul64
 	OpMul32F
 	OpMul64F
-	OpMul64D
-	OpMul128D
 	OpDiv32F
 	OpDiv64F
-	OpDiv64D
-	OpDiv128D
 	OpHmul32
 	OpHmul32u
 	OpHmul64
@@ -7012,8 +7004,6 @@ const (
 	OpEqSlice
 	OpEq32F
 	OpEq64F
-	OpEq64D
-	OpEq128D
 	OpNeq8
 	OpNeq16
 	OpNeq32
@@ -7023,8 +7013,6 @@ const (
 	OpNeqSlice
 	OpNeq32F
 	OpNeq64F
-	OpNeq64D
-	OpNeq128D
 	OpLess8
 	OpLess8U
 	OpLess16
@@ -7035,8 +7023,6 @@ const (
 	OpLess64U
 	OpLess32F
 	OpLess64F
-	OpLess64D
-	OpLess128D
 	OpLeq8
 	OpLeq8U
 	OpLeq16
@@ -7047,8 +7033,6 @@ const (
 	OpLeq64U
 	OpLeq32F
 	OpLeq64F
-	OpLeq64D
-	OpLeq128D
 	OpCondSelect
 	OpAndB
 	OpOrB
@@ -7201,20 +7185,6 @@ const (
 	OpCvt32Fto64F
 	OpCvt64Fto32F
 	OpCvtBoolToUint8
-	OpCvt64Dto64F
-	OpCvt64Fto64D
-	OpCvt64to64D
-	OpCvt64Dto64
-	OpCvt64Uto64D
-	OpCvt64Dto64U
-	OpCvt128Dto64F
-	OpCvt64Fto128D
-	OpCvt64to128D
-	OpCvt128Dto64
-	OpCvt64Uto128D
-	OpCvt128Dto64U
-	OpCvt64Dto128D
-	OpCvt128Dto64D
 	OpRound32F
 	OpRound64F
 	OpIsNonNil
@@ -113241,18 +113211,6 @@ var OpcodeTable = [...]OpInfo{
 		Generic:     true,
 	},
 	{
-		Name:        "Add64D",
-		ArgLen:      2,
-		Commutative: true,
-		Generic:     true,
-	},
-	{
-		Name:        "Add128D",
-		ArgLen:      2,
-		Commutative: true,
-		Generic:     true,
-	},
-	{
 		Name:    "Sub8",
 		ArgLen:  2,
 		EarlyOk: true,
@@ -113291,16 +113249,6 @@ var OpcodeTable = [...]OpInfo{
 		Name:    "Sub64F",
 		ArgLen:  2,
 		EarlyOk: true,
-		Generic: true,
-	},
-	{
-		Name:    "Sub64D",
-		ArgLen:  2,
-		Generic: true,
-	},
-	{
-		Name:    "Sub128D",
-		ArgLen:  2,
 		Generic: true,
 	},
 	{
@@ -113346,34 +113294,12 @@ var OpcodeTable = [...]OpInfo{
 		Generic:     true,
 	},
 	{
-		Name:        "Mul64D",
-		ArgLen:      2,
-		Commutative: true,
-		Generic:     true,
-	},
-	{
-		Name:        "Mul128D",
-		ArgLen:      2,
-		Commutative: true,
-		Generic:     true,
-	},
-	{
 		Name:    "Div32F",
 		ArgLen:  2,
 		Generic: true,
 	},
 	{
 		Name:    "Div64F",
-		ArgLen:  2,
-		Generic: true,
-	},
-	{
-		Name:    "Div64D",
-		ArgLen:  2,
-		Generic: true,
-	},
-	{
-		Name:    "Div128D",
 		ArgLen:  2,
 		Generic: true,
 	},
@@ -114018,18 +113944,6 @@ var OpcodeTable = [...]OpInfo{
 		Generic:     true,
 	},
 	{
-		Name:        "Eq64D",
-		ArgLen:      2,
-		Commutative: true,
-		Generic:     true,
-	},
-	{
-		Name:        "Eq128D",
-		ArgLen:      2,
-		Commutative: true,
-		Generic:     true,
-	},
-	{
 		Name:        "Neq8",
 		ArgLen:      2,
 		Commutative: true,
@@ -114088,18 +114002,6 @@ var OpcodeTable = [...]OpInfo{
 		ArgLen:      2,
 		Commutative: true,
 		EarlyOk:     true,
-		Generic:     true,
-	},
-	{
-		Name:        "Neq64D",
-		ArgLen:      2,
-		Commutative: true,
-		Generic:     true,
-	},
-	{
-		Name:        "Neq128D",
-		ArgLen:      2,
-		Commutative: true,
 		Generic:     true,
 	},
 	{
@@ -114163,16 +114065,6 @@ var OpcodeTable = [...]OpInfo{
 		Generic: true,
 	},
 	{
-		Name:    "Less64D",
-		ArgLen:  2,
-		Generic: true,
-	},
-	{
-		Name:    "Less128D",
-		ArgLen:  2,
-		Generic: true,
-	},
-	{
 		Name:    "Leq8",
 		ArgLen:  2,
 		EarlyOk: true,
@@ -114230,16 +114122,6 @@ var OpcodeTable = [...]OpInfo{
 		Name:    "Leq64F",
 		ArgLen:  2,
 		EarlyOk: true,
-		Generic: true,
-	},
-	{
-		Name:    "Leq64D",
-		ArgLen:  2,
-		Generic: true,
-	},
-	{
-		Name:    "Leq128D",
-		ArgLen:  2,
 		Generic: true,
 	},
 	{
@@ -115134,76 +115016,6 @@ var OpcodeTable = [...]OpInfo{
 		Name:    "CvtBoolToUint8",
 		ArgLen:  1,
 		EarlyOk: true,
-		Generic: true,
-	},
-	{
-		Name:    "Cvt64Dto64F",
-		ArgLen:  1,
-		Generic: true,
-	},
-	{
-		Name:    "Cvt64Fto64D",
-		ArgLen:  1,
-		Generic: true,
-	},
-	{
-		Name:    "Cvt64to64D",
-		ArgLen:  1,
-		Generic: true,
-	},
-	{
-		Name:    "Cvt64Dto64",
-		ArgLen:  1,
-		Generic: true,
-	},
-	{
-		Name:    "Cvt64Uto64D",
-		ArgLen:  1,
-		Generic: true,
-	},
-	{
-		Name:    "Cvt64Dto64U",
-		ArgLen:  1,
-		Generic: true,
-	},
-	{
-		Name:    "Cvt128Dto64F",
-		ArgLen:  1,
-		Generic: true,
-	},
-	{
-		Name:    "Cvt64Fto128D",
-		ArgLen:  1,
-		Generic: true,
-	},
-	{
-		Name:    "Cvt64to128D",
-		ArgLen:  1,
-		Generic: true,
-	},
-	{
-		Name:    "Cvt128Dto64",
-		ArgLen:  1,
-		Generic: true,
-	},
-	{
-		Name:    "Cvt64Uto128D",
-		ArgLen:  1,
-		Generic: true,
-	},
-	{
-		Name:    "Cvt128Dto64U",
-		ArgLen:  1,
-		Generic: true,
-	},
-	{
-		Name:    "Cvt64Dto128D",
-		ArgLen:  1,
-		Generic: true,
-	},
-	{
-		Name:    "Cvt128Dto64D",
-		ArgLen:  1,
 		Generic: true,
 	},
 	{

@@ -1475,10 +1475,6 @@ func (s *state) newValueOrSfCall1(op ssaop.Op, t *types.Type, arg *ssa.Value) *s
 			return c
 		}
 	}
-	// Decimal operations always go through runtime calls
-	if c, ok := s.sdcall(op, arg); ok {
-		return c
-	}
 	return s.newValue1(op, t, arg)
 }
 func (s *state) newValueOrSfCall2(op ssaop.Op, t *types.Type, arg0, arg1 *ssa.Value) *ssa.Value {
@@ -1486,10 +1482,6 @@ func (s *state) newValueOrSfCall2(op ssaop.Op, t *types.Type, arg0, arg1 *ssa.Va
 		if c, ok := s.sfcall(op, arg0, arg1); ok {
 			return c
 		}
-	}
-	// Decimal operations always go through runtime calls
-	if c, ok := s.sdcall(op, arg0, arg1); ok {
-		return c
 	}
 	return s.newValue2(op, t, arg0, arg1)
 }
@@ -2511,8 +2503,6 @@ var opToSSA = map[opAndType]ssaop.Op{
 	{ir.OADD, types.TUINT64}:  ssaop.OpAdd64,
 	{ir.OADD, types.TFLOAT32}: ssaop.OpAdd32F,
 	{ir.OADD, types.TFLOAT64}: ssaop.OpAdd64F,
-	{ir.OADD, types.TDECIMAL64}:  ssaop.OpAdd64D,
-	{ir.OADD, types.TDECIMAL128}: ssaop.OpAdd128D,
 
 	{ir.OSUB, types.TINT8}:    ssaop.OpSub8,
 	{ir.OSUB, types.TUINT8}:   ssaop.OpSub8,
@@ -2524,21 +2514,19 @@ var opToSSA = map[opAndType]ssaop.Op{
 	{ir.OSUB, types.TUINT64}:  ssaop.OpSub64,
 	{ir.OSUB, types.TFLOAT32}: ssaop.OpSub32F,
 	{ir.OSUB, types.TFLOAT64}: ssaop.OpSub64F,
-	{ir.OSUB, types.TDECIMAL64}:  ssaop.OpSub64D,
-	{ir.OSUB, types.TDECIMAL128}: ssaop.OpSub128D,
 
 	{ir.ONOT, types.TBOOL}: ssaop.OpNot,
 
-	{ir.ONEG, types.TINT8}:    ssaop.OpNeg8,
-	{ir.ONEG, types.TUINT8}:   ssaop.OpNeg8,
-	{ir.ONEG, types.TINT16}:   ssaop.OpNeg16,
-	{ir.ONEG, types.TUINT16}:  ssaop.OpNeg16,
-	{ir.ONEG, types.TINT32}:   ssaop.OpNeg32,
-	{ir.ONEG, types.TUINT32}:  ssaop.OpNeg32,
-	{ir.ONEG, types.TINT64}:   ssaop.OpNeg64,
-	{ir.ONEG, types.TUINT64}:  ssaop.OpNeg64,
-	{ir.ONEG, types.TFLOAT32}: ssaop.OpNeg32F,
-	{ir.ONEG, types.TFLOAT64}: ssaop.OpNeg64F,
+	{ir.ONEG, types.TINT8}:       ssaop.OpNeg8,
+	{ir.ONEG, types.TUINT8}:      ssaop.OpNeg8,
+	{ir.ONEG, types.TINT16}:      ssaop.OpNeg16,
+	{ir.ONEG, types.TUINT16}:     ssaop.OpNeg16,
+	{ir.ONEG, types.TINT32}:      ssaop.OpNeg32,
+	{ir.ONEG, types.TUINT32}:     ssaop.OpNeg32,
+	{ir.ONEG, types.TINT64}:      ssaop.OpNeg64,
+	{ir.ONEG, types.TUINT64}:     ssaop.OpNeg64,
+	{ir.ONEG, types.TFLOAT32}:    ssaop.OpNeg32F,
+	{ir.ONEG, types.TFLOAT64}:    ssaop.OpNeg64F,
 	{ir.ONEG, types.TDECIMAL64}:  ssaop.OpNeg64D,
 	{ir.ONEG, types.TDECIMAL128}: ssaop.OpNeg128D,
 
@@ -2566,13 +2554,9 @@ var opToSSA = map[opAndType]ssaop.Op{
 	{ir.OMUL, types.TUINT64}:  ssaop.OpMul64,
 	{ir.OMUL, types.TFLOAT32}: ssaop.OpMul32F,
 	{ir.OMUL, types.TFLOAT64}: ssaop.OpMul64F,
-	{ir.OMUL, types.TDECIMAL64}:  ssaop.OpMul64D,
-	{ir.OMUL, types.TDECIMAL128}: ssaop.OpMul128D,
 
 	{ir.ODIV, types.TFLOAT32}: ssaop.OpDiv32F,
 	{ir.ODIV, types.TFLOAT64}: ssaop.OpDiv64F,
-	{ir.ODIV, types.TDECIMAL64}:  ssaop.OpDiv64D,
-	{ir.ODIV, types.TDECIMAL128}: ssaop.OpDiv128D,
 
 	{ir.ODIV, types.TINT8}:   ssaop.OpDiv8,
 	{ir.ODIV, types.TUINT8}:  ssaop.OpDiv8u,
@@ -2638,8 +2622,6 @@ var opToSSA = map[opAndType]ssaop.Op{
 	{ir.OEQ, types.TUNSAFEPTR}: ssaop.OpEqPtr,
 	{ir.OEQ, types.TFLOAT64}:   ssaop.OpEq64F,
 	{ir.OEQ, types.TFLOAT32}:   ssaop.OpEq32F,
-	{ir.OEQ, types.TDECIMAL64}:  ssaop.OpEq64D,
-	{ir.OEQ, types.TDECIMAL128}: ssaop.OpEq128D,
 
 	{ir.ONE, types.TBOOL}:      ssaop.OpNeqB,
 	{ir.ONE, types.TINT8}:      ssaop.OpNeq8,
@@ -2660,8 +2642,6 @@ var opToSSA = map[opAndType]ssaop.Op{
 	{ir.ONE, types.TUNSAFEPTR}: ssaop.OpNeqPtr,
 	{ir.ONE, types.TFLOAT64}:   ssaop.OpNeq64F,
 	{ir.ONE, types.TFLOAT32}:   ssaop.OpNeq32F,
-	{ir.ONE, types.TDECIMAL64}:  ssaop.OpNeq64D,
-	{ir.ONE, types.TDECIMAL128}: ssaop.OpNeq128D,
 
 	{ir.OLT, types.TINT8}:    ssaop.OpLess8,
 	{ir.OLT, types.TUINT8}:   ssaop.OpLess8U,
@@ -2673,8 +2653,6 @@ var opToSSA = map[opAndType]ssaop.Op{
 	{ir.OLT, types.TUINT64}:  ssaop.OpLess64U,
 	{ir.OLT, types.TFLOAT64}: ssaop.OpLess64F,
 	{ir.OLT, types.TFLOAT32}: ssaop.OpLess32F,
-	{ir.OLT, types.TDECIMAL64}:  ssaop.OpLess64D,
-	{ir.OLT, types.TDECIMAL128}: ssaop.OpLess128D,
 
 	{ir.OLE, types.TINT8}:    ssaop.OpLeq8,
 	{ir.OLE, types.TUINT8}:   ssaop.OpLeq8U,
@@ -2686,8 +2664,6 @@ var opToSSA = map[opAndType]ssaop.Op{
 	{ir.OLE, types.TUINT64}:  ssaop.OpLeq64U,
 	{ir.OLE, types.TFLOAT64}: ssaop.OpLeq64F,
 	{ir.OLE, types.TFLOAT32}: ssaop.OpLeq32F,
-	{ir.OLE, types.TDECIMAL64}:  ssaop.OpLeq64D,
-	{ir.OLE, types.TDECIMAL128}: ssaop.OpLeq128D,
 }
 
 func (s *state) concreteEtype(t *types.Type) types.Kind {
@@ -3015,70 +2991,16 @@ func (s *state) conv(n ir.Node, v *ssa.Value, ft, tt *types.Type) *ssa.Value {
 
 	// Decimal conversions
 	if ft.IsDecimal() || tt.IsDecimal() {
-		ftIs64 := ft.Kind() == types.TDECIMAL64
-		ftIs128 := ft.Kind() == types.TDECIMAL128
-		ttIs64 := tt.Kind() == types.TDECIMAL64
-		ttIs128 := tt.Kind() == types.TDECIMAL128
-
-		// decimal <-> decimal
-		if ft.IsDecimal() && tt.IsDecimal() {
-			if ftIs64 && ttIs64 || ftIs128 && ttIs128 {
-				return v // same size, no-op
-			}
-			if ftIs64 && ttIs128 {
-				return s.newValueOrSfCall1(ssaop.OpCvt64Dto128D, tt, v)
-			}
-			if ftIs128 && ttIs64 {
-				return s.newValueOrSfCall1(ssaop.OpCvt128Dto64D, tt, v)
-			}
+		if ft.Kind() == tt.Kind() {
+			return v // same format, no-op
 		}
-		// decimal -> float
-		if ft.IsDecimal() && tt.IsFloat() {
-			op := ssaop.OpCvt64Dto64F
-			if ftIs128 {
-				op = ssaop.OpCvt128Dto64F
+		fk, tk, rt := ft.Kind(), tt.Kind(), tt
+		// The runtime converts to and from 64-bit integers only.
+		if ft.IsInteger() {
+			fk = types.TUINT64
+			if ft.IsSigned() {
+				fk = types.TINT64
 			}
-			v = s.newValueOrSfCall1(op, types.Types[types.TFLOAT64], v)
-			if tt.Size() == 4 {
-				v = s.newValue1(ssaop.OpCvt64Fto32F, tt, v)
-			}
-			return v
-		}
-		// float -> decimal
-		if ft.IsFloat() && tt.IsDecimal() {
-			if ft.Size() == 4 {
-				v = s.newValue1(ssaop.OpCvt32Fto64F, types.Types[types.TFLOAT64], v)
-			}
-			op := ssaop.OpCvt64Fto64D
-			if ttIs128 {
-				op = ssaop.OpCvt64Fto128D
-			}
-			return s.newValueOrSfCall1(op, tt, v)
-		}
-		// decimal -> integer
-		if ft.IsDecimal() && tt.IsInteger() {
-			op := ssaop.OpCvt64Dto64
-			if !tt.IsSigned() {
-				op = ssaop.OpCvt64Dto64U
-			}
-			if ftIs128 {
-				op = ssaop.OpCvt128Dto64
-				if !tt.IsSigned() {
-					op = ssaop.OpCvt128Dto64U
-				}
-			}
-			rt := types.Types[types.TINT64]
-			if !tt.IsSigned() {
-				rt = types.Types[types.TUINT64]
-			}
-			v = s.newValueOrSfCall1(op, rt, v)
-			if tt.Size() < 8 {
-				v = s.newValue1(decTrunc[tt.Size()], tt, v)
-			}
-			return v
-		}
-		// integer -> decimal
-		if ft.IsInteger() && tt.IsDecimal() {
 			if ft.Size() < 8 {
 				if ft.IsSigned() {
 					v = s.newValue1(decSext[ft.Size()], types.Types[types.TINT64], v)
@@ -3086,19 +3008,23 @@ func (s *state) conv(n ir.Node, v *ssa.Value, ft, tt *types.Type) *ssa.Value {
 					v = s.newValue1(decZext[ft.Size()], types.Types[types.TUINT64], v)
 				}
 			}
-			op := ssaop.OpCvt64to64D
-			if !ft.IsSigned() {
-				op = ssaop.OpCvt64Uto64D
-			}
-			if ttIs128 {
-				op = ssaop.OpCvt64to128D
-				if !ft.IsSigned() {
-					op = ssaop.OpCvt64Uto128D
-				}
-			}
-			return s.newValueOrSfCall1(op, tt, v)
 		}
-		s.Fatalf("unhandled decimal conversion %v -> %v", ft, tt)
+		if tt.IsInteger() {
+			tk = types.TUINT64
+			if tt.IsSigned() {
+				tk = types.TINT64
+			}
+			rt = types.Types[tk]
+		}
+		fn, ok := softDecimalConvs[twoTypes{fk, tk}]
+		if !ok {
+			s.Fatalf("unhandled decimal conversion %v -> %v", ft, tt)
+		}
+		v = s.softDecimalCall(fn, rt, v)
+		if tt.IsInteger() && tt.Size() < 8 {
+			v = s.newValue1(decTrunc[tt.Size()], tt, v)
+		}
+		return v
 	}
 
 	if ft.IsFloat() || tt.IsFloat() {
@@ -3461,8 +3387,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			return s.newValueOrSfCall2(s.ssaOp(op, n.X.Type()), types.Types[types.TBOOL], a, b)
 		}
 		if n.X.Type().IsDecimal() {
-			// decimal comparison
-			return s.newValueOrSfCall2(s.ssaOp(op, n.X.Type()), types.Types[types.TBOOL], a, b)
+			return s.softDecimalOp(op, types.Types[types.TBOOL], a, b)
 		}
 		// integer comparison
 		return s.newValue2(s.ssaOp(op, n.X.Type()), types.Types[types.TBOOL], a, b)
@@ -3504,7 +3429,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			return s.newValueOrSfCall2(s.ssaOp(n.Op(), n.Type()), a.Type, a, b)
 		}
 		if n.Type().IsDecimal() {
-			return s.newValueOrSfCall2(s.ssaOp(n.Op(), n.Type()), a.Type, a, b)
+			return s.softDecimalOp(n.Op(), n.Type(), a, b)
 		}
 
 		return s.newValue2(s.ssaOp(n.Op(), n.Type()), a.Type, a, b)
@@ -3557,7 +3482,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			return s.newValueOrSfCall2(s.ssaOp(n.Op(), n.Type()), a.Type, a, b)
 		}
 		if n.Type().IsDecimal() {
-			return s.newValueOrSfCall2(s.ssaOp(n.Op(), n.Type()), a.Type, a, b)
+			return s.softDecimalOp(n.Op(), n.Type(), a, b)
 		}
 		return s.intDivide(n, a, b)
 	case ir.OMOD:
@@ -3580,7 +3505,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			return s.newValueOrSfCall2(s.ssaOp(n.Op(), n.Type()), a.Type, a, b)
 		}
 		if n.Type().IsDecimal() {
-			return s.newValueOrSfCall2(s.ssaOp(n.Op(), n.Type()), a.Type, a, b)
+			return s.softDecimalOp(n.Op(), n.Type(), a, b)
 		}
 		return s.newValue2(s.ssaOp(n.Op(), n.Type()), a.Type, a, b)
 	case ir.OAND, ir.OOR, ir.OXOR:
@@ -4472,26 +4397,8 @@ func (s *state) minMax(n *ir.CallExpr) *ssa.Value {
 	if typ.IsDecimal() {
 		// Decimal min/max has the same NaN/-0 concerns as float.
 		// No hardware support, so always call runtime.
-		var name string
-		switch typ.Kind() {
-		case types.TDECIMAL64:
-			switch n.Op() {
-			case ir.OMIN:
-				name = "dmin64"
-			case ir.OMAX:
-				name = "dmax64"
-			}
-		case types.TDECIMAL128:
-			switch n.Op() {
-			case ir.OMIN:
-				name = "dmin128"
-			case ir.OMAX:
-				name = "dmax128"
-			}
-		}
-		fn := typecheck.LookupRuntimeFunc(name)
 		return fold(func(x, a *ssa.Value) *ssa.Value {
-			return s.rtcall(fn, true, []*types.Type{typ}, x, a)[0]
+			return s.softDecimalOp(n.Op(), typ, x, a)
 		})
 	}
 
@@ -5011,61 +4918,102 @@ func (s *state) sfcall(op ssaop.Op, args ...*ssa.Value) (*ssa.Value, bool) {
 	return nil, false
 }
 
-var softDecimalOps map[ssaop.Op]sfRtCallDef
+// softDecimalOps and softDecimalConvs name the runtime functions that
+// implement the decimal operators and conversions. No target has decimal
+// floating-point instructions, so unlike softFloatOps they apply everywhere
+// and no generic SSA op stands for them. As for soft float, the functions
+// take and return bit patterns: a decimal64 is a uint64 and a decimal128 is
+// two uint64 halves, high first. See softDecimalCall.
+var (
+	softDecimalOps   map[opAndType]*obj.LSym
+	softDecimalConvs map[twoTypes]*obj.LSym
+)
 
 func softdecimalInit() {
-	softDecimalOps = map[ssaop.Op]sfRtCallDef{
-		ssaop.OpAdd64D: {typecheck.LookupRuntimeFunc("dadd64"), types.TDECIMAL64},
-		ssaop.OpSub64D: {typecheck.LookupRuntimeFunc("dsub64"), types.TDECIMAL64},
-		ssaop.OpMul64D: {typecheck.LookupRuntimeFunc("dmul64"), types.TDECIMAL64},
-		ssaop.OpDiv64D: {typecheck.LookupRuntimeFunc("ddiv64"), types.TDECIMAL64},
+	softDecimalOps = map[opAndType]*obj.LSym{
+		{ir.OADD, types.TDECIMAL64}: typecheck.LookupRuntimeFunc("dadd64"),
+		{ir.OSUB, types.TDECIMAL64}: typecheck.LookupRuntimeFunc("dsub64"),
+		{ir.OMUL, types.TDECIMAL64}: typecheck.LookupRuntimeFunc("dmul64"),
+		{ir.ODIV, types.TDECIMAL64}: typecheck.LookupRuntimeFunc("ddiv64"),
+		{ir.OEQ, types.TDECIMAL64}:  typecheck.LookupRuntimeFunc("deq64"),
+		{ir.ONE, types.TDECIMAL64}:  typecheck.LookupRuntimeFunc("deq64"),
+		{ir.OLT, types.TDECIMAL64}:  typecheck.LookupRuntimeFunc("dlt64"),
+		{ir.OLE, types.TDECIMAL64}:  typecheck.LookupRuntimeFunc("dle64"),
+		{ir.OMIN, types.TDECIMAL64}: typecheck.LookupRuntimeFunc("dmin64"),
+		{ir.OMAX, types.TDECIMAL64}: typecheck.LookupRuntimeFunc("dmax64"),
 
-		ssaop.OpEq64D:   {typecheck.LookupRuntimeFunc("deq64"), types.TBOOL},
-		ssaop.OpNeq64D:  {typecheck.LookupRuntimeFunc("deq64"), types.TBOOL},
-		ssaop.OpLess64D: {typecheck.LookupRuntimeFunc("dlt64"), types.TBOOL},
-		ssaop.OpLeq64D:  {typecheck.LookupRuntimeFunc("dle64"), types.TBOOL},
+		{ir.OADD, types.TDECIMAL128}: typecheck.LookupRuntimeFunc("dadd128"),
+		{ir.OSUB, types.TDECIMAL128}: typecheck.LookupRuntimeFunc("dsub128"),
+		{ir.OMUL, types.TDECIMAL128}: typecheck.LookupRuntimeFunc("dmul128"),
+		{ir.ODIV, types.TDECIMAL128}: typecheck.LookupRuntimeFunc("ddiv128"),
+		{ir.OEQ, types.TDECIMAL128}:  typecheck.LookupRuntimeFunc("deq128"),
+		{ir.ONE, types.TDECIMAL128}:  typecheck.LookupRuntimeFunc("deq128"),
+		{ir.OLT, types.TDECIMAL128}:  typecheck.LookupRuntimeFunc("dlt128"),
+		{ir.OLE, types.TDECIMAL128}:  typecheck.LookupRuntimeFunc("dle128"),
+		{ir.OMIN, types.TDECIMAL128}: typecheck.LookupRuntimeFunc("dmin128"),
+		{ir.OMAX, types.TDECIMAL128}: typecheck.LookupRuntimeFunc("dmax128"),
+	}
+	softDecimalConvs = map[twoTypes]*obj.LSym{
+		{types.TINT64, types.TDECIMAL64}:   typecheck.LookupRuntimeFunc("di64tod64"),
+		{types.TUINT64, types.TDECIMAL64}:  typecheck.LookupRuntimeFunc("du64tod64"),
+		{types.TFLOAT32, types.TDECIMAL64}: typecheck.LookupRuntimeFunc("df32tod64"),
+		{types.TFLOAT64, types.TDECIMAL64}: typecheck.LookupRuntimeFunc("df64tod64"),
+		{types.TDECIMAL64, types.TINT64}:   typecheck.LookupRuntimeFunc("dd64toi64"),
+		{types.TDECIMAL64, types.TUINT64}:  typecheck.LookupRuntimeFunc("dd64tou64"),
+		{types.TDECIMAL64, types.TFLOAT32}: typecheck.LookupRuntimeFunc("dd64tof32"),
+		{types.TDECIMAL64, types.TFLOAT64}: typecheck.LookupRuntimeFunc("dd64tof64"),
 
-		ssaop.OpCvt64Dto64F: {typecheck.LookupRuntimeFunc("dd64tof64"), types.TFLOAT64},
-		ssaop.OpCvt64Fto64D: {typecheck.LookupRuntimeFunc("df64tod64"), types.TDECIMAL64},
-		ssaop.OpCvt64to64D:  {typecheck.LookupRuntimeFunc("di64tod64"), types.TDECIMAL64},
-		ssaop.OpCvt64Dto64:  {typecheck.LookupRuntimeFunc("dd64toi64"), types.TINT64},
-		ssaop.OpCvt64Uto64D: {typecheck.LookupRuntimeFunc("du64tod64"), types.TDECIMAL64},
-		ssaop.OpCvt64Dto64U: {typecheck.LookupRuntimeFunc("dd64tou64"), types.TUINT64},
+		{types.TINT64, types.TDECIMAL128}:   typecheck.LookupRuntimeFunc("di64tod128"),
+		{types.TUINT64, types.TDECIMAL128}:  typecheck.LookupRuntimeFunc("du64tod128"),
+		{types.TFLOAT32, types.TDECIMAL128}: typecheck.LookupRuntimeFunc("df32tod128"),
+		{types.TFLOAT64, types.TDECIMAL128}: typecheck.LookupRuntimeFunc("df64tod128"),
+		{types.TDECIMAL128, types.TINT64}:   typecheck.LookupRuntimeFunc("dd128toi64"),
+		{types.TDECIMAL128, types.TUINT64}:  typecheck.LookupRuntimeFunc("dd128tou64"),
+		{types.TDECIMAL128, types.TFLOAT32}: typecheck.LookupRuntimeFunc("dd128tof32"),
+		{types.TDECIMAL128, types.TFLOAT64}: typecheck.LookupRuntimeFunc("dd128tof64"),
 
-		// decimal128 ops
-		ssaop.OpAdd128D: {typecheck.LookupRuntimeFunc("dadd128"), types.TDECIMAL128},
-		ssaop.OpSub128D: {typecheck.LookupRuntimeFunc("dsub128"), types.TDECIMAL128},
-		ssaop.OpMul128D: {typecheck.LookupRuntimeFunc("dmul128"), types.TDECIMAL128},
-		ssaop.OpDiv128D: {typecheck.LookupRuntimeFunc("ddiv128"), types.TDECIMAL128},
-
-		ssaop.OpEq128D:   {typecheck.LookupRuntimeFunc("deq128"), types.TBOOL},
-		ssaop.OpNeq128D:  {typecheck.LookupRuntimeFunc("deq128"), types.TBOOL},
-		ssaop.OpLess128D: {typecheck.LookupRuntimeFunc("dlt128"), types.TBOOL},
-		ssaop.OpLeq128D:  {typecheck.LookupRuntimeFunc("dle128"), types.TBOOL},
-
-		ssaop.OpCvt128Dto64F: {typecheck.LookupRuntimeFunc("dd128tof64"), types.TFLOAT64},
-		ssaop.OpCvt64Fto128D: {typecheck.LookupRuntimeFunc("df64tod128"), types.TDECIMAL128},
-		ssaop.OpCvt64to128D:  {typecheck.LookupRuntimeFunc("di64tod128"), types.TDECIMAL128},
-		ssaop.OpCvt128Dto64:  {typecheck.LookupRuntimeFunc("dd128toi64"), types.TINT64},
-		ssaop.OpCvt64Uto128D: {typecheck.LookupRuntimeFunc("du64tod128"), types.TDECIMAL128},
-		ssaop.OpCvt128Dto64U: {typecheck.LookupRuntimeFunc("dd128tou64"), types.TUINT64},
-		ssaop.OpCvt64Dto128D: {typecheck.LookupRuntimeFunc("dd64tod128"), types.TDECIMAL128},
-		ssaop.OpCvt128Dto64D: {typecheck.LookupRuntimeFunc("dd128tod64"), types.TDECIMAL64},
+		{types.TDECIMAL64, types.TDECIMAL128}: typecheck.LookupRuntimeFunc("dd64tod128"),
+		{types.TDECIMAL128, types.TDECIMAL64}: typecheck.LookupRuntimeFunc("dd128tod64"),
 	}
 }
 
-// sdcall converts decimal SSA ops to runtime function calls.
-// Runtime functions now take/return decimal64/decimal128 directly.
-func (s *state) sdcall(op ssaop.Op, args ...*ssa.Value) (*ssa.Value, bool) {
-	if callDef, ok := softDecimalOps[op]; ok {
-		rt := types.Types[callDef.rtype]
-		result := s.rtcall(callDef.rtfn, true, []*types.Type{rt}, args...)[0]
-		if op == ssaop.OpNeq64D || op == ssaop.OpNeq128D {
-			result = s.newValue1(ssaop.OpNot, result.Type, result)
-		}
-		return result, true
+// softDecimalOp calls the runtime function for the operator op on decimal
+// operands, which have a common type. Its result has type rt.
+func (s *state) softDecimalOp(op ir.Op, rt *types.Type, args ...*ssa.Value) *ssa.Value {
+	fn, ok := softDecimalOps[opAndType{op, args[0].Type.Kind()}]
+	if !ok {
+		s.Fatalf("unhandled decimal operator %v on %v", op, args[0].Type)
 	}
-	return nil, false
+	res := s.softDecimalCall(fn, rt, args...)
+	if op == ir.ONE {
+		res = s.newValue1(ssaop.OpNot, res.Type, res)
+	}
+	return res
+}
+
+// softDecimalCall calls the runtime function fn, passing decimal arguments
+// and returning a decimal result as bit patterns.
+func (s *state) softDecimalCall(fn *obj.LSym, rt *types.Type, args ...*ssa.Value) *ssa.Value {
+	u64 := types.Types[types.TUINT64]
+	callArgs := make([]*ssa.Value, 0, 2*len(args))
+	for _, a := range args {
+		switch a.Type.Kind() {
+		case types.TDECIMAL64:
+			callArgs = append(callArgs, s.newValue1(ssaop.OpCopy, u64, a))
+		case types.TDECIMAL128:
+			callArgs = append(callArgs, s.newValue1(ssaop.OpDecimal128Hi, u64, a), s.newValue1(ssaop.OpDecimal128Lo, u64, a))
+		default:
+			callArgs = append(callArgs, a)
+		}
+	}
+	switch rt.Kind() {
+	case types.TDECIMAL64:
+		return s.newValue1(ssaop.OpCopy, rt, s.rtcall(fn, true, []*types.Type{u64}, callArgs...)[0])
+	case types.TDECIMAL128:
+		res := s.rtcall(fn, true, []*types.Type{u64, u64}, callArgs...)
+		return s.newValue2(ssaop.OpDecimal128Make, rt, res[1], res[0])
+	}
+	return s.rtcall(fn, true, []*types.Type{rt}, callArgs...)[0]
 }
 
 // split breaks up a tuple-typed value into its 2 parts.

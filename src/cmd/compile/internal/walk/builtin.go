@@ -755,12 +755,7 @@ func (w *walkState) walkPrint(nn *ir.CallExpr, init *ir.Nodes) ir.Node {
 		r := ir.NewCallExpr(base.Pos, ir.OCALL, on, nil)
 		if params := on.Type().Params(); len(params) > 0 {
 			t := params[0].Type
-			if n.Type().IsDecimal() {
-				// Decimal types are passed as uint64 (BID encoding).
-				n = typecheck.ConvNop(w.curfunc, n, t)
-			} else {
-				n = typecheck.Conv(w.curfunc, n, t)
-			}
+			n = typecheck.Conv(w.curfunc, n, t)
 			r.Args.Append(n)
 		}
 		calls = append(calls, r)
