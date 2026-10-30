@@ -8,6 +8,7 @@
 package runtime
 
 import (
+	"internal/bid"
 	"internal/strconv"
 	"unsafe"
 )
@@ -478,148 +479,21 @@ func dneg128(x decimal128) decimal128 {
 	return decimal128frombits(hi^bid128SignBit, lo)
 }
 
-// dadd128 computes x + y for BID-encoded decimal128 values.
+// dadd128 computes x + y through the shared BID kernel. The language
+// operators always round to nearest, ties to even.
 func dadd128(x, y decimal128) decimal128 {
 	xhi, xlo := decimal128bits(x)
 	yhi, ylo := decimal128bits(y)
-
-	if bid128IsNaN(xhi) || bid128IsNaN(yhi) {
-		return decimal128frombits(bid128NaN, 0)
-	}
-
-	xInf := bid128IsInf(xhi)
-	yInf := bid128IsInf(yhi)
-	if xInf && yInf {
-		if bid128Sign(xhi) == bid128Sign(yhi) {
-			return x
-		}
-		return decimal128frombits(bid128NaN, 0)
-	}
-	if xInf {
-		return x
-	}
-	if yInf {
-		return y
-	}
-
-	xs, xe, xc := bid128Unpack(xhi, xlo)
-	ys, ye, yc := bid128Unpack(yhi, ylo)
-
-	if u128IsZero(xc) && u128IsZero(yc) {
-		if xs != 0 && ys != 0 {
-			e := xe
-			if ye < e {
-				e = ye
-			}
-			return decimal128frombits(bid128Pack(bid128SignBit, e, uint128Zero))
-		}
-		e := xe
-		if ye < e {
-			e = ye
-		}
-		return decimal128frombits(bid128Pack(0, e, uint128Zero))
-	}
-	if u128IsZero(xc) {
-		// Pad y with trailing zeros to adopt x's more precise quantum.
-		for ye > xe {
-			test := u128Mul64(yc, 10)
-			if u128Cmp(test, bid128MaxCoeff) > 0 {
-				break
-			}
-			yc = test
-			ye--
-		}
-		return decimal128frombits(bid128Pack(ys, ye, yc))
-	}
-	if u128IsZero(yc) {
-		// Pad x with trailing zeros to adopt y's more precise quantum.
-		for xe > ye {
-			test := u128Mul64(xc, 10)
-			if u128Cmp(test, bid128MaxCoeff) > 0 {
-				break
-			}
-			xc = test
-			xe--
-		}
-		return decimal128frombits(bid128Pack(xs, xe, xc))
-	}
-
-	// Align exponents
-	if xe > ye {
-		diff := xe - ye
-		if diff > 40 {
-			return decimal128frombits(bid128Normalize(xs, xe, xc))
-		}
-		for i := 0; i < diff; i++ {
-			test := u128Mul64(xc, 10)
-			if u128Cmp(test, uint128{0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF}) > 0 {
-				// Would overflow; shift y down instead
-				for j := 0; j < (diff - i); j++ {
-					var rem uint64
-					yc, rem = u128Div64(yc, 10)
-					ye++
-					if rem > 5 || (rem == 5 && yc.lo%2 != 0) {
-						yc = u128Add(yc, uint128From64(1))
-					}
-				}
-				break
-			}
-			xc = test
-		}
-		xe = ye
-	} else if ye > xe {
-		diff := ye - xe
-		if diff > 40 {
-			return decimal128frombits(bid128Normalize(ys, ye, yc))
-		}
-		for i := 0; i < diff; i++ {
-			test := u128Mul64(yc, 10)
-			if u128Cmp(test, uint128{0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF}) > 0 {
-				for j := 0; j < (diff - i); j++ {
-					var rem uint64
-					xc, rem = u128Div64(xc, 10)
-					xe++
-					if rem > 5 || (rem == 5 && xc.lo%2 != 0) {
-						xc = u128Add(xc, uint128From64(1))
-					}
-				}
-				break
-			}
-			yc = test
-		}
-		ye = xe
-	}
-
-	var rs uint64
-	var rc uint128
-	re := xe
-
-	if xs == ys {
-		rs = xs
-		rc = u128Add(xc, yc)
-	} else {
-		cmp := u128Cmp(xc, yc)
-		if cmp >= 0 {
-			rs = xs
-			rc = u128Sub(xc, yc)
-		} else {
-			rs = ys
-			rc = u128Sub(yc, xc)
-		}
-	}
-
-	if u128IsZero(rc) {
-		return decimal128frombits(bid128Pack(0, re, uint128Zero))
-	}
-
-	return decimal128frombits(bid128Normalize(rs, re, rc))
+	r := bid.Add128(bid.Uint128{Hi: xhi, Lo: xlo}, bid.Uint128{Hi: yhi, Lo: ylo}, bid.ToNearestEven)
+	return decimal128frombits(r.Hi, r.Lo)
 }
 
-// dsub128 computes x - y.
-//
-//go:nosplit
+// dsub128 computes x - y through the shared BID kernel.
 func dsub128(x, y decimal128) decimal128 {
-	return dadd128(x, dneg128(y))
+	xhi, xlo := decimal128bits(x)
+	yhi, ylo := decimal128bits(y)
+	r := bid.Sub128(bid.Uint128{Hi: xhi, Lo: xlo}, bid.Uint128{Hi: yhi, Lo: ylo}, bid.ToNearestEven)
+	return decimal128frombits(r.Hi, r.Lo)
 }
 
 // dmul128 computes x * y for BID-encoded decimal128 values.

@@ -7,7 +7,10 @@
 
 package runtime
 
-import "internal/strconv"
+import (
+	"internal/bid"
+	"internal/strconv"
+)
 
 // dneg64 negates a decimal64 value by flipping the sign bit.
 //
@@ -16,142 +19,15 @@ func dneg64(x decimal64) decimal64 {
 	return decimal64frombits(decimal64bits(x) ^ bid64SignBit)
 }
 
-// dadd64 computes x + y for BID-encoded decimal64 values.
+// dadd64 computes x + y through the shared BID kernel. The language
+// operators always round to nearest, ties to even.
 func dadd64(x, y decimal64) decimal64 {
-	xb := decimal64bits(x)
-	yb := decimal64bits(y)
-
-	// Handle NaN
-	if bid64IsNaN(xb) || bid64IsNaN(yb) {
-		return decimal64frombits(bid64NaN)
-	}
-
-	// Handle infinity
-	xInf := bid64IsInf(xb)
-	yInf := bid64IsInf(yb)
-	if xInf && yInf {
-		// Inf + Inf with same sign = Inf; different signs = NaN
-		if bid64Sign(xb) == bid64Sign(yb) {
-			return x
-		}
-		return decimal64frombits(bid64NaN)
-	}
-	if xInf {
-		return x
-	}
-	if yInf {
-		return y
-	}
-
-	xs, xe, xc := bid64Unpack(xb)
-	ys, ye, yc := bid64Unpack(yb)
-
-	// Handle zeros
-	if xc == 0 && yc == 0 {
-		// Both zero: -0 + -0 = -0, otherwise +0
-		if xs != 0 && ys != 0 {
-			return decimal64frombits(bid64Pack(bid64SignBit, min(xe, ye), 0))
-		}
-		return decimal64frombits(bid64Pack(0, min(xe, ye), 0))
-	}
-	if xc == 0 {
-		// Pad y with trailing zeros to adopt x's more precise quantum.
-		for ye > xe && yc <= bid64MaxCoeff/10 {
-			yc *= 10
-			ye--
-		}
-		return decimal64frombits(bid64Pack(ys, ye, yc))
-	}
-	if yc == 0 {
-		// Pad x with trailing zeros to adopt y's more precise quantum.
-		for xe > ye && xc <= bid64MaxCoeff/10 {
-			xc *= 10
-			xe--
-		}
-		return decimal64frombits(bid64Pack(xs, xe, xc))
-	}
-
-	// Align exponents: shift the coefficient of the number with
-	// the larger exponent so both have the same (smaller) exponent.
-	if xe > ye {
-		// Shift xc up (multiply by 10^(xe-ye)) to align with ye
-		diff := xe - ye
-		if diff > 17 {
-			// x's coefficient would become huge; y is negligible
-			// But we still need to round properly.
-			return decimal64frombits(bid64Normalize(xs, xe, xc))
-		}
-		for i := 0; i < diff; i++ {
-			if xc > bid64MaxCoeff/10+1 {
-				// Would overflow; shift y down instead
-				for j := 0; j < (diff - i); j++ {
-					rem := yc % 10
-					yc /= 10
-					ye++
-					if rem > 5 || (rem == 5 && yc%2 != 0) {
-						yc++
-					}
-				}
-				break
-			}
-			xc *= 10
-		}
-		xe = ye
-	} else if ye > xe {
-		diff := ye - xe
-		if diff > 17 {
-			return decimal64frombits(bid64Normalize(ys, ye, yc))
-		}
-		for i := 0; i < diff; i++ {
-			if yc > bid64MaxCoeff/10+1 {
-				for j := 0; j < (diff - i); j++ {
-					rem := xc % 10
-					xc /= 10
-					xe++
-					if rem > 5 || (rem == 5 && xc%2 != 0) {
-						xc++
-					}
-				}
-				break
-			}
-			yc *= 10
-		}
-		ye = xe
-	}
-
-	// Now xe == ye. Add or subtract coefficients based on sign.
-	var rs uint64
-	var rc uint64
-	re := xe
-
-	if xs == ys {
-		// Same sign: add magnitudes
-		rs = xs
-		rc = xc + yc
-	} else {
-		// Different signs: subtract magnitudes
-		if xc >= yc {
-			rs = xs
-			rc = xc - yc
-		} else {
-			rs = ys
-			rc = yc - xc
-		}
-	}
-
-	if rc == 0 {
-		// Result is zero. IEEE 754: +0 unless rounding mode is toward -Inf
-		return decimal64frombits(bid64Pack(0, re, 0))
-	}
-
-	return decimal64frombits(bid64Normalize(rs, re, rc))
+	return decimal64frombits(bid.Add64(decimal64bits(x), decimal64bits(y), bid.ToNearestEven))
 }
 
-// dsub64 computes x - y for BID-encoded decimal64 values.
-//
-//go:nosplit
+// dsub64 computes x - y through the shared BID kernel.
 func dsub64(x, y decimal64) decimal64 {
-	return dadd64(x, dneg64(y))
+	return decimal64frombits(bid.Sub64(decimal64bits(x), decimal64bits(y), bid.ToNearestEven))
 }
 
 // dmul64 computes x * y for BID-encoded decimal64 values.
