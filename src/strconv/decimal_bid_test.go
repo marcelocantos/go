@@ -5,7 +5,10 @@
 package strconv_test
 
 import (
+	"internal/bid"
 	"math"
+	"math/big"
+	"math/rand"
 	. "strconv"
 	"testing"
 )
@@ -78,12 +81,12 @@ var dtoaTests = []dtoaTest{
 	{decimal64(1), 'g', 0, "1"},
 
 	// Rounding (round-to-even)
-	{decimal64(12.345), 'f', 2, "12.34"},  // 4 is even, round down
-	{decimal64(12.355), 'f', 2, "12.36"},  // 5 is odd, round up
-	{decimal64(0.015), 'f', 2, "0.02"},    // 1 is odd, round up
-	{decimal64(0.025), 'f', 2, "0.02"},    // 2 is even, round down
-	{decimal64(0.035), 'f', 2, "0.04"},    // 3 is odd, round up
-	{decimal64(0.045), 'f', 2, "0.04"},    // 4 is even, round down
+	{decimal64(12.345), 'f', 2, "12.34"}, // 4 is even, round down
+	{decimal64(12.355), 'f', 2, "12.36"}, // 5 is odd, round up
+	{decimal64(0.015), 'f', 2, "0.02"},   // 1 is odd, round up
+	{decimal64(0.025), 'f', 2, "0.02"},   // 2 is even, round down
+	{decimal64(0.035), 'f', 2, "0.04"},   // 3 is odd, round up
+	{decimal64(0.045), 'f', 2, "0.04"},   // 4 is even, round down
 
 	// Special values
 	{math.Decimal64NaN(), 'g', -1, "NaN"},
@@ -105,6 +108,49 @@ var dtoaTests = []dtoaTest{
 	// Decimal-specific: exact representation (unlike float)
 	{decimal64(0.1), 'f', 20, "0.10000000000000000000"},
 	{decimal64(0.3), 'f', 20, "0.30000000000000000000"},
+
+	// Rounding ties go to the even digit, and a carry moves the point.
+	{decimal64(0.5), 'f', 0, "0"},
+	{decimal64(1.5), 'f', 0, "2"},
+	{decimal64(2.5), 'f', 0, "2"},
+	{decimal64(0.51), 'f', 0, "1"},
+	{decimal64(0.049), 'f', 1, "0.0"},
+	{decimal64(0.05), 'f', 1, "0.0"},
+	{decimal64(0.051), 'f', 1, "0.1"},
+	{decimal64(0.15), 'f', 1, "0.2"},
+	{decimal64(0.25), 'f', 1, "0.2"},
+	{decimal64(-0.004), 'f', 2, "-0.00"},
+	{decimal64(9.995), 'f', 2, "10.00"},
+	{decimal64(9.994), 'f', 2, "9.99"},
+	{decimal64(99.5), 'f', 0, "100"},
+	{decimal64(1e-300), 'f', 2, "0.00"},
+	{decimal64(1e300), 'f', 2, "1" + zeros(300) + ".00"},
+	{decimal64(2.5), 'e', 0, "2e+00"},
+	{decimal64(3.5), 'e', 0, "4e+00"},
+	{decimal64(9.5), 'e', 0, "1e+01"},
+	{decimal64(9.99), 'e', 1, "1.0e+01"},
+	{decimal64(99.9), 'e', 0, "1e+02"},
+	{decimal64(1234567.8), 'e', 2, "1.23e+06"},
+	{decimal64(1234567.8), 'e', 20, "1.23456780000000000000e+06"},
+	{decimal64(1235), 'e', 2, "1.24e+03"},
+	{decimal64(1225), 'e', 2, "1.22e+03"},
+	{decimal64(9.99), 'g', 2, "10"},
+	{decimal64(99.9), 'g', 2, "1e+02"},
+	{decimal64(0.000099999), 'g', 2, "0.0001"},
+	{decimal64(123456), 'g', 3, "1.23e+05"},
+	{decimal64(1235), 'g', 3, "1.24e+03"},
+	{decimal64(1225), 'g', 3, "1.22e+03"},
+	{decimal64(1e-5), 'g', 3, "1e-05"},
+	{decimal64(-0.0001234), 'g', 2, "-0.00012"},
+	{math.Decimal64frombits(1<<63 | 0x31c0000000000001), 'g', 3, "-1"}, // -1E+0 (exponent at the bias)
+}
+
+func zeros(n int) string {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = '0'
+	}
+	return string(b)
 }
 
 func TestFormatDecimal64(t *testing.T) {
@@ -157,9 +203,7 @@ var dtoa128Tests = []dtoa128Test{
 	{decimal128(1), 'f', 6, "1.000000"},
 	{decimal128(1), 'E', 3, "1.000E+00"},
 	{decimal128(1), 'G', 5, "1"},
-
 }
-
 
 func init() {
 	// Add test case requiring ParseDecimal128 (34-digit precision)
@@ -174,6 +218,24 @@ func init() {
 		dtoa128Test{mustParseD128("1e-6000"), 'e', 0, "1e-6000"},
 		dtoa128Test{mustParseD128("1e+6111"), 'e', 0, "1e+6111"},
 		dtoa128Test{mustParseD128("1e-6176"), 'e', 0, "1e-6176"},
+		dtoa128Test{mustParseD128("1e6144"), 'e', 0, "1e+6144"},
+		dtoa128Test{mustParseD128("9.999999999999999999999999999999999e6144"), 'e', -1, "9.999999999999999999999999999999999e+6144"},
+		dtoa128Test{mustParseD128("9.999999999999999999999999999999999e6144"), 'e', 0, "1e+6145"},
+		dtoa128Test{mustParseD128("9.999999999999999999999999999999999e6144"), 'g', 33, "1e+6145"},
+		dtoa128Test{mustParseD128("9.999999999999999999999999999999999e6144"), 'e', 32, "1.00000000000000000000000000000000e+6145"},
+		dtoa128Test{mustParseD128("9999999999999999999999999999999999"), 'e', 3, "1.000e+34"},
+		dtoa128Test{mustParseD128("9999999999999999999999999999999999"), 'f', 0, "9999999999999999999999999999999999"},
+		dtoa128Test{mustParseD128("9999999999999999999999999999999999e-1"), 'f', 0, "1000000000000000000000000000000000"},
+		dtoa128Test{mustParseD128("9999999999999999999999999999999995e-1"), 'f', 0, "1000000000000000000000000000000000"},
+		dtoa128Test{mustParseD128("1234567890123456789012345678901235e-1"), 'f', 0, "123456789012345678901234567890124"}, // 3 is odd: up
+		dtoa128Test{mustParseD128("1234567890123456789012345678901225e-1"), 'f', 0, "123456789012345678901234567890122"}, // 2 is even: down
+		dtoa128Test{mustParseD128("1234567890123456789012345678901234"), 'e', 32, "1.23456789012345678901234567890123e+33"},
+		dtoa128Test{mustParseD128("1234567890123456789012345678901235"), 'e', 32, "1.23456789012345678901234567890124e+33"},
+		dtoa128Test{mustParseD128("1234567890123456789012345678901225"), 'e', 32, "1.23456789012345678901234567890122e+33"},
+		dtoa128Test{mustParseD128("1e-6176"), 'f', 3, "0.000"},
+		dtoa128Test{mustParseD128("-1e-6176"), 'f', 3, "-0.000"},
+		dtoa128Test{mustParseD128("5e-4"), 'f', 3, "0.000"},
+		dtoa128Test{mustParseD128("5.1e-4"), 'f', 3, "0.001"},
 	)
 }
 
@@ -266,37 +328,112 @@ var atod64Tests = []atodTest{
 	// Max coefficient (16 digits)
 	{"9999999999999999", "9999999999999999", nil},
 
-	// 17-digit input: truncated to 16 significant digits
-	{"12345678901234567", "12345678901234560", nil},
+	// Digits beyond the 16th round to nearest even; they are not truncated
+	// (audit L4).
+	{"12345678901234567", "12345678901234570", nil},
+	{"12345678901234569", "12345678901234570", nil}, // was "...560"
+	{"12345678901234561", "12345678901234560", nil},
+	// Ties at the 17th significant digit: to the even 16th digit.
+	{"12345678901234565", "12345678901234560", nil}, // 6 is even
+	{"12345678901234575", "12345678901234580", nil}, // 7 is odd
+	{"-12345678901234565", "-12345678901234560", nil},
+	// Above a tie, however far below the 17th digit the excess lies.
+	{"12345678901234565000000000000000000001", "1.234567890123457e+37", nil},
+	{"1234567890123456.50000000000000000000001", "1234567890123457", nil},
+	// Below a tie.
+	{"12345678901234564999999999999999999999", "1.234567890123456e+37", nil},
+	// A carry through every digit.
+	{"99999999999999995", "1e+17", nil},
+	{"99999999999999994", "99999999999999990", nil},
+	// Zeros that do not count as digits, and trailing zeros that do not matter.
+	{"0.0000000000000000000000000001234567890123456789", "1.234567890123457e-28", nil},
+	{"1234567890123456.00000000000000000000", "1234567890123456", nil},
+
+	// Range errors: the result is +-Inf, as ParseFloat gives (audit L3).
+	{"1e999", "+Inf", ErrRange},
+	{"1e400", "+Inf", ErrRange},
+	{"-1e400", "-Inf", ErrRange},
+	{"1e385", "+Inf", ErrRange},
+	{"10e384", "+Inf", ErrRange},
+	{"1e99999999999999999999", "+Inf", ErrRange},
+	{"-1e99999999999999999999", "-Inf", ErrRange},
+	{"9999999999999999.5e369", "+Inf", ErrRange}, // rounds to 10^385
+	// The largest and the smallest values are not out of range.
+	{"9.999999999999999e384", "9.999999999999999e+384", nil},
+	{"-9.999999999999999e384", "-9.999999999999999e+384", nil},
+	{"9999999999999999e369", "9.999999999999999e+384", nil},
+	{"1e-398", "1e-398", nil},
+	// Like ParseFloat, no error for a value too small: it becomes zero.
+	{"1e-399", "0", nil},
+	{"1e-400", "0", nil}, // was "1e-398" (audit L3)
+	{"1e-500", "0", nil},
+	{"-1e-500", "-0", nil},
+	{"1e-99999999999999999999", "0", nil},
+	{"0e99999999999999999999", "0", nil},
+	{"0.0000000000000000000000000000000000000000000000000000000000000e-500", "0", nil},
+
+	// Special words must match whole (audit L14).
+	{"NaNxyz", "0", ErrSyntax},
+	{"nan1", "0", ErrSyntax},
+	{"Infoo", "0", ErrSyntax},
+	{"Infinityx", "0", ErrSyntax},
+	{"Infinit", "0", ErrSyntax},
+	{"Inf ", "0", ErrSyntax},
+	{" Inf", "0", ErrSyntax},
+	{"--Inf", "0", ErrSyntax},
+	{"+-1", "0", ErrSyntax},
+	{"-NaN", "NaN", nil},
+	{"snan", "NaN", nil},
+	{"INF", "+Inf", nil},
+	{"+INFINITY", "+Inf", nil},
+
+	// Not decimal floating-point numerals.
+	{"1_000", "0", ErrSyntax},
+	{"0x10", "0", ErrSyntax},
+	{"0x1p4", "0", ErrSyntax},
+	{" 1", "0", ErrSyntax},
+	{"1 ", "0", ErrSyntax},
+}
+
+// checkParseDecimal checks the outcome of parsing test.in. An error must be
+// a *NumError of the expected kind that names the function and the input;
+// the value that comes with ErrRange is checked as well, as it is for
+// ParseFloat. A syntax error returns zero.
+func checkParseDecimal(t *testing.T, i int, fn string, test atodTest, format func(d any) string, d any, err error) {
+	t.Helper()
+	if test.err == nil {
+		if err != nil {
+			t.Errorf("#%d: %s(%q) error = %v", i, fn, test.in, err)
+			return
+		}
+		if out := format(d); out != test.out {
+			t.Errorf("#%d: %s(%q) = %q, want %q", i, fn, test.in, out, test.out)
+		}
+		return
+	}
+	if err == nil {
+		t.Errorf("#%d: %s(%q) succeeded, want error %v", i, fn, test.in, test.err)
+		return
+	}
+	ne, ok := err.(*NumError)
+	if !ok {
+		t.Errorf("#%d: %s(%q) error type = %T, want *NumError", i, fn, test.in, err)
+		return
+	}
+	if ne.Func != fn || ne.Num != test.in || ne.Err != test.err {
+		t.Errorf("#%d: %s(%q) error = %#v, want Func %q, Num %q, Err %v",
+			i, fn, test.in, ne, fn, test.in, test.err)
+	}
+	if out := format(d); out != test.out {
+		t.Errorf("#%d: %s(%q) returned %q with error %v, want %q", i, fn, test.in, out, test.err, test.out)
+	}
 }
 
 func TestParseDecimal64(t *testing.T) {
 	for i, test := range atod64Tests {
 		d, err := ParseDecimal64(test.in)
-		if test.err != nil {
-			if err == nil {
-				t.Errorf("#%d: ParseDecimal64(%q) succeeded, want error %v", i, test.in, test.err)
-				continue
-			}
-			// Check underlying error type
-			ne, ok := err.(*NumError)
-			if !ok {
-				t.Errorf("#%d: ParseDecimal64(%q) error type = %T, want *NumError", i, test.in, err)
-				continue
-			}
-			if ne.Err != test.err {
-				t.Errorf("#%d: ParseDecimal64(%q) error = %v, want %v", i, test.in, ne.Err, test.err)
-			}
-			continue
-		}
-		if err != nil {
-			t.Errorf("#%d: ParseDecimal64(%q) error = %v", i, test.in, err)
-			continue
-		}
-		out := FormatDecimal64(d, 'g', -1)
-		if out != test.out {
-			t.Errorf("#%d: ParseDecimal64(%q) = %q, want %q", i, test.in, out, test.out)
-		}
+		checkParseDecimal(t, i, "ParseDecimal64", test,
+			func(d any) string { return FormatDecimal64(d.(decimal64), 'g', -1) }, d, err)
 	}
 }
 
@@ -334,8 +471,44 @@ var atod128Tests = []atodTest{
 	{"1234567890123456789012345678901234", "1234567890123456789012345678901234", nil},
 	{"9999999999999999999999999999999999", "9999999999999999999999999999999999", nil},
 
-	// 35-digit input: truncated to 34 digits
-	{"12345678901234567890123456789012345", "12345678901234567890123456789012340", nil},
+	// Digits beyond the 34th round to nearest even; they are not truncated.
+	{"12345678901234567890123456789012345", "12345678901234567890123456789012340", nil}, // tie, 4 is even
+	{"12345678901234567890123456789012335", "12345678901234567890123456789012340", nil}, // tie, 3 is odd
+	{"12345678901234567890123456789012346", "12345678901234567890123456789012350", nil},
+	{"12345678901234567890123456789012344", "12345678901234567890123456789012340", nil},
+	{"-12345678901234567890123456789012335", "-12345678901234567890123456789012340", nil},
+	// Above and below the tie at the 35th digit.
+	{"123456789012345678901234567890123450000000000000000001", "1.234567890123456789012345678901235e+53", nil},
+	{"123456789012345678901234567890123449999999999999999999", "1.234567890123456789012345678901234e+53", nil},
+	{"1234567890123456789012345678901234.5", "1234567890123456789012345678901234", nil},
+	{"1234567890123456789012345678901233.5", "1234567890123456789012345678901234", nil},
+	{"99999999999999999999999999999999995", "1e+35", nil},
+
+	// Range errors: the result is +-Inf, as ParseFloat gives.
+	{"1e6145", "+Inf", ErrRange},
+	{"1e7000", "+Inf", ErrRange},
+	{"-1e7000", "-Inf", ErrRange},
+	{"1e99999999999999999999", "+Inf", ErrRange},
+	{"-1e99999999999999999999", "-Inf", ErrRange},
+	{"9999999999999999999999999999999999.5e6111", "+Inf", ErrRange},
+	// Representable values, including the one audit L3 reports as mis-decoded.
+	{"1e6144", "1e+6144", nil},
+	{"1e6143", "1e+6143", nil},
+	{"9.999999999999999999999999999999999e6144", "9.999999999999999999999999999999999e+6144", nil},
+	{"-9.999999999999999999999999999999999e6144", "-9.999999999999999999999999999999999e+6144", nil},
+	{"1e-6176", "1e-6176", nil},
+	// No error for a value too small: it becomes zero.
+	{"1e-6177", "0", nil},
+	{"1e-7000", "0", nil},
+	{"-1e-7000", "-0", nil},
+	{"1e-99999999999999999999", "0", nil},
+
+	// Special words must match whole (audit L14).
+	{"NaNxyz", "0", ErrSyntax},
+	{"Infoo", "0", ErrSyntax},
+	{"Infinityx", "0", ErrSyntax},
+	{"-Inf", "-Inf", nil},
+	{"-NaN", "NaN", nil},
 
 	// Zeros
 	{"0", "0", nil},
@@ -346,29 +519,8 @@ var atod128Tests = []atodTest{
 func TestParseDecimal128(t *testing.T) {
 	for i, test := range atod128Tests {
 		d, err := ParseDecimal128(test.in)
-		if test.err != nil {
-			if err == nil {
-				t.Errorf("#%d: ParseDecimal128(%q) succeeded, want error %v", i, test.in, test.err)
-				continue
-			}
-			ne, ok := err.(*NumError)
-			if !ok {
-				t.Errorf("#%d: ParseDecimal128(%q) error type = %T, want *NumError", i, test.in, err)
-				continue
-			}
-			if ne.Err != test.err {
-				t.Errorf("#%d: ParseDecimal128(%q) error = %v, want %v", i, test.in, ne.Err, test.err)
-			}
-			continue
-		}
-		if err != nil {
-			t.Errorf("#%d: ParseDecimal128(%q) error = %v", i, test.in, err)
-			continue
-		}
-		out := FormatDecimal128(d, 'g', -1)
-		if out != test.out {
-			t.Errorf("#%d: ParseDecimal128(%q) = %q, want %q", i, test.in, out, test.out)
-		}
+		checkParseDecimal(t, i, "ParseDecimal128", test,
+			func(d any) string { return FormatDecimal128(d.(decimal128), 'g', -1) }, d, err)
 	}
 }
 
@@ -432,6 +584,153 @@ func TestDecimal128Roundtrip(t *testing.T) {
 	}
 }
 
+// --- Rounding to a precision against an independent reference ---
+
+// refRound rounds the integer c × 10^exp to a multiple of 10^t, to nearest
+// even, using math/big. It returns the integer n with n × 10^t as the
+// result; if t <= exp the value is already a multiple and n = c × 10^(exp-t).
+func refRound(c *big.Int, exp, t int) *big.Int {
+	if t <= exp {
+		return new(big.Int).Mul(c, new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(exp-t)), nil))
+	}
+	div := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(t-exp)), nil)
+	q, r := new(big.Int).QuoRem(c, div, new(big.Int))
+	r.Lsh(r, 1)
+	switch cmp := r.Cmp(div); {
+	case cmp > 0, cmp == 0 && q.Bit(0) == 1:
+		q.Add(q, big.NewInt(1))
+	}
+	return q
+}
+
+// refFormat formats the non-zero value coeff × 10^exp with verb 'e' or 'f'
+// and a precision of at least 0, without any of the code under test.
+func refFormat(neg bool, coeff string, exp int, fmt byte, prec int) string {
+	c, _ := new(big.Int).SetString(coeff, 10)
+	n := len(coeff)
+	var digs string
+	var e10 int // the value is digs × 10^e10
+	switch fmt {
+	case 'e':
+		e10 = exp + n - (prec + 1)
+	case 'f':
+		e10 = -prec
+	}
+	digs = refRound(c, exp, e10).String()
+	if digs == "0" {
+		digs = ""
+	}
+	out := ""
+	if neg {
+		out = "-"
+	}
+	if fmt == 'f' {
+		for len(digs) < prec+1 {
+			digs = "0" + digs
+		}
+		out += digs[:len(digs)-prec]
+		if prec > 0 {
+			out += "." + digs[len(digs)-prec:]
+		}
+		return out
+	}
+	if digs == "" { // rounded to zero cannot happen for 'e'
+		panic("refFormat: zero")
+	}
+	for len(digs) > prec+1 { // a carry: 9.99 became 10.0
+		digs = digs[:len(digs)-1]
+		e10++
+	}
+	for len(digs) < prec+1 {
+		digs += "0"
+		e10--
+	}
+	x := e10 + prec
+	out += digs[:1]
+	if prec > 0 {
+		out += "." + digs[1:]
+	}
+	out += "e"
+	if x < 0 {
+		out += "-"
+		x = -x
+	} else {
+		out += "+"
+	}
+	if x < 10 {
+		out += "0"
+	}
+	return out + Itoa(x)
+}
+
+func TestFormatDecimalRounding(t *testing.T) {
+	rng := rand.New(rand.NewSource(1))
+	for _, width := range []struct {
+		bits, digits, minExp, maxExp int
+	}{
+		{64, 16, -398, 369},
+		{128, 34, -6176, 6111},
+	} {
+		for i := 0; i < 20000; i++ {
+			// A coefficient of 1 to width.digits digits, mostly with digits
+			// that make ties likely (zeros, fives and nines).
+			n := 1 + rng.Intn(width.digits)
+			b := make([]byte, n)
+			for j := range b {
+				b[j] = "0123456789055599"[rng.Intn(16)]
+			}
+			b[0] = "123456789"[rng.Intn(9)]
+			coeff := string(b)
+			exp := rng.Intn(width.maxExp-width.minExp+1) + width.minExp
+			if rng.Intn(2) == 0 {
+				exp = rng.Intn(60) - 40
+			}
+			neg := rng.Intn(2) == 0
+			in := coeff + "e" + Itoa(exp)
+			if neg {
+				in = "-" + in
+			}
+			prec := rng.Intn(width.digits + 4)
+			if rng.Intn(4) == 0 {
+				prec = rng.Intn(8)
+			}
+			for _, f := range []byte{'e', 'f'} {
+				var got string
+				if width.bits == 64 {
+					d, err := ParseDecimal64(in)
+					if err != nil {
+						t.Fatalf("ParseDecimal64(%q): %v", in, err)
+					}
+					got = FormatDecimal64(d, f, prec)
+				} else {
+					d, err := ParseDecimal128(in)
+					if err != nil {
+						t.Fatalf("ParseDecimal128(%q): %v", in, err)
+					}
+					got = FormatDecimal128(d, f, prec)
+				}
+				c, _ := new(big.Int).SetString(coeff, 10)
+				want := ""
+				if f == 'f' && refRound(c, exp, -prec).Sign() == 0 {
+					// Rounds to zero: the sign stays and so do the places.
+					want = "0"
+					if neg {
+						want = "-0"
+					}
+					if prec > 0 {
+						want += "." + zeros(prec)
+					}
+				} else {
+					want = refFormat(neg, coeff, exp, f, prec)
+				}
+				if got != want {
+					t.Fatalf("decimal%d %s as %%.%d%c = %q, want %q", width.bits, in, prec, f, got, want)
+				}
+			}
+		}
+	}
+}
+
 // --- Quantum-preserving format tests ---
 
 func TestFormatDecimal64Quantum(t *testing.T) {
@@ -465,6 +764,85 @@ func TestFormatDecimal64Quantum(t *testing.T) {
 				test.in, test.fmt, got, test.out)
 		}
 	}
+}
+
+// --- Fuzzing ---
+
+func FuzzDecimal64RoundTrip(f *testing.F) {
+	for _, b := range []uint64{
+		0, 1, 1 << 63, 0x31c0000000000001, 0x7c00000000000000,
+		0x7800000000000000, 0xf800000000000000, 0x6bd86f70fd5a8e0f,
+		0x77fb86f26fc0ffff, 0x0000000000000001, 0x2e3ba18ac06d0e5d,
+	} {
+		f.Add(b)
+	}
+	f.Fuzz(func(t *testing.T, b uint64) {
+		if !bid.IsCanonical64(b) {
+			t.Skip("not an encoding Format produces from")
+		}
+		d := math.Decimal64frombits(b)
+		for _, prec := range []int{-1, -2} {
+			s := FormatDecimal64(d, 'e', prec)
+			d2, err := ParseDecimal64(s)
+			if err != nil {
+				t.Fatalf("ParseDecimal64(FormatDecimal64(%#x, 'e', %d) = %q): %v", b, prec, s, err)
+			}
+			if math.IsDecimal64NaN(d) {
+				if !math.IsDecimal64NaN(d2) {
+					t.Fatalf("%#x: NaN came back as %q (%#x)", b, s, math.Decimal64bits(d2))
+				}
+				continue
+			}
+			if !bid.Equal64(math.Decimal64bits(d2), b) {
+				t.Fatalf("%#x: %q parses to %#x", b, s, math.Decimal64bits(d2))
+			}
+			// -2 keeps the quantum, so formatting again gives the same text.
+			if prec == -2 {
+				if s2 := FormatDecimal64(d2, 'e', prec); s2 != s {
+					t.Fatalf("%#x: %q parses and formats as %q", b, s, s2)
+				}
+			}
+		}
+	})
+}
+
+func FuzzDecimal128RoundTrip(f *testing.F) {
+	for _, b := range [][2]uint64{
+		{0, 0}, {1, 0}, {0, 1}, {0x3040000000000000, 1}, {0x7c00000000000000, 0},
+		{0x7800000000000000, 0}, {0xf800000000000000, 0}, {0x5fffed09bead87c0, 0x378d8e63ffffffff},
+		{0x0000000000000000, 1}, {0x2ffe314dc6448d93, 0x38c15b09ffffffff},
+	} {
+		f.Add(b[0], b[1])
+	}
+	f.Fuzz(func(t *testing.T, hi, lo uint64) {
+		x := bid.Uint128{Hi: hi, Lo: lo}
+		if !bid.IsCanonical128(x) {
+			t.Skip("not an encoding Format produces from")
+		}
+		d := math.Decimal128frombits(hi, lo)
+		for _, prec := range []int{-1, -2} {
+			s := FormatDecimal128(d, 'e', prec)
+			d2, err := ParseDecimal128(s)
+			if err != nil {
+				t.Fatalf("ParseDecimal128(FormatDecimal128(%#x:%#x, 'e', %d) = %q): %v", hi, lo, prec, s, err)
+			}
+			if math.IsDecimal128NaN(d) {
+				if !math.IsDecimal128NaN(d2) {
+					t.Fatalf("%#x:%#x: NaN came back as %q", hi, lo, s)
+				}
+				continue
+			}
+			hi2, lo2 := math.Decimal128bits(d2)
+			if !bid.Equal128(bid.Uint128{Hi: hi2, Lo: lo2}, x) {
+				t.Fatalf("%#x:%#x: %q parses to %#x:%#x", hi, lo, s, hi2, lo2)
+			}
+			if prec == -2 {
+				if s2 := FormatDecimal128(d2, 'e', prec); s2 != s {
+					t.Fatalf("%#x:%#x: %q parses and formats as %q", hi, lo, s, s2)
+				}
+			}
+		}
+	})
 }
 
 // --- Benchmarks ---
