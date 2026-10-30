@@ -60,6 +60,7 @@ var runtimePkgs = []string{
 	"internal/runtime/syscall/windows",
 
 	"internal/abi",
+	"internal/bid",
 	"internal/bytealg",
 	"internal/byteorder",
 	"internal/chacha8rand",
