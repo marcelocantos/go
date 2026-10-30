@@ -201,10 +201,10 @@ func (e *Engine) Execute(s *State, file string, script *bufio.Reader, log io.Wri
 	}()
 
 	for {
-		if err := s.ctx.Err(); err != nil {
+		if s.ctx.Err() != nil {
 			// This error wasn't produced by any particular command,
 			// so don't wrap it in a CommandError.
-			return lineErr(err)
+			return lineErr(context.Cause(s.ctx))
 		}
 
 		line, err := script.ReadString('\n')
@@ -312,8 +312,9 @@ type command struct {
 	conds      []condition // all must be satisfied
 	name       string      // the name of the command; must be non-empty
 	rawArgs    [][]argFragment
-	args       []string // shell-expanded arguments following name
-	background bool     // command should run in background (ends with a trailing &)
+	args       []string      // shell-expanded arguments following name
+	background bool          // command should run in background (ends with a trailing &)
+	duration   time.Duration // execution duration. Zero for background commands (because unknown)
 }
 
 // An expectedStatus describes the expected outcome of a command.
@@ -493,15 +494,13 @@ func expandArgs(s *State, rawArgs [][]argFragment, regexpArgs []int) []string {
 }
 
 // quoteArgs returns a string that parse would parse as args when passed to a command.
-//
-// TODO(bcmills): This function should have a fuzz test.
 func quoteArgs(args []string) string {
 	var b strings.Builder
 	for i, arg := range args {
 		if i > 0 {
 			b.WriteString(" ")
 		}
-		if strings.ContainsAny(arg, "'"+argSepChars) {
+		if len(arg) == 0 || strings.ContainsAny(arg, "&'$"+argSepChars) {
 			// Quote the argument to a form that would be parsed as a single argument.
 			b.WriteString("'")
 			b.WriteString(strings.ReplaceAll(arg, "'", "''"))
@@ -557,7 +556,11 @@ func (e *Engine) runCommand(s *State, cmd *command, impl Cmd) error {
 		return cmdError(cmd, errors.New("command cannot be run in background"))
 	}
 
+	start := time.Now()
 	wait, runErr := impl.Run(s, cmd.args...)
+	if !cmd.background {
+		cmd.duration = time.Since(start) // updated again below if we wait
+	}
 	if wait == nil {
 		if async && runErr == nil {
 			return cmdError(cmd, errors.New("internal error: async command returned a nil WaitFunc"))
@@ -580,23 +583,22 @@ func (e *Engine) runCommand(s *State, cmd *command, impl Cmd) error {
 		return nil
 	}
 
-	if wait != nil {
-		stdout, stderr, waitErr := wait(s)
-		s.stdout = stdout
-		s.stderr = stderr
-		if stdout != "" {
-			s.Logf("[stdout]\n%s", stdout)
-		}
-		if stderr != "" {
-			s.Logf("[stderr]\n%s", stderr)
-		}
-		if cmdErr := checkStatus(cmd, waitErr); cmdErr != nil {
-			return cmdErr
-		}
-		if waitErr != nil {
-			// waitErr was expected (by cmd.want), so log it instead of returning it.
-			s.Logf("[%v]\n", waitErr)
-		}
+	stdout, stderr, waitErr := wait(s)
+	cmd.duration = time.Since(start)
+	s.stdout = stdout
+	s.stderr = stderr
+	if stdout != "" {
+		s.Logf("[stdout]\n%s", stdout)
+	}
+	if stderr != "" {
+		s.Logf("[stderr]\n%s", stderr)
+	}
+	if cmdErr := checkStatus(cmd, waitErr); cmdErr != nil {
+		return cmdErr
+	}
+	if waitErr != nil {
+		// waitErr was expected (by cmd.want), so log it instead of returning it.
+		s.Logf("[%v]\n", waitErr)
 	}
 	return nil
 }

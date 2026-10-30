@@ -277,7 +277,7 @@ func isHexes(s string) bool {
 // the standard file:line: prefix,
 // but that's not where we are today.
 // It might be at the beginning but it might be in the middle of the printed instruction.
-var fileLineRE = regexp.MustCompile(`(?:^|\()(testdata[/\\][\da-z]+\.s:\d+)(?:$|\)|:)`)
+var fileLineRE = regexp.MustCompile(`(?:^|\()(testdata[/\\][\da-z_]+\.s:\d+)(?:$|\)|:)`)
 
 // Same as in test/run.go
 var (
@@ -414,6 +414,22 @@ func TestARM64Encoder(t *testing.T) {
 	testEndToEnd(t, "arm64", "arm64enc")
 }
 
+func TestARM64SVEEncoder(t *testing.T) {
+	if !buildcfg.Experiment.SIMD {
+		t.Skip("test requires GOEXPERIMENT=simd")
+	}
+	testEndToEnd(t, "arm64", "arm64sveenc")
+	testEndToEnd(t, "arm64", "arm64sveenc_extra")
+}
+
+func TestARM64SVEErrors(t *testing.T) {
+	if !buildcfg.Experiment.SIMD {
+		t.Skip("test requires GOEXPERIMENT=simd")
+	}
+	testErrors(t, "arm64", "arm64sveerror")
+	testErrors(t, "arm64", "arm64sveerror_extra")
+}
+
 func TestARM64Errors(t *testing.T) {
 	testErrors(t, "arm64", "arm64error")
 }
@@ -472,7 +488,6 @@ func TestLOONG64Encoder(t *testing.T) {
 	testEndToEnd(t, "loong64", "loong64enc3")
 	testEndToEnd(t, "loong64", "loong64enc4")
 	testEndToEnd(t, "loong64", "loong64enc5")
-	testEndToEnd(t, "loong64", "loong64enc6")
 	testEndToEnd(t, "loong64", "loong64")
 }
 

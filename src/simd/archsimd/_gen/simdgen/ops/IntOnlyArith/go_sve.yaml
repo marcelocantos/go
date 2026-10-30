@@ -1,0 +1,38 @@
+!sum
+# Abs — signed integer absolute value. ZABS is predicated-only: it has no
+# unpredicated encoding, so its governing predicate is implicit-all-true and
+# its merging qualifier becomes the predicated machine op.
+- go: Abs
+  asm: "ZABS"
+  in:
+  - &int
+    go: $t
+    base: int
+  - class: mask # governing predicate
+  out:
+  # ZABS "wraps" in the signed domain for MinIntN, which is equivalent to just
+  # producing the full range in the unsigned domain.
+  - base: int
+    overwriteBase: uint
+
+# Div — signed and unsigned integer divide (ZSDIV/ZUDIV), 32- and 64-bit
+# elements only (the narrower widths have no encoding). Predicated-only and
+# destructive like the float Div.
+- go: Div
+  asm: "ZSDIV"
+  in:
+  - *int
+  - *int
+  - class: mask # governing predicate
+  out:
+  - *int
+- go: Div
+  asm: "ZUDIV"
+  in:
+  - &uint
+    go: $t
+    base: uint
+  - *uint
+  - class: mask # governing predicate
+  out:
+  - *uint

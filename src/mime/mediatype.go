@@ -34,6 +34,7 @@ func FormatMediaType(t string, param map[string]string) string {
 		b.WriteString(strings.ToLower(sub))
 	}
 
+	seenAttrs := make(map[string]struct{}, len(param))
 	for _, attribute := range slices.Sorted(maps.Keys(param)) {
 		value := param[attribute]
 		b.WriteByte(';')
@@ -41,7 +42,12 @@ func FormatMediaType(t string, param map[string]string) string {
 		if !isToken(attribute) {
 			return ""
 		}
-		b.WriteString(strings.ToLower(attribute))
+		attribute = strings.ToLower(attribute)
+		if _, ok := seenAttrs[attribute]; ok {
+			return ""
+		}
+		seenAttrs[attribute] = struct{}{}
+		b.WriteString(attribute)
 
 		needEnc := needsEncoding(value)
 		if needEnc {
@@ -174,6 +180,18 @@ func ParseMediaType(v string) (mediatype string, params map[string]string, err e
 
 		pmap := params
 		if baseName, _, ok := strings.Cut(key, "*"); ok {
+			if strings.HasPrefix(mediatype, "multipart/") ||
+				baseName == "charset" ||
+				baseName == "boundary" {
+				// Continuations/non-ASCII values are not permitted in multipart
+				// Content-Type headers.
+				//
+				// Also ignore *-encoded parameters for charset (always ASCII)
+				// and any boundary field, which are only useful for creating
+				// parser differentials.
+				v = rest
+				continue
+			}
 			if continuation == nil {
 				continuation = make(map[string]map[string]string)
 			}

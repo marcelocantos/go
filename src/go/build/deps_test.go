@@ -54,11 +54,11 @@ var depsRules = `
 	  internal/goexperiment,
 	  internal/goos,
 	  internal/goversion,
-	  internal/itoa,
 	  internal/nettrace,
 	  internal/platform,
 	  internal/profilerecord,
 	  internal/runtime/pprof/label,
+	  internal/simd/variants,
 	  internal/syslist,
 	  internal/trace/tracev2,
 	  internal/trace/traceviewer/format,
@@ -74,7 +74,8 @@ var depsRules = `
 	internal/goarch, math/bits < internal/strconv;
 	math/bits, internal/strconv < internal/bid;
 
-	internal/cpu, internal/strconv < simd/archsimd;
+	internal/strconv < simd/internal/simdfmt;
+	internal/cpu, simd/internal/simdfmt < simd/archsimd;
 
 	# RUNTIME is the core runtime group of packages, all of them very light-weight.
 	internal/abi,
@@ -86,13 +87,13 @@ var depsRules = `
 	internal/godebugs,
 	internal/goexperiment,
 	internal/goos,
-	internal/itoa,
 	internal/profilerecord,
 	internal/runtime/pprof/label,
 	internal/strconv,
 	internal/trace/tracev2,
 	math/bits,
-	structs
+	structs,
+	simd/archsimd
 	< internal/bytealg
 	< internal/stringslite
 	< internal/unsafeheader
@@ -263,6 +264,14 @@ var depsRules = `
 
 	FMT, encoding < flag;
 
+	FMT, MATH
+	< simd/internal/spec
+	< simd/internal/simdref;
+
+	FMT, simd/archsimd < simd/internal/bridge;
+
+	simd/internal/bridge, internal/simd/variants < simd;
+
 	fmt !< encoding/base32, encoding/base64;
 
 	FMT, encoding, encoding/base32, encoding/base64, encoding/binary,
@@ -293,7 +302,7 @@ var depsRules = `
 	# hashes
 	io
 	< hash
-	< hash/adler32, hash/crc32, hash/crc64, hash/fnv;
+	< hash/adler32, hash/crc32, hash/crc64, hash/fnv, hash/maphash;
 
 	# math/big
 	FMT, math/rand
@@ -344,7 +353,6 @@ var depsRules = `
 	< internal/gover
 	< go/version
 	< go/token
-	< go/internal/scannerhooks
 	< go/scanner
 	< go/ast
 	< go/internal/typeparams;
@@ -368,9 +376,6 @@ var depsRules = `
 	FMT, internal/goexperiment
 	< internal/buildcfg;
 
-	container/heap, go/constant, go/parser, internal/buildcfg, internal/goversion, internal/types/errors
-	< go/types;
-
 	# The vast majority of standard library packages should not be resorting to regexp.
 	# go/types is a good chokepoint. It shouldn't use regexp, nor should anything
 	# that is low-enough level to be used by go/types.
@@ -381,13 +386,6 @@ var depsRules = `
 
 	go/build/constraint, go/doc, go/parser, internal/buildcfg, internal/goroot, internal/goversion, internal/platform, internal/syslist
 	< go/build;
-
-	# databases
-	FMT
-	< database/sql/internal
-	< database/sql/driver;
-
-	database/sql/driver, math/rand/v2 < database/sql;
 
 	# images
 	FMT, compress/lzw, compress/zlib
@@ -440,6 +438,7 @@ var depsRules = `
 	golang.org/x/net/dns/dnsmessage,
 	golang.org/x/net/lif,
 	internal/godebug,
+	internal/goversion,
 	internal/nettrace,
 	internal/poll,
 	internal/routebsd,
@@ -574,8 +573,12 @@ var depsRules = `
 	  crypto/hkdf,
 	  crypto/pbkdf2,
 	  crypto/ecdh,
-	  crypto/mlkem
+	  crypto/mlkem,
+	  crypto/mldsa
 	< CRYPTO;
+
+	CRYPTO
+	< golang.org/x/crypto/hkdf;
 
 	CGO, fmt, net !< CRYPTO;
 
@@ -594,6 +597,17 @@ var depsRules = `
 	< CRYPTO-MATH;
 
 	CGO, net !< CRYPTO-MATH;
+
+	# uuids
+	crypto/rand, errors, encoding/binary, encoding/hex
+	< uuid;
+
+	# databases
+	FMT, uuid
+	< database/sql/internal
+	< database/sql/driver;
+
+	database/sql/driver, math/rand/v2 < database/sql;
 
 	# TLS, Prince of Dependencies.
 
@@ -620,9 +634,32 @@ var depsRules = `
 
 	# crypto-aware packages
 
-	DEBUG, go/build, go/types, text/scanner, crypto/sha256
-	< internal/pkgbits, internal/exportdata
-	< go/internal/gcimporter, go/internal/gccgoimporter, go/internal/srcimporter
+	FMT, hash/maphash
+	< container/hash;
+
+	hash/maphash, container/heap, go/constant, go/parser, internal/buildcfg, internal/goversion, internal/types/errors
+	< go/types;
+
+	# x/tools
+	# These are the only allowed dependencies of gcexportdata. Any change here
+	# must be mirrored in x/tools/go/gcexportdata/deps_test.go.
+	FMT, STR, crypto/md5, encoding/binary, encoding/json, go/build, go/token, go/types
+	< golang.org/x/tools/go/types/objectpath,
+	  golang.org/x/tools/internal/pkgbits
+	< golang.org/x/tools/internal/gcimporter
+	< golang.org/x/tools/go/gcexportdata;
+
+	# go/importer
+	DEBUG, crypto/sha256, go/build, go/types, text/scanner
+	< internal/exportdata, internal/pkgbits;
+
+	golang.org/x/tools/go/gcexportdata, internal/exportdata, internal/pkgbits
+	< go/internal/gcimporter;
+
+	internal/exportdata, internal/pkgbits
+	< go/internal/gccgoimporter, go/internal/srcimporter;
+
+	go/internal/gccgoimporter, go/internal/gcimporter, go/internal/srcimporter
 	< go/importer;
 
 	NET, crypto/rand, mime/quotedprintable
@@ -631,12 +668,12 @@ var depsRules = `
 	crypto/tls
 	< net/smtp;
 
-	crypto/rand
-	< hash/maphash; # for purego implementation
-
 	# HTTP, King of Dependencies.
 
-	FMT
+	context
+	< internal/gate;
+
+	FMT, encoding/binary
 	< golang.org/x/net/http2/hpack
 	< net/http/internal, net/http/internal/ascii, net/http/internal/testcert;
 
@@ -661,8 +698,14 @@ var depsRules = `
 	net/http/httptrace,
 	mime/multipart,
 	log
-	< net/http/internal/httpcommon
+	< net/http/internal/httpcommon, net/http/internal/httpsfv
+	< net/http/internal/http2
 	< net/http;
+
+	net/http, golang.org/x/crypto/hkdf, log/slog
+	< golang.org/x/net/internal/quic/quicwire
+	< golang.org/x/net/quic
+	< net/http/internal/http3;
 
 	# HTTP-aware packages
 
@@ -671,9 +714,6 @@ var depsRules = `
 
 	net/http, net/http/internal/ascii
 	< net/http/cookiejar, net/http/httputil;
-
-	net/http, flag
-	< net/http/httptest;
 
 	net/http, regexp
 	< net/http/cgi
@@ -711,13 +751,19 @@ var depsRules = `
 	< testing;
 
 	testing, math
-	< simd/archsimd/internal/test_helpers;
+	< simd/archsimd/internal/test_helpers, simd/internal/test_helpers;
 
 	log/slog, testing
 	< testing/slogtest;
 
 	testing, crypto/rand
 	< testing/cryptotest;
+
+	NET, internal/gate
+	< internal/nettest;
+
+	net/http, flag, internal/nettest, testing
+	< net/http/httptest;
 
 	FMT, crypto/sha256, encoding/binary, encoding/json,
 	go/ast, go/parser, go/token,
@@ -754,8 +800,14 @@ var depsRules = `
 	CRYPTO-MATH
 	< crypto/mlkem/mlkemtest;
 
-	CRYPTO-MATH, testing, internal/testenv, internal/testhash, encoding/json
+	CRYPTO-MATH, testing, internal/testenv, internal/testhash, encoding/json, regexp
 	< crypto/internal/cryptotest;
+
+	crypto/internal/cryptotest, encoding/hex
+	< crypto/internal/cryptotest/wycheproof;
+
+	FMT, encoding/json, time, regexp
+	< crypto/internal/cryptotest/x509limbo;
 
 	CGO, FMT
 	< crypto/internal/sysrand/internal/seccomp;

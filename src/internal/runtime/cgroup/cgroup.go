@@ -300,10 +300,6 @@ func parseCPUMount(fd int, read func(fd int, b []byte) (int, uintptr), out, cgro
 			return 0, errMalformedFile
 		}
 		root := line[:i]
-		if len(root) == 0 || root[0] != '/' {
-			// We rely on this in hasPathPrefix.
-			return 0, errMalformedFile
-		}
 		line = line[i+1:]
 
 		// (5) mount point:  mount point relative to the process's root
@@ -363,6 +359,13 @@ func parseCPUMount(fd int, read func(fd int, b []byte) (int, uintptr), out, cgro
 		default:
 			throw("impossible cgroup version")
 			panic("unreachable")
+		}
+
+		// Only validate root for cgroup mounts. Other mounts may have
+		// roots that aren't paths (e.g., nsfs roots like "net:[...]").
+		if len(root) == 0 || root[0] != '/' {
+			// We rely on this in hasPathPrefix.
+			return 0, errMalformedFile
 		}
 
 		// Check cgroup is in the root.
@@ -448,7 +451,7 @@ func unescapedLen(in []byte) int {
 //
 // Returns the number of bytes written to out.
 //
-// Also see escapePath in cgroup_linux_test.go.
+// Also see escapePath in cgroup_test.go.
 func unescapePath(out []byte, in []byte) (int, error) {
 	var outi, ini int
 	for ini < len(in) {

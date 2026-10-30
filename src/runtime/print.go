@@ -67,7 +67,14 @@ var debuglock mutex
 // For both these reasons, let a thread acquire the printlock 'recursively'.
 
 func printlock() {
-	mp := getg().m
+	gp := getg()
+	if gp.writebuf != nil && gp.m.dying == 0 {
+		// Output is being diverted into this goroutine's own buffer
+		// (see gwrite), so there is nothing shared to protect. Once
+		// the M is dying gwrite writes to stderr instead, so keep the lock.
+		return
+	}
+	mp := gp.m
 	mp.locks++ // do not reschedule between printlock++ and lock(&debuglock).
 	mp.printlock++
 	if mp.printlock == 1 {
@@ -77,7 +84,11 @@ func printlock() {
 }
 
 func printunlock() {
-	mp := getg().m
+	gp := getg()
+	if gp.writebuf != nil && gp.m.dying == 0 {
+		return
+	}
+	mp := gp.m
 	mp.printlock--
 	if mp.printlock == 0 {
 		unlock(&debuglock)
@@ -90,7 +101,6 @@ func gwrite(b []byte) {
 	if len(b) == 0 {
 		return
 	}
-	recordForPanic(b)
 	gp := getg()
 	// Don't use the writebuf if gp.m is dying. We want anything
 	// written through gwrite to appear in the terminal rather
@@ -98,6 +108,7 @@ func gwrite(b []byte) {
 	// Note that we can't just clear writebuf in the gp.m.dying case
 	// because a panic isn't allowed to have any write barriers.
 	if gp == nil || gp.writebuf == nil || gp.m.dying > 0 {
+		recordForPanic(b)
 		writeErr(b)
 		return
 	}
@@ -122,23 +133,35 @@ func printbool(v bool) {
 	}
 }
 
+// float64 requires 1+17+1+1+1+3 = 24 bytes max (sign+digits+decimal point+e+sign+exponent digits).
+const float64Bytes = 24
+
 func printfloat64(v float64) {
-	var buf [20]byte
+	var buf [float64Bytes]byte
 	gwrite(strconv.AppendFloat(buf[:0], v, 'g', -1, 64))
 }
 
+// float32 requires 1+9+1+1+1+2 = 15 bytes max (sign+digits+decimal point+e+sign+exponent digits).
+const float32Bytes = 15
+
 func printfloat32(v float32) {
-	var buf [20]byte
+	var buf [float32Bytes]byte
 	gwrite(strconv.AppendFloat(buf[:0], float64(v), 'g', -1, 32))
 }
 
+// complex128 requires 24+24+1+1+1 = 51 bytes max (paren+float64+float64+i+paren).
+const complex128Bytes = 2*float64Bytes + 3
+
 func printcomplex128(c complex128) {
-	var buf [44]byte
+	var buf [complex128Bytes]byte
 	gwrite(strconv.AppendComplex(buf[:0], c, 'g', -1, 128))
 }
 
+// complex64 requires 15+15+1+1+1 = 33 bytes max (paren+float32+float32+i+paren).
+const complex64Bytes = 2*float32Bytes + 3
+
 func printcomplex64(c complex64) {
-	var buf [44]byte
+	var buf [complex64Bytes]byte
 	gwrite(strconv.AppendComplex(buf[:0], complex128(c), 'g', -1, 64))
 }
 
@@ -200,7 +223,7 @@ func printhex(v uint64) {
 func printquoted(s string) {
 	printlock()
 	gwrite([]byte(`"`))
-	for _, r := range s {
+	for i, r := range s {
 		switch r {
 		case '\n':
 			gwrite([]byte(`\n`))
@@ -215,6 +238,14 @@ func printquoted(s string) {
 		case '\\', '"':
 			gwrite([]byte{byte('\\'), byte(r)})
 			continue
+		case runeError:
+			// Distinguish errors from a valid encoding of U+FFFD.
+			if _, j := decoderune(s, uint(i)); j == uint(i+1) {
+				gwrite(bytes(`\x`))
+				printhexopts(false, 2, uint64(s[i]))
+				continue
+			}
+			// Fall through to quoting.
 		}
 		// For now, only allow basic printable ascii through unescaped
 		if r >= ' ' && r <= '~' {

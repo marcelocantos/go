@@ -265,6 +265,24 @@ func BenchmarkSelect(b *testing.B) {
 	}
 }
 
+func BenchmarkSelectStaticLit(b *testing.B) {
+	channel := make(chan int)
+	close(channel)
+
+	sc := SelectCase{Dir: SelectRecv, Chan: ValueOf(channel)}
+	b.Run("[4]SelectCase", func(b *testing.B) {
+		for range b.N {
+			_, _, _ = Select([]SelectCase{sc, sc, sc, sc})
+		}
+	})
+
+	b.Run("[8]SelectCase", func(b *testing.B) {
+		for range b.N {
+			_, _, _ = Select([]SelectCase{sc, sc, sc, sc, sc, sc, sc, sc})
+		}
+	})
+}
+
 func BenchmarkCall(b *testing.B) {
 	fv := ValueOf(func(a, b string) {})
 	b.ReportAllocs()
@@ -278,7 +296,7 @@ func BenchmarkCall(b *testing.B) {
 
 type myint int64
 
-func (i *myint) inc() {
+func (i *myint) Inc() {
 	*i = *i + 1
 }
 
@@ -286,7 +304,7 @@ func BenchmarkCallMethod(b *testing.B) {
 	b.ReportAllocs()
 	z := new(myint)
 
-	v := ValueOf(z.inc)
+	v := ValueOf(z.Inc)
 	for i := 0; i < b.N; i++ {
 		v.Call(nil)
 	}
@@ -474,4 +492,53 @@ func BenchmarkMapIterNext(b *testing.B) {
 		}
 		it.Reset(m)
 	}
+}
+
+func BenchmarkMethodValueCall(b *testing.B) {
+	b.ReportAllocs()
+	z := new(myint)
+	v := ValueOf(z)
+	for i := 0; i < b.N; i++ {
+		v.Method(0).Call(nil)
+	}
+}
+
+func BenchmarkMethodByName(b *testing.B) {
+	// time.Time has enough exported methods for the search to take
+	// several steps.
+	typ := TypeOf(time.Time{})
+	for _, bb := range []struct {
+		desc  string
+		names []string
+	}{
+		// Names spread across the method set.
+		{"found", []string{"Add", "Format", "Month", "Unix", "ZoneBounds"}},
+		// Names that are absent but sort within the method set, so the
+		// lookup pays for the search without then building a Method.
+		{"missing", []string{"Addx", "Formatx", "Monthx", "Unixx", "Yearx"}},
+	} {
+		b.Run(bb.desc, func(b *testing.B) {
+			for b.Loop() {
+				for _, name := range bb.names {
+					typ.MethodByName(name)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkValueMethodByName(b *testing.B) {
+	v := ValueOf(new(myint))
+	b.Run("Found", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			v.MethodByName("Inc")
+		}
+	})
+	b.Run("Missing", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			v.MethodByName("Missing")
+		}
+	})
 }

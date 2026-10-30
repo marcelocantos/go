@@ -16,6 +16,7 @@ func approx(x float64) {
 	// s390x:"FIDBR [$]6"
 	// arm64:"FRINTPD"
 	// ppc64x:"FRIP"
+	// riscv64:"FCVTLD\\.RUP" "FCVTDL" "FSGNJD"
 	// wasm:"F64Ceil"
 	sink64[0] = math.Ceil(x)
 
@@ -24,12 +25,14 @@ func approx(x float64) {
 	// s390x:"FIDBR [$]7"
 	// arm64:"FRINTMD"
 	// ppc64x:"FRIM"
+	// riscv64:"FCVTLD\\.RDN" "FCVTDL" "FSGNJD"
 	// wasm:"F64Floor"
 	sink64[1] = math.Floor(x)
 
 	// s390x:"FIDBR [$]1"
 	// arm64:"FRINTAD"
 	// ppc64x:"FRIN"
+	// riscv64:"FCVTLD\\.RMM" "FCVTDL" "FSGNJD"
 	sink64[2] = math.Round(x)
 
 	// amd64/v2:-".*x86HasSSE41" amd64/v3:-".*x86HasSSE41"
@@ -37,6 +40,7 @@ func approx(x float64) {
 	// s390x:"FIDBR [$]5"
 	// arm64:"FRINTZD"
 	// ppc64x:"FRIZ"
+	// riscv64:"FCVTLD\\.RTZ" "FCVTDL" "FSGNJD"
 	// wasm:"F64Trunc"
 	sink64[3] = math.Trunc(x)
 
@@ -44,6 +48,7 @@ func approx(x float64) {
 	// amd64:"ROUNDSD [$]0"
 	// s390x:"FIDBR [$]4"
 	// arm64:"FRINTND"
+	// riscv64:"FCVTLD\\.RNE" "FCVTDL" "FSGNJD"
 	// wasm:"F64Nearest"
 	sink64[4] = math.RoundToEven(x)
 }
@@ -117,7 +122,7 @@ func copysign(a, b, c float64) {
 	// s390x:"LNDFR " -"MOVD "     (no integer load/store)
 	// ppc64x:"FCPSGN"
 	// riscv64:"FSGNJD"
-	// arm64:"ORR", -"AND"
+	// arm64:"ORR" -"AND"
 	sink64[1] = math.Copysign(c, -1)
 
 	// Like math.Copysign(c, -1), but with integer operations. Useful
@@ -333,17 +338,17 @@ func nanGenerate32() float32 {
 
 func outOfBoundsConv(i32 *[2]int32, u32 *[2]uint32, i64 *[2]int64, u64 *[2]uint64) {
 	// arm64: "FCVTZSDW"
-	// amd64: "CVTTSD2SL", "CVTSD2SS"
+	// amd64: "CVTTSD2SL" "CVTSD2SS"
 	i32[0] = int32(two40())
 	// arm64: "FCVTZSDW"
-	// amd64: "CVTTSD2SL", "CVTSD2SS"
+	// amd64: "CVTTSD2SL" "CVTSD2SS"
 	i32[1] = int32(-two40())
 	// arm64: "FCVTZSDW"
-	// amd64: "CVTTSD2SL", "CVTSD2SS"
+	// amd64: "CVTTSD2SL" "CVTSD2SS"
 	u32[0] = uint32(two41())
 	// on arm64, this uses an explicit <0 comparison, so it constant folds.
 	// on amd64, this uses an explicit <0 comparison, so it constant folds.
-	// amd64: "MOVL [$]0,"
+	// amd64: "MOVL X15,"
 	u32[1] = uint32(minus1())
 	// arm64: "FCVTZSD"
 	// amd64: "CVTTSD2SQ"
@@ -356,7 +361,7 @@ func outOfBoundsConv(i32 *[2]int32, u32 *[2]uint32, i64 *[2]int64, u64 *[2]uint6
 	u64[0] = uint64(two81())
 	// arm64: "FCVTZUD"
 	// on amd64, this uses an explicit <0 comparison, so it constant folds.
-	// amd64: "MOVQ [$]0,"
+	// amd64: "MOVQ X15,"
 	u64[1] = uint64(minus1())
 }
 

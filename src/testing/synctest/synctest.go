@@ -169,15 +169,13 @@
 //			defer cancel()
 //
 //			// Wait just less than the timeout.
-//			time.Sleep(timeout - time.Nanosecond)
-//			synctest.Wait()
+//			synctest.Sleep(timeout - time.Nanosecond)
 //			if err := ctx.Err(); err != nil {
 //				t.Fatalf("before timeout: ctx.Err() = %v, want nil\n", err)
 //			}
 //
 //			// Wait the rest of the way until the timeout.
-//			time.Sleep(time.Nanosecond)
-//			synctest.Wait()
+//			synctest.Sleep(time.Nanosecond)
 //			if err := ctx.Err(); err != context.DeadlineExceeded {
 //				t.Fatalf("after timeout: ctx.Err() = %v, want DeadlineExceeded\n", err)
 //			}
@@ -268,6 +266,7 @@ package synctest
 import (
 	"internal/synctest"
 	"testing"
+	"time"
 	_ "unsafe" // for linkname
 )
 
@@ -308,4 +307,35 @@ func testingSynctestTest(t *testing.T, f func(*testing.T)) bool
 // in the same bubble.
 func Wait() {
 	synctest.Wait()
+}
+
+// Sleep blocks until the current bubble's clock has advanced
+// by the duration of d and every goroutine within the current bubble,
+// other than the current goroutine, is durably blocked.
+//
+// This is exactly equivalent to
+//
+//	time.Sleep(d)
+//	synctest.Wait()
+//
+// In tests, this is often preferable to calling only [time.Sleep].
+// If the test itself and another goroutine running the system under test
+// sleeps for the exact same amount of time, it's unpredictable which
+// of the two goroutines will run first. The test itself usually wants
+// to wait for the system under test to "settle" after sleeping.
+// This is what Sleep accomplishes.
+func Sleep(d time.Duration) {
+	time.Sleep(d)
+	Wait()
+}
+
+// Subtest is a convenience function that runs f in a subtest of t called name.
+//
+// It is exactly equivalent to calling t.Run with a function that calls [Test].
+func Subtest(t *testing.T, name string, f func(*testing.T)) {
+	t.Helper()
+	t.Run(name, func(t *testing.T) {
+		t.Helper()
+		Test(t, f)
+	})
 }

@@ -10,6 +10,8 @@ import (
 	"cmd/compile/internal/logopt"
 	"cmd/compile/internal/objw"
 	"cmd/compile/internal/ssa"
+	"cmd/compile/internal/ssa/block"
+	"cmd/compile/internal/ssa/ssaop"
 	"cmd/compile/internal/ssagen"
 	"cmd/compile/internal/types"
 	"cmd/internal/obj"
@@ -43,8 +45,28 @@ func ssaMarkMoves(s *ssagen.State, b *ssa.Block) {
 	//	}
 }
 
+// simdReg returns the VSX register operand to use when emitting a VSX
+// instruction (LXV/STXV/XXLOR/...) for a vector value allocated to register r.
+// With simdregmask == vsxReg, a Vec128 value may be allocated to the F0-F31
+// bank (= VSR0-VSR31); VSX instructions require a VSX operand there, and the
+// assembler does not accept an F-name where a VSX register is expected. V0-V31
+// (= VSR32-VSR63) are already accepted via the C_VREG->C_VSREG compatibility,
+// so they are returned unchanged.
+func simdReg(r int16) int16 {
+	if r >= ppc64.REG_F0 && r <= ppc64.REG_F31 {
+		return ppc64.REG_VS0 + (r - ppc64.REG_F0)
+	}
+	return r
+}
+
 // loadByType returns the load instruction of the given type.
 func loadByType(t *types.Type) obj.As {
+	if t.IsSIMD() {
+		return ppc64.ALXV
+	}
+	if t.Size() > 8 {
+		base.Fatalf("loadByType: unexpected >8-byte non-SIMD type %v", t)
+	}
 	if t.IsFloat() {
 		switch t.Size() {
 		case 4:
@@ -81,6 +103,12 @@ func loadByType(t *types.Type) obj.As {
 
 // storeByType returns the store instruction of the given type.
 func storeByType(t *types.Type) obj.As {
+	if t.IsSIMD() {
+		return ppc64.ASTXV
+	}
+	if t.Size() > 8 {
+		base.Fatalf("storeByType: unexpected >8-byte non-SIMD type %v", t)
+	}
 	if t.IsFloat() {
 		switch t.Size() {
 		case 4:
@@ -105,7 +133,7 @@ func storeByType(t *types.Type) obj.As {
 
 func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 	switch v.Op {
-	case ssa.OpCopy:
+	case ssaop.OpCopy:
 		t := v.Type
 		if t.IsMemory() {
 			return
@@ -116,7 +144,13 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			rt := obj.TYPE_REG
 			op := ppc64.AMOVD
 
-			if t.IsFloat() {
+			if t.IsSIMD() {
+				op = ppc64.AXXLOR
+				// A Vec128 may live in the F0-F31 bank; emit it as a
+				// VSX operand (see simdReg).
+				x = simdReg(x)
+				y = simdReg(y)
+			} else if t.IsFloat() {
 				op = ppc64.AFMOVD
 			}
 			p := s.Prog(op)
@@ -124,20 +158,24 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			p.From.Reg = x
 			p.To.Type = rt
 			p.To.Reg = y
+			if t.IsSIMD() {
+				p.Reg = x
+			}
 		}
 
-	case ssa.OpPPC64LoweredAtomicAnd8,
-		ssa.OpPPC64LoweredAtomicAnd32,
-		ssa.OpPPC64LoweredAtomicOr8,
-		ssa.OpPPC64LoweredAtomicOr32:
+	case ssaop.OpPPC64LoweredAtomicAnd8,
+		ssaop.OpPPC64LoweredAtomicAnd32,
+		ssaop.OpPPC64LoweredAtomicOr8,
+		ssaop.OpPPC64LoweredAtomicOr32:
 		// LWSYNC
 		// LBAR/LWAR	(Rarg0), Rtmp
 		// AND/OR	Rarg1, Rtmp
 		// STBCCC/STWCCC Rtmp, (Rarg0)
 		// BNE		-3(PC)
+		// LWSYNC
 		ld := ppc64.ALBAR
 		st := ppc64.ASTBCCC
-		if v.Op == ssa.OpPPC64LoweredAtomicAnd32 || v.Op == ssa.OpPPC64LoweredAtomicOr32 {
+		if v.Op == ssaop.OpPPC64LoweredAtomicAnd32 || v.Op == ssaop.OpPPC64LoweredAtomicOr32 {
 			ld = ppc64.ALWAR
 			st = ppc64.ASTWCCC
 		}
@@ -145,8 +183,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		r1 := v.Args[1].Reg()
 		// LWSYNC - Assuming shared data not write-through-required nor
 		// caching-inhibited. See Appendix B.2.2.2 in the ISA 2.07b.
-		plwsync := s.Prog(ppc64.ALWSYNC)
-		plwsync.To.Type = obj.TYPE_NONE
+		s.Prog(ppc64.ALWSYNC)
 		// LBAR or LWAR
 		p := s.Prog(ld)
 		p.From.Type = obj.TYPE_MEM
@@ -170,18 +207,23 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p3 := s.Prog(ppc64.ABNE)
 		p3.To.Type = obj.TYPE_BRANCH
 		p3.To.SetTarget(p)
+		// LWSYNC - Provide acquire ordering to pair with the
+		// release (pre-LWSYNC) above, making the operation
+		// sequentially consistent.
+		s.Prog(ppc64.ALWSYNC)
 
-	case ssa.OpPPC64LoweredAtomicAdd32,
-		ssa.OpPPC64LoweredAtomicAdd64:
+	case ssaop.OpPPC64LoweredAtomicAdd32,
+		ssaop.OpPPC64LoweredAtomicAdd64:
 		// LWSYNC
 		// LDAR/LWAR    (Rarg0), Rout
 		// ADD		Rarg1, Rout
 		// STDCCC/STWCCC Rout, (Rarg0)
 		// BNE         -3(PC)
 		// MOVW		Rout,Rout (if Add32)
+		// LWSYNC
 		ld := ppc64.ALDAR
 		st := ppc64.ASTDCCC
-		if v.Op == ssa.OpPPC64LoweredAtomicAdd32 {
+		if v.Op == ssaop.OpPPC64LoweredAtomicAdd32 {
 			ld = ppc64.ALWAR
 			st = ppc64.ASTWCCC
 		}
@@ -190,8 +232,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		out := v.Reg0()
 		// LWSYNC - Assuming shared data not write-through-required nor
 		// caching-inhibited. See Appendix B.2.2.2 in the ISA 2.07b.
-		plwsync := s.Prog(ppc64.ALWSYNC)
-		plwsync.To.Type = obj.TYPE_NONE
+		s.Prog(ppc64.ALWSYNC)
 		// LDAR or LWAR
 		p := s.Prog(ld)
 		p.From.Type = obj.TYPE_MEM
@@ -216,17 +257,21 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p4.To.SetTarget(p)
 
 		// Ensure a 32 bit result
-		if v.Op == ssa.OpPPC64LoweredAtomicAdd32 {
+		if v.Op == ssaop.OpPPC64LoweredAtomicAdd32 {
 			p5 := s.Prog(ppc64.AMOVWZ)
 			p5.To.Type = obj.TYPE_REG
 			p5.To.Reg = out
 			p5.From.Type = obj.TYPE_REG
 			p5.From.Reg = out
 		}
+		// LWSYNC - Provide acquire ordering to pair with the
+		// release (pre-LWSYNC) above, making the operation
+		// sequentially consistent.
+		s.Prog(ppc64.ALWSYNC)
 
-	case ssa.OpPPC64LoweredAtomicExchange8,
-		ssa.OpPPC64LoweredAtomicExchange32,
-		ssa.OpPPC64LoweredAtomicExchange64:
+	case ssaop.OpPPC64LoweredAtomicExchange8,
+		ssaop.OpPPC64LoweredAtomicExchange32,
+		ssaop.OpPPC64LoweredAtomicExchange64:
 		// LWSYNC
 		// LDAR/LWAR/LBAR        (Rarg0), Rout
 		// STDCCC/STWCCC/STBWCCC Rout, (Rarg0)
@@ -235,10 +280,10 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		ld := ppc64.ALDAR
 		st := ppc64.ASTDCCC
 		switch v.Op {
-		case ssa.OpPPC64LoweredAtomicExchange8:
+		case ssaop.OpPPC64LoweredAtomicExchange8:
 			ld = ppc64.ALBAR
 			st = ppc64.ASTBCCC
-		case ssa.OpPPC64LoweredAtomicExchange32:
+		case ssaop.OpPPC64LoweredAtomicExchange32:
 			ld = ppc64.ALWAR
 			st = ppc64.ASTWCCC
 		}
@@ -247,8 +292,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		out := v.Reg0()
 		// LWSYNC - Assuming shared data not write-through-required nor
 		// caching-inhibited. See Appendix B.2.2.2 in the ISA 2.07b.
-		plwsync := s.Prog(ppc64.ALWSYNC)
-		plwsync.To.Type = obj.TYPE_NONE
+		s.Prog(ppc64.ALWSYNC)
 		// L[B|W|D]AR
 		p := s.Prog(ld)
 		p.From.Type = obj.TYPE_MEM
@@ -266,13 +310,12 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p2.To.Type = obj.TYPE_BRANCH
 		p2.To.SetTarget(p)
 		// ISYNC
-		pisync := s.Prog(ppc64.AISYNC)
-		pisync.To.Type = obj.TYPE_NONE
+		s.Prog(ppc64.AISYNC)
 
-	case ssa.OpPPC64LoweredAtomicLoad8,
-		ssa.OpPPC64LoweredAtomicLoad32,
-		ssa.OpPPC64LoweredAtomicLoad64,
-		ssa.OpPPC64LoweredAtomicLoadPtr:
+	case ssaop.OpPPC64LoweredAtomicLoad8,
+		ssaop.OpPPC64LoweredAtomicLoad32,
+		ssaop.OpPPC64LoweredAtomicLoad64,
+		ssaop.OpPPC64LoweredAtomicLoadPtr:
 		// SYNC
 		// MOVB/MOVD/MOVW (Rarg0), Rout
 		// CMP Rout,Rout
@@ -281,9 +324,9 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		ld := ppc64.AMOVD
 		cmp := ppc64.ACMP
 		switch v.Op {
-		case ssa.OpPPC64LoweredAtomicLoad8:
+		case ssaop.OpPPC64LoweredAtomicLoad8:
 			ld = ppc64.AMOVBZ
-		case ssa.OpPPC64LoweredAtomicLoad32:
+		case ssaop.OpPPC64LoweredAtomicLoad32:
 			ld = ppc64.AMOVWZ
 			cmp = ppc64.ACMPW
 		}
@@ -291,8 +334,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		out := v.Reg0()
 		// SYNC when AuxInt == 1; otherwise, load-acquire
 		if v.AuxInt == 1 {
-			psync := s.Prog(ppc64.ASYNC)
-			psync.To.Type = obj.TYPE_NONE
+			s.Prog(ppc64.ASYNC)
 		}
 		// Load
 		p := s.Prog(ld)
@@ -311,19 +353,18 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p2.To.Type = obj.TYPE_BRANCH
 		// ISYNC
 		pisync := s.Prog(ppc64.AISYNC)
-		pisync.To.Type = obj.TYPE_NONE
 		p2.To.SetTarget(pisync)
 
-	case ssa.OpPPC64LoweredAtomicStore8,
-		ssa.OpPPC64LoweredAtomicStore32,
-		ssa.OpPPC64LoweredAtomicStore64:
+	case ssaop.OpPPC64LoweredAtomicStore8,
+		ssaop.OpPPC64LoweredAtomicStore32,
+		ssaop.OpPPC64LoweredAtomicStore64:
 		// SYNC or LWSYNC
 		// MOVB/MOVW/MOVD arg1,(arg0)
 		st := ppc64.AMOVD
 		switch v.Op {
-		case ssa.OpPPC64LoweredAtomicStore8:
+		case ssaop.OpPPC64LoweredAtomicStore8:
 			st = ppc64.AMOVB
-		case ssa.OpPPC64LoweredAtomicStore32:
+		case ssaop.OpPPC64LoweredAtomicStore32:
 			st = ppc64.AMOVW
 		}
 		arg0 := v.Args[0].Reg()
@@ -334,8 +375,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		if v.AuxInt == 0 {
 			syncOp = ppc64.ALWSYNC
 		}
-		psync := s.Prog(syncOp)
-		psync.To.Type = obj.TYPE_NONE
+		s.Prog(syncOp)
 		// Store
 		p := s.Prog(st)
 		p.To.Type = obj.TYPE_MEM
@@ -343,8 +383,8 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.From.Type = obj.TYPE_REG
 		p.From.Reg = arg1
 
-	case ssa.OpPPC64LoweredAtomicCas64,
-		ssa.OpPPC64LoweredAtomicCas32:
+	case ssaop.OpPPC64LoweredAtomicCas64,
+		ssaop.OpPPC64LoweredAtomicCas32:
 		// MOVD        $0, Rout
 		// LWSYNC
 		// loop:
@@ -359,7 +399,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		ld := ppc64.ALDAR
 		st := ppc64.ASTDCCC
 		cmp := ppc64.ACMP
-		if v.Op == ssa.OpPPC64LoweredAtomicCas32 {
+		if v.Op == ssaop.OpPPC64LoweredAtomicCas32 {
 			ld = ppc64.ALWAR
 			st = ppc64.ASTWCCC
 			cmp = ppc64.ACMPW
@@ -376,8 +416,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Reg = out
 		// LWSYNC - Assuming shared data not write-through-required nor
 		// caching-inhibited. See Appendix B.2.2.2 in the ISA 2.07b.
-		plwsync1 := s.Prog(ppc64.ALWSYNC)
-		plwsync1.To.Type = obj.TYPE_NONE
+		s.Prog(ppc64.ALWSYNC)
 		// LDAR or LWAR
 		p0 := s.Prog(ld)
 		p0.From.Type = obj.TYPE_MEM
@@ -419,7 +458,6 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// If the operation is a CAS-Release, then synchronization is not necessary.
 		if v.AuxInt != 0 {
 			plwsync2 := s.Prog(ppc64.ALWSYNC)
-			plwsync2.To.Type = obj.TYPE_NONE
 			p2.To.SetTarget(plwsync2)
 		} else {
 			// done (label)
@@ -427,15 +465,15 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			p2.To.SetTarget(p6)
 		}
 
-	case ssa.OpPPC64LoweredPubBarrier:
+	case ssaop.OpPPC64LoweredPubBarrier:
 		// LWSYNC
 		s.Prog(v.Op.Asm())
 
-	case ssa.OpPPC64LoweredGetClosurePtr:
+	case ssaop.OpPPC64LoweredGetClosurePtr:
 		// Closure pointer is R11 (already)
 		ssagen.CheckLoweredGetClosurePtr(v)
 
-	case ssa.OpPPC64LoweredGetCallerSP:
+	case ssaop.OpPPC64LoweredGetCallerSP:
 		// caller's SP is FixedFrameSize below the address of the first arg
 		p := s.Prog(ppc64.AMOVD)
 		p.From.Type = obj.TYPE_ADDR
@@ -444,29 +482,35 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()
 
-	case ssa.OpPPC64LoweredGetCallerPC:
+	case ssaop.OpPPC64LoweredGetCallerPC:
 		p := s.Prog(obj.AGETCALLERPC)
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()
 
-	case ssa.OpPPC64LoweredRound32F, ssa.OpPPC64LoweredRound64F:
+	case ssaop.OpPPC64LoweredRound32F, ssaop.OpPPC64LoweredRound64F:
 		// input is already rounded
 
-	case ssa.OpLoadReg:
+	case ssaop.OpLoadReg:
 		loadOp := loadByType(v.Type)
 		p := s.Prog(loadOp)
 		ssagen.AddrAuto(&p.From, v.Args[0])
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()
+		if v.Type.IsSIMD() {
+			p.To.Reg = simdReg(v.Reg())
+		}
 
-	case ssa.OpStoreReg:
+	case ssaop.OpStoreReg:
 		storeOp := storeByType(v.Type)
 		p := s.Prog(storeOp)
 		p.From.Type = obj.TYPE_REG
 		p.From.Reg = v.Args[0].Reg()
+		if v.Type.IsSIMD() {
+			p.From.Reg = simdReg(v.Args[0].Reg())
+		}
 		ssagen.AddrAuto(&p.To, v)
 
-	case ssa.OpArgIntReg, ssa.OpArgFloatReg:
+	case ssaop.OpArgIntReg, ssaop.OpArgFloatReg:
 		// The assembler needs to wrap the entry safepoint/stack growth code with spill/unspill
 		// The loop only runs once.
 		for _, a := range v.Block.Func.RegArgs {
@@ -480,7 +524,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 
 		ssagen.CheckArgReg(v)
 
-	case ssa.OpPPC64DIVD:
+	case ssaop.OpPPC64DIVD:
 		// For now,
 		//
 		// cmp arg1, -1
@@ -489,6 +533,9 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// b over
 		// ahead: v = - arg0
 		// over: nop
+		//
+		// The compare writes CR0, so DIVD and DIVW must stay marked
+		// clobberFlags in PPC64Ops.go.
 		r := v.Reg()
 		r0 := v.Args[0].Reg()
 		r1 := v.Args[1].Reg()
@@ -522,7 +569,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p = s.Prog(obj.ANOP)
 		pbover.To.SetTarget(p)
 
-	case ssa.OpPPC64DIVW:
+	case ssaop.OpPPC64DIVW:
 		// word-width version of above
 		r := v.Reg()
 		r0 := v.Args[0].Reg()
@@ -557,7 +604,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p = s.Prog(obj.ANOP)
 		pbover.To.SetTarget(p)
 
-	case ssa.OpPPC64CLRLSLWI:
+	case ssaop.OpPPC64CLRLSLWI:
 		r := v.Reg()
 		r1 := v.Args[0].Reg()
 		shifts := v.AuxInt
@@ -569,7 +616,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = r
 
-	case ssa.OpPPC64CLRLSLDI:
+	case ssaop.OpPPC64CLRLSLDI:
 		r := v.Reg()
 		r1 := v.Args[0].Reg()
 		shifts := v.AuxInt
@@ -581,14 +628,14 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = r
 
-	case ssa.OpPPC64ADD, ssa.OpPPC64FADD, ssa.OpPPC64FADDS, ssa.OpPPC64SUB, ssa.OpPPC64FSUB, ssa.OpPPC64FSUBS,
-		ssa.OpPPC64MULLD, ssa.OpPPC64MULLW, ssa.OpPPC64DIVDU, ssa.OpPPC64DIVWU,
-		ssa.OpPPC64SRAD, ssa.OpPPC64SRAW, ssa.OpPPC64SRD, ssa.OpPPC64SRW, ssa.OpPPC64SLD, ssa.OpPPC64SLW,
-		ssa.OpPPC64ROTL, ssa.OpPPC64ROTLW,
-		ssa.OpPPC64MULHD, ssa.OpPPC64MULHW, ssa.OpPPC64MULHDU, ssa.OpPPC64MULHWU,
-		ssa.OpPPC64FMUL, ssa.OpPPC64FMULS, ssa.OpPPC64FDIV, ssa.OpPPC64FDIVS, ssa.OpPPC64FCPSGN,
-		ssa.OpPPC64AND, ssa.OpPPC64OR, ssa.OpPPC64ANDN, ssa.OpPPC64ORN, ssa.OpPPC64NOR, ssa.OpPPC64XOR, ssa.OpPPC64EQV,
-		ssa.OpPPC64MODUD, ssa.OpPPC64MODSD, ssa.OpPPC64MODUW, ssa.OpPPC64MODSW, ssa.OpPPC64XSMINJDP, ssa.OpPPC64XSMAXJDP:
+	case ssaop.OpPPC64ADD, ssaop.OpPPC64FADD, ssaop.OpPPC64FADDS, ssaop.OpPPC64SUB, ssaop.OpPPC64FSUB, ssaop.OpPPC64FSUBS,
+		ssaop.OpPPC64MULLD, ssaop.OpPPC64MULLW, ssaop.OpPPC64DIVDU, ssaop.OpPPC64DIVWU,
+		ssaop.OpPPC64SRAD, ssaop.OpPPC64SRAW, ssaop.OpPPC64SRD, ssaop.OpPPC64SRW, ssaop.OpPPC64SLD, ssaop.OpPPC64SLW,
+		ssaop.OpPPC64ROTL, ssaop.OpPPC64ROTLW,
+		ssaop.OpPPC64MULHD, ssaop.OpPPC64MULHW, ssaop.OpPPC64MULHDU, ssaop.OpPPC64MULHWU,
+		ssaop.OpPPC64FMUL, ssaop.OpPPC64FMULS, ssaop.OpPPC64FDIV, ssaop.OpPPC64FDIVS, ssaop.OpPPC64FCPSGN,
+		ssaop.OpPPC64AND, ssaop.OpPPC64OR, ssaop.OpPPC64ANDN, ssaop.OpPPC64ORN, ssaop.OpPPC64NOR, ssaop.OpPPC64XOR, ssaop.OpPPC64EQV,
+		ssaop.OpPPC64MODUD, ssaop.OpPPC64MODSD, ssaop.OpPPC64MODUW, ssaop.OpPPC64MODSW, ssaop.OpPPC64XSMINJDP, ssaop.OpPPC64XSMAXJDP:
 		r := v.Reg()
 		r1 := v.Args[0].Reg()
 		r2 := v.Args[1].Reg()
@@ -599,8 +646,8 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = r
 
-	case ssa.OpPPC64ADDCC, ssa.OpPPC64ANDCC, ssa.OpPPC64SUBCC, ssa.OpPPC64ORCC, ssa.OpPPC64XORCC, ssa.OpPPC64NORCC,
-		ssa.OpPPC64ANDNCC, ssa.OpPPC64MULHDUCC:
+	case ssaop.OpPPC64ADDCC, ssaop.OpPPC64ANDCC, ssaop.OpPPC64SUBCC, ssaop.OpPPC64ORCC, ssaop.OpPPC64XORCC, ssaop.OpPPC64NORCC,
+		ssaop.OpPPC64ANDNCC, ssaop.OpPPC64MULHDUCC:
 		r1 := v.Args[0].Reg()
 		r2 := v.Args[1].Reg()
 		p := s.Prog(v.Op.Asm())
@@ -610,14 +657,14 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg0()
 
-	case ssa.OpPPC64NEGCC, ssa.OpPPC64CNTLZDCC:
+	case ssaop.OpPPC64NEGCC, ssaop.OpPPC64CNTLZDCC:
 		p := s.Prog(v.Op.Asm())
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg0()
 		p.From.Type = obj.TYPE_REG
 		p.From.Reg = v.Args[0].Reg()
 
-	case ssa.OpPPC64ROTLconst, ssa.OpPPC64ROTLWconst:
+	case ssaop.OpPPC64ROTLconst, ssaop.OpPPC64ROTLWconst:
 		p := s.Prog(v.Op.Asm())
 		p.From.Type = obj.TYPE_CONST
 		p.From.Offset = v.AuxInt
@@ -626,7 +673,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Reg = v.Reg()
 
 		// Auxint holds encoded rotate + mask
-	case ssa.OpPPC64RLWINM, ssa.OpPPC64RLWMI:
+	case ssaop.OpPPC64RLWINM, ssaop.OpPPC64RLWMI:
 		sh, mb, me, _ := ssa.DecodePPC64RotateMask(v.AuxInt)
 		p := s.Prog(v.Op.Asm())
 		p.To = obj.Addr{Type: obj.TYPE_REG, Reg: v.Reg()}
@@ -635,20 +682,20 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.AddRestSourceArgs([]obj.Addr{{Type: obj.TYPE_CONST, Offset: mb}, {Type: obj.TYPE_CONST, Offset: me}})
 		// Auxint holds mask
 
-	case ssa.OpPPC64RLDICL, ssa.OpPPC64RLDICLCC, ssa.OpPPC64RLDICR:
+	case ssaop.OpPPC64RLDICL, ssaop.OpPPC64RLDICLCC, ssaop.OpPPC64RLDICR:
 		sh, mb, me, _ := ssa.DecodePPC64RotateMask(v.AuxInt)
 		p := s.Prog(v.Op.Asm())
 		p.From = obj.Addr{Type: obj.TYPE_CONST, Offset: sh}
 		switch v.Op {
-		case ssa.OpPPC64RLDICL, ssa.OpPPC64RLDICLCC:
+		case ssaop.OpPPC64RLDICL, ssaop.OpPPC64RLDICLCC:
 			p.AddRestSourceConst(mb)
-		case ssa.OpPPC64RLDICR:
+		case ssaop.OpPPC64RLDICR:
 			p.AddRestSourceConst(me)
 		}
 		p.Reg = v.Args[0].Reg()
 		p.To = obj.Addr{Type: obj.TYPE_REG, Reg: v.ResultReg()}
 
-	case ssa.OpPPC64RLWNM:
+	case ssaop.OpPPC64RLWNM:
 		_, mb, me, _ := ssa.DecodePPC64RotateMask(v.AuxInt)
 		p := s.Prog(v.Op.Asm())
 		p.To = obj.Addr{Type: obj.TYPE_REG, Reg: v.Reg()}
@@ -656,7 +703,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.From = obj.Addr{Type: obj.TYPE_REG, Reg: v.Args[1].Reg()}
 		p.AddRestSourceArgs([]obj.Addr{{Type: obj.TYPE_CONST, Offset: mb}, {Type: obj.TYPE_CONST, Offset: me}})
 
-	case ssa.OpPPC64MADDLD:
+	case ssaop.OpPPC64MADDLD:
 		r := v.Reg()
 		r1 := v.Args[0].Reg()
 		r2 := v.Args[1].Reg()
@@ -670,7 +717,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = r
 
-	case ssa.OpPPC64FMADD, ssa.OpPPC64FMADDS, ssa.OpPPC64FMSUB, ssa.OpPPC64FMSUBS:
+	case ssaop.OpPPC64FMADD, ssaop.OpPPC64FMADDS, ssaop.OpPPC64FMSUB, ssaop.OpPPC64FMSUBS:
 		r := v.Reg()
 		r1 := v.Args[0].Reg()
 		r2 := v.Args[1].Reg()
@@ -684,10 +731,10 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = r
 
-	case ssa.OpPPC64NEG, ssa.OpPPC64FNEG, ssa.OpPPC64FSQRT, ssa.OpPPC64FSQRTS, ssa.OpPPC64FFLOOR, ssa.OpPPC64FTRUNC, ssa.OpPPC64FCEIL,
-		ssa.OpPPC64FCTIDZ, ssa.OpPPC64FCTIWZ, ssa.OpPPC64FCFID, ssa.OpPPC64FCFIDS, ssa.OpPPC64FRSP, ssa.OpPPC64CNTLZD, ssa.OpPPC64CNTLZW,
-		ssa.OpPPC64POPCNTD, ssa.OpPPC64POPCNTW, ssa.OpPPC64POPCNTB, ssa.OpPPC64MFVSRD, ssa.OpPPC64MTVSRD, ssa.OpPPC64FABS, ssa.OpPPC64FNABS,
-		ssa.OpPPC64FROUND, ssa.OpPPC64CNTTZW, ssa.OpPPC64CNTTZD, ssa.OpPPC64BRH, ssa.OpPPC64BRW, ssa.OpPPC64BRD:
+	case ssaop.OpPPC64NEG, ssaop.OpPPC64FNEG, ssaop.OpPPC64FSQRT, ssaop.OpPPC64FSQRTS, ssaop.OpPPC64FFLOOR, ssaop.OpPPC64FTRUNC, ssaop.OpPPC64FCEIL,
+		ssaop.OpPPC64FCTIDZ, ssaop.OpPPC64FCTIWZ, ssaop.OpPPC64FCFID, ssaop.OpPPC64FCFIDS, ssaop.OpPPC64FRSP, ssaop.OpPPC64CNTLZD, ssaop.OpPPC64CNTLZW,
+		ssaop.OpPPC64POPCNTD, ssaop.OpPPC64POPCNTW, ssaop.OpPPC64POPCNTB, ssaop.OpPPC64MFVSRD, ssaop.OpPPC64MTVSRD, ssaop.OpPPC64FABS, ssaop.OpPPC64FNABS,
+		ssaop.OpPPC64FROUND, ssaop.OpPPC64CNTTZW, ssaop.OpPPC64CNTTZD, ssaop.OpPPC64BRH, ssaop.OpPPC64BRW, ssaop.OpPPC64BRD:
 		r := v.Reg()
 		p := s.Prog(v.Op.Asm())
 		p.To.Type = obj.TYPE_REG
@@ -695,10 +742,10 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.From.Type = obj.TYPE_REG
 		p.From.Reg = v.Args[0].Reg()
 
-	case ssa.OpPPC64ADDconst, ssa.OpPPC64ORconst, ssa.OpPPC64XORconst,
-		ssa.OpPPC64SRADconst, ssa.OpPPC64SRAWconst, ssa.OpPPC64SRDconst, ssa.OpPPC64SRWconst,
-		ssa.OpPPC64SLDconst, ssa.OpPPC64SLWconst, ssa.OpPPC64EXTSWSLconst, ssa.OpPPC64MULLWconst, ssa.OpPPC64MULLDconst,
-		ssa.OpPPC64ANDconst:
+	case ssaop.OpPPC64ADDconst, ssaop.OpPPC64ORconst, ssaop.OpPPC64XORconst,
+		ssaop.OpPPC64SRADconst, ssaop.OpPPC64SRAWconst, ssaop.OpPPC64SRDconst, ssaop.OpPPC64SRWconst,
+		ssaop.OpPPC64SLDconst, ssaop.OpPPC64SLWconst, ssaop.OpPPC64EXTSWSLconst, ssaop.OpPPC64MULLWconst, ssaop.OpPPC64MULLDconst,
+		ssaop.OpPPC64ANDconst:
 		p := s.Prog(v.Op.Asm())
 		p.Reg = v.Args[0].Reg()
 		p.From.Type = obj.TYPE_CONST
@@ -706,7 +753,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()
 
-	case ssa.OpPPC64ADDC, ssa.OpPPC64ADDE, ssa.OpPPC64SUBC, ssa.OpPPC64SUBE:
+	case ssaop.OpPPC64ADDC, ssaop.OpPPC64ADDE, ssaop.OpPPC64SUBC, ssaop.OpPPC64SUBE:
 		r := v.Reg0() // CA is the first, implied argument.
 		r1 := v.Args[0].Reg()
 		r2 := v.Args[1].Reg()
@@ -717,21 +764,21 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = r
 
-	case ssa.OpPPC64ADDZE:
+	case ssaop.OpPPC64ADDZE:
 		p := s.Prog(v.Op.Asm())
 		p.From.Type = obj.TYPE_REG
 		p.From.Reg = v.Args[0].Reg()
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg0()
 
-	case ssa.OpPPC64ADDZEzero, ssa.OpPPC64SUBZEzero:
+	case ssaop.OpPPC64ADDZEzero, ssaop.OpPPC64SUBZEzero:
 		p := s.Prog(v.Op.Asm())
 		p.From.Type = obj.TYPE_REG
 		p.From.Reg = ppc64.REG_R0
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()
 
-	case ssa.OpPPC64ADDCconst:
+	case ssaop.OpPPC64ADDCconst:
 		p := s.Prog(v.Op.Asm())
 		p.Reg = v.Args[0].Reg()
 		p.From.Type = obj.TYPE_CONST
@@ -740,7 +787,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// Output is a pair, the second is the CA, which is implied.
 		p.To.Reg = v.Reg0()
 
-	case ssa.OpPPC64SUBCconst:
+	case ssaop.OpPPC64SUBCconst:
 		p := s.Prog(v.Op.Asm())
 		p.AddRestSourceConst(v.AuxInt)
 		p.From.Type = obj.TYPE_REG
@@ -748,7 +795,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg0()
 
-	case ssa.OpPPC64SUBFCconst:
+	case ssaop.OpPPC64SUBFCconst:
 		p := s.Prog(v.Op.Asm())
 		p.AddRestSourceConst(v.AuxInt)
 		p.From.Type = obj.TYPE_REG
@@ -756,7 +803,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()
 
-	case ssa.OpPPC64ADDCCconst, ssa.OpPPC64ANDCCconst:
+	case ssaop.OpPPC64ADDCCconst, ssaop.OpPPC64ANDCCconst:
 		p := s.Prog(v.Op.Asm())
 		p.Reg = v.Args[0].Reg()
 		p.From.Type = obj.TYPE_CONST
@@ -764,7 +811,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg0()
 
-	case ssa.OpPPC64MOVDaddr:
+	case ssaop.OpPPC64MOVDaddr:
 		switch v.Aux.(type) {
 		default:
 			v.Fatalf("aux in MOVDaddr is of unknown type %T", v.Aux)
@@ -792,35 +839,35 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 
 		}
 
-	case ssa.OpPPC64MOVDconst:
+	case ssaop.OpPPC64MOVDconst:
 		p := s.Prog(v.Op.Asm())
 		p.From.Type = obj.TYPE_CONST
 		p.From.Offset = v.AuxInt
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()
 
-	case ssa.OpPPC64FMOVDconst, ssa.OpPPC64FMOVSconst:
+	case ssaop.OpPPC64FMOVDconst, ssaop.OpPPC64FMOVSconst:
 		p := s.Prog(v.Op.Asm())
 		p.From.Type = obj.TYPE_FCONST
 		p.From.Val = math.Float64frombits(uint64(v.AuxInt))
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()
 
-	case ssa.OpPPC64FCMPU, ssa.OpPPC64CMP, ssa.OpPPC64CMPW, ssa.OpPPC64CMPU, ssa.OpPPC64CMPWU:
+	case ssaop.OpPPC64FCMPU, ssaop.OpPPC64CMP, ssaop.OpPPC64CMPW, ssaop.OpPPC64CMPU, ssaop.OpPPC64CMPWU:
 		p := s.Prog(v.Op.Asm())
 		p.From.Type = obj.TYPE_REG
 		p.From.Reg = v.Args[0].Reg()
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Args[1].Reg()
 
-	case ssa.OpPPC64CMPconst, ssa.OpPPC64CMPUconst, ssa.OpPPC64CMPWconst, ssa.OpPPC64CMPWUconst:
+	case ssaop.OpPPC64CMPconst, ssaop.OpPPC64CMPUconst, ssaop.OpPPC64CMPWconst, ssaop.OpPPC64CMPWUconst:
 		p := s.Prog(v.Op.Asm())
 		p.From.Type = obj.TYPE_REG
 		p.From.Reg = v.Args[0].Reg()
 		p.To.Type = obj.TYPE_CONST
 		p.To.Offset = v.AuxInt
 
-	case ssa.OpPPC64MOVBreg, ssa.OpPPC64MOVBZreg, ssa.OpPPC64MOVHreg, ssa.OpPPC64MOVHZreg, ssa.OpPPC64MOVWreg, ssa.OpPPC64MOVWZreg:
+	case ssaop.OpPPC64MOVBreg, ssaop.OpPPC64MOVBZreg, ssaop.OpPPC64MOVHreg, ssaop.OpPPC64MOVHZreg, ssaop.OpPPC64MOVWreg, ssaop.OpPPC64MOVWZreg:
 		// Shift in register to required size
 		p := s.Prog(v.Op.Asm())
 		p.From.Type = obj.TYPE_REG
@@ -828,7 +875,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Reg = v.Reg()
 		p.To.Type = obj.TYPE_REG
 
-	case ssa.OpPPC64MOVDload, ssa.OpPPC64MOVWload:
+	case ssaop.OpPPC64MOVDload, ssaop.OpPPC64MOVWload:
 
 		// MOVDload and MOVWload are DS form instructions that are restricted to
 		// offsets that are a multiple of 4. If the offset is not a multiple of 4,
@@ -883,7 +930,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()
 
-	case ssa.OpPPC64MOVHload, ssa.OpPPC64MOVWZload, ssa.OpPPC64MOVBZload, ssa.OpPPC64MOVHZload, ssa.OpPPC64FMOVDload, ssa.OpPPC64FMOVSload:
+	case ssaop.OpPPC64MOVHload, ssaop.OpPPC64MOVWZload, ssaop.OpPPC64MOVBZload, ssaop.OpPPC64MOVHZload, ssaop.OpPPC64FMOVDload, ssaop.OpPPC64FMOVSload:
 		p := s.Prog(v.Op.Asm())
 		p.From.Type = obj.TYPE_MEM
 		p.From.Reg = v.Args[0].Reg()
@@ -891,23 +938,23 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()
 
-	case ssa.OpPPC64MOVDBRload, ssa.OpPPC64MOVWBRload, ssa.OpPPC64MOVHBRload:
+	case ssaop.OpPPC64MOVDBRload, ssaop.OpPPC64MOVWBRload, ssaop.OpPPC64MOVHBRload:
 		p := s.Prog(v.Op.Asm())
 		p.From.Type = obj.TYPE_MEM
 		p.From.Reg = v.Args[0].Reg()
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()
 
-	case ssa.OpPPC64MOVDBRstore, ssa.OpPPC64MOVWBRstore, ssa.OpPPC64MOVHBRstore:
+	case ssaop.OpPPC64MOVDBRstore, ssaop.OpPPC64MOVWBRstore, ssaop.OpPPC64MOVHBRstore:
 		p := s.Prog(v.Op.Asm())
 		p.To.Type = obj.TYPE_MEM
 		p.To.Reg = v.Args[0].Reg()
 		p.From.Type = obj.TYPE_REG
 		p.From.Reg = v.Args[1].Reg()
 
-	case ssa.OpPPC64MOVDloadidx, ssa.OpPPC64MOVWloadidx, ssa.OpPPC64MOVHloadidx, ssa.OpPPC64MOVWZloadidx,
-		ssa.OpPPC64MOVBZloadidx, ssa.OpPPC64MOVHZloadidx, ssa.OpPPC64FMOVDloadidx, ssa.OpPPC64FMOVSloadidx,
-		ssa.OpPPC64MOVDBRloadidx, ssa.OpPPC64MOVWBRloadidx, ssa.OpPPC64MOVHBRloadidx:
+	case ssaop.OpPPC64MOVDloadidx, ssaop.OpPPC64MOVWloadidx, ssaop.OpPPC64MOVHloadidx, ssaop.OpPPC64MOVWZloadidx,
+		ssaop.OpPPC64MOVBZloadidx, ssaop.OpPPC64MOVHZloadidx, ssaop.OpPPC64FMOVDloadidx, ssaop.OpPPC64FMOVSloadidx,
+		ssaop.OpPPC64MOVDBRloadidx, ssaop.OpPPC64MOVWBRloadidx, ssaop.OpPPC64MOVHBRloadidx:
 		p := s.Prog(v.Op.Asm())
 		p.From.Type = obj.TYPE_MEM
 		p.From.Reg = v.Args[0].Reg()
@@ -915,14 +962,14 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()
 
-	case ssa.OpPPC64DCBT:
+	case ssaop.OpPPC64DCBT:
 		p := s.Prog(v.Op.Asm())
 		p.From.Type = obj.TYPE_MEM
 		p.From.Reg = v.Args[0].Reg()
 		p.To.Type = obj.TYPE_CONST
 		p.To.Offset = v.AuxInt
 
-	case ssa.OpPPC64MOVWstorezero, ssa.OpPPC64MOVHstorezero, ssa.OpPPC64MOVBstorezero:
+	case ssaop.OpPPC64MOVWstorezero, ssaop.OpPPC64MOVHstorezero, ssaop.OpPPC64MOVBstorezero:
 		p := s.Prog(v.Op.Asm())
 		p.From.Type = obj.TYPE_REG
 		p.From.Reg = ppc64.REGZERO
@@ -930,7 +977,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Reg = v.Args[0].Reg()
 		ssagen.AddAux(&p.To, v)
 
-	case ssa.OpPPC64MOVDstore, ssa.OpPPC64MOVDstorezero:
+	case ssaop.OpPPC64MOVDstore, ssaop.OpPPC64MOVDstorezero:
 
 		// MOVDstore and MOVDstorezero become DS form instructions that are restricted
 		// to offset values that are a multiple of 4. If the offset field is not a
@@ -963,13 +1010,13 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p := s.Prog(v.Op.Asm())
 		p.To = toAddr
 		p.From.Type = obj.TYPE_REG
-		if v.Op == ssa.OpPPC64MOVDstorezero {
+		if v.Op == ssaop.OpPPC64MOVDstorezero {
 			p.From.Reg = ppc64.REGZERO
 		} else {
 			p.From.Reg = v.Args[1].Reg()
 		}
 
-	case ssa.OpPPC64MOVWstore, ssa.OpPPC64MOVHstore, ssa.OpPPC64MOVBstore, ssa.OpPPC64FMOVDstore, ssa.OpPPC64FMOVSstore:
+	case ssaop.OpPPC64MOVWstore, ssaop.OpPPC64MOVHstore, ssaop.OpPPC64MOVBstore, ssaop.OpPPC64FMOVDstore, ssaop.OpPPC64FMOVSstore:
 		p := s.Prog(v.Op.Asm())
 		p.From.Type = obj.TYPE_REG
 		p.From.Reg = v.Args[1].Reg()
@@ -977,9 +1024,9 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Reg = v.Args[0].Reg()
 		ssagen.AddAux(&p.To, v)
 
-	case ssa.OpPPC64MOVDstoreidx, ssa.OpPPC64MOVWstoreidx, ssa.OpPPC64MOVHstoreidx, ssa.OpPPC64MOVBstoreidx,
-		ssa.OpPPC64FMOVDstoreidx, ssa.OpPPC64FMOVSstoreidx, ssa.OpPPC64MOVDBRstoreidx, ssa.OpPPC64MOVWBRstoreidx,
-		ssa.OpPPC64MOVHBRstoreidx:
+	case ssaop.OpPPC64MOVDstoreidx, ssaop.OpPPC64MOVWstoreidx, ssaop.OpPPC64MOVHstoreidx, ssaop.OpPPC64MOVBstoreidx,
+		ssaop.OpPPC64FMOVDstoreidx, ssaop.OpPPC64FMOVSstoreidx, ssaop.OpPPC64MOVDBRstoreidx, ssaop.OpPPC64MOVWBRstoreidx,
+		ssaop.OpPPC64MOVHBRstoreidx:
 		p := s.Prog(v.Op.Asm())
 		p.From.Type = obj.TYPE_REG
 		p.From.Reg = v.Args[2].Reg()
@@ -987,7 +1034,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_MEM
 		p.To.Reg = v.Args[0].Reg()
 
-	case ssa.OpPPC64ISEL, ssa.OpPPC64ISELZ:
+	case ssaop.OpPPC64ISEL, ssaop.OpPPC64ISELZ:
 		// ISEL  AuxInt ? arg0 : arg1
 		// ISELZ is a special case of ISEL where arg1 is implicitly $0.
 		//
@@ -1000,7 +1047,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p := s.Prog(v.Op.Asm())
 		p.To = obj.Addr{Type: obj.TYPE_REG, Reg: v.Reg()}
 		p.Reg = v.Args[0].Reg()
-		if v.Op == ssa.OpPPC64ISEL {
+		if v.Op == ssaop.OpPPC64ISEL {
 			p.AddRestSourceReg(v.Args[1].Reg())
 		} else {
 			p.AddRestSourceReg(ppc64.REG_R0)
@@ -1011,33 +1058,37 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		}
 		p.From.SetConst(v.AuxInt & 3)
 
-	case ssa.OpPPC64SETBC, ssa.OpPPC64SETBCR:
+	case ssaop.OpPPC64SETBC, ssaop.OpPPC64SETBCR:
 		p := s.Prog(v.Op.Asm())
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()
 		p.From.Type = obj.TYPE_REG
 		p.From.Reg = int16(ppc64.REG_CR0LT + v.AuxInt)
 
-	case ssa.OpPPC64LoweredQuadZero, ssa.OpPPC64LoweredQuadZeroShort:
+	case ssaop.OpPPC64Zero128:
+		// The output may be allocated to the F0-F31 bank; XXLXOR is a VSX
+		// instruction and needs a VSX operand there (see simdReg).
+		r := simdReg(v.Reg())
+		p := s.Prog(ppc64.AXXLXOR)
+		p.From.Type = obj.TYPE_REG
+		p.From.Reg = r
+		p.To.Type = obj.TYPE_REG
+		p.To.Reg = r
+		p.Reg = r
+
+	case ssaop.OpPPC64LoweredQuadZero, ssaop.OpPPC64LoweredQuadZeroShort:
 		// The LoweredQuad code generation
 		// generates STXV instructions on
 		// power9. The Short variation is used
 		// if no loop is generated.
+		//
+		// arg0 = destination address
+		// arg1 = scratch zero vector (produced by Zero128)
+		// arg2 = mem
 
-		// sizes >= 64 generate a loop as follows:
-
-		// Set up loop counter in CTR, used by BC
-		// XXLXOR clears VS32
-		//       XXLXOR VS32,VS32,VS32
-		//       MOVD len/64,REG_TMP
-		//       MOVD REG_TMP,CTR
-		//       loop:
-		//       STXV VS32,0(R20)
-		//       STXV VS32,16(R20)
-		//       STXV VS32,32(R20)
-		//       STXV VS32,48(R20)
-		//       ADD  $64,R20
-		//       BC   16, 0, loop
+		// The scratch vector register is allocated by regalloc
+		// and zeroed by the Zero128 op that feeds arg1.
+		vreg := v.Args[1].Reg()
 
 		// Bytes per iteration
 		ctr := v.AuxInt / 64
@@ -1048,16 +1099,8 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// Only generate a loop if there is more
 		// than 1 iteration.
 		if ctr > 1 {
-			// Set up VS32 (V0) to hold 0s
-			p := s.Prog(ppc64.AXXLXOR)
-			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS32
-			p.To.Type = obj.TYPE_REG
-			p.To.Reg = ppc64.REG_VS32
-			p.Reg = ppc64.REG_VS32
-
 			// Set up CTR loop counter
-			p = s.Prog(ppc64.AMOVD)
+			p := s.Prog(ppc64.AMOVD)
 			p.From.Type = obj.TYPE_CONST
 			p.From.Offset = ctr
 			p.To.Type = obj.TYPE_REG
@@ -1082,7 +1125,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 
 			p = s.Prog(ppc64.ASTXV)
 			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS32
+			p.From.Reg = vreg
 			p.To.Type = obj.TYPE_MEM
 			p.To.Reg = v.Args[0].Reg()
 
@@ -1092,21 +1135,21 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			}
 			p = s.Prog(ppc64.ASTXV)
 			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS32
+			p.From.Reg = vreg
 			p.To.Type = obj.TYPE_MEM
 			p.To.Reg = v.Args[0].Reg()
 			p.To.Offset = 16
 
 			p = s.Prog(ppc64.ASTXV)
 			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS32
+			p.From.Reg = vreg
 			p.To.Type = obj.TYPE_MEM
 			p.To.Reg = v.Args[0].Reg()
 			p.To.Offset = 32
 
 			p = s.Prog(ppc64.ASTXV)
 			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS32
+			p.From.Reg = vreg
 			p.To.Type = obj.TYPE_MEM
 			p.To.Reg = v.Args[0].Reg()
 			p.To.Offset = 48
@@ -1141,30 +1184,19 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// Clear the remainder starting at offset zero
 		offset := int64(0)
 
-		if rem >= 16 && ctr <= 1 {
-			// If the XXLXOR hasn't already been
-			// generated, do it here to initialize
-			// VS32 (V0) to 0.
-			p := s.Prog(ppc64.AXXLXOR)
-			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS32
-			p.To.Type = obj.TYPE_REG
-			p.To.Reg = ppc64.REG_VS32
-			p.Reg = ppc64.REG_VS32
-		}
 		// Generate STXV for 32 or 64
 		// bytes.
 		for rem >= 32 {
 			p := s.Prog(ppc64.ASTXV)
 			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS32
+			p.From.Reg = vreg
 			p.To.Type = obj.TYPE_MEM
 			p.To.Reg = v.Args[0].Reg()
 			p.To.Offset = offset
 
 			p = s.Prog(ppc64.ASTXV)
 			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS32
+			p.From.Reg = vreg
 			p.To.Type = obj.TYPE_MEM
 			p.To.Reg = v.Args[0].Reg()
 			p.To.Offset = offset + 16
@@ -1175,7 +1207,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		if rem >= 16 {
 			p := s.Prog(ppc64.ASTXV)
 			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS32
+			p.From.Reg = vreg
 			p.To.Type = obj.TYPE_MEM
 			p.To.Reg = v.Args[0].Reg()
 			p.To.Offset = offset
@@ -1205,7 +1237,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			offset += size
 		}
 
-	case ssa.OpPPC64LoweredZero, ssa.OpPPC64LoweredZeroShort:
+	case ssaop.OpPPC64LoweredZero, ssaop.OpPPC64LoweredZeroShort:
 
 		// Unaligned data doesn't hurt performance
 		// for these instructions on power8.
@@ -1213,13 +1245,12 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// For sizes >= 64 generate a loop as follows:
 
 		// Set up loop counter in CTR, used by BC
-		//       XXLXOR VS32,VS32,VS32
 		//	 MOVD len/32,REG_TMP
 		//	 MOVD REG_TMP,CTR
 		//       MOVD $16,REG_TMP
 		//	 loop:
-		//	 STXVD2X VS32,(R0)(R20)
-		//	 STXVD2X VS32,(R31)(R20)
+		//	 STXVD2X vreg,(R0)(R20)
+		//	 STXVD2X vreg,(R31)(R20)
 		//	 ADD  $32,R20
 		//	 BC   16, 0, loop
 		//
@@ -1253,16 +1284,12 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// only generate a loop if there is more
 		// than 1 iteration.
 		if ctr > 1 {
-			// Set up VS32 (V0) to hold 0s
-			p := s.Prog(ppc64.AXXLXOR)
-			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS32
-			p.To.Type = obj.TYPE_REG
-			p.To.Reg = ppc64.REG_VS32
-			p.Reg = ppc64.REG_VS32
+			// The scratch vector register is allocated by regalloc
+			// and zeroed by the Zero128 op that feeds arg1.
+			vreg := v.Args[1].Reg()
 
 			// Set up CTR loop counter
-			p = s.Prog(ppc64.AMOVD)
+			p := s.Prog(ppc64.AMOVD)
 			p.From.Type = obj.TYPE_CONST
 			p.From.Offset = ctr
 			p.To.Type = obj.TYPE_REG
@@ -1296,7 +1323,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 
 			p = s.Prog(ppc64.ASTXVD2X)
 			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS32
+			p.From.Reg = vreg
 			p.To.Type = obj.TYPE_MEM
 			p.To.Reg = v.Args[0].Reg()
 			p.To.Index = ppc64.REGZERO
@@ -1306,7 +1333,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			}
 			p = s.Prog(ppc64.ASTXVD2X)
 			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS32
+			p.From.Reg = vreg
 			p.To.Type = obj.TYPE_MEM
 			p.To.Reg = v.Args[0].Reg()
 			p.To.Index = ppc64.REGTMP
@@ -1364,7 +1391,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			offset += size
 		}
 
-	case ssa.OpPPC64LoweredMove, ssa.OpPPC64LoweredMoveShort:
+	case ssaop.OpPPC64LoweredMove, ssaop.OpPPC64LoweredMoveShort:
 
 		bytesPerLoop := int64(32)
 		// This will be used when moving more
@@ -1383,11 +1410,11 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		//	MOVD REG_TMP,CTR
 		//	MOVD $16,REG_TMP
 		// top:
-		//	LXVD2X (R0)(R21),VS32
-		//	LXVD2X (R31)(R21),VS33
+		//	LXVD2X (R0)(R21),V0
+		//	LXVD2X (R31)(R21),V1
 		//	ADD $32,R21
-		//	STXVD2X VS32,(R0)(R20)
-		//	STXVD2X VS33,(R31)(R20)
+		//	STXVD2X V0,(R0)(R20)
+		//	STXVD2X V1,(R31)(R20)
 		//	ADD $32,R20
 		//	BC 16,0,top
 		// Bytes not moved by this loop are moved
@@ -1458,7 +1485,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			p.From.Reg = srcReg
 			p.From.Index = ppc64.REGZERO
 			p.To.Type = obj.TYPE_REG
-			p.To.Reg = ppc64.REG_VS32
+			p.To.Reg = ppc64.REG_V0
 			if top == nil {
 				top = p
 			}
@@ -1467,7 +1494,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			p.From.Reg = srcReg
 			p.From.Index = ppc64.REGTMP
 			p.To.Type = obj.TYPE_REG
-			p.To.Reg = ppc64.REG_VS33
+			p.To.Reg = ppc64.REG_V1
 
 			// increment the src reg for next iteration
 			p = s.Prog(ppc64.AADD)
@@ -1480,14 +1507,14 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			// generate 16 byte stores
 			p = s.Prog(ppc64.ASTXVD2X)
 			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS32
+			p.From.Reg = ppc64.REG_V0
 			p.To.Type = obj.TYPE_MEM
 			p.To.Reg = dstReg
 			p.To.Index = ppc64.REGZERO
 
 			p = s.Prog(ppc64.ASTXVD2X)
 			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS33
+			p.From.Reg = ppc64.REG_V1
 			p.To.Type = obj.TYPE_MEM
 			p.To.Reg = dstReg
 			p.To.Index = ppc64.REGTMP
@@ -1529,11 +1556,11 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			p.From.Reg = srcReg
 			p.From.Index = ppc64.REGZERO
 			p.To.Type = obj.TYPE_REG
-			p.To.Reg = ppc64.REG_VS32
+			p.To.Reg = ppc64.REG_V0
 
 			p = s.Prog(ppc64.ASTXVD2X)
 			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS32
+			p.From.Reg = ppc64.REG_V0
 			p.To.Type = obj.TYPE_MEM
 			p.To.Reg = dstReg
 			p.To.Index = ppc64.REGZERO
@@ -1554,11 +1581,11 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 				p.From.Reg = srcReg
 				p.From.Index = ppc64.REGTMP
 				p.To.Type = obj.TYPE_REG
-				p.To.Reg = ppc64.REG_VS32
+				p.To.Reg = ppc64.REG_V0
 
 				p = s.Prog(ppc64.ASTXVD2X)
 				p.From.Type = obj.TYPE_REG
-				p.From.Reg = ppc64.REG_VS32
+				p.From.Reg = ppc64.REG_V0
 				p.To.Type = obj.TYPE_MEM
 				p.To.Reg = dstReg
 				p.To.Index = ppc64.REGTMP
@@ -1599,7 +1626,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			offset += size
 		}
 
-	case ssa.OpPPC64LoweredQuadMove, ssa.OpPPC64LoweredQuadMoveShort:
+	case ssaop.OpPPC64LoweredQuadMove, ssaop.OpPPC64LoweredQuadMoveShort:
 		bytesPerLoop := int64(64)
 		// This is used when moving more
 		// than 8 bytes on power9.  Moves start with
@@ -1616,11 +1643,11 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		//      MOVD len/32,REG_TMP
 		//      MOVD REG_TMP,CTR
 		// top:
-		//      LXV 0(R21),VS32
-		//      LXV 16(R21),VS33
+		//      LXV 0(R21),V0
+		//      LXV 16(R21),V1
 		//      ADD $32,R21
-		//      STXV VS32,0(R20)
-		//      STXV VS33,16(R20)
+		//      STXV V0,0(R20)
+		//      STXV V1,16(R20)
 		//      ADD $32,R20
 		//      BC 16,0,top
 		// Bytes not moved by this loop are moved
@@ -1675,7 +1702,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			p.From.Reg = srcReg
 			p.From.Offset = offset
 			p.To.Type = obj.TYPE_REG
-			p.To.Reg = ppc64.REG_VS32
+			p.To.Reg = ppc64.REG_V0
 			if top == nil {
 				top = p
 			}
@@ -1684,19 +1711,19 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			p.From.Reg = srcReg
 			p.From.Offset = offset + 16
 			p.To.Type = obj.TYPE_REG
-			p.To.Reg = ppc64.REG_VS33
+			p.To.Reg = ppc64.REG_V1
 
 			// generate 16 byte stores
 			p = s.Prog(ppc64.ASTXV)
 			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS32
+			p.From.Reg = ppc64.REG_V0
 			p.To.Type = obj.TYPE_MEM
 			p.To.Reg = dstReg
 			p.To.Offset = offset
 
 			p = s.Prog(ppc64.ASTXV)
 			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS33
+			p.From.Reg = ppc64.REG_V1
 			p.To.Type = obj.TYPE_MEM
 			p.To.Reg = dstReg
 			p.To.Offset = offset + 16
@@ -1707,26 +1734,26 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			p.From.Reg = srcReg
 			p.From.Offset = offset + 32
 			p.To.Type = obj.TYPE_REG
-			p.To.Reg = ppc64.REG_VS32
+			p.To.Reg = ppc64.REG_V0
 
 			p = s.Prog(ppc64.ALXV)
 			p.From.Type = obj.TYPE_MEM
 			p.From.Reg = srcReg
 			p.From.Offset = offset + 48
 			p.To.Type = obj.TYPE_REG
-			p.To.Reg = ppc64.REG_VS33
+			p.To.Reg = ppc64.REG_V1
 
 			// generate 16 byte stores
 			p = s.Prog(ppc64.ASTXV)
 			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS32
+			p.From.Reg = ppc64.REG_V0
 			p.To.Type = obj.TYPE_MEM
 			p.To.Reg = dstReg
 			p.To.Offset = offset + 32
 
 			p = s.Prog(ppc64.ASTXV)
 			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS33
+			p.From.Reg = ppc64.REG_V1
 			p.To.Type = obj.TYPE_MEM
 			p.To.Reg = dstReg
 			p.To.Offset = offset + 48
@@ -1771,24 +1798,24 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			p.From.Type = obj.TYPE_MEM
 			p.From.Reg = srcReg
 			p.To.Type = obj.TYPE_REG
-			p.To.Reg = ppc64.REG_VS32
+			p.To.Reg = ppc64.REG_V0
 
 			p = s.Prog(ppc64.ALXV)
 			p.From.Type = obj.TYPE_MEM
 			p.From.Reg = srcReg
 			p.From.Offset = 16
 			p.To.Type = obj.TYPE_REG
-			p.To.Reg = ppc64.REG_VS33
+			p.To.Reg = ppc64.REG_V1
 
 			p = s.Prog(ppc64.ASTXV)
 			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS32
+			p.From.Reg = ppc64.REG_V0
 			p.To.Type = obj.TYPE_MEM
 			p.To.Reg = dstReg
 
 			p = s.Prog(ppc64.ASTXV)
 			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS33
+			p.From.Reg = ppc64.REG_V1
 			p.To.Type = obj.TYPE_MEM
 			p.To.Reg = dstReg
 			p.To.Offset = 16
@@ -1804,11 +1831,11 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			p.From.Reg = srcReg
 			p.From.Offset = offset
 			p.To.Type = obj.TYPE_REG
-			p.To.Reg = ppc64.REG_VS32
+			p.To.Reg = ppc64.REG_V0
 
 			p = s.Prog(ppc64.ASTXV)
 			p.From.Type = obj.TYPE_REG
-			p.From.Reg = ppc64.REG_VS32
+			p.From.Reg = ppc64.REG_V0
 			p.To.Type = obj.TYPE_MEM
 			p.To.Reg = dstReg
 			p.To.Offset = offset
@@ -1822,11 +1849,11 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 				p.From.Reg = srcReg
 				p.From.Offset = offset
 				p.To.Type = obj.TYPE_REG
-				p.To.Reg = ppc64.REG_VS32
+				p.To.Reg = ppc64.REG_V0
 
 				p = s.Prog(ppc64.ASTXV)
 				p.From.Type = obj.TYPE_REG
-				p.From.Reg = ppc64.REG_VS32
+				p.From.Reg = ppc64.REG_V0
 				p.To.Type = obj.TYPE_MEM
 				p.To.Reg = dstReg
 				p.To.Offset = offset
@@ -1866,13 +1893,13 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			offset += size
 		}
 
-	case ssa.OpPPC64CALLstatic:
+	case ssaop.OpPPC64CALLstatic:
 		s.Call(v)
 
-	case ssa.OpPPC64CALLtail:
+	case ssaop.OpPPC64CALLtail, ssaop.OpPPC64CALLtailinter:
 		s.TailCall(v)
 
-	case ssa.OpPPC64CALLclosure, ssa.OpPPC64CALLinter:
+	case ssaop.OpPPC64CALLclosure, ssaop.OpPPC64CALLinter:
 		p := s.Prog(ppc64.AMOVD)
 		p.From.Type = obj.TYPE_REG
 		p.From.Reg = v.Args[0].Reg()
@@ -1907,14 +1934,14 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			q.To.Reg = ppc64.REG_R2
 		}
 
-	case ssa.OpPPC64LoweredWB:
+	case ssaop.OpPPC64LoweredWB:
 		p := s.Prog(obj.ACALL)
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
 		// AuxInt encodes how many buffer entries we need.
 		p.To.Sym = ir.Syms.GCWriteBarrier[v.AuxInt-1]
 
-	case ssa.OpPPC64LoweredPanicBoundsRR, ssa.OpPPC64LoweredPanicBoundsRC, ssa.OpPPC64LoweredPanicBoundsCR, ssa.OpPPC64LoweredPanicBoundsCC:
+	case ssaop.OpPPC64LoweredPanicBoundsRR, ssaop.OpPPC64LoweredPanicBoundsRC, ssaop.OpPPC64LoweredPanicBoundsCR, ssaop.OpPPC64LoweredPanicBoundsCC:
 		// Compute the constant we put in the PCData entry for this call.
 		code, signed := ssa.BoundsKind(v.AuxInt).Code()
 		xIsReg := false
@@ -1922,12 +1949,12 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		xVal := 0
 		yVal := 0
 		switch v.Op {
-		case ssa.OpPPC64LoweredPanicBoundsRR:
+		case ssaop.OpPPC64LoweredPanicBoundsRR:
 			xIsReg = true
 			xVal = int(v.Args[0].Reg() - ppc64.REG_R3)
 			yIsReg = true
 			yVal = int(v.Args[1].Reg() - ppc64.REG_R3)
-		case ssa.OpPPC64LoweredPanicBoundsRC:
+		case ssaop.OpPPC64LoweredPanicBoundsRC:
 			xIsReg = true
 			xVal = int(v.Args[0].Reg() - ppc64.REG_R3)
 			c := v.Aux.(ssa.PanicBoundsC).C
@@ -1945,7 +1972,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 				p.To.Type = obj.TYPE_REG
 				p.To.Reg = ppc64.REG_R3 + int16(yVal)
 			}
-		case ssa.OpPPC64LoweredPanicBoundsCR:
+		case ssaop.OpPPC64LoweredPanicBoundsCR:
 			yIsReg = true
 			yVal = int(v.Args[0].Reg() - ppc64.REG_R3)
 			c := v.Aux.(ssa.PanicBoundsC).C
@@ -1962,7 +1989,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 				p.To.Type = obj.TYPE_REG
 				p.To.Reg = ppc64.REG_R3 + int16(xVal)
 			}
-		case ssa.OpPPC64LoweredPanicBoundsCC:
+		case ssaop.OpPPC64LoweredPanicBoundsCC:
 			c := v.Aux.(ssa.PanicBoundsCC).Cx
 			if c >= 0 && c <= abi.BoundsMaxConst {
 				xVal = int(c)
@@ -1999,7 +2026,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Name = obj.NAME_EXTERN
 		p.To.Sym = ir.Syms.PanicBounds
 
-	case ssa.OpPPC64LoweredNilCheck:
+	case ssaop.OpPPC64LoweredNilCheck:
 		if buildcfg.GOOS == "aix" {
 			// CMP Rarg0, $0
 			// BNE 2(PC)
@@ -2046,15 +2073,15 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		}
 
 	// These should be resolved by rules and not make it here.
-	case ssa.OpPPC64Equal, ssa.OpPPC64NotEqual, ssa.OpPPC64LessThan, ssa.OpPPC64FLessThan,
-		ssa.OpPPC64LessEqual, ssa.OpPPC64GreaterThan, ssa.OpPPC64FGreaterThan, ssa.OpPPC64GreaterEqual,
-		ssa.OpPPC64FLessEqual, ssa.OpPPC64FGreaterEqual:
+	case ssaop.OpPPC64Equal, ssaop.OpPPC64NotEqual, ssaop.OpPPC64LessThan, ssaop.OpPPC64FLessThan,
+		ssaop.OpPPC64LessEqual, ssaop.OpPPC64GreaterThan, ssaop.OpPPC64FGreaterThan, ssaop.OpPPC64GreaterEqual,
+		ssaop.OpPPC64FLessEqual, ssaop.OpPPC64FGreaterEqual:
 		v.Fatalf("Pseudo-op should not make it to codegen: %s ###\n", v.LongString())
-	case ssa.OpPPC64InvertFlags:
+	case ssaop.OpPPC64InvertFlags:
 		v.Fatalf("InvertFlags should never make it to codegen %v", v.LongString())
-	case ssa.OpPPC64FlagEQ, ssa.OpPPC64FlagLT, ssa.OpPPC64FlagGT:
+	case ssaop.OpPPC64FlagEQ, ssaop.OpPPC64FlagLT, ssaop.OpPPC64FlagGT:
 		v.Fatalf("Flag* ops should never make it to codegen %v", v.LongString())
-	case ssa.OpClobber, ssa.OpClobberReg:
+	case ssaop.OpClobber, ssaop.OpClobberReg:
 		// TODO: implement for clobberdead experiment. Nop is ok for now.
 	default:
 		v.Fatalf("genValue not implemented: %s", v.LongString())
@@ -2065,38 +2092,38 @@ var blockJump = [...]struct {
 	asm, invasm     obj.As
 	asmeq, invasmun bool
 }{
-	ssa.BlockPPC64EQ: {ppc64.ABEQ, ppc64.ABNE, false, false},
-	ssa.BlockPPC64NE: {ppc64.ABNE, ppc64.ABEQ, false, false},
+	block.BlockPPC64EQ: {ppc64.ABEQ, ppc64.ABNE, false, false},
+	block.BlockPPC64NE: {ppc64.ABNE, ppc64.ABEQ, false, false},
 
-	ssa.BlockPPC64LT: {ppc64.ABLT, ppc64.ABGE, false, false},
-	ssa.BlockPPC64GE: {ppc64.ABGE, ppc64.ABLT, false, false},
-	ssa.BlockPPC64LE: {ppc64.ABLE, ppc64.ABGT, false, false},
-	ssa.BlockPPC64GT: {ppc64.ABGT, ppc64.ABLE, false, false},
+	block.BlockPPC64LT: {ppc64.ABLT, ppc64.ABGE, false, false},
+	block.BlockPPC64GE: {ppc64.ABGE, ppc64.ABLT, false, false},
+	block.BlockPPC64LE: {ppc64.ABLE, ppc64.ABGT, false, false},
+	block.BlockPPC64GT: {ppc64.ABGT, ppc64.ABLE, false, false},
 
 	// TODO: need to work FP comparisons into block jumps
-	ssa.BlockPPC64FLT: {ppc64.ABLT, ppc64.ABGE, false, false},
-	ssa.BlockPPC64FGE: {ppc64.ABGT, ppc64.ABLT, true, true}, // GE = GT or EQ; !GE = LT or UN
-	ssa.BlockPPC64FLE: {ppc64.ABLT, ppc64.ABGT, true, true}, // LE = LT or EQ; !LE = GT or UN
-	ssa.BlockPPC64FGT: {ppc64.ABGT, ppc64.ABLE, false, false},
+	block.BlockPPC64FLT: {ppc64.ABLT, ppc64.ABGE, false, false},
+	block.BlockPPC64FGE: {ppc64.ABGT, ppc64.ABLT, true, true}, // GE = GT or EQ; !GE = LT or UN
+	block.BlockPPC64FLE: {ppc64.ABLT, ppc64.ABGT, true, true}, // LE = LT or EQ; !LE = GT or UN
+	block.BlockPPC64FGT: {ppc64.ABGT, ppc64.ABLE, false, false},
 }
 
 func ssaGenBlock(s *ssagen.State, b, next *ssa.Block) {
 	switch b.Kind {
-	case ssa.BlockPlain, ssa.BlockDefer:
+	case block.BlockPlain, block.BlockDefer:
 		if b.Succs[0].Block() != next {
 			p := s.Prog(obj.AJMP)
 			p.To.Type = obj.TYPE_BRANCH
 			s.Branches = append(s.Branches, ssagen.Branch{P: p, B: b.Succs[0].Block()})
 		}
-	case ssa.BlockExit, ssa.BlockRetJmp:
-	case ssa.BlockRet:
+	case block.BlockExit, block.BlockRetJmp:
+	case block.BlockRet:
 		s.Prog(obj.ARET)
 
-	case ssa.BlockPPC64EQ, ssa.BlockPPC64NE,
-		ssa.BlockPPC64LT, ssa.BlockPPC64GE,
-		ssa.BlockPPC64LE, ssa.BlockPPC64GT,
-		ssa.BlockPPC64FLT, ssa.BlockPPC64FGE,
-		ssa.BlockPPC64FLE, ssa.BlockPPC64FGT:
+	case block.BlockPPC64EQ, block.BlockPPC64NE,
+		block.BlockPPC64LT, block.BlockPPC64GE,
+		block.BlockPPC64LE, block.BlockPPC64GT,
+		block.BlockPPC64FLT, block.BlockPPC64FGE,
+		block.BlockPPC64FLE, block.BlockPPC64FGT:
 		jmp := blockJump[b.Kind]
 		switch next {
 		case b.Succs[0].Block():

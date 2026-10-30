@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"internal/asan"
+	"internal/goarch"
 	"internal/race"
 	"internal/testenv"
 	"os"
@@ -849,5 +850,68 @@ func TestMkmalloc(t *testing.T) {
 	t.Logf("test output:\n%s", output)
 	if err != nil {
 		t.Errorf("_mkmalloc tests failed: %v", err)
+	}
+}
+
+func TestScanAllocIssue77573(t *testing.T) {
+	if asan.Enabled {
+		t.Skip("extra allocations with -asan causes this to fail")
+	}
+	verifyScanAlloc := func(t *testing.T, f func(), expectSize uintptr) {
+		runtime.Acquirem()
+		defer runtime.Releasem()
+		for i := 0; i < 100; i++ {
+			before := runtime.GetScanAlloc()
+			f()
+			after := runtime.GetScanAlloc()
+			// When mcache refills a new mspan, scanAlloc will be set to 0.
+			// As a result, the calculated value is not the scanAlloc of the allocated object, just retry again.
+			if after > before {
+				actualSize := after - before
+				if actualSize != expectSize {
+					t.Errorf("wrong GC Scan Alloc Size:\nwant %+v\ngot  %+v", expectSize, actualSize)
+				}
+				return
+			}
+		}
+		t.Error("always refill, it still fails after running multiple times")
+	}
+	t.Run("heap slice ([]*int, 1)", func(t *testing.T) {
+		verifyScanAlloc(t, func() { runtime.Escape(make([]*int, 1)) }, goarch.PtrSize)
+	})
+	t.Run("heap slice ([]*int, 2)", func(t *testing.T) {
+		verifyScanAlloc(t, func() { runtime.Escape(make([]*int, 2)) }, 2*goarch.PtrSize)
+	})
+	t.Run("heap slice ([]*int, 3)", func(t *testing.T) {
+		verifyScanAlloc(t, func() { runtime.Escape(make([]*int, 3)) }, 3*goarch.PtrSize)
+	})
+}
+
+func TestArenaHintChainGeneration(t *testing.T) {
+	// Regression test for the randomized-heap-base prefix mask:
+	// randHeapBasePrefixMask used to clear the top byte at
+	// heapAddrBits-8 while hint generation placed the random prefix
+	// byte at randHeapAddrBits-8, so two stray randHeapBase bits were
+	// OR'd into the prefix's low bits, collapsing distinct prefixes
+	// into duplicate hint addresses on most launches. The hint chain
+	// must hold pairwise-distinct addresses with at most one
+	// non-ascending step (the prefix byte's single mod-256 wrap).
+	if !RandomizeHeapBase {
+		t.Skip("heap base randomization is disabled in this configuration")
+	}
+	addrs := ArenaHintAddrs()
+	seen := make(map[uintptr]bool, len(addrs))
+	descents := 0
+	for i, a := range addrs {
+		if seen[a] {
+			t.Errorf("duplicate arena hint address %#x", a)
+		}
+		seen[a] = true
+		if i > 0 && a <= addrs[i-1] {
+			descents++
+		}
+	}
+	if descents > 1 {
+		t.Errorf("%d non-ascending steps in arena hint chain, want at most 1 (addrs %#x)", descents, addrs)
 	}
 }

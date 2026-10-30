@@ -526,7 +526,7 @@ func TestDialerLocalAddr(t *testing.T) {
 	type test struct {
 		network, raddr string
 		laddr          Addr
-		error
+		error          error
 	}
 	var tests = []test{
 		{"tcp4", "127.0.0.1", nil, nil},
@@ -1088,14 +1088,16 @@ func TestDialContext(t *testing.T) {
 			var c Conn
 			switch network {
 			case "tcp", "tcp4", "tcp6":
-				raddr, err := netip.ParseAddrPort(ln.Addr().String())
+				var raddr netip.AddrPort
+				raddr, err = netip.ParseAddrPort(ln.Addr().String())
 				if err != nil {
 					t.Error(err)
 					continue
 				}
 				c, err = d.DialTCP(context.WithValue(context.Background(), "id", i+1), network, (*TCPAddr)(nil).AddrPort(), raddr)
 			case "unix", "unixpacket":
-				raddr, err := ResolveUnixAddr(network, ln.Addr().String())
+				var raddr *UnixAddr
+				raddr, err = ResolveUnixAddr(network, ln.Addr().String())
 				if err != nil {
 					t.Error(err)
 					continue
@@ -1131,14 +1133,16 @@ func TestDialContext(t *testing.T) {
 			var c2 Conn
 			switch network {
 			case "udp", "udp4", "udp6":
-				raddr, err := netip.ParseAddrPort(c1.LocalAddr().String())
+				var raddr netip.AddrPort
+				raddr, err = netip.ParseAddrPort(c1.LocalAddr().String())
 				if err != nil {
 					t.Error(err)
 					continue
 				}
 				c2, err = d.DialUDP(context.WithValue(context.Background(), "id", i+1), network, (*UDPAddr)(nil).AddrPort(), raddr)
 			case "unixgram":
-				raddr, err := ResolveUnixAddr(network, c1.LocalAddr().String())
+				var raddr *UnixAddr
+				raddr, err = ResolveUnixAddr(network, c1.LocalAddr().String())
 				if err != nil {
 					t.Error(err)
 					continue
@@ -1155,6 +1159,31 @@ func TestDialContext(t *testing.T) {
 			c2.Close()
 		}
 	})
+}
+
+func TestDialNetipInvalidRaddr(t *testing.T) {
+	assertErrMissingAddress := func(t *testing.T, name string, err error) {
+		t.Helper()
+		if err == nil {
+			t.Errorf("%s err = nil", name)
+			return
+		}
+		e, ok := err.(*OpError)
+		if !ok {
+			t.Errorf("%s err = %#v, want *OpError", name, err)
+			return
+		}
+		if e.Err != errMissingAddress {
+			t.Errorf("%s err = %#v, want *OpError errMissingAddress", name, err)
+		}
+	}
+	var d Dialer
+	_, err := d.DialTCP(t.Context(), "tcp", netip.AddrPort{}, netip.AddrPort{})
+	assertErrMissingAddress(t, "DialTCP()", err)
+	_, err = d.DialUDP(t.Context(), "udp", netip.AddrPort{}, netip.AddrPort{})
+	assertErrMissingAddress(t, "DialUDP()", err)
+	_, err = d.DialIP(t.Context(), "ip6:ipv6-icmp", netip.Addr{}, netip.Addr{})
+	assertErrMissingAddress(t, "DialIP()", err)
 }
 
 // mustHaveExternalNetwork is like testenv.MustHaveExternalNetwork

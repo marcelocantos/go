@@ -16,6 +16,7 @@ import (
 	"cmd/compile/internal/liveness"
 	"cmd/compile/internal/objw"
 	"cmd/compile/internal/pgoir"
+	"cmd/compile/internal/ssacompile"
 	"cmd/compile/internal/ssagen"
 	"cmd/compile/internal/staticinit"
 	"cmd/compile/internal/types"
@@ -30,10 +31,6 @@ var (
 )
 
 func enqueueFunc(fn *ir.Func, symABIs *ssagen.SymABIs) {
-	if ir.CurFunc != nil {
-		base.FatalfAt(fn.Pos(), "enqueueFunc %v inside %v", fn, ir.CurFunc)
-	}
-
 	if ir.FuncName(fn) == "_" {
 		// Skip compiling blank functions.
 		// Frontend already reported any spec-mandated errors (#29870).
@@ -49,7 +46,7 @@ func enqueueFunc(fn *ir.Func, symABIs *ssagen.SymABIs) {
 	}
 
 	if len(fn.Body) == 0 {
-		if ir.IsIntrinsicSym(fn.Sym()) && fn.Sym().Linkname == "" && !symABIs.HasDef(fn.Sym()) {
+		if needsIntrinsicBody(fn, symABIs) {
 			// Generate the function body for a bodyless intrinsic, in case it
 			// is used in a non-call context (e.g. as a function pointer).
 			// We skip functions defined in assembly, or has a linkname (which
@@ -95,6 +92,10 @@ func enqueueFunc(fn *ir.Func, symABIs *ssagen.SymABIs) {
 	compilequeue = append(compilequeue, fn)
 }
 
+func needsIntrinsicBody(fn *ir.Func, symABIs *ssagen.SymABIs) bool {
+	return len(fn.Body) == 0 && ir.IsIntrinsicSym(fn.Sym()) && fn.Sym().Linkname == "" && !symABIs.HasDef(fn.Sym())
+}
+
 // prepareFunc handles any remaining frontend compilation tasks that
 // aren't yet safe to perform concurrently.
 func prepareFunc(fn *ir.Func) {
@@ -119,9 +120,10 @@ func prepareFunc(fn *ir.Func) {
 	// Must be done after InitLSym and CalcSize.
 	ssagen.GenWasmExportWrapper(fn)
 
-	ir.CurFunc = fn
 	walk.Walk(fn)
-	ir.CurFunc = nil // enforce no further uses of CurFunc
+	if ir.MatchAstDump(fn, "walk") {
+		ir.AstDump(fn, "walk, "+ir.FuncName(fn))
+	}
 
 	base.Ctxt.DwTextCount++
 }
@@ -142,74 +144,56 @@ func compileFunctions(profile *pgoir.Profile) {
 		// Compile the longest functions first,
 		// since they're most likely to be the slowest.
 		// This helps avoid stragglers.
+		// Since we remove from the end of the slice queue,
+		// that means shortest to longest.
 		slices.SortFunc(compilequeue, func(a, b *ir.Func) int {
-			return cmp.Compare(len(b.Body), len(a.Body))
+			return cmp.Compare(a.NumPreWalkNodes, b.NumPreWalkNodes)
 		})
 	}
 
-	// By default, we perform work right away on the current goroutine
-	// as the solo worker.
-	queue := func(work func(int)) {
-		work(0)
-	}
-
-	if nWorkers := base.Flag.LowerC; nWorkers > 1 {
-		// For concurrent builds, we allow the work queue
-		// to grow arbitrarily large, but only nWorkers work items
-		// can be running concurrently.
-		workq := make(chan func(int))
-		done := make(chan int)
-		go func() {
-			ids := make([]int, nWorkers)
-			for i := range ids {
-				ids[i] = i
-			}
-			var pending []func(int)
-			for {
-				select {
-				case work := <-workq:
-					pending = append(pending, work)
-				case id := <-done:
-					ids = append(ids, id)
-				}
-				for len(pending) > 0 && len(ids) > 0 {
-					work := pending[len(pending)-1]
-					id := ids[len(ids)-1]
-					pending = pending[:len(pending)-1]
-					ids = ids[:len(ids)-1]
-					go func() {
-						work(id)
-						done <- id
-					}()
-				}
-			}
-		}()
-		queue = func(work func(int)) {
-			workq <- work
-		}
-	}
-
+	var mu sync.Mutex
 	var wg sync.WaitGroup
-	var compile func([]*ir.Func)
-	compile = func(fns []*ir.Func) {
-		wg.Add(len(fns))
-		for _, fn := range fns {
-			fn := fn
-			queue(func(worker int) {
-				ssagen.Compile(fn, worker, profile)
-				compile(fn.Closures)
-				wg.Done()
-			})
-		}
+	mu.Lock()
+
+	for workerId := range base.Flag.LowerC {
+		wg.Go(func() {
+			var closures []*ir.Func
+			for {
+				mu.Lock()
+				compilequeue = append(compilequeue, closures...)
+				remaining := len(compilequeue)
+				if remaining == 0 {
+					mu.Unlock()
+					return
+				}
+				fn := compilequeue[len(compilequeue)-1]
+				compilequeue = compilequeue[:len(compilequeue)-1]
+				mu.Unlock()
+				ssagen.Compile(ssacompile.Compiler{}, fn, workerId, profile)
+				closures = fn.Closures
+
+				// Free IR data that is no longer needed once machine code has been generated.
+				fn.Body = nil
+				fn.Dcl = nil
+				fn.ClosureVars = nil
+				// We need to retain debug info for inlined functions because it is used to build
+				// DWARF for the functions that this function was inlined into.
+				if !fn.LSym.WasInlined() {
+					fn.DebugInfo = nil
+				}
+			}
+		})
 	}
 
 	types.CalcSizeDisabled = true // not safe to calculate sizes concurrently
 	base.Ctxt.InParallel = true
 
-	compile(compilequeue)
-	compilequeue = nil
+	mu.Unlock()
 	wg.Wait()
+	compilequeue = nil
 
 	base.Ctxt.InParallel = false
 	types.CalcSizeDisabled = false
+
+	ssacompile.PostCompile()
 }

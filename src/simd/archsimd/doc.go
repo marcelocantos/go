@@ -7,7 +7,7 @@
 // Package archsimd provides access to architecture-specific SIMD operations.
 //
 // This is a low-level package that exposes hardware-specific functionality.
-// It currently supports AMD64.
+// It currently supports amd64, arm64 Neon, and WebAssembly SIMD.
 //
 // This package is experimental, and not subject to the Go 1 compatibility promise.
 // It only exists when building with the GOEXPERIMENT=simd environment variable set.
@@ -15,8 +15,8 @@
 // # Vector types and operations
 //
 // Vector types are defined as structs, such as Int8x16 and Float64x8, corresponding
-// to the hardware's vector registers. On AMD64, 128-, 256-, and 512-bit vectors are
-// supported.
+// to the hardware's vector registers. The package defines 128-bit vector types on
+// amd64, arm64, and WebAssembly, and 256- and 512-bit vector types on amd64.
 //
 // Mask types are defined similarly, such as Mask8x16, and are represented as
 // opaque types, handling the differences in the underlying representations.
@@ -57,7 +57,5 @@
 //     as values. It is not recommended to take the address of a vector type,
 //     allocate it in the heap, or put it in an aggregate type.
 package archsimd
-
-// BUG(cherry): Using a vector type as a type parameter may not work.
 
 // BUG(cherry): Using reflect Call to call a vector function/method may not work.

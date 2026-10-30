@@ -80,7 +80,6 @@ import (
 	"cmp"
 	"fmt"
 	"internal/abi"
-	"internal/goexperiment"
 	"internal/profilerecord"
 	"io"
 	"runtime"
@@ -257,15 +256,13 @@ func lockProfiles() {
 	if profiles.m == nil {
 		// Initial built-in profiles.
 		profiles.m = map[string]*Profile{
-			"goroutine":    goroutineProfile,
-			"threadcreate": threadcreateProfile,
-			"heap":         heapProfile,
-			"allocs":       allocsProfile,
-			"block":        blockProfile,
-			"mutex":        mutexProfile,
-		}
-		if goexperiment.GoroutineLeakProfile {
-			profiles.m["goroutineleak"] = goroutineLeakProfile
+			"goroutine":     goroutineProfile,
+			"threadcreate":  threadcreateProfile,
+			"heap":          heapProfile,
+			"allocs":        allocsProfile,
+			"block":         blockProfile,
+			"mutex":         mutexProfile,
+			"goroutineleak": goroutineLeakProfile,
 		}
 	}
 }
@@ -674,9 +671,9 @@ func writeHeapInternal(w io.Writer, debug int, defaultSampleType string) error {
 	var total runtime.MemProfileRecord
 	for i := range p {
 		r := &p[i]
-		total.AllocBytes += r.AllocBytes
+		total.AllocBytes += r.AllocObjects * r.ObjectSize
 		total.AllocObjects += r.AllocObjects
-		total.FreeBytes += r.FreeBytes
+		total.FreeBytes += r.FreeObjects * r.ObjectSize
 		total.FreeObjects += r.FreeObjects
 	}
 
@@ -706,7 +703,7 @@ func writeHeapInternal(w io.Writer, debug int, defaultSampleType string) error {
 		r := &p[i]
 		fmt.Fprintf(w, "%d: %d [%d: %d] @",
 			r.InUseObjects(), r.InUseBytes(),
-			r.AllocObjects, r.AllocBytes)
+			r.AllocObjects, r.AllocObjects*r.ObjectSize)
 		for _, pc := range r.Stack {
 			fmt.Fprintf(w, " %#x", pc)
 		}
@@ -907,7 +904,7 @@ func StartCPUProfile(w io.Writer) error {
 		return fmt.Errorf("cpu profiling already in use")
 	}
 	cpu.profiling = true
-	runtime.SetCPUProfileRate(hz)
+	pprof_setCPUProfileRate(hz)
 	go profileWriter(w)
 	return nil
 }
@@ -955,7 +952,7 @@ func StopCPUProfile() {
 		return
 	}
 	cpu.profiling = false
-	runtime.SetCPUProfileRate(0)
+	pprof_setCPUProfileRate(0)
 	<-cpu.done
 }
 
@@ -1003,7 +1000,7 @@ func writeProfileInternal(w io.Writer, debug int, name string, runtimeProfile fu
 	}
 
 	b := bufio.NewWriter(w)
-	tw := tabwriter.NewWriter(w, 1, 8, 1, '\t', 0)
+	tw := tabwriter.NewWriter(b, 1, 8, 1, '\t', 0)
 	w = tw
 
 	fmt.Fprintf(w, "--- %v:\n", name)
@@ -1058,3 +1055,6 @@ func pprof_fpunwindExpand(dst, src []uintptr) int
 
 //go:linkname pprof_makeProfStack runtime.pprof_makeProfStack
 func pprof_makeProfStack() []uintptr
+
+//go:linkname pprof_setCPUProfileRate runtime.pprof_setCPUProfileRate
+func pprof_setCPUProfileRate(hz int)

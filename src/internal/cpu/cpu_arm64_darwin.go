@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build arm64 && darwin && !ios
+//go:build arm64 && darwin
 
 package cpu
 
@@ -17,6 +17,8 @@ func osInit() {
 	ARM64.HasSHA3 = sysctlEnabled([]byte("hw.optional.armv8_2_sha3\x00"))
 
 	ARM64.HasDIT = sysctlEnabled([]byte("hw.optional.arm.FEAT_DIT\x00"))
+
+	ARM64.HasSB = sysctlEnabled([]byte("hw.optional.arm.FEAT_SB\x00"))
 
 	// There are no hw.optional sysctl values for the below features on macOS 11
 	// to detect their supported state dynamically (although they are available

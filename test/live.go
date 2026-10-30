@@ -1,4 +1,4 @@
-// errorcheckwithauto -0 -l -live -wb=0 -d=ssa/insert_resched_checks/off
+// errorcheckwithauto -0 -l -live -wb=0 -d=ssa/mem2reg/off -d=ssa/insert_resched_checks/off
 
 //go:build !ppc64 && !ppc64le && !goexperiment.regabiargs
 
@@ -665,14 +665,14 @@ func f39a() (x []int) {
 
 func f39b() (x [10]*int) {
 	x = [10]*int{}
-	x[0] = new(int) // ERROR "live at call to (newobject|mallocgcTinySize[48]): x$"
+	x[0] = new(int) // ERROR "live at call to (newobject|mallocgcTinySC2): x$"
 	printnl()       // ERROR "live at call to printnl: x$"
 	return x
 }
 
 func f39c() (x [10]*int) {
 	x = [10]*int{}
-	x[0] = new(int) // ERROR "live at call to (newobject|mallocgcTinySize[48]): x$"
+	x[0] = new(int) // ERROR "live at call to (newobject|mallocgcTinySC2): x$"
 	printnl()       // ERROR "live at call to printnl: x$"
 	return
 }

@@ -364,7 +364,7 @@ func kemEncaps(cc *[CiphertextSize768]byte, ek *EncapsulationKey768, m *[message
 	g.Write(m[:])
 	g.Write(ek.h[:])
 	G := g.Sum(nil)
-	K, r := G[:SharedKeySize], G[SharedKeySize:]
+	K, r := G[:SharedKeySize:SharedKeySize], G[SharedKeySize:]
 	c = pkeEncrypt(cc, &ek.encryptionKey, m, r)
 	return K, c
 }
@@ -469,6 +469,8 @@ func (dk *DecapsulationKey768) Decapsulate(ciphertext []byte) (sharedKey []byte,
 	return kemDecaps(dk, c), nil
 }
 
+var testingOnlyRejectionOutcome func(int)
+
 // kemDecaps produces a shared key from a ciphertext.
 //
 // It implements ML-KEM.Decaps_internal according to FIPS 203, Algorithm 18.
@@ -487,6 +489,10 @@ func kemDecaps(dk *DecapsulationKey768, c *[CiphertextSize768]byte) (K []byte) {
 	J.Read(Kout)
 	var cc [CiphertextSize768]byte
 	c1 := pkeEncrypt(&cc, &dk.encryptionKey, (*[32]byte)(m), r)
+
+	if testingOnlyRejectionOutcome != nil {
+		testingOnlyRejectionOutcome(subtle.ConstantTimeCompare(c[:], c1))
+	}
 
 	subtle.ConstantTimeCopy(subtle.ConstantTimeCompare(c[:], c1), Kout, Kprime)
 	return Kout

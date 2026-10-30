@@ -440,7 +440,7 @@ func f13i(a uint) int {
 	if a == 0 {
 		return 1
 	}
-	if a > 0 { // ERROR "Proved Less64U$"
+	if a > 0 { // ERROR "Proved Neq64$"
 		return 2
 	}
 	return 3
@@ -457,6 +457,24 @@ func f14(p, q *int, a []int) {
 	i2 := *p
 	useInt(a[i1+j])
 	useInt(a[i2+j]) // ERROR "Proved IsInBounds$"
+}
+
+func f14mem(q *int, a []int) (r int) {
+	p := &r
+	i1 := *q
+	*p = 1 // CSE of the "q" pointer load across disjoint store to "p"
+	i2 := *q
+	useInt(a[i1])
+	useInt(a[i2]) // ERROR "Proved IsInBounds$"
+	return r
+}
+
+func sliceptr(a *[]int, i int) int {
+	var x, y int
+	px, py := &x, &y
+	*px = (*a)[i]
+	*py = (*a)[i] // ERROR "Proved IsInBounds$"
+	return x + y
 }
 
 func f15(s []int, x int) {
@@ -681,11 +699,11 @@ func natcmp(x, y []uint) (r int) {
 
 func suffix(s, suffix string) bool {
 	// Note: issue 76304
-	return len(s) >= len(suffix) && s[len(s)-len(suffix):] == suffix // ERROR "Proved IsSliceInBounds"
+	return len(s) >= len(suffix) && s[len(s)-len(suffix):] == suffix // ERROR "Proved IsSliceInBounds" "Proved Eq64$"
 }
 
 func constsuffix(s string) bool {
-	return suffix(s, "abc") // ERROR "Proved IsSliceInBounds$" "Proved slicemask not needed$" "Proved Eq64$"
+	return suffix(s, "abc") // ERROR "Proved IsSliceInBounds$" "Proved slicemask not needed \(by limit\)$" "Proved Eq64$"
 }
 
 func atexit(foobar []func()) {
@@ -778,7 +796,7 @@ func unrollUpExcl(a []int) int {
 		x += a[i+1] // ERROR "Proved IsInBounds( for blocked indexing)?$"
 	}
 	if i == len(a)-1 {
-		x += a[i]
+		x += a[i] // ERROR "Proved IsInBounds$"
 	}
 	return x
 }
@@ -791,7 +809,7 @@ func unrollUpIncl(a []int) int {
 		x += a[i+1] // ERROR "Proved IsInBounds( for blocked indexing)?$"
 	}
 	if i == len(a)-1 {
-		x += a[i]
+		x += a[i] // ERROR "Proved IsInBounds$"
 	}
 	return x
 }
@@ -804,7 +822,7 @@ func unrollDownExcl0(a []int) int {
 		x += a[i-1] // ERROR "Proved IsInBounds$"
 	}
 	if i == 0 {
-		x += a[i]
+		x += a[i] // ERROR "Proved IsInBounds$"
 	}
 	return x
 }
@@ -817,7 +835,7 @@ func unrollDownExcl1(a []int) int {
 		x += a[i-1] // ERROR "Proved IsInBounds$"
 	}
 	if i == 0 {
-		x += a[i]
+		x += a[i] // ERROR "Proved IsInBounds$"
 	}
 	return x
 }
@@ -830,7 +848,7 @@ func unrollDownInclStep(a []int) int {
 		x += a[i-2] // ERROR "Proved IsInBounds$"
 	}
 	if i == 1 {
-		x += a[i-1]
+		x += a[i-1] // ERROR "Proved IsInBounds$"
 	}
 	return x
 }
@@ -2475,6 +2493,58 @@ func issue75144ifNot(a, b []uint64) bool {
 	return false
 }
 
+func issue76269(a, b []byte) byte {
+	lenA := len(a)
+	lenB := len(b)
+	idxA := lenA - 1
+	idxB := lenB - 1
+
+	c := byte(0)
+
+	for idxA >= 0 && idxB >= 0 { // ERROR "Induction variable: limits \[0,\?\], increment 1$"
+		c ^= a[idxA] // ERROR "Proved IsInBounds$"
+		c ^= b[idxB] // ERROR "Proved IsInBounds$"
+		idxA--
+		idxB--
+	}
+	return c
+}
+
+func ex76269shouldNotIndVar() {
+	i, j := 0, 0
+	var a [4]byte
+	for {
+		if i >= 4 {
+			goto next
+		} // looks like a loop exit, but isn't!
+		if j >= 4 { // ERROR "Disproved Leq64$"
+			break
+		}
+	next:
+		_, _ = a[i], a[j] // ERROR "Proved IsInBounds$"
+		i++
+		j++
+	}
+}
+
+func issue45078reverse(s []int) {
+	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 { // ERROR "Induction variable: limits \[0,\?\), increment 1$" "Induction variable: limits \(\?,\?\], increment 1$"
+		tmp := s[i] // ERROR "Proved IsInBounds$"
+		s[i] = s[j] // ERROR "Proved IsInBounds$"
+		s[j] = tmp  // ERROR "Proved IsInBounds$"
+	}
+}
+
+func ex45078reverse(s []int, low, high int) {
+	if low >= 0 && high < len(s) {
+		for i, j := low, high; i < j; i, j = i+1, j-1 { // ERROR "Induction variable: limits \[\?,\?\), increment 1$" "Induction variable: limits \(\?,\?\], increment 1$"
+			tmp := s[i] // ERROR "Proved IsInBounds$"
+			s[i] = s[j] // ERROR "Proved IsInBounds$"
+			s[j] = tmp  // ERROR "Proved IsInBounds$"
+		}
+	}
+}
+
 func mulIntoAnd(a, b uint) uint {
 	if a > 1 || b > 1 {
 		return 0
@@ -2552,7 +2622,7 @@ func swapbound(v []int) {
 	for i := 0; i < len(v)/2; i++ { // ERROR "Proved Div64 is unsigned|Induction variable"
 		v[i], // ERROR "Proved IsInBounds"
 			v[len(v)-1-i] = // ERROR "Proved IsInBounds"
-			v[len(v)-1-i],
+			v[len(v)-1-i], // ERROR "Proved IsInBounds"
 			v[i] // ERROR "Proved IsInBounds"
 	}
 }
@@ -2726,6 +2796,90 @@ func issue76688(x, y uint64) uint64 {
 	return x * y
 }
 
+func issue76429(s []byte, k int) byte {
+	if k < 0 || k >= len(s) {
+		return 0
+	}
+	s = s[k:]   // ERROR "Proved IsSliceInBounds" "Proved slicemask not needed"
+	return s[0] // ERROR "Proved IsInBounds"
+}
+
+func booleanLikeNeqWithOneToEqWithZero(x uint64) uint64 {
+	x = min(x, 1)
+	if x != 1 { // ERROR "argument is boolean-like; rewrote to Eq64 against 0$"
+		return 42
+	}
+	return 1337
+}
+
+func booleanLikeEqWithOneToNeqWithZero(x uint64) uint64 {
+	x = min(x, 1)
+	if x == 1 { // ERROR "argument is boolean-like; rewrote to Neq64 against 0$"
+		return 42
+	}
+	return 1337
+}
+
+func noopAnd64(x uint64) uint64 {
+	x = max(x, 0x0f0f0)
+	x = min(x, 0x0f0ff)
+	x &= 0xff0ff // ERROR "Proved v[0-9]+ is a no-op And64"
+	return x
+}
+
+func noopAnd64DoNothingClearsFixed(x uint64) uint64 {
+	x = max(x, 0x0f0f0)
+	x = min(x, 0x0f0ff)
+	x &= 0xf80ff
+	return x
+}
+
+func noopAnd64DoNothingMayClearVarying(x uint64) uint64 {
+	x = max(x, 0x0f0f0)
+	x = min(x, 0x0f0ff)
+	x &= 0xff0f8
+	return x
+}
+
+func noopOr64(x uint64) uint64 {
+	x = max(x, 0x0f0f0)
+	x = min(x, 0x0f0ff)
+	x |= 0x0f0f0 // ERROR "Proved v[0-9]+ is a no-op Or64"
+	return x
+}
+
+func noopOr64DoNothingSetsFixed(x uint64) uint64 {
+	x = max(x, 0x0f0f0)
+	x = min(x, 0x0f0ff)
+	x |= 0x8f0f0
+	return x
+}
+func noopOr64DoNothingMaySetVarying(x uint64) uint64 {
+	x = max(x, 0x0f0f0)
+	x = min(x, 0x0f0ff)
+	x |= 0x0f0f8
+	return x
+}
+
+func limitFlowThroughAnd(x, y uint64, ensureAllBranchesCouldHappen func() bool) int {
+	x = min(x, 1337)
+	x &= y
+	if ensureAllBranchesCouldHappen() && x <= 1337 { // ERROR "Proved Leq64U$"
+		return 1
+	}
+	if ensureAllBranchesCouldHappen() && x < 1338 { // ERROR "Proved Less64U$"
+		return 2
+	}
+
+	if ensureAllBranchesCouldHappen() && x <= 1336 {
+		return 3
+	}
+	if ensureAllBranchesCouldHappen() && x < 1337 {
+		return 4
+	}
+	return 0
+}
+
 //go:noinline
 func prove(x int) {
 }
@@ -2742,5 +2896,127 @@ func useInt(a int) {
 func useSlice(a []int) {
 }
 
+func testSubSlicingAdd(buf []byte) {
+	if len(buf) >= 128 {
+		for i := 0; i <= len(buf)-128; i += 128 { // ERROR "Induction variable:"
+			_ = buf[i : i+32]     // ERROR "Proved IsSliceInBounds"
+			_ = buf[i+32 : i+64]  // ERROR "Proved IsSliceInBounds"
+			_ = buf[i+64 : i+96]  // ERROR "Proved IsSliceInBounds"
+			_ = buf[i+96 : i+128] // ERROR "Proved IsSliceInBounds"
+		}
+	}
+}
+
+func testSubSlicingSub(buf []byte, i int) {
+	if i >= 128 && i <= len(buf) {
+		_ = buf[i-128 : i-96] // ERROR "Proved IsSliceInBounds$"
+		_ = buf[i-96 : i-64]  // ERROR "Proved IsSliceInBounds$"
+		_ = buf[i-64 : i-32]  // ERROR "Proved IsSliceInBounds$"
+		_ = buf[i-32 : i]     // ERROR "Proved IsSliceInBounds$"
+	}
+}
+
+func testSubSlicingAddCanOverflow(buf []byte, i int8) {
+	if int(i) < len(buf)-10 {
+		_ = buf[i+1 : i+10]
+	}
+}
+
+func testSubSlicingSubCanUnderflow(buf []byte, i uint) {
+	if i <= uint(len(buf)) {
+		_ = buf[i-64 : i-32]
+	}
+}
+
+func testConsecutiveLoops(buf []byte) {
+	i := 0
+	n := len(buf)
+	for ; i <= n-128; i += 128 { // ERROR "Induction variable:"
+		_ = buf[i : i+32] // ERROR "Proved IsSliceInBounds"
+	}
+	for ; i <= n-32; i += 32 { // ERROR "Induction variable:"
+		_ = buf[i : i+32] // ERROR "Proved IsSliceInBounds"
+	}
+}
+
+func testDownwardLoopProved(buf []byte) {
+	if len(buf) >= 15 {
+		i := 10
+		for ; i > 0; i -= 3 { // ERROR "Induction variable:"
+			_ = buf[i : i+2] // ERROR "Proved IsSliceInBounds"
+		}
+	}
+}
+
+func testConsecutiveLoopsMixed(buf []byte) {
+	i := 10
+	n := len(buf)
+	if n >= 100 {
+		for ; i > 0; i -= 3 { // ERROR "Induction variable:"
+			_ = buf[i : i+2] // ERROR "Proved IsSliceInBounds"
+		}
+		j := i
+		for ; j <= n-32; j += 32 { // ERROR "Induction variable:"
+			// We cannot prove buf[i : i+32] here because i starts negative.
+			_ = buf[j : j+32]
+		}
+	}
+}
+
 func main() {
+}
+
+// The operand that cancels appears twice in each of these, as separate
+// expressions that are merged only by CSE, after the rewrite rules that
+// would fold the arithmetic have run.
+
+func inverseSliceRow(a []int, i, k int) int {
+	ai := a[i*k : i*k+k] // len(ai) == (i*k+k)-i*k == k
+	s := 0
+	for p := range k { // ERROR "Induction variable: limits \[0,\?\), increment 1$"
+		s += ai[p] // ERROR "Proved IsInBounds$"
+	}
+	return s
+}
+
+func inverseAddSubX(x, y, z int) int {
+	if (x*z+y)-x*z == y { // ERROR "Proved Eq64$"
+		return 1
+	}
+	return 0
+}
+
+func inverseAddSubY(x, y, z int) int {
+	if (y+x*z)-x*z == y { // ERROR "Proved Eq64$"
+		return 1
+	}
+	return 0
+}
+
+func inverseSubSub(x, y, z int) int {
+	if x*z-(x*z-y) == y { // ERROR "Proved Eq64$"
+		return 1
+	}
+	return 0
+}
+
+func inverseSubAdd(x, y, z int) int {
+	if (y-x*z)+x*z == y { // ERROR "Proved Eq64$"
+		return 1
+	}
+	return 0
+}
+
+func inverseAddSubCommuted(x, y, z int) int {
+	if x*z+(y-x*z) == y { // ERROR "Proved Eq64$"
+		return 1
+	}
+	return 0
+}
+
+func inverseAddSub32(x, y, z int32) int {
+	if (x*z+y)-x*z == y { // ERROR "Proved Eq32$"
+		return 1
+	}
+	return 0
 }

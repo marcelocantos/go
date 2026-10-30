@@ -42,12 +42,11 @@ import (
 	"log"
 	"math"
 	"sort"
+	"sync"
 )
 
 func Linknew(arch *LinkArch) *Link {
 	ctxt := new(Link)
-	ctxt.hash = make(map[string]*LSym)
-	ctxt.funchash = make(map[string]*LSym)
 	ctxt.statichash = make(map[string]*LSym)
 	ctxt.Arch = arch
 	ctxt.Pathname = objabi.WorkingDir()
@@ -90,28 +89,34 @@ func (ctxt *Link) LookupABI(name string, abi ABI) *LSym {
 // If it does not exist, it creates it and
 // passes it to init for one-time initialization.
 func (ctxt *Link) LookupABIInit(name string, abi ABI, init func(s *LSym)) *LSym {
-	var hash map[string]*LSym
+	var hash *sync.Map
 	switch abi {
 	case ABI0:
-		hash = ctxt.hash
+		hash = &ctxt.hash
 	case ABIInternal:
-		hash = ctxt.funchash
+		hash = &ctxt.funchash
 	default:
 		panic("unknown ABI")
 	}
 
-	ctxt.hashmu.Lock()
-	s := hash[name]
-	if s == nil {
-		s = &LSym{Name: name}
-		s.SetABI(abi)
-		hash[name] = s
-		if init != nil {
-			init(s)
+	c, _ := hash.Load(name)
+	if c == nil {
+		once := &symOnce{
+			sym: LSym{Name: name},
 		}
+		once.sym.SetABI(abi)
+		c, _ = hash.LoadOrStore(name, once)
 	}
-	ctxt.hashmu.Unlock()
-	return s
+	once := c.(*symOnce)
+	if init != nil && !once.inited.Load() {
+		ctxt.hashmu.Lock()
+		if !once.inited.Load() {
+			init(&once.sym)
+			once.inited.Store(true)
+		}
+		ctxt.hashmu.Unlock()
+	}
+	return &once.sym
 }
 
 // Lookup looks up the symbol with name name.
@@ -124,17 +129,31 @@ func (ctxt *Link) Lookup(name string) *LSym {
 // If it does not exist, it creates it and
 // passes it to init for one-time initialization.
 func (ctxt *Link) LookupInit(name string, init func(s *LSym)) *LSym {
-	ctxt.hashmu.Lock()
-	s := ctxt.hash[name]
-	if s == nil {
-		s = &LSym{Name: name}
-		ctxt.hash[name] = s
-		if init != nil {
-			init(s)
+	c, _ := ctxt.hash.Load(name)
+	if c == nil {
+		once := &symOnce{
+			sym: LSym{Name: name},
 		}
+		c, _ = ctxt.hash.LoadOrStore(name, once)
 	}
-	ctxt.hashmu.Unlock()
-	return s
+	once := c.(*symOnce)
+	if init != nil && !once.inited.Load() {
+		// TODO(dmo): some of our init functions modify other fields
+		// in the symbol table. They are only implicitly protected since
+		// we serialize all inits under the hashmu lock.
+		// Consider auditing the functions and have them lock their
+		// concurrent access values explicitly. This would make it possible
+		// to have more than one than one init going at a time (although this might
+		// be a theoretical concern, I have yet to catch this lock actually being waited
+		// on).
+		ctxt.hashmu.Lock()
+		if !once.inited.Load() {
+			init(&once.sym)
+			once.inited.Store(true)
+		}
+		ctxt.hashmu.Unlock()
+	}
+	return &once.sym
 }
 
 func (ctxt *Link) rodataKind() (suffix string, typ objabi.SymKind) {
@@ -147,6 +166,7 @@ func (ctxt *Link) Float32Sym(f float32) *LSym {
 	name := fmt.Sprintf("$f32.%08x%s", i, suffix)
 	return ctxt.LookupInit(name, func(s *LSym) {
 		s.Size = 4
+		s.Align = 4
 		s.WriteFloat32(ctxt, 0, f)
 		s.Type = typ
 		s.Set(AttrLocal, true)
@@ -161,6 +181,7 @@ func (ctxt *Link) Float64Sym(f float64) *LSym {
 	name := fmt.Sprintf("$f64.%016x%s", i, suffix)
 	return ctxt.LookupInit(name, func(s *LSym) {
 		s.Size = 8
+		s.Align = int16(ctxt.Arch.PtrSize)
 		s.WriteFloat64(ctxt, 0, f)
 		s.Type = typ
 		s.Set(AttrLocal, true)
@@ -174,6 +195,7 @@ func (ctxt *Link) Int32Sym(i int64) *LSym {
 	name := fmt.Sprintf("$i32.%08x%s", uint64(i), suffix)
 	return ctxt.LookupInit(name, func(s *LSym) {
 		s.Size = 4
+		s.Align = 4
 		s.WriteInt(ctxt, 0, 4, i)
 		s.Type = typ
 		s.Set(AttrLocal, true)
@@ -187,6 +209,7 @@ func (ctxt *Link) Int64Sym(i int64) *LSym {
 	name := fmt.Sprintf("$i64.%016x%s", uint64(i), suffix)
 	return ctxt.LookupInit(name, func(s *LSym) {
 		s.Size = 8
+		s.Align = int16(ctxt.Arch.PtrSize)
 		s.WriteInt(ctxt, 0, 8, i)
 		s.Type = typ
 		s.Set(AttrLocal, true)
@@ -200,6 +223,7 @@ func (ctxt *Link) Int128Sym(hi, lo int64) *LSym {
 	name := fmt.Sprintf("$i128.%016x%016x%s", uint64(hi), uint64(lo), suffix)
 	return ctxt.LookupInit(name, func(s *LSym) {
 		s.Size = 16
+		s.Align = int16(ctxt.Arch.PtrSize)
 		if ctxt.Arch.ByteOrder == binary.LittleEndian {
 			s.WriteInt(ctxt, 0, 8, lo)
 			s.WriteInt(ctxt, 8, 8, hi)
@@ -221,10 +245,27 @@ func (ctxt *Link) GCLocalsSym(data []byte) *LSym {
 	return ctxt.LookupInit(fmt.Sprintf("gclocals·%s", str), func(lsym *LSym) {
 		lsym.P = data
 		lsym.Set(AttrContentAddressable, true)
+		lsym.Align = 4
 	})
 }
 
-// Assign index to symbols.
+// NumberSymEarly preassigns an index to a symbol that will appear
+// in export data so that export data can be written early.
+func (ctxt *Link) NumberSymEarly(s *LSym) {
+	if s.PkgIdx != goobj.PkgIdxInvalid || s.Indexed() {
+		panic("NumberSymEarly: symbol " + s.Name + " already numbered")
+	}
+	s.PkgIdx = goobj.PkgIdxSelf
+	s.SymIdx = int32(len(ctxt.predefs))
+	s.Set(AttrIndexed, true)
+	ctxt.predefs = append(ctxt.predefs, s)
+}
+
+func (ctxt *Link) NoteUnnumberedExport(s *LSym) {
+	s.Set(AttrUnnumbered, true)
+}
+
+// NumberSyms assigns indices to symbols not handled by NumberSymEarly.
 // asm is set to true if this is called by the assembler (i.e. not the compiler),
 // in which case all the symbols are non-package (for now).
 func (ctxt *Link) NumberSyms() {
@@ -262,13 +303,17 @@ func (ctxt *Link) NumberSyms() {
 	ctxt.SEHSyms = nil
 
 	ctxt.pkgIdx = make(map[string]int32)
-	ctxt.defs = []*LSym{}
+	ctxt.defs = ctxt.predefs // Predefs isn't needed by itself anymore. Take over the slice.
 	ctxt.hashed64defs = []*LSym{}
 	ctxt.hasheddefs = []*LSym{}
 	ctxt.nonpkgdefs = []*LSym{}
 
-	var idx, hashedidx, hashed64idx, nonpkgidx int32
+	var hashedidx, hashed64idx, nonpkgidx int32
+	idx := int32(len(ctxt.predefs))
 	ctxt.traverseSyms(traverseDefs|traversePcdata, func(s *LSym) {
+		if s.PkgIdx == goobj.PkgIdxSelf {
+			return
+		}
 		if s.ContentAddressable() {
 			if s.Size <= 8 && len(s.R) == 0 && contentHashSection(s) == 0 {
 				// We can use short hash only for symbols without relocations.
@@ -290,7 +335,7 @@ func (ctxt *Link) NumberSyms() {
 				ctxt.hasheddefs = append(ctxt.hasheddefs, s)
 				hashedidx++
 			}
-		} else if isNonPkgSym(ctxt, s) {
+		} else if ctxt.IsNonPkgSym(s) {
 			s.PkgIdx = goobj.PkgIdxNone
 			s.SymIdx = nonpkgidx
 			if nonpkgidx != int32(len(ctxt.nonpkgdefs)) {
@@ -299,6 +344,13 @@ func (ctxt *Link) NumberSyms() {
 			ctxt.nonpkgdefs = append(ctxt.nonpkgdefs, s)
 			nonpkgidx++
 		} else {
+			// We're about to number a symbol that hasn't yet been numbered.
+			// If we write export data before we numbered symbols, make sure that none of the
+			// symbols that weren't numbered at export time have been numbered here. If they
+			// were, we missed a case where we had to number an exported symbol.
+			if s.Attribute&AttrUnnumbered != 0 {
+				panic("exported package symbol " + s.Name + " was not preassigned an index")
+			}
 			s.PkgIdx = goobj.PkgIdxSelf
 			s.SymIdx = idx
 			if idx != int32(len(ctxt.defs)) {
@@ -309,6 +361,23 @@ func (ctxt *Link) NumberSyms() {
 		}
 		s.Set(AttrIndexed, true)
 	})
+
+	// Double check preassigned symbol indices: make sure that all the
+	// numbered symbols were defined and that we didn't index symbols
+	// that shouldn't be numbered
+	for _, s := range ctxt.predefs {
+		if !s.OnList() {
+			panic("preassigned symbol " + s.Name + " was not defined")
+		}
+		if s.ContentAddressable() {
+			// Content addressable symbols couldn't have safely been pre-numbered because
+			// their contents were not determined at export time.
+			panic("content-addressable symbol " + s.Name + " was pre-numbered")
+		}
+		if ctxt.IsNonPkgSym(s) {
+			panic("non-package symbol " + s.Name + " was pre-numbered")
+		}
+	}
 
 	ipkg := int32(1) // 0 is invalid index
 	nonpkgdef := nonpkgidx
@@ -355,7 +424,7 @@ func (ctxt *Link) NumberSyms() {
 
 // Returns whether s is a non-package symbol, which needs to be referenced
 // by name instead of by index.
-func isNonPkgSym(ctxt *Link, s *LSym) bool {
+func (ctxt *Link) IsNonPkgSym(s *LSym) bool {
 	if ctxt.IsAsm && !s.Static() {
 		// asm symbols are referenced by name only, except static symbols
 		// which are file-local and can be referenced by index.

@@ -352,6 +352,13 @@ TEXT runtime·sigtramp(SB),NOSPLIT|TOPFRAME|NOFRAME,$0
 	get_tls(R12)
 	MOVQ	g(R12), R14
 	PXOR	X15, X15
+#ifndef GOAMD64_v3
+#ifndef GOAMD64_v4
+	CMPB	internal∕cpu·X86+const_offsetX86HasAVX(SB), $1
+	JNE	2(PC)
+#endif
+#endif
+	VXORPS	X15, X15, X15
 
 	// Reserve space for spill slots.
 	NOP	SP		// disable vet stack checking
@@ -377,6 +384,13 @@ TEXT runtime·sigprofNonGoWrapper<>(SB),NOSPLIT|NOFRAME,$0
 	get_tls(R12)
 	MOVQ	g(R12), R14
 	PXOR	X15, X15
+#ifndef GOAMD64_v3
+#ifndef GOAMD64_v4
+	CMPB	internal∕cpu·X86+const_offsetX86HasAVX(SB), $1
+	JNE	2(PC)
+#endif
+#endif
+	VXORPS	X15, X15, X15
 
 	// Reserve space for spill slots.
 	NOP	SP		// disable vet stack checking
@@ -480,7 +494,13 @@ sigtrampnog:
 // the name. The gdb source code is:
 // https://sourceware.org/git/?p=binutils-gdb.git;a=blob;f=gdb/amd64-linux-tdep.c;h=cbbac1a0c64e1deb8181b9d0ff6404e328e2979d#l178
 TEXT runtime·sigreturn__sigaction(SB),NOSPLIT,$0
-	MOVQ	$SYS_rt_sigreturn, AX
+	// The 7-byte sign-extended "48 c7 c0 0f 00 00 00" form of
+	// "MOVQ $SYS_rt_sigreturn, AX" is required: gdb and libgcc match
+	// these exact bytes to recognize the signal trampoline. The Go
+	// assembler now emits the 5-byte zero-extended "b8 0f 00 00 00"
+	// form for positive imm32, so write the bytes by hand.
+	BYTE $0x48; BYTE $0xc7; BYTE $0xc0
+	BYTE $0x0f; BYTE $0x00; BYTE $0x00; BYTE $0x00
 	SYSCALL
 	INT $3	// not reached
 

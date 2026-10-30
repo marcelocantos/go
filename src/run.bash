@@ -5,11 +5,6 @@
 
 # Environment variables that control run.bash:
 #
-# GO_TEST_SHARDS: number of "dist test" test shards that the
-# $GOROOT/test directory will be sliced up into for parallel
-# execution. Defaults to 1, unless GO_BUILDER_NAME is also specified,
-# in which case it defaults to 10.
-#
 # GO_BUILDER_NAME: the name of the Go builder that's running the tests.
 # Some tests are conditionally enabled or disabled based on the builder
 # name or the builder name being non-empty.
@@ -21,6 +16,13 @@
 #
 # GO_TEST_TIMEOUT_SCALE: a non-negative integer factor to scale test timeout by.
 # Defaults to 1.
+#
+# GO_TEST_ASMFLAGS: Additional go tool asm arguments to use when running the tests.
+# This environment variable is an internal implementation detail between the
+# Go build system (x/build) and cmd/dist to enable builders that need to control this,
+# and will be removed if it stops being needed, or if a more general-purpose
+# GO_ASMFLAGS environment variable gets added to make.bash and supersedes this
+# test-only subset of it. See go.dev/issue/77427.
 
 set -e
 

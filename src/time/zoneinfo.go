@@ -353,11 +353,15 @@ func tzset(s string, lastTxSec, sec int64) (name string, offset int, start, end 
 	// The start and end values that we return are accurate
 	// close to a daylight savings transition, but are otherwise
 	// just the start and end of the year. That suffices for
-	// the only caller that cares, which is Date.
+	// the callers that care about it, Date and Time.ZoneBounds.
 	if ysec < startSec {
 		return stdName, stdOffset, ystart, startSec + ystart, stdIsDST, true
 	} else if ysec >= endSec {
-		return stdName, stdOffset, endSec + ystart, ystart + 365*secondsPerDay, stdIsDST, true
+		yend := ystart + 365*secondsPerDay
+		if isLeap(year) {
+			yend += secondsPerDay
+		}
+		return stdName, stdOffset, endSec + ystart, yend, stdIsDST, true
 	} else {
 		return dstName, dstOffset, startSec + ystart, endSec + ystart, dstIsDST, true
 	}
@@ -645,12 +649,13 @@ var errLocation = errors.New("time: invalid location name")
 var zoneinfo *string
 var zoneinfoOnce sync.Once
 
-// LoadLocation returns the Location with the given name.
+// LoadLocation returns a [Location] with the given name.
 //
-// If the name is "" or "UTC", LoadLocation returns UTC.
-// If the name is "Local", LoadLocation returns Local.
+// If the name is "" or "UTC", LoadLocation returns [UTC].
+// If the name is "Local", LoadLocation returns [Local].
 //
-// Otherwise, the name is taken to be a location name corresponding to a file
+// Otherwise, a new [Location] is created where the name is taken
+// to be a location name corresponding to a file
 // in the IANA Time Zone database, such as "America/New_York".
 //
 // LoadLocation looks for the IANA Time Zone database in the following

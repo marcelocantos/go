@@ -41,7 +41,6 @@ TEXT ·archExp(SB),$0-16
 	MOVD	56(R10), F1	// Overflow
 	MOVD	64(R10), F2	// Underflow
 	MOVD	88(R10), F3	// NearZero
-	MOVD	16(R10), F17	// 1.0
 
 	CMPEQD	F0, F0, FCC0
 	BFPF	isNaN		// x = NaN, return NaN
@@ -62,13 +61,9 @@ TEXT ·archExp(SB),$0-16
 	MOVD	8(R10), F3
 	MOVD	48(R10), F2
 	CMPGTD	F0, F5, FCC0
-	BFPT	add		// x > 0
-sub:
-	FMSUBD	F3, F2, F0, F3	// Log2e*x - 0.5
-	JMP	2(PC)
-add:
+	FMSUBD	F3, F2, F0, F4	// Log2e*x - 0.5
 	FMADDD	F3, F2, F0, F3	// Log2e*x + 0.5
-
+	FSEL	FCC0, F3, F4, F3
 	FTINTRZVD F3, F4	// float64 -> int64
 	MOVV	F4, R5		// R5 = int(k)
 	FFINTDV	F4, F3		// int64 -> float64
@@ -82,15 +77,19 @@ add:
 
 	// compute c
 	MOVV	$expmultirodata<>+0(SB), R11
-	MOVD	32(R11), F8
-	MOVD	24(R11), F9
-	FMADDD	F9, F8, F7, F13
-	MOVD	16(R11), F10
-	FMADDD	F10, F13, F7, F13
-	MOVD	8(R11), F11
-	FMADDD	F11, F13, F7, F13
-	MOVD	0(R11), F12
-	FMADDD	F12, F13, F7, F13
+	MOVD	0(R11), F12	// P1
+	MOVD	8(R11), F11	// P2
+	MOVD	16(R11), F10	// P3
+	MOVD	24(R11), F9	// P4
+	MOVD	32(R11), F8	// P5
+	// Estrin's scheme: A, B, r4 are mutually independent and
+	// can be computed in parallel; shortens the dependency
+	// chain from 4 serial FMAs to 3.
+	MULD	F7, F7, F18		// F18 = r4 = r2*r2
+	FMADDD	F12, F11, F7, F19	// F19 = A = P1 + P2*r2
+	FMADDD	F10, F9, F7, F20	// F20 = B = P3 + P4*r2
+	FMADDD	F20, F8, F18, F20	// F20 = C = B + P5*r4
+	FMADDD	F19, F20, F18, F13	// F13 = A + C*r4
 	FNMSUBD	F6, F13, F7, F13
 
 	// compute y
@@ -98,6 +97,8 @@ add:
 	SUBD	F13, F14, F14
 	MULD	F6, F13, F15
 	DIVD	F14, F15, F15
+
+	MOVD    16(R10), F17	// 1.0
 	SUBD	F15, F5, F15
 	SUBD	F4, F15, F15
 	SUBD	F15, F17, F16
@@ -123,6 +124,7 @@ normal:
 	MOVD	F0, ret+8(FP)
 	RET
 nearzero:
+	MOVD    16(R10), F17	// 1.0
 	ADDD	F17, F0, F0
 isNaN:
 	MOVD	F0, ret+8(FP)
@@ -162,13 +164,9 @@ TEXT ·archExp2(SB),$0-16
 	MOVD	0(R10), F10
 	MOVD	8(R10), F2
 	CMPGTD	F0, F10, FCC0
-	BFPT	add
-sub:
-	SUBD	F2, F0, F3	// x - 0.5
-	JMP	2(PC)
-add:
+	SUBD	F2, F0, F4	// x - 0.5
 	ADDD	F2, F0, F3	// x + 0.5
-
+	FSEL	FCC0, F3, F4, F3
 	FTINTRZVD F3, F4
 	MOVV	F4, R5
 	FFINTDV	F4, F3
@@ -183,15 +181,16 @@ add:
 
 	// compute c
 	MOVV	$expmultirodata<>+0(SB), R11
-	MOVD	32(R11), F8
-	MOVD	24(R11), F9
-	FMADDD	F9, F8, F7, F13
-	MOVD	16(R11), F10
-	FMADDD	F10, F13, F7, F13
-	MOVD	8(R11), F11
-	FMADDD	F11, F13, F7, F13
-	MOVD	0(R11), F12
-	FMADDD	F12, F13, F7, F13
+	MOVD	0(R11), F12	// P1
+	MOVD	8(R11), F11	// P2
+	MOVD	16(R11), F10	// P3
+	MOVD	24(R11), F9	// P4
+	MOVD	32(R11), F8	// P5
+	MULD	F7, F7, F18		// F18 = r4 = r2*r2
+	FMADDD	F12, F11, F7, F19	// F19 = A = P1 + P2*r2
+	FMADDD	F10, F9, F7, F20	// F20 = B = P3 + P4*r2
+	FMADDD	F20, F8, F18, F20	// F20 = C = B + P5*r4
+	FMADDD	F19, F20, F18, F13	// F13 = A + C*r4
 	FNMSUBD	F6, F13, F7, F13
 
 	// compute y

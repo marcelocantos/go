@@ -232,7 +232,7 @@ func (p *Profile) postDecode() error {
 			if id := ln.functionIDX; id != 0 {
 				l.Line[i].Function = functions[id]
 				if l.Line[i].Function == nil {
-					return fmt.Errorf("Function ID %d not found", id)
+					return fmt.Errorf("function ID %d not found", id)
 				}
 				l.Line[i].functionIDX = 0
 			}
@@ -266,7 +266,11 @@ func (p *Profile) postDecode() error {
 		}
 		s.Location = nil
 		for _, lid := range s.locationIDX {
-			s.Location = append(s.Location, locations[lid])
+			loc := locations[lid]
+			if loc == nil {
+				return fmt.Errorf("location ID %d not found", lid)
+			}
+			s.Location = append(s.Location, loc)
 		}
 		s.locationIDX = nil
 	}

@@ -297,6 +297,7 @@ const (
 	SymFlagNoSplit
 	SymFlagReflectMethod
 	SymFlagGoType
+	SymFlagWeakDef
 )
 
 // Sym.Flag2
@@ -306,6 +307,7 @@ const (
 	SymFlagDict
 	SymFlagPkgInit
 	SymFlagLinkname
+	SymFlagLinknameStd
 	SymFlagABIWrapper
 	SymFlagWasmExport
 )
@@ -335,11 +337,13 @@ func (s *Sym) Leaf() bool          { return s.Flag()&SymFlagLeaf != 0 }
 func (s *Sym) NoSplit() bool       { return s.Flag()&SymFlagNoSplit != 0 }
 func (s *Sym) ReflectMethod() bool { return s.Flag()&SymFlagReflectMethod != 0 }
 func (s *Sym) IsGoType() bool      { return s.Flag()&SymFlagGoType != 0 }
+func (s *Sym) WeakDef() bool       { return s.Flag()&SymFlagWeakDef != 0 }
 func (s *Sym) UsedInIface() bool   { return s.Flag2()&SymFlagUsedInIface != 0 }
 func (s *Sym) IsItab() bool        { return s.Flag2()&SymFlagItab != 0 }
 func (s *Sym) IsDict() bool        { return s.Flag2()&SymFlagDict != 0 }
 func (s *Sym) IsPkgInit() bool     { return s.Flag2()&SymFlagPkgInit != 0 }
 func (s *Sym) IsLinkname() bool    { return s.Flag2()&SymFlagLinkname != 0 }
+func (s *Sym) IsLinknameStd() bool { return s.Flag2()&SymFlagLinknameStd != 0 }
 func (s *Sym) ABIWrapper() bool    { return s.Flag2()&SymFlagABIWrapper != 0 }
 func (s *Sym) WasmExport() bool    { return s.Flag2()&SymFlagWasmExport != 0 }
 

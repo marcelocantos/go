@@ -71,21 +71,30 @@ func isExported(name string) bool {
 // Id returns name if it is exported, otherwise it
 // returns the name qualified with the package path.
 func Id(pkg *Package, name string) string {
-	if isExported(name) {
+	path := idPath(pkg, name)
+	if path == "" {
 		return name
+	}
+	return path + "." + name
+}
+
+// idPath returns the qualifier of Id(pkg, name): "" if name is
+// exported, and otherwise the package path, or "_" if there is none.
+func idPath(pkg *Package, name string) string {
+	if isExported(name) {
+		return ""
 	}
 	// unexported names need the package path for differentiation
 	// (if there's no package, make sure we don't start with '.'
 	// as that may change the order of methods between a setup
 	// inside a package and outside a package - which breaks some
 	// tests)
-	path := "_"
 	// pkg is nil for objects in Universe scope and possibly types
 	// introduced via Eval (see also comment in object.sameId)
 	if pkg != nil && pkg.path != "" {
-		path = pkg.path
+		return pkg.path
 	}
-	return path + "." + name
+	return "_"
 }
 
 // An object implements the common parts of an Object.
@@ -396,8 +405,9 @@ func (*Var) isDependency() {} // a variable may be a dependency of an initializa
 // An abstract method may belong to many interfaces due to embedding.
 type Func struct {
 	object
-	hasPtrRecv_ bool  // only valid for methods that don't have a type yet; use hasPtrRecv() to read
 	origin      *Func // if non-nil, the Func from which this one was instantiated
+	hasPtrRecv_ bool  // only valid for methods that don't have a type yet; use hasPtrRecv() to read
+	nointerface bool
 }
 
 // NewFunc returns a new function with the given signature, representing
@@ -412,7 +422,7 @@ func NewFunc(pos syntax.Pos, pkg *Package, name string, sig *Signature) *Func {
 		// as this would violate object.{Type,color} invariants.
 		// TODO(adonovan): propose to disallow NewFunc with nil *Signature.
 	}
-	return &Func{object{nil, pos, pkg, name, typ, 0, nopos}, false, nil}
+	return &Func{object{nil, pos, pkg, name, typ, 0, nopos}, nil, false, false}
 }
 
 // Signature returns the signature (type) of the function or method.
@@ -591,7 +601,7 @@ func writeObject(buf *bytes.Buffer, obj Object, qf Qualifier) {
 		}
 		if tname.IsAlias() {
 			buf.WriteString(" =")
-			if alias, ok := typ.(*Alias); ok { // materialized? (gotypesalias=1)
+			if alias, ok := typ.(*Alias); ok { // materialized? TODO(gri) Do we still need this (e.g. for byte, rune)?
 				typ = alias.fromRHS
 			}
 		} else if t, _ := typ.(*TypeParam); t != nil {

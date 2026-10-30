@@ -359,11 +359,11 @@ func decodeFast(bs []byte, order ByteOrder, data any) bool {
 		bits := [2]uint64{order.Uint64(bs), order.Uint64(bs[8:])}
 		*data = *(*decimal128)(unsafe.Pointer(&bits))
 	case []bool:
-		for i, x := range bs { // Easier to loop over the input for 8-bit values.
+		for i, x := range bs[:len(data)] { // Easier to loop over the input for 8-bit values.
 			data[i] = x != 0
 		}
 	case []int8:
-		for i, x := range bs {
+		for i, x := range bs[:len(data)] {
 			data[i] = int8(x)
 		}
 	case []uint8:

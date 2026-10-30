@@ -41,6 +41,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"internal/abi"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -456,9 +457,10 @@ const (
 // It represents Go symbols in a flat pkg+"."+name namespace.
 type LSym struct {
 	Name string
-	Type objabi.SymKind
 	Attribute
+	Type objabi.SymKind
 
+	Align  int16
 	Size   int64
 	Gotype *LSym
 	P      []byte
@@ -475,7 +477,6 @@ type LSym struct {
 type FuncInfo struct {
 	Args      int32
 	Locals    int32
-	Align     int32
 	FuncID    abi.FuncID
 	FuncFlag  abi.FuncFlag
 	StartLine int32
@@ -799,6 +800,7 @@ const (
 	WasmF32
 	WasmF64
 	WasmPtr
+	WasmV128
 
 	// bool is not really a wasm type, but we allow it on wasmimport/wasmexport
 	// function parameters/results. 32-bit on Wasm side, 8-bit on Go side.
@@ -977,6 +979,21 @@ const (
 	// Linkname indicates this is a go:linkname'd symbol.
 	AttrLinkname
 
+	// LinknameStd indicates this is a go:linknamestd'd symbol.
+	AttrLinknameStd
+
+	// WeakDef indicates that this definition of a dupok symbol is to be
+	// used only if no other object defines the symbol without it. The
+	// compiler marks the type descriptor of a noalg type this way: it
+	// describes the same type as the descriptor emitted by a package that
+	// does need the type's hash and equality algorithms, but it leaves
+	// those out, so the other one has to win. See reflectdata.writeType.
+	AttrWeakDef
+
+	// Unnumbered indicates the symbol was not numbered when writing
+	// export data. It's used to check that it wouldn't be numbered later.
+	AttrUnnumbered
+
 	// attrABIBase is the value at which the ABI is encoded in
 	// Attribute. This must be last; all bits after this are
 	// assumed to be an ABI value.
@@ -1005,8 +1022,10 @@ func (a *Attribute) UsedInIface() bool        { return a.load()&AttrUsedInIface 
 func (a *Attribute) ContentAddressable() bool { return a.load()&AttrContentAddressable != 0 }
 func (a *Attribute) ABIWrapper() bool         { return a.load()&AttrABIWrapper != 0 }
 func (a *Attribute) IsPcdata() bool           { return a.load()&AttrPcdata != 0 }
+func (a *Attribute) WeakDef() bool            { return a.load()&AttrWeakDef != 0 }
 func (a *Attribute) IsPkgInit() bool          { return a.load()&AttrPkgInit != 0 }
 func (a *Attribute) IsLinkname() bool         { return a.load()&AttrLinkname != 0 }
+func (a *Attribute) IsLinknameStd() bool      { return a.load()&AttrLinknameStd != 0 }
 
 func (a *Attribute) Set(flag Attribute, value bool) {
 	for {
@@ -1054,9 +1073,11 @@ var textAttrStrings = [...]struct {
 	{bit: AttrWasInlined, s: ""},
 	{bit: AttrIndexed, s: ""},
 	{bit: AttrContentAddressable, s: ""},
+	{bit: AttrWeakDef, s: ""},
 	{bit: AttrABIWrapper, s: "ABIWRAPPER"},
 	{bit: AttrPkgInit, s: "PKGINIT"},
 	{bit: AttrLinkname, s: "LINKNAME"},
+	{bit: AttrLinknameStd, s: "LINKNAMESTD"},
 }
 
 // String formats a for printing in as part of a TEXT prog.
@@ -1100,6 +1121,17 @@ func (s *LSym) TextAttrString() string {
 
 func (s *LSym) String() string {
 	return s.Name
+}
+
+// IsGoType reports whether s is a Go type descriptor symbol, based on its name.
+//
+// Other kinds of symbol share the "type:" prefix, in particular the closures
+// for the generated equality and hash functions, type:.eqfunc.* and
+// type:.hashfunc.*. Those are not type descriptors; what tells them apart is
+// the "." that follows the prefix.
+func (s *LSym) IsGoType() bool {
+	const prefix = "type:"
+	return len(s.Name) > len(prefix) && strings.HasPrefix(s.Name, prefix) && s.Name[len(prefix)] != '.'
 }
 
 // The compiler needs *LSym to be assignable to cmd/compile/internal/ssa.Sym.
@@ -1169,21 +1201,22 @@ type Link struct {
 	Flag_maymorestack    string // If not "", call this function before stack checks
 	Bso                  *bufio.Writer
 	Pathname             string
-	Pkgpath              string           // the current package's import path
-	hashmu               sync.Mutex       // protects hash, funchash
-	hash                 map[string]*LSym // name -> sym mapping
-	funchash             map[string]*LSym // name -> sym mapping for ABIInternal syms
-	statichash           map[string]*LSym // name -> sym mapping for static syms
-	PosTable             src.PosTable
-	InlTree              InlTree // global inlining tree used by gc/inl.go
-	DwFixups             *DwarfFixupTable
-	DwTextCount          int
-	Imports              []goobj.ImportedPkg
-	DiagFunc             func(string, ...any)
-	DiagFlush            func()
-	DebugInfo            func(ctxt *Link, fn *LSym, info *LSym, curfn Func) ([]dwarf.Scope, dwarf.InlCalls)
-	GenAbstractFunc      func(fn *LSym)
-	Errors               int
+	Pkgpath              string // the current package's import path
+
+	hashmu          sync.Mutex       // protects hash, funchash
+	hash            sync.Map         // name(string) -> sym(*syncOnce) mapping
+	funchash        sync.Map         // name(string) -> sym(*syncOnce) mapping for ABIInternal syms
+	statichash      map[string]*LSym // name -> sym mapping for static syms
+	PosTable        src.PosTable
+	InlTree         InlTree // global inlining tree used by gc/inl.go
+	DwFixups        *DwarfFixupTable
+	DwTextCount     int
+	Imports         []goobj.ImportedPkg
+	DiagFunc        func(string, ...any)
+	DiagFlush       func()
+	DebugInfo       func(ctxt *Link, fn *LSym, info *LSym, curfn Func) ([]dwarf.Scope, dwarf.InlCalls)
+	GenAbstractFunc func(fn *LSym)
+	Errors          int
 
 	InParallel    bool // parallel backend phase in effect
 	UseBASEntries bool // use Base Address Selection Entries in location lists and PC ranges
@@ -1208,6 +1241,9 @@ type Link struct {
 	// symbol reference in the object file.
 	pkgIdx map[string]int32
 
+	// By the time we do symbol numbering we should have saved each symbol in either predefs or unnumbered.
+	predefs      []*LSym // list of symbols appearing in export data that we've preassigned indices for
+	unnumbered   []*LSym // list of symbols not numbered when writing export data; used to check they wouldn't be numbered later
 	defs         []*LSym // list of defined symbols in the current package
 	hashed64defs []*LSym // list of defined short (64-bit or less) hashed (content-addressable) symbols
 	hasheddefs   []*LSym // list of defined hashed (content-addressable) symbols
@@ -1215,6 +1251,13 @@ type Link struct {
 	nonpkgrefs   []*LSym // list of referenced non-package symbols
 
 	Fingerprint goobj.FingerprintType // fingerprint of symbol indices, to catch index mismatch
+}
+
+// symOnce is a "marker" value for our sync.Maps. We insert it on lookup and
+// use the atomic value to check whether initialization has been completed.
+type symOnce struct {
+	sym    LSym
+	inited atomic.Bool
 }
 
 // Assert to vet's printf checker that Link.DiagFunc is a printf-like.

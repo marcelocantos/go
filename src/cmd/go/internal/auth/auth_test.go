@@ -88,3 +88,60 @@ func TestCredentialCacheTrailingSlash(t *testing.T) {
 		t.Errorf("parseNetrc:\nhave %q\nwant %q", got2.Header, want.Header)
 	}
 }
+
+func TestCredentialCacheHostOnlyMatchesPort(t *testing.T) {
+	// A host-only .netrc machine name should match a request to that host
+	// regardless of port, and regardless of path.
+	want := http.Request{Header: make(http.Header)}
+	want.SetBasicAuth("user", "pwd")
+	storeCredential("proxy.example.com", want.Header)
+
+	url := "https://proxy.example.com:8443/mod/info"
+	got := &http.Request{Header: make(http.Header)}
+	ok := loadCredential(got, url)
+	if !ok || !reflect.DeepEqual(got.Header, want.Header) {
+		t.Errorf("loadCredential(%q):\nhave %q\nwant %q", url, got.Header, want.Header)
+	}
+}
+
+func TestCredentialCacheExplicitPortIsSpecific(t *testing.T) {
+	// A machine name with an explicit port should match only that port,
+	// not other ports on the same host, and not a bare host-only lookup.
+	want := http.Request{Header: make(http.Header)}
+	want.SetBasicAuth("user", "pwd")
+	storeCredential("example.com:8443", want.Header)
+
+	url := "https://example.com:8443/mod/info"
+	got := &http.Request{Header: make(http.Header)}
+	ok := loadCredential(got, url)
+	if !ok || !reflect.DeepEqual(got.Header, want.Header) {
+		t.Errorf("loadCredential(%q):\nhave %q\nwant %q", url, got.Header, want.Header)
+	}
+
+	url = "https://example.com:9999/mod/info"
+	got = &http.Request{Header: make(http.Header)}
+	if ok := loadCredential(got, url); ok {
+		t.Errorf("loadCredential(%q):\nhave %q\nwant no match", url, got.Header)
+	}
+
+	url = "https://example.com/mod/info"
+	got = &http.Request{Header: make(http.Header)}
+	if ok := loadCredential(got, url); ok {
+		t.Errorf("loadCredential(%q):\nhave %q\nwant no match", url, got.Header)
+	}
+}
+
+func TestCredentialCacheURLQuery(t *testing.T) {
+	want := http.Request{Header: make(http.Header)}
+	want.SetBasicAuth("user", "password")
+	storeCredential("example.com/api", want.Header)
+
+	got := &http.Request{Header: make(http.Header)}
+	ok := loadCredential(got, "https://example.com/api?version=1")
+	if !ok {
+		t.Fatal("loadCredential returned false")
+	}
+	if !reflect.DeepEqual(got.Header, want.Header) {
+		t.Fatalf("got %v, want %v", got.Header, want.Header)
+	}
+}

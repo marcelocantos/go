@@ -94,7 +94,8 @@ func (t *Interface) MarkImplicit() {
 func (t *Interface) NumExplicitMethods() int { return len(t.methods) }
 
 // ExplicitMethod returns the i'th explicitly declared method of interface t for 0 <= i < t.NumExplicitMethods().
-// The methods are ordered by their unique [Id].
+// The methods are ordered with exported methods first, then by name
+// and, for non-exported methods with the same name, by package path.
 func (t *Interface) ExplicitMethod(i int) *Func { return t.methods[i] }
 
 // NumEmbeddeds returns the number of embedded types in interface t.
@@ -113,7 +114,8 @@ func (t *Interface) EmbeddedType(i int) Type { return t.embeddeds[i] }
 func (t *Interface) NumMethods() int { return t.typeSet().NumMethods() }
 
 // Method returns the i'th method of interface t for 0 <= i < t.NumMethods().
-// The methods are ordered by their unique Id.
+// The methods are ordered with exported methods first, then by name
+// and, for non-exported methods with the same name, by package path.
 func (t *Interface) Method(i int) *Func { return t.typeSet().Method(i) }
 
 // Empty reports whether t is the empty interface.
@@ -188,13 +190,13 @@ func (check *Checker) interfaceType(ityp *Interface, iface *ast.InterfaceType, d
 			continue // ignore
 		}
 
-		// The go/parser doesn't accept method type parameters but an ast.FuncType may have them.
+		// The go/parser doesn't accept interface method type parameters but an ast.FuncType may have them.
 		if sig.tparams != nil {
 			var at positioner = f.Type
 			if ftyp, _ := f.Type.(*ast.FuncType); ftyp != nil && ftyp.TypeParams != nil {
 				at = ftyp.TypeParams
 			}
-			check.error(at, InvalidSyntaxTree, "methods cannot have type parameters")
+			check.error(at, InvalidSyntaxTree, "interface methods cannot have type parameters")
 		}
 
 		// use named receiver type if available (for better error messages)

@@ -114,7 +114,7 @@ import (
 // As this time is unlikely to come up in practice, the [Time.IsZero] method gives
 // a simple way of detecting a time that has not been initialized explicitly.
 //
-// Each time has an associated [Location]. The methods [Time.Local], [Time.UTC], and Time.In return a
+// Each time has an associated [Location]. The methods [Time.Local], [Time.UTC], and [Time.In] return a
 // Time with a specific Location. Changing the Location of a Time value with
 // these methods does not change the actual instant it represents, only the time
 // zone in which to interpret it.
@@ -1279,7 +1279,7 @@ func daysBefore(m Month) int {
 	// which is:
 	//	0  31  61  92 122 153 183 214 245 275 306 336 367
 	// This is almost exactly 367/12×(m-1) except for the
-	// occasonal off-by-one suggesting there may be an
+	// occasional off-by-one suggesting there may be an
 	// integer approximation of the form (a×m + b)/c.
 	// A brute force search over small a, b, c finds that
 	// (214×m - 211) / 7 computes the function perfectly.
@@ -1333,10 +1333,8 @@ func runtimeNano() int64
 func runtimeIsBubbled() bool
 
 // Monotonic times are reported as offsets from startNano.
-// We initialize startNano to runtimeNano() - 1 so that on systems where
-// monotonic time resolution is fairly low (e.g. Windows 2008
-// which appears to have a default resolution of 15ms),
-// we avoid ever reporting a monotonic time of 0.
+// We subtract 1 so that a reading equal to the initial reading is not
+// reported as a monotonic time of 0.
 // (Callers may want to use 0 as "time not set".)
 var startNano int64 = runtimeNano() - 1
 
@@ -1552,7 +1550,7 @@ func (t *Time) UnmarshalBinary(data []byte) error {
 	buf = buf[4:]
 	offset := int(int16(buf[1])|int16(buf[0])<<8) * 60
 	if version == timeBinaryVersionV2 {
-		offset += int(buf[2])
+		offset += int(int8(buf[2]))
 	}
 
 	*t = Time{}

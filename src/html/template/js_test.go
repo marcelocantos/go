@@ -65,6 +65,12 @@ func TestNextJsCtx(t *testing.T) {
 		{jsCtxRegexp, "return\t"},
 		{jsCtxRegexp, "return\n"},
 		{jsCtxRegexp, "return\u2028"},
+		{jsCtxRegexp, "yield"},
+		// A keyword after property access is a property name.
+		{jsCtxDivOp, "x.yield"},
+		{jsCtxDivOp, "x?.yield"},
+		{jsCtxDivOp, "x.\nyield"},
+		{jsCtxDivOp, "x.in"},
 		// Identifiers can be divided and cannot validly be preceded by
 		// a regular expressions. Semicolon insertion cannot happen
 		// between an identifier and a regular expression on a new line
@@ -181,6 +187,31 @@ func TestJSValEscaper(t *testing.T) {
 		if js := jsValEscaper(a); js != want {
 			t.Errorf("%+v: want\n\t%q\ngot\n\t%q", a, want, js)
 		}
+	}
+}
+
+func TestJSValEscaperCycles(t *testing.T) {
+	mapCycle := map[string]any{}
+	mapCycle["self"] = mapCycle
+	sliceCycle := []any{nil}
+	sliceCycle[0] = sliceCycle
+
+	for _, test := range []struct {
+		name  string
+		value any
+	}{
+		{"map", mapCycle},
+		{"slice", sliceCycle},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := jsValEscaper(test.value)
+			if !strings.Contains(strings.ToLower(got), "cycle") {
+				t.Errorf("got %q, want cycle error", got)
+			}
+			if want := "*/null "; !strings.HasSuffix(got, want) {
+				t.Errorf("got %q, want %q", got, want)
+			}
+		})
 	}
 }
 

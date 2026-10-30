@@ -281,13 +281,6 @@ func NewABIConfig(iRegsCount, fRegsCount int, offsetForLocals int64, which uint8
 	return &ABIConfig{offsetForLocals: offsetForLocals, regAmounts: RegAmounts{iRegsCount, fRegsCount}, which: obj.ABI(which)}
 }
 
-// Copy returns config.
-//
-// TODO(mdempsky): Remove.
-func (config *ABIConfig) Copy() *ABIConfig {
-	return config
-}
-
 // Which returns the ABI number
 func (config *ABIConfig) Which() obj.ABI {
 	return config.which
@@ -341,7 +334,8 @@ func (config *ABIConfig) ABIAnalyzeTypes(params, results []*types.Type) *ABIPara
 
 	// Inputs
 	info.inparams = assignParams(params, false)
-	s.stackOffset = types.RoundUp(s.stackOffset, int64(types.RegSize))
+	// Stack results follow the ABI0 layout.
+	s.stackOffset = types.RoundUp(s.stackOffset, int64(types.PtrSize))
 	info.inRegistersUsed = s.rUsed.intRegs + s.rUsed.floatRegs
 
 	// Outputs
@@ -383,7 +377,8 @@ func (config *ABIConfig) ABIAnalyzeFuncType(ft *types.Type) *ABIParamResultInfo 
 
 	// Inputs
 	info.inparams = assignParams(ft.RecvParams(), false)
-	s.stackOffset = types.RoundUp(s.stackOffset, int64(types.RegSize))
+	// Stack results follow the ABI0 layout.
+	s.stackOffset = types.RoundUp(s.stackOffset, int64(types.PtrSize))
 	info.inRegistersUsed = s.rUsed.intRegs + s.rUsed.floatRegs
 
 	// Outputs

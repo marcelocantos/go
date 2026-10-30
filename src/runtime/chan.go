@@ -161,18 +161,10 @@ func chansend1(c *hchan, elem unsafe.Pointer) {
 	chansend(c, elem, true, sys.GetCallerPC())
 }
 
-/*
- * generic single channel send/recv
- * If block is not nil,
- * then the protocol will not
- * sleep but return if it could
- * not complete.
- *
- * sleep can wake up with g.param == nil
- * when a channel involved in the sleep has
- * been closed.  it is easiest to loop and re-run
- * the operation; we'll see that it's now closed.
- */
+// chansend sends the element pointed to by ep on channel c.
+// A send on a closed channel panics.
+// If block == false and the send cannot proceed immediately, it returns false.
+// Otherwise, it waits as needed for the send to complete and returns true.
 func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
 	if c == nil {
 		if !block {
@@ -541,12 +533,13 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 		fatal("receive on synctest channel from outside bubble")
 	}
 
-	if c.timer != nil {
-		c.timer.maybeRunChan(c)
-	}
-
-	// Fast path: check for failed non-blocking operation without acquiring the lock.
-	if !block && empty(c) {
+	if block {
+		if c.timer != nil {
+			c.timer.maybeRunChan(c)
+		}
+	} else if empty(c) {
+		// Fast path: check for failed non-blocking operation without acquiring the lock.
+		//
 		// After observing that the channel is not ready for receiving, we observe whether the
 		// channel is closed.
 		//
@@ -816,14 +809,7 @@ func reflect_chanrecv(c *hchan, nb bool, elem unsafe.Pointer) (selected bool, re
 }
 
 func chanlen(c *hchan) int {
-	if c == nil {
-		return 0
-	}
-	async := debug.asynctimerchan.Load() != 0
-	if c.timer != nil && async {
-		c.timer.maybeRunChan(c)
-	}
-	if c.timer != nil && !async {
+	if c == nil || c.timer != nil {
 		// timer channels have a buffered implementation
 		// but present to users as unbuffered, so that we can
 		// undo sends without users noticing.
@@ -833,14 +819,7 @@ func chanlen(c *hchan) int {
 }
 
 func chancap(c *hchan) int {
-	if c == nil {
-		return 0
-	}
-	if c.timer != nil {
-		async := debug.asynctimerchan.Load() != 0
-		if async {
-			return int(c.dataqsiz)
-		}
+	if c == nil || c.timer != nil {
 		// timer channels have a buffered implementation
 		// but present to users as unbuffered, so that we can
 		// undo sends without users noticing.

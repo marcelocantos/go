@@ -26,6 +26,7 @@ import (
 // threads
 extern void doAdd(int, int);
 extern int callGoInCThread(int);
+extern void callbackInInitC(void);
 
 // issue 1328
 void IntoC(void);
@@ -112,6 +113,10 @@ void callIssue31891(void);
 typedef struct {
 	int i;
 } Issue38408, *PIssue38408;
+
+// issue 44648
+typedef int issue44648T;
+typedef int (*issue44648F)(void *);
 
 extern void cfunc49633(void*); // definition is in test.go
 */
@@ -574,6 +579,26 @@ func GoFunc37033(handle C.uintptr_t) {
 // No runtime test; just make sure it compiles.
 var _ C.PIssue38408 = &C.Issue38408{i: 1}
 
+// issue 44648
+// The C wrapper for an exported Go function failed to compile if a
+// parameter had the same name as a C type used by the function.
+// No runtime test; just make sure it compiles.
+
+//export Issue44648A
+func Issue44648A(issue44648F C.issue44648F, data unsafe.Pointer) C.int {
+	return 0
+}
+
+//export Issue44648B
+func Issue44648B(issue44648T C.issue44648T) (C.issue44648T, C.issue44648T) {
+	return issue44648T, issue44648T
+}
+
+//export Issue44648C
+func Issue44648C(r C.int) (a, b C.int) {
+	return r, r
+}
+
 // issue 49633, example use of cgo.Handle with void*
 
 type data49633 struct {
@@ -621,4 +646,29 @@ func ditCallback() uint8 {
 		return 1
 	}
 	return 0
+}
+
+// Test C calling back into Go before init is done.
+// In particular, this does not trigger false race
+// (the fix is in CL 746581).
+
+var callbackInInitVar int
+
+func init() {
+	C.callbackInInitC()
+	callbackInInitVar = 123
+}
+
+var callbackInInitChan = make(chan int)
+
+//export callbackInInit
+func callbackInInit() {
+	if callbackInInitVar != 123 {
+		panic("callbackInInitVar not initialized to 123")
+	}
+	callbackInInitChan <- 1
+}
+
+func testCallbackInInit(t *testing.T) {
+	<-callbackInInitChan // make sure callbackInInit runs
 }

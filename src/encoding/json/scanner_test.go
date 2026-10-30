@@ -110,6 +110,28 @@ func TestCompactAndIndent(t *testing.T) {
 	}
 }
 
+func TestIndentPrefix(t *testing.T) {
+	tests := []struct {
+		CaseName
+		src, prefix, indent string
+		want                string
+	}{
+		{Name(""), "[1,[2]]", ">", "--", "[\n>--1,\n>--[\n>----2\n>--]\n>]"},
+		{Name(""), "[1,2]\n  ", ">", "--", "[\n>--1,\n>--2\n>]\n  "},
+		{Name(""), "1\n  ", ">", "", "1\n  "}, // See golang.org/issue/81547
+	}
+	for _, tt := range tests {
+		t.Run(tt.Name, func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := Indent(&buf, []byte(tt.src), tt.prefix, tt.indent); err != nil {
+				t.Errorf("%s: Indent error: %v", tt.Where, err)
+			} else if got := buf.String(); got != tt.want {
+				t.Errorf("%s: Indent:\n\tgot:  %q\n\twant: %q", tt.Where, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCompactSeparators(t *testing.T) {
 	// U+2028 and U+2029 should be escaped inside strings.
 	// They should not appear outside strings.
@@ -193,8 +215,8 @@ func TestIndentErrors(t *testing.T) {
 		in  string
 		err error
 	}{
-		{Name(""), `{"X": "foo", "Y"}`, &SyntaxError{"invalid character '}' after object key", 17}},
-		{Name(""), `{"X": "foo" "Y": "bar"}`, &SyntaxError{"invalid character '\"' after object key:value pair", 13}},
+		{Name(""), `{"X": "foo", "Y"}`, &SyntaxError{"invalid character '}' after object key", len64(`{"X": "foo", "Y"}`)}},
+		{Name(""), `{"X": "foo" "Y": "bar"}`, &SyntaxError{"invalid character '\"' after object key:value pair", len64(`{"X": "foo" "`)}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {

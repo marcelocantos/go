@@ -71,9 +71,9 @@ that ensure they are hardware supported.
 The file asm_riscv64.h defines macros for each RISC-V extension that is enabled
 by setting the GORISCV64 environment variable to a value other than [rva20u64].
 For example, if GORISCV64=rva22u64 the macros hasZba, hasZbb and hasZbs will be
-defined. If GORISCV64=rva23u64 hasV will be defined in addition to hasZba,
-hasZbb and hasZbs. These macros can be used to determine whether it's safe
-to use an instruction in hand-written assembly.
+defined. If GORISCV64=rva23u64, hasV, hasZfa and hasZicond will be defined in
+addition to hasZba, hasZbb and hasZbs. These macros can be used to determine
+whether it's safe to use an instruction in hand-written assembly.
 
 It is not always necessary to include asm_riscv64.h and use #ifdefs in your
 code to safely take advantage of instructions present in the [rva22u64]
@@ -248,11 +248,31 @@ The use of this abbreviated syntax is encouraged.
 
 # Ordering of atomic instructions
 
-It is not possible to specify the ordering bits in the FENCE, LR, SC or AMO
-instructions.  The FENCE instruction is always emitted as a full fence, the
-acquire and release bits are always set for the AMO instructions, the acquire
-bit is always set for the LR instructions while the release bit is set for
-the SC instructions.
+The FENCE instruction supports all of the bits in the predecessor and successor
+sets. The predecessor set is specified before the successor set. The letters
+representing the bits in both sets must be given in uppercase. For example,
+
+	FENCE R, RW
+
+specifies a FENCE instruction with the R bit set in the predecessor set and
+the R and W bits set in the successor set.
+
+If neither set is provided a full fence is emitted, e.g.,
+
+	FENCE
+
+and
+
+	FENCE IORW, IORW
+
+are equivalent.
+
+The FENCE.TSO instruction is supported.
+
+It is not possible to specify the ordering bits in the LR, SC or AMO
+instructions. The acquire and release bits are always set for the AMO
+instructions, the acquire bit is always set for the LR instructions while
+the release bit is set for the SC instructions.
 
 # Immediate operands
 

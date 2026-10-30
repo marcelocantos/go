@@ -12,6 +12,7 @@ import (
 	"internal/goos"
 	"internal/runtime/atomic"
 	"internal/runtime/gc"
+	"internal/runtime/maps"
 	"internal/runtime/sys"
 	"unsafe"
 )
@@ -211,7 +212,9 @@ var (
 	IfaceHash  = ifaceHash
 )
 
-var UseAeshash = &useAeshash
+var MinAeshashSize = &maps.MinAeshashSize
+
+var AeshashEnabled = maps.AeshashEnabled
 
 func MemclrBytes(b []byte) {
 	s := (*slice)(unsafe.Pointer(&b))
@@ -254,7 +257,6 @@ func SetTracebackEnv(level string) {
 	traceback_env = traceback_cache
 }
 
-var ReadUnaligned32 = readUnaligned32
 var ReadUnaligned64 = readUnaligned64
 
 func CountPagesInUse() (pagesInUse, counted uintptr) {
@@ -273,6 +275,10 @@ func CountPagesInUse() (pagesInUse, counted uintptr) {
 	return
 }
 
+func Blocksampled(cycles, rate int64) bool { return blocksampled(cycles, rate) }
+
+func Cheaprand() uint32         { return cheaprand() }
+func Cheaprand64() int64        { return cheaprand64() }
 func Fastrand() uint32          { return uint32(rand()) }
 func Fastrand64() uint64        { return rand() }
 func Fastrandn(n uint32) uint32 { return randn(n) }
@@ -449,6 +455,16 @@ func ShrinkStackAndVerifyFramePointers() {
 	FPCallers(make([]uintptr, 1024))
 }
 
+type StackPoisonCopyRestore int
+
+func (s StackPoisonCopyRestore) Restore() { stackPoisonCopy = int(s) }
+
+func StackPoisonCopy() StackPoisonCopyRestore {
+	before := stackPoisonCopy
+	stackPoisonCopy = 1
+	return StackPoisonCopyRestore(before)
+}
+
 // BlockOnSystemStack switches to the system stack, prints "x\n" to
 // stderr, and blocks in a stack containing
 // "runtime.blockOnSystemStackInternal".
@@ -546,7 +562,7 @@ func MapNextArenaHint() (start, end uintptr, ok bool) {
 	if !ok {
 		// We were unable to get the requested reservation.
 		// Release what we did get and fail.
-		sysFreeOS(got, physPageSize)
+		sysUnreserve(got, physPageSize)
 	}
 	return
 }
@@ -556,6 +572,22 @@ func NextArenaHint() (uintptr, bool) {
 		return 0, false
 	}
 	return mheap_.arenaHints.addr, true
+}
+
+const RandomizeHeapBase = randomizeHeapBase
+
+// ArenaHintAddrs returns the heap's remaining arena hint addresses, in
+// chain order.
+func ArenaHintAddrs() []uintptr {
+	// Preallocate: appending while holding the heap lock would allocate
+	// under mheap_.lock. mallocinit generates at most 64 heap hints.
+	out := make([]uintptr, 0, 128)
+	lock(&mheap_.lock)
+	for h := mheap_.arenaHints; h != nil; h = h.next {
+		out = append(out, h.addr)
+	}
+	unlock(&mheap_.lock)
+	return out
 }
 
 type G = g
@@ -1087,18 +1119,20 @@ func FreePageAlloc(pp *PageAlloc) {
 	// Free all the mapped space for the summary levels.
 	if pageAlloc64Bit != 0 {
 		for l := 0; l < summaryLevels; l++ {
-			sysFreeOS(unsafe.Pointer(&p.summary[l][0]), uintptr(cap(p.summary[l]))*pallocSumBytes)
+			// This isn't quite right, as some of this memory may
+			// be Ready instead of Reserved. The mappedReady and
+			// testSysStat adjustments below correct for the
+			// difference.
+			sysUnreserve(unsafe.Pointer(&p.summary[l][0]), uintptr(cap(p.summary[l]))*pallocSumBytes)
 		}
 	} else {
 		resSize := uintptr(0)
 		for _, s := range p.summary {
 			resSize += uintptr(cap(s)) * pallocSumBytes
 		}
-		sysFreeOS(unsafe.Pointer(&p.summary[0][0]), alignUp(resSize, physPageSize))
+		// See sysUnreserve comment above.
+		sysUnreserve(unsafe.Pointer(&p.summary[0][0]), alignUp(resSize, physPageSize))
 	}
-
-	// Free extra data structures.
-	sysFreeOS(unsafe.Pointer(&p.scav.index.chunks[0]), uintptr(cap(p.scav.index.chunks))*unsafe.Sizeof(atomicScavChunkData{}))
 
 	// Subtract back out whatever we mapped for the summaries.
 	// sysUsed adds to p.sysStat and memstats.mappedReady no matter what
@@ -1106,6 +1140,12 @@ func FreePageAlloc(pp *PageAlloc) {
 	// way to figure out how much we actually mapped.
 	gcController.mappedReady.Add(-int64(p.summaryMappedReady))
 	testSysStat.add(-int64(p.summaryMappedReady))
+
+	// Free extra data structures.
+	//
+	// TODO(prattmic): As above, some of this may be Ready, so we should
+	// manually adjust mappedReady and testSysStat?
+	sysUnreserve(unsafe.Pointer(&p.scav.index.chunks[0]), uintptr(cap(p.scav.index.chunks))*unsafe.Sizeof(atomicScavChunkData{}))
 
 	// Free the mapped space for chunks.
 	for i := range p.chunks {
@@ -1244,6 +1284,20 @@ func PageCachePagesLeaked() (leaked uintptr) {
 
 var ProcYield = procyield
 var OSYield = osyield
+
+type Note = note
+
+var NoteClear = noteclear
+var NoteTSleepG = notetsleepg
+
+// NoteTSleepG0 calls notetsleep on the system stack
+func NoteTSleepG0(n *Note, ns int64) bool {
+	var ok bool
+	systemstack(func() {
+		ok = notetsleep(n, ns)
+	})
+	return ok
+}
 
 type Mutex = mutex
 
@@ -1469,7 +1523,7 @@ func (c *GCController) Revise(d GCControllerReviseDelta) {
 
 func (c *GCController) EndCycle(bytesMarked uint64, assistTime, elapsed int64, gomaxprocs int) {
 	c.assistTime.Store(assistTime)
-	c.endCycle(elapsed, gomaxprocs, false)
+	c.endCycle(elapsed, gomaxprocs)
 	c.resetLive(bytesMarked)
 	c.commit(false)
 }
@@ -2079,3 +2133,57 @@ func DumpPrintQuoted(s string) string {
 
 	return string(buf)
 }
+
+// PrintBacklog returns a copy of the runtime's print backlog.
+func PrintBacklog() []byte {
+	b := make([]byte, len(printBacklog))
+	printlock()
+	copy(b, printBacklog[:])
+	printunlock()
+	return b
+}
+
+// DumpPrint returns the output of print(v).
+func DumpPrint[T any](v T) string {
+	gp := getg()
+	gp.writebuf = make([]byte, 0, 2048)
+	print(v)
+	buf := gp.writebuf
+	gp.writebuf = nil
+
+	return string(buf)
+}
+
+var (
+	Float64Bytes    = float64Bytes
+	Float32Bytes    = float32Bytes
+	Complex128Bytes = complex128Bytes
+	Complex64Bytes  = complex64Bytes
+)
+
+func GetScanAlloc() uintptr {
+	c := getMCache(getg().m)
+	return c.scanAlloc
+}
+
+func MallocGC(size uintptr, typ *abi.Type, needzero bool) unsafe.Pointer {
+	return mallocgc(size, typ, needzero)
+}
+
+// AllocSize returns how many bytes mallocgc uses for an object of the given
+// size of a type that contains pointers: the size of its size class,
+// including the malloc header if the object has one. A large object has no
+// size class, and the result is its size rounded up to a page.
+func AllocSize(size uintptr) uintptr {
+	if size <= maxSmallSize-gc.MallocHeaderSize && !heapBitsInSpan(size) {
+		// roundupsize subtracts the malloc header from the size class.
+		return roundupsize(size, false) + gc.MallocHeaderSize
+	}
+	return roundupsize(size, false)
+}
+
+func FuncNamePiecesForPrint(name string) (string, string, string, string, string) {
+	return funcNamePiecesForPrint(name)
+}
+
+var InHeapOrStack = inHeapOrStack

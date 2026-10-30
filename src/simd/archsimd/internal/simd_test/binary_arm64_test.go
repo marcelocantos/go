@@ -1,0 +1,170 @@
+// Copyright 2026 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build goexperiment.simd && arm64
+
+package simd_test
+
+import (
+	"simd/archsimd"
+	"testing"
+)
+
+func TestConcatEven(t *testing.T) {
+	testInt8x16Binary(t, archsimd.Int8x16.ConcatEven, deinterleaveSlice[int8](128, false))
+	testInt16x8Binary(t, archsimd.Int16x8.ConcatEven, deinterleaveSlice[int16](128, false))
+	testInt32x4Binary(t, archsimd.Int32x4.ConcatEven, deinterleaveSlice[int32](128, false))
+	testInt64x2Binary(t, archsimd.Int64x2.ConcatEven, deinterleaveSlice[int64](128, false))
+	testUint8x16Binary(t, archsimd.Uint8x16.ConcatEven, deinterleaveSlice[uint8](128, false))
+	testUint16x8Binary(t, archsimd.Uint16x8.ConcatEven, deinterleaveSlice[uint16](128, false))
+	testUint32x4Binary(t, archsimd.Uint32x4.ConcatEven, deinterleaveSlice[uint32](128, false))
+	testUint64x2Binary(t, archsimd.Uint64x2.ConcatEven, deinterleaveSlice[uint64](128, false))
+}
+
+func TestConcatOdd(t *testing.T) {
+	testInt8x16Binary(t, archsimd.Int8x16.ConcatOdd, deinterleaveSlice[int8](128, true))
+	testInt16x8Binary(t, archsimd.Int16x8.ConcatOdd, deinterleaveSlice[int16](128, true))
+	testInt32x4Binary(t, archsimd.Int32x4.ConcatOdd, deinterleaveSlice[int32](128, true))
+	testInt64x2Binary(t, archsimd.Int64x2.ConcatOdd, deinterleaveSlice[int64](128, true))
+	testUint8x16Binary(t, archsimd.Uint8x16.ConcatOdd, deinterleaveSlice[uint8](128, true))
+	testUint16x8Binary(t, archsimd.Uint16x8.ConcatOdd, deinterleaveSlice[uint16](128, true))
+	testUint32x4Binary(t, archsimd.Uint32x4.ConcatOdd, deinterleaveSlice[uint32](128, true))
+	testUint64x2Binary(t, archsimd.Uint64x2.ConcatOdd, deinterleaveSlice[uint64](128, true))
+}
+
+func TestConcatAddPairs(t *testing.T) {
+	testFloat32x4Binary(t, archsimd.Float32x4.ConcatAddPairs, concatAddPairsSlice[float32])
+	testFloat64x2Binary(t, archsimd.Float64x2.ConcatAddPairs, concatAddPairsSlice[float64])
+
+	testInt8x16Binary(t, archsimd.Int8x16.ConcatAddPairs, concatAddPairsSlice[int8])
+	testInt16x8Binary(t, archsimd.Int16x8.ConcatAddPairs, concatAddPairsSlice[int16])
+	testInt32x4Binary(t, archsimd.Int32x4.ConcatAddPairs, concatAddPairsSlice[int32])
+	testInt64x2Binary(t, archsimd.Int64x2.ConcatAddPairs, concatAddPairsSlice[int64])
+
+	testUint8x16Binary(t, archsimd.Uint8x16.ConcatAddPairs, concatAddPairsSlice[uint8])
+	testUint16x8Binary(t, archsimd.Uint16x8.ConcatAddPairs, concatAddPairsSlice[uint16])
+	testUint32x4Binary(t, archsimd.Uint32x4.ConcatAddPairs, concatAddPairsSlice[uint32])
+	testUint64x2Binary(t, archsimd.Uint64x2.ConcatAddPairs, concatAddPairsSlice[uint64])
+}
+
+func TestConcatMaxPairs(t *testing.T) {
+	testFloat32x4Binary(t, archsimd.Float32x4.ConcatMaxPairs, concatMaxPairsSlice[float32])
+	testFloat64x2Binary(t, archsimd.Float64x2.ConcatMaxPairs, concatMaxPairsSlice[float64])
+
+	testInt8x16Binary(t, archsimd.Int8x16.ConcatMaxPairs, concatMaxPairsSlice[int8])
+	testInt16x8Binary(t, archsimd.Int16x8.ConcatMaxPairs, concatMaxPairsSlice[int16])
+	testInt32x4Binary(t, archsimd.Int32x4.ConcatMaxPairs, concatMaxPairsSlice[int32])
+
+	testUint8x16Binary(t, archsimd.Uint8x16.ConcatMaxPairs, concatMaxPairsSlice[uint8])
+	testUint16x8Binary(t, archsimd.Uint16x8.ConcatMaxPairs, concatMaxPairsSlice[uint16])
+	testUint32x4Binary(t, archsimd.Uint32x4.ConcatMaxPairs, concatMaxPairsSlice[uint32])
+}
+
+func TestConcatMinPairs(t *testing.T) {
+	testFloat32x4Binary(t, archsimd.Float32x4.ConcatMinPairs, concatMinPairsSlice[float32])
+	testFloat64x2Binary(t, archsimd.Float64x2.ConcatMinPairs, concatMinPairsSlice[float64])
+
+	testInt8x16Binary(t, archsimd.Int8x16.ConcatMinPairs, concatMinPairsSlice[int8])
+	testInt16x8Binary(t, archsimd.Int16x8.ConcatMinPairs, concatMinPairsSlice[int16])
+	testInt32x4Binary(t, archsimd.Int32x4.ConcatMinPairs, concatMinPairsSlice[int32])
+
+	testUint8x16Binary(t, archsimd.Uint8x16.ConcatMinPairs, concatMinPairsSlice[uint8])
+	testUint16x8Binary(t, archsimd.Uint16x8.ConcatMinPairs, concatMinPairsSlice[uint16])
+	testUint32x4Binary(t, archsimd.Uint32x4.ConcatMinPairs, concatMinPairsSlice[uint32])
+}
+
+func TestInterleaveEven(t *testing.T) {
+	testInt8x16Binary(t, archsimd.Int8x16.InterleaveEven, transposeSlice[int8](128, false))
+	testInt16x8Binary(t, archsimd.Int16x8.InterleaveEven, transposeSlice[int16](128, false))
+	testInt32x4Binary(t, archsimd.Int32x4.InterleaveEven, transposeSlice[int32](128, false))
+	testInt64x2Binary(t, archsimd.Int64x2.InterleaveEven, transposeSlice[int64](128, false))
+	testUint8x16Binary(t, archsimd.Uint8x16.InterleaveEven, transposeSlice[uint8](128, false))
+	testUint16x8Binary(t, archsimd.Uint16x8.InterleaveEven, transposeSlice[uint16](128, false))
+	testUint32x4Binary(t, archsimd.Uint32x4.InterleaveEven, transposeSlice[uint32](128, false))
+	testUint64x2Binary(t, archsimd.Uint64x2.InterleaveEven, transposeSlice[uint64](128, false))
+}
+
+func TestInterleaveOdd(t *testing.T) {
+	testInt8x16Binary(t, archsimd.Int8x16.InterleaveOdd, transposeSlice[int8](128, true))
+	testInt16x8Binary(t, archsimd.Int16x8.InterleaveOdd, transposeSlice[int16](128, true))
+	testInt32x4Binary(t, archsimd.Int32x4.InterleaveOdd, transposeSlice[int32](128, true))
+	testInt64x2Binary(t, archsimd.Int64x2.InterleaveOdd, transposeSlice[int64](128, true))
+	testUint8x16Binary(t, archsimd.Uint8x16.InterleaveOdd, transposeSlice[uint8](128, true))
+	testUint16x8Binary(t, archsimd.Uint16x8.InterleaveOdd, transposeSlice[uint16](128, true))
+	testUint32x4Binary(t, archsimd.Uint32x4.InterleaveOdd, transposeSlice[uint32](128, true))
+	testUint64x2Binary(t, archsimd.Uint64x2.InterleaveOdd, transposeSlice[uint64](128, true))
+}
+
+func TestInterleaveLoARM64(t *testing.T) {
+	testInt8x16Binary(t, archsimd.Int8x16.InterleaveLo, interleaveSlice[int8](128, false))
+	testInt16x8Binary(t, archsimd.Int16x8.InterleaveLo, interleaveSlice[int16](128, false))
+	testInt32x4Binary(t, archsimd.Int32x4.InterleaveLo, interleaveSlice[int32](128, false))
+	testInt64x2Binary(t, archsimd.Int64x2.InterleaveLo, interleaveSlice[int64](128, false))
+	testUint8x16Binary(t, archsimd.Uint8x16.InterleaveLo, interleaveSlice[uint8](128, false))
+	testUint16x8Binary(t, archsimd.Uint16x8.InterleaveLo, interleaveSlice[uint16](128, false))
+	testUint32x4Binary(t, archsimd.Uint32x4.InterleaveLo, interleaveSlice[uint32](128, false))
+	testUint64x2Binary(t, archsimd.Uint64x2.InterleaveLo, interleaveSlice[uint64](128, false))
+}
+
+func TestInterleaveHiARM64(t *testing.T) {
+	testInt8x16Binary(t, archsimd.Int8x16.InterleaveHi, interleaveSlice[int8](128, true))
+	testInt16x8Binary(t, archsimd.Int16x8.InterleaveHi, interleaveSlice[int16](128, true))
+	testInt32x4Binary(t, archsimd.Int32x4.InterleaveHi, interleaveSlice[int32](128, true))
+	testInt64x2Binary(t, archsimd.Int64x2.InterleaveHi, interleaveSlice[int64](128, true))
+	testUint8x16Binary(t, archsimd.Uint8x16.InterleaveHi, interleaveSlice[uint8](128, true))
+	testUint16x8Binary(t, archsimd.Uint16x8.InterleaveHi, interleaveSlice[uint16](128, true))
+	testUint32x4Binary(t, archsimd.Uint32x4.InterleaveHi, interleaveSlice[uint32](128, true))
+	testUint64x2Binary(t, archsimd.Uint64x2.InterleaveHi, interleaveSlice[uint64](128, true))
+}
+
+func TestOrNot(t *testing.T) {
+	testInt8x16Binary(t, archsimd.Int8x16.OrNot, orNotSlice[int8])
+	testInt16x8Binary(t, archsimd.Int16x8.OrNot, orNotSlice[int16])
+	testInt32x4Binary(t, archsimd.Int32x4.OrNot, orNotSlice[int32])
+	testInt64x2Binary(t, archsimd.Int64x2.OrNot, orNotSlice[int64])
+
+	testUint8x16Binary(t, archsimd.Uint8x16.OrNot, orNotSlice[uint8])
+	testUint16x8Binary(t, archsimd.Uint16x8.OrNot, orNotSlice[uint16])
+	testUint32x4Binary(t, archsimd.Uint32x4.OrNot, orNotSlice[uint32])
+	testUint64x2Binary(t, archsimd.Uint64x2.OrNot, orNotSlice[uint64])
+}
+
+func cmtst[T integer](x, y T) bool {
+	return (x & y) != 0
+}
+
+func cmtstSlice[T integer](x, y []T) []int64 {
+	return mapCompare[T](cmtst)(x, y)
+}
+
+//go:noinline
+func cmtst8(x, y archsimd.Int8x16) archsimd.Mask8x16 {
+	var z archsimd.Int8x16
+	return x.And(y).Equal(z).Not()
+}
+
+//go:noinline
+func cmtst16(x, y archsimd.Int16x8) archsimd.Mask16x8 {
+	var z archsimd.Int16x8
+	return x.And(y).Equal(z).Not()
+}
+
+//go:noinline
+func cmtst32(x, y archsimd.Int32x4) archsimd.Mask32x4 {
+	z := x.Xor(x)
+	return x.And(y).Equal(z).Not()
+}
+
+//go:noinline
+func cmtst64(x, y archsimd.Int64x2) archsimd.Mask64x2 {
+	var z archsimd.Int64x2
+	return x.And(y).Equal(z).Not()
+}
+
+func TestCmtst(t *testing.T) {
+	testInt8x16Compare(t, cmtst8, cmtstSlice[int8])
+	testInt16x8Compare(t, cmtst16, cmtstSlice[int16])
+	testInt32x4Compare(t, cmtst32, cmtstSlice[int32])
+	testInt64x2Compare(t, cmtst64, cmtstSlice[int64])
+}

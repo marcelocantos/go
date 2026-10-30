@@ -204,7 +204,6 @@ type commonHandler struct {
 }
 
 func (h *commonHandler) clone() *commonHandler {
-	// We can't use assignment because we can't copy the mutex.
 	return &commonHandler{
 		json:              h.json,
 		opts:              h.opts,
@@ -260,6 +259,9 @@ func (h *commonHandler) withAttrs(as []Attr) *commonHandler {
 }
 
 func (h *commonHandler) withGroup(name string) *commonHandler {
+	if name == "" {
+		return h
+	}
 	h2 := h.clone()
 	h2.groups = append(h2.groups, name)
 	return h2
@@ -505,23 +507,29 @@ func (s *handleState) appendAttr(a Attr) bool {
 	if a.Value.Kind() == KindGroup {
 		attrs := a.Value.Group()
 		// Output only non-empty groups.
-		if len(attrs) > 0 {
-			// The group may turn out to be empty even though it has attrs (for
-			// example, ReplaceAttr may delete all the attrs).
-			// So remember where we are in the buffer, to restore the position
-			// later if necessary.
-			pos := s.buf.Len()
-			// Inline a group with an empty key.
-			if a.Key != "" {
-				s.openGroup(a.Key)
-			}
-			if !s.appendAttrs(attrs) {
-				s.buf.SetLen(pos)
-				return false
-			}
+		if len(attrs) == 0 {
+			return false
+		}
+		// The group may turn out to be empty even though it has attrs (for
+		// example, ReplaceAttr may delete all the attrs).
+		// So remember where we are in the buffer, to restore the position
+		// later if necessary.
+		pos := s.buf.Len()
+		sep := s.sep
+		// Inline a group with an empty key.
+		if a.Key != "" {
+			s.openGroup(a.Key)
+		}
+		if !s.appendAttrs(attrs) {
 			if a.Key != "" {
 				s.closeGroup(a.Key)
 			}
+			s.buf.SetLen(pos)
+			s.sep = sep
+			return false
+		}
+		if a.Key != "" {
+			s.closeGroup(a.Key)
 		}
 	} else {
 		s.appendKey(a.Key)

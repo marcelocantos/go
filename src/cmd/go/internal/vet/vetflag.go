@@ -48,7 +48,7 @@ func addFlags(cmd *base.Command) {
 	// Suppress the build -json flag; we define our own.
 	work.AddBuildFlags(cmd, work.OmitJSONFlag)
 
-	cmd.Flag.StringVar(&toolFlag, cmd.Name()+"tool", "", "") // -vettool or -fixtool
+	cmd.Flag.StringVar(&toolFlag, cmd.Name()+"tool", "", "select a different analysis `tool` with alternative or additional checks") // -vettool or -fixtool
 	cmd.Flag.BoolVar(&diffFlag, "diff", false, "print diff instead of applying it")
 	cmd.Flag.BoolVar(&jsonFlag, "json", false, "print diagnostics and fixes as JSON")
 	cmd.Flag.IntVar(&contextFlag, "c", -1, "display offending line with this many lines of context")
@@ -88,6 +88,7 @@ func parseToolFlag(cmd *base.Command, args []string) string {
 
 // toolFlags processes the command line, splitting it at the first non-flag
 // into the list of flags and list of packages.
+// It also sets [work.VetTool] and [work.VetExplicit].
 func toolFlags(cmd *base.Command, args []string) (passToTool, packageNames []string) {
 	tool := parseToolFlag(cmd, args)
 	work.VetTool = tool
@@ -114,10 +115,12 @@ func toolFlags(cmd *base.Command, args []string) (passToTool, packageNames []str
 
 	// Add tool's flags to cmd.Flag.
 	//
-	// Some flags, in particular -tags and -v, are known to the tool but
-	// also defined as build flags. This works fine, so we omit duplicates here.
+	// Some flags, in particular -json and -diff, are known to the tool but
+	// also defined by the go command. This works fine, so we omit duplicates
+	// here. Such shared flags do not select analyzers.
 	// However some, like -x, are known to the build but not to the tool.
 	isToolFlag := make(map[string]bool, len(analysisFlags))
+	isSharedFlag := make(map[string]bool)
 	cf := cmd.Flag
 	for _, f := range analysisFlags {
 		// We reimplement the unitchecker's -c=n flag.
@@ -125,13 +128,21 @@ func toolFlags(cmd *base.Command, args []string) (passToTool, packageNames []str
 		if f.Name == "c" {
 			continue
 		}
+		// The tool's legacy -tags and -v flags have no effect;
+		// the build flags of the same names apply instead.
+		// Don't pass them through.
+		if f.Name == "tags" || f.Name == "v" {
+			continue
+		}
 		isToolFlag[f.Name] = true
 		if cf.Lookup(f.Name) == nil {
 			if f.Bool {
-				cf.Bool(f.Name, false, "")
+				cf.Bool(f.Name, false, f.Usage)
 			} else {
-				cf.String(f.Name, "", "")
+				cf.String(f.Name, "", f.Usage)
 			}
+		} else {
+			isSharedFlag[f.Name] = true
 		}
 	}
 
@@ -176,6 +187,9 @@ func toolFlags(cmd *base.Command, args []string) (passToTool, packageNames []str
 			// Forward the raw arguments rather than cleaned equivalents, just in
 			// case the tool parses them idiosyncratically.
 			explicitFlags = append(explicitFlags, args[:len(args)-len(remainingArgs)]...)
+			if !isSharedFlag[f.Name] {
+				work.VetExplicit = true
+			}
 
 			// This flag has been overridden explicitly, so don't forward its implicit
 			// value from GOFLAGS.
@@ -189,6 +203,9 @@ func toolFlags(cmd *base.Command, args []string) (passToTool, packageNames []str
 	cmd.Flag.Visit(func(f *flag.Flag) {
 		if addFromGOFLAGS[f.Name] {
 			passToTool = append(passToTool, fmt.Sprintf("-%s=%s", f.Name, f.Value))
+			if !isSharedFlag[f.Name] {
+				work.VetExplicit = true
+			}
 		}
 	})
 	passToTool = append(passToTool, explicitFlags...)
@@ -197,7 +214,9 @@ func toolFlags(cmd *base.Command, args []string) (passToTool, packageNames []str
 
 func exitWithUsage(cmd *base.Command) {
 	fmt.Fprintf(os.Stderr, "usage: %s\n", cmd.UsageLine)
-	fmt.Fprintf(os.Stderr, "Run 'go help %s' for details.\n", cmd.LongName())
+	fmt.Fprintf(os.Stderr, "\nFlags:\n")
+	cmd.Flag.PrintDefaults()
+	fmt.Fprintf(os.Stderr, "\nRun 'go help %s' for details.\n", cmd.LongName())
 
 	// This part is additional to what (*Command).Usage does:
 	tool := toolFlag

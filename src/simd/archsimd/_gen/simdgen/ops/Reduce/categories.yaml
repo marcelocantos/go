@@ -1,0 +1,24 @@
+!sum
+- go: reduceSum
+  commutative: false
+  documentation: !string |-
+    // NAME reduces x by summing all elements. The sum is placed in element 0
+    // of the result; other elements are zeroed.
+- go: reduceMax
+  commutative: false
+  documentation: !string |-
+    // NAME reduces x by taking the maximum of all elements. The maximum is placed
+    // in element 0 of the result; other elements are zeroed.
+- go: reduceMin
+  commutative: false
+  documentation: !string |-
+    // NAME reduces x by taking the minimum of all elements. The minimum is placed
+    // in element 0 of the result; other elements are zeroed.
+- go: ReduceSum
+  commutative: false
+  documentation: !string |-
+    // NAME returns the scalar sum of the elements of x.
+- go: ReduceMax
+  commutative: false
+  documentation: !string |-
+    // NAME returns the largest element of x.

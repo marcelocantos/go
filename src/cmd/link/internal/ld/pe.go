@@ -48,6 +48,24 @@ type IMAGE_EXPORT_DIRECTORY struct {
 	AddressOfNameOrdinals uint32
 }
 
+type IMAGE_TLS_DIRECTORY32 struct {
+	StartAddressOfRawData uint32
+	EndAddressOfRawData   uint32
+	AddressOfIndex        uint32
+	AddressOfCallBacks    uint32
+	SizeOfZeroFill        uint32
+	Characteristics       uint32
+}
+
+type IMAGE_TLS_DIRECTORY64 struct {
+	StartAddressOfRawData uint64
+	EndAddressOfRawData   uint64
+	AddressOfIndex        uint64
+	AddressOfCallBacks    uint64
+	SizeOfZeroFill        uint32
+	Characteristics       uint32
+}
+
 var (
 	// PEBASE is the base address for the executable.
 	// It is small for 32-bit and large for 64-bit.
@@ -151,9 +169,139 @@ const (
 	IMAGE_REL_BASED_DIR64   = 10
 )
 
+// IMAGE_LOAD_CONFIG_DIRECTORY64.GuardFlags and IMAGE_LOAD_CONFIG_DIRECTORY32.GuardFlags
+// values. These can be combined together.
 const (
-	PeMinimumTargetMajorVersion = 6
-	PeMinimumTargetMinorVersion = 1
+	IMAGE_GUARD_CF_INSTRUMENTED                    = 0x00000100 // Module performs control flow integrity checks using system-supplied support
+	IMAGE_GUARD_CFW_INSTRUMENTED                   = 0x00000200 // Module performs control flow and write integrity checks
+	IMAGE_GUARD_CF_FUNCTION_TABLE_PRESENT          = 0x00000400 // Module contains valid control flow target metadata
+	IMAGE_GUARD_SECURITY_COOKIE_UNUSED             = 0x00000800 // Module does not make use of the /GS security cookie
+	IMAGE_GUARD_PROTECT_DELAYLOAD_IAT              = 0x00001000 // Module supports read only delay load IAT
+	IMAGE_GUARD_DELAYLOAD_IAT_IN_ITS_OWN_SECTION   = 0x00002000 // Delayload import table in its own .didat section (with nothing else in it) that can be freely reprotected
+	IMAGE_GUARD_CF_EXPORT_SUPPRESSION_INFO_PRESENT = 0x00004000 // Module contains suppressed export information
+	IMAGE_GUARD_CF_ENABLE_EXPORT_SUPPRESSION       = 0x00008000 // Module enables suppression of exports
+	IMAGE_GUARD_CF_LONGJUMP_TABLE_PRESENT          = 0x00010000 // Module contains longjmp target information
+	IMAGE_GUARD_RF_INSTRUMENTED                    = 0x00020000 // Module contains return flow instrumentation and metadata
+	IMAGE_GUARD_RF_ENABLE                          = 0x00040000 // Module requests that the OS enable return flow protection
+	IMAGE_GUARD_RF_STRICT                          = 0x00080000 // Module requests that the OS enable return flow protection in strict mode
+	IMAGE_GUARD_CF_FUNCTION_TABLE_SIZE_MASK        = 0xF0000000 // Stride of Guard CF function table encoded in these bits (additional count of bytes per element)
+	IMAGE_GUARD_CF_FUNCTION_TABLE_SIZE_SHIFT       = 28         // Shift to right-justify Guard CF function table stride
+)
+
+type IMAGE_LOAD_CONFIG_CODE_INTEGRITY struct {
+	Flags         uint16
+	Catalog       uint16
+	CatalogOffset uint32
+	Reserved      uint32
+}
+
+type IMAGE_LOAD_CONFIG_DIRECTORY32 struct {
+	Size                                     uint32
+	TimeDateStamp                            uint32
+	MajorVersion                             uint16
+	MinorVersion                             uint16
+	GlobalFlagsClear                         uint32
+	GlobalFlagsSet                           uint32
+	CriticalSectionDefaultTimeout            uint32
+	DeCommitFreeBlockThreshold               uint32
+	DeCommitTotalFreeThreshold               uint32
+	LockPrefixTable                          uint32
+	MaximumAllocationSize                    uint32
+	VirtualMemoryThreshold                   uint32
+	ProcessHeapFlags                         uint32
+	ProcessAffinityMask                      uint32
+	CSDVersion                               uint16
+	DependentLoadFlags                       uint16
+	EditList                                 uint32
+	SecurityCookie                           uint32
+	SEHandlerTable                           uint32
+	SEHandlerCount                           uint32
+	GuardCFCheckFunctionPointer              uint32
+	GuardCFDispatchFunctionPointer           uint32
+	GuardCFFunctionTable                     uint32
+	GuardCFFunctionCount                     uint32
+	GuardFlags                               uint32
+	CodeIntegrity                            IMAGE_LOAD_CONFIG_CODE_INTEGRITY
+	GuardAddressTakenIatEntryTable           uint32
+	GuardAddressTakenIatEntryCount           uint32
+	GuardLongJumpTargetTable                 uint32
+	GuardLongJumpTargetCount                 uint32
+	DynamicValueRelocTable                   uint32
+	CHPEMetadataPointer                      uint32
+	GuardRFFailureRoutine                    uint32
+	GuardRFFailureRoutineFunctionPointer     uint32
+	DynamicValueRelocTableOffset             uint32
+	DynamicValueRelocTableSection            uint16
+	Reserved2                                uint16
+	GuardRFVerifyStackPointerFunctionPointer uint32
+	HotPatchTableOffset                      uint32
+	Reserved3                                uint32
+	EnclaveConfigurationPointer              uint32
+	VolatileMetadataPointer                  uint32
+	GuardEHContinuationTable                 uint32
+	GuardEHContinuationCount                 uint32
+	GuardXFGCheckFunctionPointer             uint32
+	GuardXFGDispatchFunctionPointer          uint32
+	GuardXFGTableDispatchFunctionPointer     uint32
+	CastGuardOsDeterminedFailureMode         uint32
+	GuardMemcpyFunctionPointer               uint32
+}
+
+type IMAGE_LOAD_CONFIG_DIRECTORY64 struct {
+	Size                                     uint32
+	TimeDateStamp                            uint32
+	MajorVersion                             uint16
+	MinorVersion                             uint16
+	GlobalFlagsClear                         uint32
+	GlobalFlagsSet                           uint32
+	CriticalSectionDefaultTimeout            uint32
+	DeCommitFreeBlockThreshold               uint64
+	DeCommitTotalFreeThreshold               uint64
+	LockPrefixTable                          uint64
+	MaximumAllocationSize                    uint64
+	VirtualMemoryThreshold                   uint64
+	ProcessAffinityMask                      uint64
+	ProcessHeapFlags                         uint32
+	CSDVersion                               uint16
+	DependentLoadFlags                       uint16
+	EditList                                 uint64
+	SecurityCookie                           uint64
+	SEHandlerTable                           uint64
+	SEHandlerCount                           uint64
+	GuardCFCheckFunctionPointer              uint64
+	GuardCFDispatchFunctionPointer           uint64
+	GuardCFFunctionTable                     uint64
+	GuardCFFunctionCount                     uint64
+	GuardFlags                               uint32
+	CodeIntegrity                            IMAGE_LOAD_CONFIG_CODE_INTEGRITY
+	GuardAddressTakenIatEntryTable           uint64
+	GuardAddressTakenIatEntryCount           uint64
+	GuardLongJumpTargetTable                 uint64
+	GuardLongJumpTargetCount                 uint64
+	DynamicValueRelocTable                   uint64
+	CHPEMetadataPointer                      uint64
+	GuardRFFailureRoutine                    uint64
+	GuardRFFailureRoutineFunctionPointer     uint64
+	DynamicValueRelocTableOffset             uint32
+	DynamicValueRelocTableSection            uint16
+	Reserved2                                uint16
+	GuardRFVerifyStackPointerFunctionPointer uint64
+	HotPatchTableOffset                      uint32
+	Reserved3                                uint32
+	EnclaveConfigurationPointer              uint64
+	VolatileMetadataPointer                  uint64
+	GuardEHContinuationTable                 uint64
+	GuardEHContinuationCount                 uint64
+	GuardXFGCheckFunctionPointer             uint64
+	GuardXFGDispatchFunctionPointer          uint64
+	GuardXFGTableDispatchFunctionPointer     uint64
+	CastGuardOsDeterminedFailureMode         uint64
+	GuardMemcpyFunctionPointer               uint64
+}
+
+const (
+	PeMinimumTargetMajorVersion = 10
+	PeMinimumTargetMinorVersion = 0
 )
 
 // DOS stub that prints out
@@ -437,6 +585,8 @@ type peFile struct {
 	rdataSect      *peSection
 	dataSect       *peSection
 	bssSect        *peSection
+	tlsSect        *peSection
+	tlsDirOffset   uint32
 	ctorsSect      *peSection
 	pdataSect      *peSection
 	xdataSect      *peSection
@@ -562,6 +712,63 @@ func (f *peFile) addInitArray(ctxt *Link) *peSection {
 		ctxt.Out.Write32(uint32(addr))
 	}
 	return sect
+}
+
+// addTLS adds storage for runtime.tlsg. For external linking, the host linker
+// combines this section with the TLS template supplied by its runtime. For
+// internal linking, this also emits the TLS directory consumed by the loader.
+func (f *peFile) addTLS(ctxt *Link) {
+	ptrSize := ctxt.Arch.PtrSize
+	name := ".tls$"
+	size := ptrSize
+	if ctxt.LinkMode == LinkInternal {
+		name = ".tls"
+		f.tlsDirOffset = uint32(ptrSize)
+		if pe64 {
+			size += binary.Size(&IMAGE_TLS_DIRECTORY64{})
+		} else {
+			size += binary.Size(&IMAGE_TLS_DIRECTORY32{})
+		}
+	}
+
+	sect := f.addSection(name, size, size)
+	sect.characteristics = IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE
+	if ptrSize == 8 {
+		sect.characteristics |= IMAGE_SCN_ALIGN_8BYTES
+	} else {
+		sect.characteristics |= IMAGE_SCN_ALIGN_4BYTES
+	}
+	f.tlsSect = sect
+
+	out := ctxt.Out
+	out.SeekSet(int64(sect.pointerToRawData))
+	sect.checkOffset(out.Offset())
+	out.WriteStringN("", ptrSize)
+
+	if ctxt.LinkMode == LinkInternal {
+		start := uint64(PEBASE) + uint64(sect.virtualAddress)
+		index := uint64(ctxt.loader.SymValue(ctxt.loader.Lookup("_tls_index", 0)))
+		if pe64 {
+			dir := IMAGE_TLS_DIRECTORY64{
+				StartAddressOfRawData: start,
+				EndAddressOfRawData:   start + uint64(ptrSize),
+				AddressOfIndex:        index,
+				Characteristics:       IMAGE_SCN_ALIGN_8BYTES,
+			}
+			binary.Write(out, binary.LittleEndian, &dir)
+		} else {
+			dir := IMAGE_TLS_DIRECTORY32{
+				StartAddressOfRawData: uint32(start),
+				EndAddressOfRawData:   uint32(start) + uint32(ptrSize),
+				AddressOfIndex:        uint32(index),
+				Characteristics:       IMAGE_SCN_ALIGN_4BYTES,
+			}
+			binary.Write(out, binary.LittleEndian, &dir)
+		}
+		f.dataDirectory[pe.IMAGE_DIRECTORY_ENTRY_TLS].VirtualAddress = sect.virtualAddress + f.tlsDirOffset
+		f.dataDirectory[pe.IMAGE_DIRECTORY_ENTRY_TLS].Size = uint32(size - ptrSize)
+	}
+	sect.pad(out, uint32(size))
 }
 
 // emitRelocations emits relocation entries for go.o in external linking.
@@ -715,6 +922,9 @@ func (f *peFile) writeSymbol(out *OutBuf, ldr *loader.Loader, s loader.Sym, name
 // mapToPESection searches peFile f for s symbol's location.
 // It returns PE section index, and offset within that section.
 func (f *peFile) mapToPESection(ldr *loader.Loader, s loader.Sym, linkmode LinkMode) (pesectidx int, offset int64, err error) {
+	if ldr.SymType(s) == sym.STLSBSS && f.tlsSect != nil {
+		return f.tlsSect.index, ldr.SymValue(s), nil
+	}
 	sect := ldr.SymSect(s)
 	if sect == nil {
 		return 0, 0, fmt.Errorf("could not map %s symbol with no section", ldr.SymName(s))
@@ -754,7 +964,7 @@ func (f *peFile) writeSymbols(ctxt *Link) {
 	ldr := ctxt.loader
 	addsym := func(s loader.Sym) {
 		t := ldr.SymType(s)
-		if ldr.SymSect(s) == nil && t != sym.SDYNIMPORT && t != sym.SHOSTOBJ && t != sym.SUNDEFEXT {
+		if ldr.SymSect(s) == nil && t != sym.STLSBSS && t != sym.SDYNIMPORT && t != sym.SHOSTOBJ && t != sym.SUNDEFEXT {
 			return
 		}
 
@@ -807,7 +1017,8 @@ func (f *peFile) writeSymbols(ctxt *Link) {
 			}
 		}
 		class := IMAGE_SYM_CLASS_EXTERNAL
-		if ldr.IsFileLocal(s) || ldr.AttrVisibilityHidden(s) || ldr.AttrLocal(s) {
+		if ldr.IsFileLocal(s) || ldr.AttrVisibilityHidden(s) || ldr.AttrLocal(s) ||
+			(ldr.IsContentHashed(s) && ldr.SymType(s).IsText()) {
 			class = IMAGE_SYM_CLASS_STATIC
 		}
 		f.writeSymbol(ctxt.Out, ldr, s, name, value, sect, peSymType, uint8(class))
@@ -855,9 +1066,6 @@ func (f *peFile) writeSymbols(ctxt *Link) {
 		}
 		t := ldr.SymType(s)
 		if t >= sym.SELFRXSECT && t < sym.SFirstUnallocated { // data sections handled in dodata
-			if t == sym.STLSBSS {
-				continue
-			}
 			if !shouldBeInSymbolTable(s) {
 				continue
 			}
@@ -1121,7 +1329,7 @@ func Peinit(ctxt *Link) {
 		}
 	}
 
-	var sh [16]pe.SectionHeader32
+	var sh [17]pe.SectionHeader32
 	var fh pe.FileHeader
 	PEFILEHEADR = int32(Rnd(int64(len(dosstub)+binary.Size(&fh)+l+binary.Size(&sh)), PEFILEALIGN))
 	if ctxt.LinkMode != LinkExternal {
@@ -1134,13 +1342,50 @@ func Peinit(ctxt *Link) {
 
 	if ctxt.LinkMode == LinkInternal {
 		// some mingw libs depend on this symbol, for example, FindPESectionByName
-		for _, name := range [2]string{"__image_base__", "_image_base__"} {
+		for _, name := range [...]string{"__image_base__", "_image_base__", "__ImageBase"} {
 			sb := ctxt.loader.CreateSymForUpdate(name, 0)
 			sb.SetType(sym.SDATA)
 			sb.SetValue(PEBASE)
 			ctxt.loader.SetAttrSpecial(sb.Sym(), true)
 			ctxt.loader.SetAttrLocal(sb.Sym(), true)
 		}
+
+		// The _load_config_used symbol is required to be present on modern
+		// Windows. We later wire this up to the PE data directory.
+		sb := ctxt.loader.CreateSymForUpdate("_load_config_used", 0)
+		sb.SetType(sym.SRODATA)
+		sb.SetAlign(int32(ctxt.Arch.PtrSize))
+		var buf bytes.Buffer
+		if pe64 {
+			lc := IMAGE_LOAD_CONFIG_DIRECTORY64{
+				Size:       uint32(binary.Size(&IMAGE_LOAD_CONFIG_DIRECTORY64{})),
+				GuardFlags: IMAGE_GUARD_SECURITY_COOKIE_UNUSED,
+			}
+			binary.Write(&buf, binary.LittleEndian, &lc)
+		} else {
+			lc := IMAGE_LOAD_CONFIG_DIRECTORY32{
+				Size:       uint32(binary.Size(&IMAGE_LOAD_CONFIG_DIRECTORY32{})),
+				GuardFlags: IMAGE_GUARD_SECURITY_COOKIE_UNUSED,
+			}
+			binary.Write(&buf, binary.LittleEndian, &lc)
+		}
+		sb.SetData(buf.Bytes())
+		sb.SetSize(int64(buf.Len()))
+		ctxt.loader.SetAttrReachable(sb.Sym(), true)
+
+		// The Windows loader writes this module's static TLS index here.
+		tlsIndex := ctxt.loader.CreateSymForUpdate("_tls_index", 0)
+		tlsIndex.SetType(sym.SNOPTRBSS)
+		tlsIndex.SetSize(4)
+		tlsIndex.SetAlign(4)
+		ctxt.loader.SetAttrReachable(tlsIndex.Sym(), true)
+	} else {
+		tlsIndex := ctxt.loader.LookupOrCreateSym("_tls_index", 0)
+		sb := ctxt.loader.MakeSymbolUpdater(tlsIndex)
+		if sb.Type() == 0 || sb.Type() == sym.SXREF {
+			sb.SetType(sym.SHOSTOBJ)
+		}
+		ctxt.loader.SetAttrReachable(tlsIndex, true)
 	}
 
 	HEADR = PEFILEHEADR
@@ -1501,12 +1746,15 @@ func (rt *peBaseRelocTable) init(ctxt *Link) {
 }
 
 func (rt *peBaseRelocTable) addentry(ldr *loader.Loader, s loader.Sym, r *loader.Reloc) {
+	rt.add(ldr.SymValue(s)+int64(r.Off())-PEBASE, r.Siz())
+}
+
+func (rt *peBaseRelocTable) add(addr int64, size uint8) {
 	// pageSize is the size in bytes of a page
 	// described by a base relocation block.
 	const pageSize = 0x1000
 	const pageMask = pageSize - 1
 
-	addr := ldr.SymValue(s) + int64(r.Off()) - PEBASE
 	page := uint32(addr &^ pageMask)
 	off := uint32(addr & pageMask)
 
@@ -1520,9 +1768,9 @@ func (rt *peBaseRelocTable) addentry(ldr *loader.Loader, s loader.Sym, r *loader
 	}
 
 	// Set entry type
-	switch r.Siz() {
+	switch size {
 	default:
-		Exitf("unsupported relocation size %d\n", r.Siz)
+		Exitf("unsupported relocation size %d\n", size)
 	case 4:
 		e.typeOff |= uint16(IMAGE_REL_BASED_HIGHLOW << 12)
 	case 8:
@@ -1616,6 +1864,12 @@ func addPEBaseReloc(ctxt *Link) {
 	for _, s := range ctxt.datap {
 		addPEBaseRelocSym(ldr, s, &rt)
 	}
+	if pefile.tlsSect != nil && pefile.tlsDirOffset != 0 {
+		dir := int64(pefile.tlsSect.virtualAddress + pefile.tlsDirOffset)
+		for i := range 3 {
+			rt.add(dir+int64(i*ctxt.Arch.PtrSize), uint8(ctxt.Arch.PtrSize))
+		}
+	}
 
 	// Write relocation information
 	startoff := ctxt.Out.Offset()
@@ -1635,7 +1889,6 @@ func addPEBaseReloc(ctxt *Link) {
 func (ctxt *Link) dope() {
 	initdynimport(ctxt)
 	initdynexport(ctxt)
-	writeSEH(ctxt)
 }
 
 func setpersrc(ctxt *Link, syms []loader.Sym) {
@@ -1712,6 +1965,14 @@ func asmbPe(ctxt *Link) {
 	ro.checkSegment(&Segrodata)
 	pefile.rdataSect = ro
 
+	// This should have been added in Peinit and by now is part of the
+	// just-written .rdata section.
+	s := ctxt.loader.Lookup("_load_config_used", 0)
+	if s != 0 {
+		pefile.dataDirectory[pe.IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG].VirtualAddress = uint32(ctxt.loader.SymValue(s) - PEBASE)
+		pefile.dataDirectory[pe.IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG].Size = uint32(ctxt.loader.SymSize(s))
+	}
+
 	var d *peSection
 	if ctxt.LinkMode != LinkExternal {
 		d = pefile.addSection(".data", int(Segdata.Length), int(Segdata.Filelen))
@@ -1732,6 +1993,7 @@ func asmbPe(ctxt *Link) {
 
 	pefile.addSEH(ctxt)
 	pefile.addDWARF()
+	pefile.addTLS(ctxt)
 
 	if ctxt.LinkMode == LinkExternal {
 		pefile.ctorsSect = pefile.addInitArray(ctxt)
@@ -1759,7 +2021,7 @@ func peCreateExportFile(ctxt *Link, libName string) (fname string) {
 	var buf bytes.Buffer
 
 	if ctxt.BuildMode == BuildModeCShared {
-		fmt.Fprintf(&buf, "LIBRARY %s\n", libName)
+		fmt.Fprintf(&buf, "LIBRARY %q\n", libName)
 	}
 	buf.WriteString("EXPORTS\n")
 

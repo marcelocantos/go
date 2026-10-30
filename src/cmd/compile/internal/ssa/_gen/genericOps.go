@@ -4,6 +4,13 @@
 
 package main
 
+import (
+	"log"
+	"maps"
+	"slices"
+	"strings"
+)
+
 // Generic opcodes typically specify a width. The inputs and outputs
 // of that op are the given number of bits wide. There is no notion of
 // "sign", so Add32 can be used both for signed and unsigned 32-bit
@@ -22,32 +29,32 @@ var genericOps = []opData{
 	// 2-input arithmetic
 	// Types must be consistent with Go typing. Add, for example, must take two values
 	// of the same type and produces that same type.
-	{name: "Add8", argLength: 2, commutative: true}, // arg0 + arg1
-	{name: "Add16", argLength: 2, commutative: true},
-	{name: "Add32", argLength: 2, commutative: true},
-	{name: "Add64", argLength: 2, commutative: true},
+	{name: "Add8", argLength: 2, commutative: true, earlyOk: true}, // arg0 + arg1
+	{name: "Add16", argLength: 2, commutative: true, earlyOk: true},
+	{name: "Add32", argLength: 2, commutative: true, earlyOk: true},
+	{name: "Add64", argLength: 2, commutative: true, earlyOk: true},
 	{name: "AddPtr", argLength: 2}, // For address calculations.  arg0 is a pointer and arg1 is an int.
-	{name: "Add32F", argLength: 2, commutative: true},
-	{name: "Add64F", argLength: 2, commutative: true},
+	{name: "Add32F", argLength: 2, commutative: true, earlyOk: true},
+	{name: "Add64F", argLength: 2, commutative: true, earlyOk: true},
 	{name: "Add64D", argLength: 2, commutative: true},  // decimal64 addition
 	{name: "Add128D", argLength: 2, commutative: true}, // decimal128 addition
 
-	{name: "Sub8", argLength: 2}, // arg0 - arg1
-	{name: "Sub16", argLength: 2},
-	{name: "Sub32", argLength: 2},
-	{name: "Sub64", argLength: 2},
+	{name: "Sub8", argLength: 2, earlyOk: true}, // arg0 - arg1
+	{name: "Sub16", argLength: 2, earlyOk: true},
+	{name: "Sub32", argLength: 2, earlyOk: true},
+	{name: "Sub64", argLength: 2, earlyOk: true},
 	{name: "SubPtr", argLength: 2},
-	{name: "Sub32F", argLength: 2},
-	{name: "Sub64F", argLength: 2},
+	{name: "Sub32F", argLength: 2, earlyOk: true},
+	{name: "Sub64F", argLength: 2, earlyOk: true},
 	{name: "Sub64D", argLength: 2},  // decimal64 subtraction
 	{name: "Sub128D", argLength: 2}, // decimal128 subtraction
 
-	{name: "Mul8", argLength: 2, commutative: true}, // arg0 * arg1
-	{name: "Mul16", argLength: 2, commutative: true},
-	{name: "Mul32", argLength: 2, commutative: true},
-	{name: "Mul64", argLength: 2, commutative: true},
-	{name: "Mul32F", argLength: 2, commutative: true},
-	{name: "Mul64F", argLength: 2, commutative: true},
+	{name: "Mul8", argLength: 2, commutative: true, earlyOk: true}, // arg0 * arg1
+	{name: "Mul16", argLength: 2, commutative: true, earlyOk: true},
+	{name: "Mul32", argLength: 2, commutative: true, earlyOk: true},
+	{name: "Mul64", argLength: 2, commutative: true, earlyOk: true},
+	{name: "Mul32F", argLength: 2, commutative: true, earlyOk: true},
+	{name: "Mul64F", argLength: 2, commutative: true, earlyOk: true},
 	{name: "Mul64D", argLength: 2, commutative: true},  // decimal64 multiplication
 	{name: "Mul128D", argLength: 2, commutative: true}, // decimal128 multiplication
 
@@ -56,24 +63,24 @@ var genericOps = []opData{
 	{name: "Div64D", argLength: 2},  // decimal64 division
 	{name: "Div128D", argLength: 2}, // decimal128 division
 
-	{name: "Hmul32", argLength: 2, commutative: true},
-	{name: "Hmul32u", argLength: 2, commutative: true},
-	{name: "Hmul64", argLength: 2, commutative: true},
-	{name: "Hmul64u", argLength: 2, commutative: true},
+	{name: "Hmul32", argLength: 2, commutative: true, earlyOk: true},
+	{name: "Hmul32u", argLength: 2, commutative: true, earlyOk: true},
+	{name: "Hmul64", argLength: 2, commutative: true, earlyOk: true},
+	{name: "Hmul64u", argLength: 2, commutative: true, earlyOk: true},
 
-	{name: "Mul32uhilo", argLength: 2, typ: "(UInt32,UInt32)", commutative: true}, // arg0 * arg1, returns (hi, lo)
-	{name: "Mul64uhilo", argLength: 2, typ: "(UInt64,UInt64)", commutative: true}, // arg0 * arg1, returns (hi, lo)
+	{name: "Mul32uhilo", argLength: 2, typ: "(UInt32,UInt32)", commutative: true, earlyOk: true}, // arg0 * arg1, returns (hi, lo)
+	{name: "Mul64uhilo", argLength: 2, typ: "(UInt64,UInt64)", commutative: true, earlyOk: true}, // arg0 * arg1, returns (hi, lo)
 
-	{name: "Mul32uover", argLength: 2, typ: "(UInt32,Bool)", commutative: true}, // Let x = arg0*arg1 (full 32x32-> 64 unsigned multiply), returns (uint32(x), (uint32(x) != x))
-	{name: "Mul64uover", argLength: 2, typ: "(UInt64,Bool)", commutative: true}, // Let x = arg0*arg1 (full 64x64->128 unsigned multiply), returns (uint64(x), (uint64(x) != x))
+	{name: "Mul32uover", argLength: 2, typ: "(UInt32,Bool)", commutative: true, earlyOk: true}, // Let x = arg0*arg1 (full 32x32-> 64 unsigned multiply), returns (uint32(x), (uint32(x) != x))
+	{name: "Mul64uover", argLength: 2, typ: "(UInt64,Bool)", commutative: true, earlyOk: true}, // Let x = arg0*arg1 (full 64x64->128 unsigned multiply), returns (uint64(x), (uint64(x) != x))
 
 	// Weird special instructions for use in the strength reduction of divides.
 	// These ops compute unsigned (arg0 + arg1) / 2, correct to all
 	// 32/64 bits, even when the intermediate result of the add has 33/65 bits.
 	// These ops can assume arg0 >= arg1.
 	// Note: these ops aren't commutative!
-	{name: "Avg32u", argLength: 2, typ: "UInt32"}, // 32-bit platforms only
-	{name: "Avg64u", argLength: 2, typ: "UInt64"}, // 64-bit platforms only
+	{name: "Avg32u", argLength: 2, typ: "UInt32", earlyOk: true}, // 32-bit platforms only
+	{name: "Avg64u", argLength: 2, typ: "UInt64", earlyOk: true}, // 64-bit platforms only
 
 	// For Div16, Div32 and Div64, AuxInt non-zero means that the divisor has been proved to be not -1
 	// or that the dividend is not the most negative value.
@@ -97,154 +104,154 @@ var genericOps = []opData{
 	{name: "Mod64", argLength: 2, aux: "Bool"},
 	{name: "Mod64u", argLength: 2},
 
-	{name: "And8", argLength: 2, commutative: true}, // arg0 & arg1
-	{name: "And16", argLength: 2, commutative: true},
-	{name: "And32", argLength: 2, commutative: true},
-	{name: "And64", argLength: 2, commutative: true},
+	{name: "And8", argLength: 2, commutative: true, earlyOk: true}, // arg0 & arg1
+	{name: "And16", argLength: 2, commutative: true, earlyOk: true},
+	{name: "And32", argLength: 2, commutative: true, earlyOk: true},
+	{name: "And64", argLength: 2, commutative: true, earlyOk: true},
 
-	{name: "Or8", argLength: 2, commutative: true}, // arg0 | arg1
-	{name: "Or16", argLength: 2, commutative: true},
-	{name: "Or32", argLength: 2, commutative: true},
-	{name: "Or64", argLength: 2, commutative: true},
+	{name: "Or8", argLength: 2, commutative: true, earlyOk: true}, // arg0 | arg1
+	{name: "Or16", argLength: 2, commutative: true, earlyOk: true},
+	{name: "Or32", argLength: 2, commutative: true, earlyOk: true},
+	{name: "Or64", argLength: 2, commutative: true, earlyOk: true},
 
-	{name: "Xor8", argLength: 2, commutative: true}, // arg0 ^ arg1
-	{name: "Xor16", argLength: 2, commutative: true},
-	{name: "Xor32", argLength: 2, commutative: true},
-	{name: "Xor64", argLength: 2, commutative: true},
+	{name: "Xor8", argLength: 2, commutative: true, earlyOk: true}, // arg0 ^ arg1
+	{name: "Xor16", argLength: 2, commutative: true, earlyOk: true},
+	{name: "Xor32", argLength: 2, commutative: true, earlyOk: true},
+	{name: "Xor64", argLength: 2, commutative: true, earlyOk: true},
 
 	// For shifts, AxB means the shifted value has A bits and the shift amount has B bits.
 	// Shift amounts are considered unsigned.
 	// If arg1 is known to be nonnegative and less than the number of bits in arg0,
 	// then auxInt may be set to 1.
 	// This enables better code generation on some platforms.
-	{name: "Lsh8x8", argLength: 2, aux: "Bool"}, // arg0 << arg1
-	{name: "Lsh8x16", argLength: 2, aux: "Bool"},
-	{name: "Lsh8x32", argLength: 2, aux: "Bool"},
-	{name: "Lsh8x64", argLength: 2, aux: "Bool"},
-	{name: "Lsh16x8", argLength: 2, aux: "Bool"},
-	{name: "Lsh16x16", argLength: 2, aux: "Bool"},
-	{name: "Lsh16x32", argLength: 2, aux: "Bool"},
-	{name: "Lsh16x64", argLength: 2, aux: "Bool"},
-	{name: "Lsh32x8", argLength: 2, aux: "Bool"},
-	{name: "Lsh32x16", argLength: 2, aux: "Bool"},
-	{name: "Lsh32x32", argLength: 2, aux: "Bool"},
-	{name: "Lsh32x64", argLength: 2, aux: "Bool"},
-	{name: "Lsh64x8", argLength: 2, aux: "Bool"},
-	{name: "Lsh64x16", argLength: 2, aux: "Bool"},
-	{name: "Lsh64x32", argLength: 2, aux: "Bool"},
-	{name: "Lsh64x64", argLength: 2, aux: "Bool"},
+	{name: "Lsh8x8", argLength: 2, aux: "Bool", earlyOk: true}, // arg0 << arg1
+	{name: "Lsh8x16", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Lsh8x32", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Lsh8x64", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Lsh16x8", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Lsh16x16", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Lsh16x32", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Lsh16x64", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Lsh32x8", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Lsh32x16", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Lsh32x32", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Lsh32x64", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Lsh64x8", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Lsh64x16", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Lsh64x32", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Lsh64x64", argLength: 2, aux: "Bool", earlyOk: true},
 
-	{name: "Rsh8x8", argLength: 2, aux: "Bool"}, // arg0 >> arg1, signed
-	{name: "Rsh8x16", argLength: 2, aux: "Bool"},
-	{name: "Rsh8x32", argLength: 2, aux: "Bool"},
-	{name: "Rsh8x64", argLength: 2, aux: "Bool"},
-	{name: "Rsh16x8", argLength: 2, aux: "Bool"},
-	{name: "Rsh16x16", argLength: 2, aux: "Bool"},
-	{name: "Rsh16x32", argLength: 2, aux: "Bool"},
-	{name: "Rsh16x64", argLength: 2, aux: "Bool"},
-	{name: "Rsh32x8", argLength: 2, aux: "Bool"},
-	{name: "Rsh32x16", argLength: 2, aux: "Bool"},
-	{name: "Rsh32x32", argLength: 2, aux: "Bool"},
-	{name: "Rsh32x64", argLength: 2, aux: "Bool"},
-	{name: "Rsh64x8", argLength: 2, aux: "Bool"},
-	{name: "Rsh64x16", argLength: 2, aux: "Bool"},
-	{name: "Rsh64x32", argLength: 2, aux: "Bool"},
-	{name: "Rsh64x64", argLength: 2, aux: "Bool"},
+	{name: "Rsh8x8", argLength: 2, aux: "Bool", earlyOk: true}, // arg0 >> arg1, signed
+	{name: "Rsh8x16", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh8x32", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh8x64", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh16x8", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh16x16", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh16x32", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh16x64", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh32x8", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh32x16", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh32x32", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh32x64", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh64x8", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh64x16", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh64x32", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh64x64", argLength: 2, aux: "Bool", earlyOk: true},
 
-	{name: "Rsh8Ux8", argLength: 2, aux: "Bool"}, // arg0 >> arg1, unsigned
-	{name: "Rsh8Ux16", argLength: 2, aux: "Bool"},
-	{name: "Rsh8Ux32", argLength: 2, aux: "Bool"},
-	{name: "Rsh8Ux64", argLength: 2, aux: "Bool"},
-	{name: "Rsh16Ux8", argLength: 2, aux: "Bool"},
-	{name: "Rsh16Ux16", argLength: 2, aux: "Bool"},
-	{name: "Rsh16Ux32", argLength: 2, aux: "Bool"},
-	{name: "Rsh16Ux64", argLength: 2, aux: "Bool"},
-	{name: "Rsh32Ux8", argLength: 2, aux: "Bool"},
-	{name: "Rsh32Ux16", argLength: 2, aux: "Bool"},
-	{name: "Rsh32Ux32", argLength: 2, aux: "Bool"},
-	{name: "Rsh32Ux64", argLength: 2, aux: "Bool"},
-	{name: "Rsh64Ux8", argLength: 2, aux: "Bool"},
-	{name: "Rsh64Ux16", argLength: 2, aux: "Bool"},
-	{name: "Rsh64Ux32", argLength: 2, aux: "Bool"},
-	{name: "Rsh64Ux64", argLength: 2, aux: "Bool"},
+	{name: "Rsh8Ux8", argLength: 2, aux: "Bool", earlyOk: true}, // arg0 >> arg1, unsigned
+	{name: "Rsh8Ux16", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh8Ux32", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh8Ux64", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh16Ux8", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh16Ux16", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh16Ux32", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh16Ux64", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh32Ux8", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh32Ux16", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh32Ux32", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh32Ux64", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh64Ux8", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh64Ux16", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh64Ux32", argLength: 2, aux: "Bool", earlyOk: true},
+	{name: "Rsh64Ux64", argLength: 2, aux: "Bool", earlyOk: true},
 
 	// 2-input comparisons
-	{name: "Eq8", argLength: 2, commutative: true, typ: "Bool"}, // arg0 == arg1
-	{name: "Eq16", argLength: 2, commutative: true, typ: "Bool"},
-	{name: "Eq32", argLength: 2, commutative: true, typ: "Bool"},
-	{name: "Eq64", argLength: 2, commutative: true, typ: "Bool"},
-	{name: "EqPtr", argLength: 2, commutative: true, typ: "Bool"},
-	{name: "EqInter", argLength: 2, typ: "Bool"}, // arg0 or arg1 is nil; other cases handled by frontend
-	{name: "EqSlice", argLength: 2, typ: "Bool"}, // arg0 or arg1 is nil; other cases handled by frontend
-	{name: "Eq32F", argLength: 2, commutative: true, typ: "Bool"},
-	{name: "Eq64F", argLength: 2, commutative: true, typ: "Bool"},
+	{name: "Eq8", argLength: 2, commutative: true, typ: "Bool", earlyOk: true}, // arg0 == arg1
+	{name: "Eq16", argLength: 2, commutative: true, typ: "Bool", earlyOk: true},
+	{name: "Eq32", argLength: 2, commutative: true, typ: "Bool", earlyOk: true},
+	{name: "Eq64", argLength: 2, commutative: true, typ: "Bool", earlyOk: true},
+	{name: "EqPtr", argLength: 2, commutative: true, typ: "Bool", earlyOk: true},
+	{name: "EqInter", argLength: 2, typ: "Bool", earlyOk: true}, // arg0 or arg1 is nil; other cases handled by frontend
+	{name: "EqSlice", argLength: 2, typ: "Bool", earlyOk: true}, // arg0 or arg1 is nil; other cases handled by frontend
+	{name: "Eq32F", argLength: 2, commutative: true, typ: "Bool", earlyOk: true},
+	{name: "Eq64F", argLength: 2, commutative: true, typ: "Bool", earlyOk: true},
 	{name: "Eq64D", argLength: 2, commutative: true, typ: "Bool"},  // decimal64 equality
 	{name: "Eq128D", argLength: 2, commutative: true, typ: "Bool"}, // decimal128 equality
 
-	{name: "Neq8", argLength: 2, commutative: true, typ: "Bool"}, // arg0 != arg1
-	{name: "Neq16", argLength: 2, commutative: true, typ: "Bool"},
-	{name: "Neq32", argLength: 2, commutative: true, typ: "Bool"},
-	{name: "Neq64", argLength: 2, commutative: true, typ: "Bool"},
-	{name: "NeqPtr", argLength: 2, commutative: true, typ: "Bool"},
-	{name: "NeqInter", argLength: 2, typ: "Bool"}, // arg0 or arg1 is nil; other cases handled by frontend
-	{name: "NeqSlice", argLength: 2, typ: "Bool"}, // arg0 or arg1 is nil; other cases handled by frontend
-	{name: "Neq32F", argLength: 2, commutative: true, typ: "Bool"},
-	{name: "Neq64F", argLength: 2, commutative: true, typ: "Bool"},
+	{name: "Neq8", argLength: 2, commutative: true, typ: "Bool", earlyOk: true}, // arg0 != arg1
+	{name: "Neq16", argLength: 2, commutative: true, typ: "Bool", earlyOk: true},
+	{name: "Neq32", argLength: 2, commutative: true, typ: "Bool", earlyOk: true},
+	{name: "Neq64", argLength: 2, commutative: true, typ: "Bool", earlyOk: true},
+	{name: "NeqPtr", argLength: 2, commutative: true, typ: "Bool", earlyOk: true},
+	{name: "NeqInter", argLength: 2, typ: "Bool", earlyOk: true}, // arg0 or arg1 is nil; other cases handled by frontend
+	{name: "NeqSlice", argLength: 2, typ: "Bool", earlyOk: true}, // arg0 or arg1 is nil; other cases handled by frontend
+	{name: "Neq32F", argLength: 2, commutative: true, typ: "Bool", earlyOk: true},
+	{name: "Neq64F", argLength: 2, commutative: true, typ: "Bool", earlyOk: true},
 	{name: "Neq64D", argLength: 2, commutative: true, typ: "Bool"},  // decimal64 inequality
 	{name: "Neq128D", argLength: 2, commutative: true, typ: "Bool"}, // decimal128 inequality
 
-	{name: "Less8", argLength: 2, typ: "Bool"},  // arg0 < arg1, signed
-	{name: "Less8U", argLength: 2, typ: "Bool"}, // arg0 < arg1, unsigned
-	{name: "Less16", argLength: 2, typ: "Bool"},
-	{name: "Less16U", argLength: 2, typ: "Bool"},
-	{name: "Less32", argLength: 2, typ: "Bool"},
-	{name: "Less32U", argLength: 2, typ: "Bool"},
-	{name: "Less64", argLength: 2, typ: "Bool"},
-	{name: "Less64U", argLength: 2, typ: "Bool"},
-	{name: "Less32F", argLength: 2, typ: "Bool"},
-	{name: "Less64F", argLength: 2, typ: "Bool"},
+	{name: "Less8", argLength: 2, typ: "Bool", earlyOk: true},  // arg0 < arg1, signed
+	{name: "Less8U", argLength: 2, typ: "Bool", earlyOk: true}, // arg0 < arg1, unsigned
+	{name: "Less16", argLength: 2, typ: "Bool", earlyOk: true},
+	{name: "Less16U", argLength: 2, typ: "Bool", earlyOk: true},
+	{name: "Less32", argLength: 2, typ: "Bool", earlyOk: true},
+	{name: "Less32U", argLength: 2, typ: "Bool", earlyOk: true},
+	{name: "Less64", argLength: 2, typ: "Bool", earlyOk: true},
+	{name: "Less64U", argLength: 2, typ: "Bool", earlyOk: true},
+	{name: "Less32F", argLength: 2, typ: "Bool", earlyOk: true},
+	{name: "Less64F", argLength: 2, typ: "Bool", earlyOk: true},
 	{name: "Less64D", argLength: 2, typ: "Bool"},  // decimal64 less than
 	{name: "Less128D", argLength: 2, typ: "Bool"}, // decimal128 less than
 
-	{name: "Leq8", argLength: 2, typ: "Bool"},  // arg0 <= arg1, signed
-	{name: "Leq8U", argLength: 2, typ: "Bool"}, // arg0 <= arg1, unsigned
-	{name: "Leq16", argLength: 2, typ: "Bool"},
-	{name: "Leq16U", argLength: 2, typ: "Bool"},
-	{name: "Leq32", argLength: 2, typ: "Bool"},
-	{name: "Leq32U", argLength: 2, typ: "Bool"},
-	{name: "Leq64", argLength: 2, typ: "Bool"},
-	{name: "Leq64U", argLength: 2, typ: "Bool"},
-	{name: "Leq32F", argLength: 2, typ: "Bool"},
-	{name: "Leq64F", argLength: 2, typ: "Bool"},
+	{name: "Leq8", argLength: 2, typ: "Bool", earlyOk: true},  // arg0 <= arg1, signed
+	{name: "Leq8U", argLength: 2, typ: "Bool", earlyOk: true}, // arg0 <= arg1, unsigned
+	{name: "Leq16", argLength: 2, typ: "Bool", earlyOk: true},
+	{name: "Leq16U", argLength: 2, typ: "Bool", earlyOk: true},
+	{name: "Leq32", argLength: 2, typ: "Bool", earlyOk: true},
+	{name: "Leq32U", argLength: 2, typ: "Bool", earlyOk: true},
+	{name: "Leq64", argLength: 2, typ: "Bool", earlyOk: true},
+	{name: "Leq64U", argLength: 2, typ: "Bool", earlyOk: true},
+	{name: "Leq32F", argLength: 2, typ: "Bool", earlyOk: true},
+	{name: "Leq64F", argLength: 2, typ: "Bool", earlyOk: true},
 	{name: "Leq64D", argLength: 2, typ: "Bool"},  // decimal64 less or equal
 	{name: "Leq128D", argLength: 2, typ: "Bool"}, // decimal128 less or equal
 
 	// the type of a CondSelect is the same as the type of its first
 	// two arguments, which should be register-width scalars; the third
 	// argument should be a boolean
-	{name: "CondSelect", argLength: 3}, // arg2 ? arg0 : arg1
+	{name: "CondSelect", argLength: 3, earlyOk: true}, // arg2 ? arg0 : arg1
 
 	// boolean ops
-	{name: "AndB", argLength: 2, commutative: true, typ: "Bool"}, // arg0 && arg1 (not shortcircuited)
-	{name: "OrB", argLength: 2, commutative: true, typ: "Bool"},  // arg0 || arg1 (not shortcircuited)
-	{name: "EqB", argLength: 2, commutative: true, typ: "Bool"},  // arg0 == arg1
-	{name: "NeqB", argLength: 2, commutative: true, typ: "Bool"}, // arg0 != arg1
-	{name: "Not", argLength: 1, typ: "Bool"},                     // !arg0, boolean
+	{name: "AndB", argLength: 2, commutative: true, typ: "Bool", earlyOk: true}, // arg0 && arg1 (not shortcircuited)
+	{name: "OrB", argLength: 2, commutative: true, typ: "Bool", earlyOk: true},  // arg0 || arg1 (not shortcircuited)
+	{name: "EqB", argLength: 2, commutative: true, typ: "Bool", earlyOk: true},  // arg0 == arg1
+	{name: "NeqB", argLength: 2, commutative: true, typ: "Bool", earlyOk: true}, // arg0 != arg1
+	{name: "Not", argLength: 1, typ: "Bool", earlyOk: true},                     // !arg0, boolean
 
 	// 1-input ops
-	{name: "Neg8", argLength: 1}, // -arg0
-	{name: "Neg16", argLength: 1},
-	{name: "Neg32", argLength: 1},
-	{name: "Neg64", argLength: 1},
-	{name: "Neg32F", argLength: 1},
-	{name: "Neg64F", argLength: 1},
+	{name: "Neg8", argLength: 1, earlyOk: true}, // -arg0
+	{name: "Neg16", argLength: 1, earlyOk: true},
+	{name: "Neg32", argLength: 1, earlyOk: true},
+	{name: "Neg64", argLength: 1, earlyOk: true},
+	{name: "Neg32F", argLength: 1, earlyOk: true},
+	{name: "Neg64F", argLength: 1, earlyOk: true},
 	{name: "Neg64D", argLength: 1},  // decimal64 negation
 	{name: "Neg128D", argLength: 1}, // decimal128 negation
 
-	{name: "Com8", argLength: 1}, // ^arg0
-	{name: "Com16", argLength: 1},
-	{name: "Com32", argLength: 1},
-	{name: "Com64", argLength: 1},
+	{name: "Com8", argLength: 1, earlyOk: true}, // ^arg0
+	{name: "Com16", argLength: 1, earlyOk: true},
+	{name: "Com32", argLength: 1, earlyOk: true},
+	{name: "Com64", argLength: 1, earlyOk: true},
 
 	{name: "Ctz8", argLength: 1},         // Count trailing (low order) zeroes (returns 0-8)
 	{name: "Ctz16", argLength: 1},        // Count trailing (low order) zeroes (returns 0-16)
@@ -278,10 +285,10 @@ var genericOps = []opData{
 	// by the low lg_2(X) bits of arg[1], interpreted as an unsigned value.
 	// Note that this works out regardless of the bit width or signedness of
 	// arg[1]. In particular, RotateLeft by x is the same as RotateRight by -x.
-	{name: "RotateLeft64", argLength: 2},
-	{name: "RotateLeft32", argLength: 2},
-	{name: "RotateLeft16", argLength: 2},
-	{name: "RotateLeft8", argLength: 2},
+	{name: "RotateLeft64", argLength: 2, earlyOk: true},
+	{name: "RotateLeft32", argLength: 2, earlyOk: true},
+	{name: "RotateLeft16", argLength: 2, earlyOk: true},
+	{name: "RotateLeft8", argLength: 2, earlyOk: true},
 
 	// Square root.
 	// Special cases:
@@ -319,6 +326,16 @@ var genericOps = []opData{
 	{name: "Max64F", argLength: 2}, // max(arg0,arg1)
 	{name: "Max32F", argLength: 2}, // max(arg0,arg1)
 
+	// Float min/max with the "arg0 < arg1 ? arg0 : arg1" comparison-select
+	// semantics (min) and "arg0 > arg1 ? arg0 : arg1" (max): ties and NaN
+	// yield arg1. These differ from the IEEE Min/Max ops above and match the
+	// MINSD/MAXSD and FCSEL hardware. branchelim emits them for the float
+	// min/max branch idiom on architectures that lower them unconditionally.
+	{name: "Min64FSel", argLength: 2}, // arg0 < arg1 ? arg0 : arg1
+	{name: "Min32FSel", argLength: 2}, // arg0 < arg1 ? arg0 : arg1
+	{name: "Max64FSel", argLength: 2}, // arg0 > arg1 ? arg0 : arg1
+	{name: "Max32FSel", argLength: 2}, // arg0 > arg1 ? arg0 : arg1
+
 	// 3-input opcode.
 	// Fused-multiply-add, float64 only.
 	// When a*b+c is exactly zero (before rounding), then the result is +0 or -0.
@@ -348,25 +365,25 @@ var genericOps = []opData{
 
 	// constants. Constant values are stored in the aux or
 	// auxint fields.
-	{name: "ConstBool", aux: "Bool"},     // auxint is 0 for false and 1 for true
-	{name: "ConstString", aux: "String"}, // value is aux.(string)
-	{name: "ConstNil", typ: "BytePtr"},   // nil pointer
-	{name: "Const8", aux: "Int8"},        // auxint is sign-extended 8 bits
-	{name: "Const16", aux: "Int16"},      // auxint is sign-extended 16 bits
-	{name: "Const32", aux: "Int32"},      // auxint is sign-extended 32 bits
+	{name: "ConstBool", aux: "Bool", earlyOk: true},     // auxint is 0 for false and 1 for true
+	{name: "ConstString", aux: "String", earlyOk: true}, // value is aux.(string)
+	{name: "ConstNil", typ: "BytePtr", earlyOk: true},   // nil pointer
+	{name: "Const8", aux: "Int8", earlyOk: true},        // auxint is sign-extended 8 bits
+	{name: "Const16", aux: "Int16", earlyOk: true},      // auxint is sign-extended 16 bits
+	{name: "Const32", aux: "Int32", earlyOk: true},      // auxint is sign-extended 32 bits
 	// Note: ConstX are sign-extended even when the type of the value is unsigned.
 	// For instance, uint8(0xaa) is stored as auxint=0xffffffffffffffaa.
-	{name: "Const64", aux: "Int64"}, // value is auxint
+	{name: "Const64", aux: "Int64", earlyOk: true}, // value is auxint
 	// Note: for both Const32F and Const64F, we disallow encoding NaNs.
 	// Signaling NaNs are tricky because if you do anything with them, they become quiet.
 	// Particularly, converting a 32 bit sNaN to 64 bit and back converts it to a qNaN.
 	// See issue 36399 and 36400.
 	// Encodings of +inf, -inf, and -0 are fine.
-	{name: "Const32F", aux: "Float32"}, // value is math.Float64frombits(uint64(auxint)) and is exactly representable as float 32
-	{name: "Const64F", aux: "Float64"}, // value is math.Float64frombits(uint64(auxint))
+	{name: "Const32F", aux: "Float32", earlyOk: true}, // value is math.Float64frombits(uint64(auxint)) and is exactly representable as float 32
+	{name: "Const64F", aux: "Float64", earlyOk: true}, // value is math.Float64frombits(uint64(auxint))
 	{name: "Const64D", aux: "Int64"}, // BID-encoded decimal64 stored as int64
-	{name: "ConstInterface"},           // nil interface
-	{name: "ConstSlice"},               // nil slice
+	{name: "ConstInterface", earlyOk: true},           // nil interface
+	{name: "ConstSlice", earlyOk: true},               // nil slice
 
 	// Constant-like things
 	{name: "InitMem", zeroWidth: true},                               // memory input to the function.
@@ -382,11 +399,11 @@ var genericOps = []opData{
 	// the Aux field will be a *obj.LSym.
 	// If the variable is a local, the base pointer will be SP and
 	// the Aux field will be a *ir.Name
-	{name: "Addr", argLength: 1, aux: "Sym", symEffect: "Addr"},      // Address of a variable.  Arg0=SB.  Aux identifies the variable.
-	{name: "LocalAddr", argLength: 2, aux: "Sym", symEffect: "Addr"}, // Address of a variable.  Arg0=SP. Arg1=mem. Aux identifies the variable.
+	{name: "Addr", argLength: 1, aux: "Sym", symEffect: "Addr", earlyOk: true},      // Address of a variable.  Arg0=SB.  Aux identifies the variable.
+	{name: "LocalAddr", argLength: 2, aux: "Sym", symEffect: "Addr", earlyOk: true}, // Address of a variable.  Arg0=SP. Arg1=mem. Aux identifies the variable.
 
-	{name: "SP", zeroWidth: true, fixedReg: true},                 // stack pointer
-	{name: "SB", typ: "Uintptr", zeroWidth: true, fixedReg: true}, // static base pointer (a.k.a. globals pointer)
+	{name: "SP", zeroWidth: true, fixedReg: true, earlyOk: true},                 // stack pointer
+	{name: "SB", typ: "Uintptr", zeroWidth: true, fixedReg: true, earlyOk: true}, // static base pointer (a.k.a. globals pointer)
 	{name: "Invalid"}, // unused value
 	{name: "SPanchored", typ: "Uintptr", argLength: 2, zeroWidth: true}, // arg0 = SP, arg1 = mem. Result is identical to arg0, but cannot be scheduled before memory state arg1.
 
@@ -438,7 +455,7 @@ var genericOps = []opData{
 
 	// PanicBounds and PanicExtend generate a runtime panic.
 	// Their arguments provide index values to use in panic messages.
-	// Both PanicBounds and PanicExtend have an AuxInt value from the BoundsKind type (in ../op.go).
+	// Both PanicBounds and PanicExtend have an AuxInt value from the BoundsKind type (in ../ssacore/bounds.go).
 	// PanicBounds' index is int sized.
 	// PanicExtend's index is int64 sized. (PanicExtend is only used on 32-bit archs.)
 	{name: "PanicBounds", argLength: 3, aux: "Int64", typ: "Mem", call: true}, // arg0=idx, arg1=len, arg2=mem, returns memory.
@@ -468,47 +485,49 @@ var genericOps = []opData{
 	//
 	// Subsequent architecture-specific lowering only changes the opcode.
 
-	{name: "ClosureCall", argLength: -1, aux: "CallOff", call: true}, // arg0=code pointer, arg1=context ptr, arg2..argN-1 are register inputs, argN=memory.  auxint=arg size.  Returns Result of register results, plus memory.
-	{name: "StaticCall", argLength: -1, aux: "CallOff", call: true},  // call function aux.(*obj.LSym), arg0..argN-1 are register inputs, argN=memory.  auxint=arg size.  Returns Result of register results, plus memory.
-	{name: "InterCall", argLength: -1, aux: "CallOff", call: true},   // interface call.  arg0=code pointer, arg1..argN-1 are register inputs, argN=memory, auxint=arg size.  Returns Result of register results, plus memory.
-	{name: "TailCall", argLength: -1, aux: "CallOff", call: true},    // tail call function aux.(*obj.LSym), arg0..argN-1 are register inputs, argN=memory.  auxint=arg size.  Returns Result of register results, plus memory.
+	{name: "ClosureCall", argLength: -1, aux: "CallOff", call: true},   // arg0=code pointer, arg1=context ptr, arg2..argN-1 are register inputs, argN=memory.  auxint=arg size.  Returns Result of register results, plus memory.
+	{name: "StaticCall", argLength: -1, aux: "CallOff", call: true},    // call function aux.(*obj.LSym), arg0..argN-1 are register inputs, argN=memory.  auxint=arg size.  Returns Result of register results, plus memory.
+	{name: "InterCall", argLength: -1, aux: "CallOff", call: true},     // interface call.  arg0=code pointer, arg1..argN-1 are register inputs, argN=memory, auxint=arg size.  Returns Result of register results, plus memory.
+	{name: "TailCall", argLength: -1, aux: "CallOff", call: true},      // tail call function aux.(*obj.LSym), arg0..argN-1 are register inputs, argN=memory.  auxint=arg size.  Returns Result of register results, plus memory.
+	{name: "TailCallInter", argLength: -1, aux: "CallOff", call: true}, // tail call function arg0=code pointer, arg1..argN-1 are register inputs, argN=memory.  auxint=arg size.  Returns Result of register results, plus memory.
 
-	{name: "ClosureLECall", argLength: -1, aux: "CallOff", call: true}, // late-expanded closure call. arg0=code pointer, arg1=context ptr,  arg2..argN-1 are inputs, argN is mem. auxint = arg size. Result is tuple of result(s), plus mem.
-	{name: "StaticLECall", argLength: -1, aux: "CallOff", call: true},  // late-expanded static call function aux.(*ssa.AuxCall.Fn). arg0..argN-1 are inputs, argN is mem. auxint = arg size. Result is tuple of result(s), plus mem.
-	{name: "InterLECall", argLength: -1, aux: "CallOff", call: true},   // late-expanded interface call. arg0=code pointer, arg1..argN-1 are inputs, argN is mem. auxint = arg size. Result is tuple of result(s), plus mem.
-	{name: "TailLECall", argLength: -1, aux: "CallOff", call: true},    // late-expanded static tail call function aux.(*ssa.AuxCall.Fn). arg0..argN-1 are inputs, argN is mem. auxint = arg size. Result is tuple of result(s), plus mem.
+	{name: "ClosureLECall", argLength: -1, aux: "CallOff", call: true},   // late-expanded closure call. arg0=code pointer, arg1=context ptr,  arg2..argN-1 are inputs, argN is mem. auxint = arg size. Result is tuple of result(s), plus mem.
+	{name: "StaticLECall", argLength: -1, aux: "CallOff", call: true},    // late-expanded static call function aux.(*ssa.AuxCall.Fn). arg0..argN-1 are inputs, argN is mem. auxint = arg size. Result is tuple of result(s), plus mem.
+	{name: "InterLECall", argLength: -1, aux: "CallOff", call: true},     // late-expanded interface call. arg0=code pointer, arg1..argN-1 are inputs, argN is mem. auxint = arg size. Result is tuple of result(s), plus mem.
+	{name: "TailLECall", argLength: -1, aux: "CallOff", call: true},      // late-expanded static tail call function aux.(*ssa.AuxCall.Fn). arg0..argN-1 are inputs, argN is mem. auxint = arg size. Result is tuple of result(s), plus mem.
+	{name: "TailLECallInter", argLength: -1, aux: "CallOff", call: true}, // late-expanded static tail call function arg0=code pointer, arg1..argN-1 are inputs, argN is mem. auxint = arg size. Result is tuple of result(s), plus mem.
 
 	// Conversions: signed extensions, zero (unsigned) extensions, truncations
-	{name: "SignExt8to16", argLength: 1, typ: "Int16"},
-	{name: "SignExt8to32", argLength: 1, typ: "Int32"},
-	{name: "SignExt8to64", argLength: 1, typ: "Int64"},
-	{name: "SignExt16to32", argLength: 1, typ: "Int32"},
-	{name: "SignExt16to64", argLength: 1, typ: "Int64"},
-	{name: "SignExt32to64", argLength: 1, typ: "Int64"},
-	{name: "ZeroExt8to16", argLength: 1, typ: "UInt16"},
-	{name: "ZeroExt8to32", argLength: 1, typ: "UInt32"},
-	{name: "ZeroExt8to64", argLength: 1, typ: "UInt64"},
-	{name: "ZeroExt16to32", argLength: 1, typ: "UInt32"},
-	{name: "ZeroExt16to64", argLength: 1, typ: "UInt64"},
-	{name: "ZeroExt32to64", argLength: 1, typ: "UInt64"},
-	{name: "Trunc16to8", argLength: 1},
-	{name: "Trunc32to8", argLength: 1},
-	{name: "Trunc32to16", argLength: 1},
-	{name: "Trunc64to8", argLength: 1},
-	{name: "Trunc64to16", argLength: 1},
-	{name: "Trunc64to32", argLength: 1},
+	{name: "SignExt8to16", argLength: 1, typ: "Int16", earlyOk: true},
+	{name: "SignExt8to32", argLength: 1, typ: "Int32", earlyOk: true},
+	{name: "SignExt8to64", argLength: 1, typ: "Int64", earlyOk: true},
+	{name: "SignExt16to32", argLength: 1, typ: "Int32", earlyOk: true},
+	{name: "SignExt16to64", argLength: 1, typ: "Int64", earlyOk: true},
+	{name: "SignExt32to64", argLength: 1, typ: "Int64", earlyOk: true},
+	{name: "ZeroExt8to16", argLength: 1, typ: "UInt16", earlyOk: true},
+	{name: "ZeroExt8to32", argLength: 1, typ: "UInt32", earlyOk: true},
+	{name: "ZeroExt8to64", argLength: 1, typ: "UInt64", earlyOk: true},
+	{name: "ZeroExt16to32", argLength: 1, typ: "UInt32", earlyOk: true},
+	{name: "ZeroExt16to64", argLength: 1, typ: "UInt64", earlyOk: true},
+	{name: "ZeroExt32to64", argLength: 1, typ: "UInt64", earlyOk: true},
+	{name: "Trunc16to8", argLength: 1, earlyOk: true},
+	{name: "Trunc32to8", argLength: 1, earlyOk: true},
+	{name: "Trunc32to16", argLength: 1, earlyOk: true},
+	{name: "Trunc64to8", argLength: 1, earlyOk: true},
+	{name: "Trunc64to16", argLength: 1, earlyOk: true},
+	{name: "Trunc64to32", argLength: 1, earlyOk: true},
 
-	{name: "Cvt32to32F", argLength: 1},
-	{name: "Cvt32to64F", argLength: 1},
-	{name: "Cvt64to32F", argLength: 1},
-	{name: "Cvt64to64F", argLength: 1},
-	{name: "Cvt32Fto32", argLength: 1},
-	{name: "Cvt32Fto64", argLength: 1},
-	{name: "Cvt64Fto32", argLength: 1},
-	{name: "Cvt64Fto64", argLength: 1},
-	{name: "Cvt32Fto64F", argLength: 1},
-	{name: "Cvt64Fto32F", argLength: 1},
-	{name: "CvtBoolToUint8", argLength: 1},
+	{name: "Cvt32to32F", argLength: 1, earlyOk: true},
+	{name: "Cvt32to64F", argLength: 1, earlyOk: true},
+	{name: "Cvt64to32F", argLength: 1, earlyOk: true},
+	{name: "Cvt64to64F", argLength: 1, earlyOk: true},
+	{name: "Cvt32Fto32", argLength: 1, earlyOk: true},
+	{name: "Cvt32Fto64", argLength: 1, earlyOk: true},
+	{name: "Cvt64Fto32", argLength: 1, earlyOk: true},
+	{name: "Cvt64Fto64", argLength: 1, earlyOk: true},
+	{name: "Cvt32Fto64F", argLength: 1, earlyOk: true},
+	{name: "Cvt64Fto32F", argLength: 1, earlyOk: true},
+	{name: "CvtBoolToUint8", argLength: 1, earlyOk: true},
 
 	// Decimal64 conversions
 	{name: "Cvt64Dto64F", argLength: 1}, // decimal64 -> float64
@@ -529,8 +548,8 @@ var genericOps = []opData{
 	{name: "Cvt128Dto64D", argLength: 1}, // decimal128 -> decimal64 (narrow)
 
 	// Force rounding to precision of type.
-	{name: "Round32F", argLength: 1},
-	{name: "Round64F", argLength: 1},
+	{name: "Round32F", argLength: 1, earlyOk: true},
+	{name: "Round64F", argLength: 1, earlyOk: true},
 
 	// Automatically inserted safety checks
 	{name: "IsNonNil", argLength: 1, typ: "Bool"},        // arg0 != nil
@@ -540,13 +559,13 @@ var genericOps = []opData{
 
 	// Pseudo-ops
 	{name: "GetG", argLength: 1, zeroWidth: true}, // runtime.getg() (read g pointer). arg0=mem
-	{name: "GetClosurePtr"},                       // get closure pointer from dedicated register
-	{name: "GetCallerPC"},                         // for GetCallerPC intrinsic
+	{name: "GetClosurePtr", earlyOk: true},        // get closure pointer from dedicated register
+	{name: "GetCallerPC", earlyOk: true},          // for GetCallerPC intrinsic
 	{name: "GetCallerSP", argLength: 1},           // for GetCallerSP intrinsic. arg0=mem.
 
 	// Indexing operations
-	{name: "PtrIndex", argLength: 2},             // arg0=ptr, arg1=index. Computes ptr+sizeof(*v.type)*index, where index is extended to ptrwidth type
-	{name: "OffPtr", argLength: 1, aux: "Int64"}, // arg0 + auxint (arg0 and result are pointers)
+	{name: "PtrIndex", argLength: 2, earlyOk: true},             // arg0=ptr, arg1=index. Computes ptr+sizeof(*v.type)*index, where index is extended to ptrwidth type
+	{name: "OffPtr", argLength: 1, aux: "Int64", earlyOk: true}, // arg0 + auxint (arg0 and result are pointers)
 
 	// Slices
 	{name: "SliceMake", argLength: 3},                // arg0=ptr, arg1=len, arg2=cap
@@ -579,12 +598,11 @@ var genericOps = []opData{
 	{name: "IData", argLength: 1},                // arg0=interface, returns data field
 
 	// Structs
-	{name: "StructMake", argLength: -1},                // args...=field0..n-1. Returns struct with n fields.
+	{name: "StructMake", argLength: -1},                // args...=field0..n-1. Returns struct with n fields. Must have >0 size (use Empty otherwise).
 	{name: "StructSelect", argLength: 1, aux: "Int64"}, // arg0=struct, auxint=field index.  Returns the auxint'th field.
 
 	// Arrays
-	{name: "ArrayMake0"},                              // Returns array with 0 elements
-	{name: "ArrayMake1", argLength: 1},                // Returns array with 1 element
+	{name: "ArrayMake1", argLength: 1},                // Returns array with 1 element. Use Empty if the element is zero-sized.
 	{name: "ArraySelect", argLength: 1, aux: "Int64"}, // arg0=array, auxint=index. Returns a[i].
 
 	// Spill&restore ops for the register allocator. These are
@@ -607,7 +625,7 @@ var genericOps = []opData{
 
 	// InlMark marks the start of an inlined function body. Its AuxInt field
 	// distinguishes which entry in the local inline tree it is marking.
-	{name: "InlMark", argLength: 1, aux: "Int32", typ: "Void"}, // arg[0]=mem, returns void.
+	{name: "InlMark", argLength: 1, aux: "Int32", typ: "Void", earlyOk: true}, // arg[0]=mem, returns void.
 
 	// Ops for breaking 64-bit operations on 32-bit architectures
 	{name: "Int64Make", argLength: 2, typ: "UInt64"}, // arg0=hi, arg1=lo
@@ -724,6 +742,9 @@ var genericOps = []opData{
 	// Helper instruction which is semantically equivalent to calling runtime.memequal, but some targets may prefer to custom lower it later, e.g. for specific constant sizes.
 	{name: "MemEq", argLength: 4, commutative: true, typ: "Bool"}, // arg0=ptr0, arg1=ptr1, arg2=size, arg3=memory.
 
+	// Value of a zero-sized type.
+	{name: "Empty", argLength: 0, earlyOk: true},
+
 	// SIMD
 	{name: "ZeroSIMD", argLength: 0}, // zero value of a vector
 
@@ -765,6 +786,95 @@ var genericOps = []opData{
 	{name: "IsNaNFloat64x2", argLength: 1},
 	{name: "IsNaNFloat64x4", argLength: 1},
 	{name: "IsNaNFloat64x8", argLength: 1},
+
+	{name: "ScalableVectorLen", argLength: 0}, // SVE runtime vector length in bytes
+	{name: "Count8s", argLength: 1},           // arg0 = active byte count; builds an SVE predicate over that many byte lanes
+
+	// IfElse selects per element between two scalable vectors under a predicate.
+	// It backs both the IfElse and (against a zero vector) the Masked method, and
+	// is written by hand rather than derived from the ISA because SEL is
+	// bit-pattern-agnostic: there is no float-lane encoding of it to unify with.
+	// arg0 = x, arg1 = predicate, arg2 = y (taken where the predicate is false).
+	{name: "IfElseInt8s", argLength: 3},
+	{name: "IfElseUint8s", argLength: 3},
+	{name: "IfElseInt16s", argLength: 3},
+	{name: "IfElseUint16s", argLength: 3},
+	{name: "IfElseInt32s", argLength: 3},
+	{name: "IfElseUint32s", argLength: 3},
+	{name: "IfElseFloat32s", argLength: 3},
+	{name: "IfElseInt64s", argLength: 3},
+	{name: "IfElseUint64s", argLength: 3},
+	{name: "IfElseFloat64s", argLength: 3},
+
+	// Reinterprets the bits of the input argument as the output value. No conversion is done, as with math.Float32bits.
+	// (U32AsF32 x) = math.Float32frombits(x)
+	// TODO: these ops currently only have lowering rules for amd64, and only generated by mem2reg.
+	// We can implement them in all architecture.
+	// Or alternatively, make them non-lowered and get rid of the architecture specific ops, and
+	// make ssa.go aware of them in all architectures.
+	{name: "I32AsF32", argLength: 1, typ: "Float32"},
+	{name: "F32AsI32", argLength: 1, typ: "Int32"},
+	{name: "I64AsF64", argLength: 1, typ: "Float64"},
+	{name: "F64AsI64", argLength: 1, typ: "Int64"},
+
+	// Broadcast duplicates a scalar to every element of a scalable vector.
+	// arg0 = the scalar.
+	{name: "BroadcastInt8s", argLength: 1},
+	{name: "BroadcastUint8s", argLength: 1},
+	{name: "BroadcastInt16s", argLength: 1},
+	{name: "BroadcastUint16s", argLength: 1},
+	{name: "BroadcastInt32s", argLength: 1},
+	{name: "BroadcastUint32s", argLength: 1},
+	{name: "BroadcastFloat32s", argLength: 1},
+	{name: "BroadcastInt64s", argLength: 1},
+	{name: "BroadcastUint64s", argLength: 1},
+	{name: "BroadcastFloat64s", argLength: 1},
+
+	// AllTrue constructs a scalable predicate with every lane true. Written by
+	// hand: there is no instruction operand to unify on, and the lowering is
+	// the same synthesized PWHILELT the implicitly predicated operations use.
+	{name: "Mask8sAllTrue", argLength: 0},
+	{name: "Mask16sAllTrue", argLength: 0},
+	{name: "Mask32sAllTrue", argLength: 0},
+	{name: "Mask64sAllTrue", argLength: 0},
+
+	// FromCount constructs a scalable predicate whose first arg0 lanes are
+	// true, with the same PWHILELT that AllTrue uses. arg0 = the count (int).
+	{name: "Mask8sFromCount", argLength: 1},
+	{name: "Mask16sFromCount", argLength: 1},
+	{name: "Mask32sFromCount", argLength: 1},
+	{name: "Mask64sFromCount", argLength: 1},
+
+	// First returns a mask with only the first active lane of arg0 active.
+	{name: "Mask8sFirst", argLength: 1},
+	{name: "Mask16sFirst", argLength: 1},
+	{name: "Mask32sFirst", argLength: 1},
+	{name: "Mask64sFirst", argLength: 1},
+
+	// Next returns a mask with only the lane after the last active lane of
+	// arg0 active; lane 0 if arg0 has none.
+	{name: "Mask8sNext", argLength: 1},
+	{name: "Mask16sNext", argLength: 1},
+	{name: "Mask32sNext", argLength: 1},
+	{name: "Mask64sNext", argLength: 1},
+
+	// All reports whether every lane of arg0 is active.
+	{name: "Mask8sAll", argLength: 1},
+	{name: "Mask16sAll", argLength: 1},
+	{name: "Mask32sAll", argLength: 1},
+	{name: "Mask64sAll", argLength: 1},
+
+	// None reports whether no lane of arg0 is active.
+	{name: "Mask8sNone", argLength: 1},
+	{name: "Mask16sNone", argLength: 1},
+	{name: "Mask32sNone", argLength: 1},
+	{name: "Mask64sNone", argLength: 1},
+
+	// Any reports whether some lane of arg0 is active.
+	{name: "Mask8sAny", argLength: 1},
+	{name: "Mask16sAny", argLength: 1},
+	{name: "Mask32sAny", argLength: 1},
+	{name: "Mask64sAny", argLength: 1},
 }
 
 //     kind          controls          successors   implicit exit
@@ -791,8 +901,53 @@ var genericBlocks = []blockData{
 	{name: "First"}, // 2 successors, always takes the first one (second is dead)
 }
 
-func init() {
-	genericOps = append(genericOps, simdGenericOps()...)
+var additionalGenericOps = make(map[string][]opData)
+
+func compareOpData(a, b opData) int {
+	return strings.Compare(a.name, b.name)
+}
+
+func merge(a, b []opData) []opData {
+	m := make([]opData, 0, len(a)+len(b))
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		x, y := a[i], b[j]
+		c := compareOpData(x, y)
+		if c < 0 {
+			m = append(m, x)
+			i++
+			continue
+		}
+		if c > 0 {
+			m = append(m, y)
+			j++
+			continue
+		}
+		if x.comparableOpData == y.comparableOpData {
+			m = append(m, x)
+			i++
+			j++
+			continue
+		}
+		log.Fatalf("Two generic ops have same name but unequal attributes, %v, %v", x, y)
+	}
+	m = append(m, a[i:]...)
+	m = append(m, b[j:]...)
+	return m
+}
+
+func moreGenericOps() []opData {
+	var g []opData
+	for _, k := range slices.Sorted(maps.Keys(additionalGenericOps)) {
+		s := additionalGenericOps[k]
+		slices.SortFunc(s, compareOpData)
+		g = merge(g, s)
+	}
+	return g
+}
+
+func genericInit() {
+	genericOps = append(genericOps, moreGenericOps()...)
 	archs = append(archs, arch{
 		name:    "generic",
 		ops:     genericOps,

@@ -8,6 +8,7 @@ package json
 
 import (
 	"cmp"
+	"errors"
 	"math"
 	"reflect"
 	"slices"
@@ -49,7 +50,7 @@ func marshalValueAny(enc *jsontext.Encoder, val any, mo *jsonopts.Struct) error 
 
 	v := newAddressableValue(reflect.TypeOf(val))
 	v.Set(reflect.ValueOf(val))
-	marshal := lookupArshaler(v.Type()).marshal
+	marshal := lookupMarshaler(v.Type()).fnc
 	if mo.Marshalers != nil {
 		marshal, _ = mo.Marshalers.(*Marshalers).lookup(marshal, v.Type())
 	}
@@ -90,9 +91,9 @@ func unmarshalValueAny(dec *jsontext.Decoder, uo *jsonopts.Struct) (any, error) 
 			if uo.Flags.Get(jsonflags.UnmarshalAnyWithRawNumber) {
 				return internal.RawNumberOf(val), nil
 			}
-			fv, ok := jsonwire.ParseFloat(val, 64)
-			if !ok {
-				return fv, newUnmarshalErrorAfterWithValue(dec, float64Type, strconv.ErrRange)
+			fv, err := strconv.ParseFloat(string(val), 64)
+			if err != nil {
+				return 0.0, newUnmarshalErrorAfterWithValue(dec, float64Type, errors.Unwrap(err))
 			}
 			return fv, nil
 		default:
@@ -108,7 +109,7 @@ func marshalObjectAny(enc *jsontext.Encoder, obj map[string]any, mo *jsonopts.St
 	xe := export.Encoder(enc)
 	if xe.Tokens.Depth() > startDetectingCyclesAfter {
 		v := reflect.ValueOf(obj)
-		if err := visitPointer(&xe.SeenPointers, v); err != nil {
+		if err := visitPointer(&xe.SeenPointers, v, mo); err != nil {
 			return newMarshalErrorBefore(enc, mapStringAnyType, err)
 		}
 		defer leavePointer(&xe.SeenPointers, v)
@@ -133,7 +134,7 @@ func marshalObjectAny(enc *jsontext.Encoder, obj map[string]any, mo *jsonopts.St
 	if err := enc.WriteToken(jsontext.BeginObject); err != nil {
 		return err
 	}
-	// A Go map guarantees that each entry has a unique key
+	// A Go map guarantees that each entry has a unique key.
 	// The only possibility of duplicates is due to invalid UTF-8.
 	if !mo.Flags.Get(jsonflags.AllowInvalidUTF8) {
 		xe.Tokens.Last.DisableNamespace()
@@ -181,7 +182,7 @@ func unmarshalObjectAny(dec *jsontext.Decoder, uo *jsonopts.Struct) (map[string]
 		panic("BUG: invalid kind: " + tok.Kind().String())
 	}
 	obj := make(map[string]any)
-	// A Go map guarantees that each entry has a unique key
+	// A Go map guarantees that each entry has a unique key.
 	// The only possibility of duplicates is due to invalid UTF-8.
 	if !uo.Flags.Get(jsonflags.AllowInvalidUTF8) {
 		export.Decoder(dec).Tokens.Last.DisableNamespace()
@@ -224,7 +225,7 @@ func marshalArrayAny(enc *jsontext.Encoder, arr []any, mo *jsonopts.Struct) erro
 	xe := export.Encoder(enc)
 	if xe.Tokens.Depth() > startDetectingCyclesAfter {
 		v := reflect.ValueOf(arr)
-		if err := visitPointer(&xe.SeenPointers, v); err != nil {
+		if err := visitPointer(&xe.SeenPointers, v, mo); err != nil {
 			return newMarshalErrorBefore(enc, sliceAnyType, err)
 		}
 		defer leavePointer(&xe.SeenPointers, v)

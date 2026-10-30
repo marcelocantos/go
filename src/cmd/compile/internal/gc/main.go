@@ -22,11 +22,13 @@ import (
 	"cmd/compile/internal/pgoir"
 	"cmd/compile/internal/pkginit"
 	"cmd/compile/internal/reflectdata"
+	"cmd/compile/internal/rewriteresults"
 	"cmd/compile/internal/rttype"
 	"cmd/compile/internal/slice"
-	"cmd/compile/internal/ssa"
+	"cmd/compile/internal/ssacompile"
 	"cmd/compile/internal/ssagen"
 	"cmd/compile/internal/staticinit"
+	"cmd/compile/internal/stats"
 	"cmd/compile/internal/typecheck"
 	"cmd/compile/internal/types"
 	"cmd/internal/dwarf"
@@ -47,6 +49,8 @@ import (
 // already been some compiler errors). It may also be invoked from the explicit panic in
 // hcrash(), in which case, we pass the panic on through.
 func handlePanic() {
+	ir.CloseHTMLWriters()
+	noder.CloseHTMLWriters()
 	if err := recover(); err != nil {
 		if err == "-h" {
 			// Force real panic now with -h option (hcrash) - the error
@@ -70,7 +74,7 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	archInit(&ssagen.Arch)
 
 	base.Ctxt = obj.Linknew(ssagen.Arch.LinkArch)
-	base.Ctxt.DiagFunc = base.Errorf
+	base.Ctxt.DiagFunc = base.Diagf
 	base.Ctxt.DiagFlush = base.FlushErrors
 	base.Ctxt.Bso = bufio.NewWriter(os.Stdout)
 
@@ -80,7 +84,7 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	// See bugs 31188 and 21945 (CLs 170638, 98075, 72371).
 	base.Ctxt.UseBASEntries = base.Ctxt.Headtype != objabi.Hdarwin
 
-	base.DebugSSA = ssa.PhaseOption
+	base.DebugSSA = ssacompile.PhaseOption
 	base.ParseFlags()
 
 	if flagGCStart := base.Debug.GCStart; flagGCStart > 0 || // explicit flags overrides environment variable disable of GC boost
@@ -227,7 +231,7 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	dwarfgen.RecordPackageName()
 
 	// Prepare for backend processing.
-	ssagen.InitConfig()
+	ssagen.InitConfig(ssacompile.NewConfig(ssagen.Arch.SoftFloat))
 
 	// Apply coverage fixups, if applicable.
 	coverage.Fixup()
@@ -243,12 +247,24 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 		}
 	}
 
+	for _, fn := range typecheck.Target.Funcs {
+		if ir.MatchAstDump(fn, "start") {
+			ir.AstDump(fn, "start, "+ir.FuncName(fn))
+		}
+	}
+
 	// Apply bloop markings.
-	bloop.BloopWalk(typecheck.Target)
+	bloop.Walk(typecheck.Target)
 
 	// Interleaved devirtualization and inlining.
 	base.Timer.Start("fe", "devirtualize-and-inline")
 	interleaved.DevirtualizeAndInlinePackage(typecheck.Target, profile)
+
+	for _, fn := range typecheck.Target.Funcs {
+		if ir.MatchAstDump(fn, "devirtualize-and-inline") {
+			ir.AstDump(fn, "devirtualize-and-inline, "+ir.FuncName(fn))
+		}
+	}
 
 	noder.MakeWrappers(typecheck.Target) // must happen after inlining
 
@@ -257,7 +273,6 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	for _, fn := range typecheck.Target.Funcs {
 		transformed = append(transformed, loopvar.ForCapture(fn)...)
 	}
-	ir.CurFunc = nil
 
 	// Build init task, if needed.
 	pkginit.MakeTask()
@@ -265,6 +280,10 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	// Generate ABI wrappers. Must happen before escape analysis
 	// and doesn't benefit from dead-coding or inlining.
 	symABIs.GenABIWrappers()
+
+	// Preassign symbol indexes so that they're set when we emit export data,
+	// if it's emitted early. This depends on the results of GenABIWrappers.
+	preassignSymIdxs(symABIs)
 
 	deadlocals.Funcs(typecheck.Target.Funcs)
 
@@ -279,6 +298,8 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	base.Timer.Start("fe", "escapes")
 	escape.Funcs(typecheck.Target.Funcs)
 
+	rewriteresults.Funcs(typecheck.Target.Funcs)
+
 	slice.Funcs(typecheck.Target.Funcs)
 
 	loopvar.LogTransformations(transformed)
@@ -291,7 +312,8 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 		ssagen.EnableNoWriteBarrierRecCheck()
 	}
 
-	ir.CurFunc = nil
+	base.Timer.Start("fe", "dumpexport")
+	dumpexport()
 
 	reflectdata.WriteBasicTypes()
 
@@ -348,6 +370,14 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 		break
 	}
 
+	if base.Flag.Stats {
+		s := new(stats.Stats)
+		for _, fn := range typecheck.Target.Funcs {
+			s.Merge(fn.Stats)
+		}
+		s.Print()
+	}
+
 	base.Timer.AddEvent(int64(len(typecheck.Target.Funcs)), "funcs")
 
 	if base.Flag.CompilingRuntime {
@@ -370,7 +400,6 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	}
 
 	ssagen.CheckLargeStacks()
-	typecheck.CheckFuncStack()
 
 	if len(compilequeue) != 0 {
 		base.Fatalf("%d uncompiled functions", len(compilequeue))
