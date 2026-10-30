@@ -305,3 +305,20 @@ func cToU64128(c coef128) (m uint64, ok bool) {
 func cFromU128128(q Uint128) wide128 {
 	return wide128{Lo: q}
 }
+
+// cSplit128 returns c split into the words hi and lo with
+// c = hi × 10^19 + lo and lo < 10^19, the form writeDigits renders.
+// Precondition: c is at most MaxCoeff128, below 10^34, so hi is below 10^15
+// and fits a word; a c that does not panics rather than truncates.
+func cSplit128(c coef128) (hi, lo uint64) {
+	q, r := u128Div64(c, pow10tab64[u64Digits])
+	if q.Hi != 0 {
+		panic(errQuotientOverflow)
+	}
+	return q.Lo, r
+}
+
+// cWide128 returns the 128-bit value m as a wide128.
+func cWide128(m Uint128) wide128 {
+	return wide128{Lo: m}
+}

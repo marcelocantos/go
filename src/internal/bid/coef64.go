@@ -263,3 +263,17 @@ func cToU6464(c coef64) (m uint64, ok bool) {
 func cFromU12864(q Uint128) wide64 {
 	return q
 }
+
+// cSplit64 returns c split into the words hi and lo with
+// c = hi × 10^19 + lo and lo < 10^19, the form writeDigits renders.
+// Precondition: c is at most MaxCoeff64, which is below 10^19, so hi is
+// zero.
+func cSplit64(c coef64) (hi, lo uint64) {
+	return 0, c
+}
+
+// cWide64 returns the 128-bit value m as a wide64, which it is. The
+// precondition of the other width, that m fits it, is vacuous here.
+func cWide64(m Uint128) wide64 {
+	return m
+}
