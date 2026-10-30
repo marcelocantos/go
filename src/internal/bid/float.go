@@ -22,15 +22,16 @@ import (
 // string to before it does anything else, so strconv.Float64FromCoeff and
 // strconv.Float32FromCoeff are the same code fed directly. In the default mode:
 //
-//   - A coefficient that fits 64 bits, which is every decimal64 and any
-//     decimal128 of up to 19 digits, goes straight to Eisel-Lemire.
-//   - A longer decimal128 is cut to a 64-bit prefix d and a sticky. If
-//     Eisel-Lemire rounds d and d+1 to the same binary value then the exact
-//     value, which lies between them, rounds to it too. With some 60 bits in
-//     d against float64's 53 this leaves about one random 34-digit coefficient
-//     in 650 undecided (3081 of 2×10^6 measured; float32, 0 of 2×10^6).
-//   - The rest, and everything Eisel-Lemire declines (exact and near-exact
-//     ties, subnormals, the edges of the range), takes the exact path: the
+//   - A coefficient of up to 19 digits, which is every decimal64 and any
+//     short decimal128, goes straight to strconv's fast unrounded scaling
+//     (parseFloat64 and parseFloat32), which is correctly rounded.
+//   - A longer decimal128 is cut to a 19-digit prefix d and a sticky. If
+//     scaling rounds d and d+1 to the same binary value then the exact value,
+//     which lies between them, rounds to it too. With some 60 bits in d
+//     against float64's 53 only a small share of random 34-digit coefficients
+//     stays undecided, and float32 almost none.
+//   - The rest, and everything beyond the exponent bounds of atof64 and
+//     atof32, takes the exact path: the
 //     value is written into strconv's multiprecision decimal and shifted until
 //     the significand is an integer, and the fraction left over is the exact
 //     remainder. Values plainly out of range are decided first from the size
@@ -39,14 +40,14 @@ import (
 //     128-bit coefficient: see coeffFloatBits in internal/strconv. Nothing
 //     allocates.
 //
-// The other four modes always take the exact path. Eisel-Lemire returns only
-// the nearest value, not which side of the exact value it fell on, so it
-// cannot decide a directed rounding or a tie without the same exact comparison.
+// The other four modes always take the exact path. Scaling returns only the
+// nearest value, not which side of the exact value it fell on, so it cannot
+// decide a directed rounding or a tie without the same exact comparison.
 // Those modes are unreachable from the language operators, which use
 // ToNearestEven, so this costs them nothing.
 //
-// float32 rounds once on both paths: Eisel-Lemire and the decimal each extract
-// 24 bits from the exact value directly.
+// float32 rounds once on both paths: scaling and the decimal each extract 24
+// bits from the exact value directly.
 //
 // None of this is in the code-generation template (see "Width
 // parameterisation" in the package documentation). The core mentions no

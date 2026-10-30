@@ -790,7 +790,7 @@ func FuzzFloat32From128(f *testing.F) {
 }
 
 // BenchmarkFloatFrom measures the paths: a short coefficient and a long one,
-// which take Eisel-Lemire; a subnormal and a directed mode, which take the
+// which take the fast scaling path; a subnormal and a directed mode, which take the
 // exact path; and an exponent decided by size.
 func BenchmarkFloatFrom(b *testing.B) {
 	long, _ := new(big.Int).SetString("1234567890123456789012345678901234", 10)

@@ -34,19 +34,21 @@ const (
 // Any 128-bit coefficient is accepted. Precondition: exp10 is small enough
 // that adding 39 to its magnitude does not overflow an int.
 func Float64FromCoeff(hi, lo uint64, exp10 int, neg bool, r Rounding) float64 {
-	if optimize && r == RoundNearestEven && hi>>63 == 0 {
+	if optimize && r == RoundNearestEven && hi>>coeffPrefixHiBits == 0 && (hi|lo) != 0 {
 		man, k, sticky := coeffPrefix(hi, lo)
-		f, ok := eiselLemire64(man, exp10+k, neg)
-		if ok {
+		// Outside these bounds, as in atof64, parseFloat64 is not needed:
+		// the exact path decides such a value from its size.
+		if p := exp10 + k; -345 <= p && p <= 310 {
+			sign := bool2[uint64](neg) << 63
+			f, _ := parseFloat64(man, p, sign)
 			if !sticky {
 				return f
 			}
 			// The exact value lies strictly between man and man+1 in the
 			// last place kept. Rounding is monotonic, so if both round to
-			// the same float64 then so does the value. As in atof64, man+1
-			// wrapping to zero gives a different f and takes the slow path.
-			fUp, ok := eiselLemire64(man+1, exp10+k, neg)
-			if ok && f == fUp {
+			// the same float64 then so does the value. man+1 may be 10^19,
+			// which atof64 also passes.
+			if fUp, _ := parseFloat64(man+1, p, sign); f == fUp {
 				return f
 			}
 		}
@@ -57,16 +59,16 @@ func Float64FromCoeff(hi, lo uint64, exp10 int, neg bool, r Rounding) float64 {
 // Float32FromCoeff is Float64FromCoeff with a float32 result. It rounds once,
 // from the exact value directly to float32, and never by way of float64.
 func Float32FromCoeff(hi, lo uint64, exp10 int, neg bool, r Rounding) float32 {
-	if optimize && r == RoundNearestEven && hi>>63 == 0 {
+	if optimize && r == RoundNearestEven && hi>>coeffPrefixHiBits == 0 && (hi|lo) != 0 {
 		man, k, sticky := coeffPrefix(hi, lo)
-		f, ok := eiselLemire32(man, exp10+k, neg)
-		if ok {
+		// See Float64FromCoeff; the bounds are atof32's.
+		if p := exp10 + k; -70 <= p && p <= 40 {
+			sign := bool2[uint32](neg) << 31
+			f, _ := parseFloat32(man, p, sign)
 			if !sticky {
 				return f
 			}
-			// See Float64FromCoeff.
-			fUp, ok := eiselLemire32(man+1, exp10+k, neg)
-			if ok && f == fUp {
+			if fUp, _ := parseFloat32(man+1, p, sign); f == fUp {
 				return f
 			}
 		}
@@ -74,17 +76,22 @@ func Float32FromCoeff(hi, lo uint64, exp10 int, neg bool, r Rounding) float32 {
 	return float32frombits(uint32(coeffFloatBits(hi, lo, exp10, neg, r, &float32info)))
 }
 
+// coeffPrefixHiBits bounds the high word coeffPrefix accepts. With
+// hi < 2^60 the k it computes is at most 19, so 10^k is within uint64pow10.
+const coeffPrefixHiBits = 60
+
 // coeffPrefix returns man = ⌊c / 10^k⌋ for the coefficient c = hi×2^64 + lo,
-// where k is small enough that man fits 64 bits, and whether the digits
-// dropped were non-zero. Precondition: hi>>63 == 0, which keeps k at most 19
-// and so 10^k within a uint64.
+// where k is the smallest shift this estimate finds that leaves man at most
+// 19 digits, the most parseFloat64 and parseFloat32 accept, and whether the
+// digits dropped were non-zero. Precondition: hi>>coeffPrefixHiBits == 0.
 func coeffPrefix(hi, lo uint64) (man uint64, k int, sticky bool) {
-	if hi == 0 {
+	if hi == 0 && lo < uint64pow10[19] {
 		return lo, 0, false
 	}
-	// c < 2^(64+n) ≤ 2^64 × 10^k, so the quotient fits and hi < 10^k.
-	n := bits.Len64(hi)
-	k = log10Pow2(n) + 1
+	// With n the bit length of hi, c < 2^(64+n). Since 2^64 < 2 × 10^19,
+	// c < 2^(n+1) × 10^19 < 10^k × 10^19, so man < 10^19. And hi < 2^n <
+	// 10^k, so the quotient fits and bits.Div64 does not panic.
+	k = log10Pow2(bits.Len64(hi)+1) + 1
 	man, rem := bits.Div64(hi, lo, uint64pow10[k])
 	return man, k, rem != 0
 }
