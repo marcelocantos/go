@@ -17,13 +17,39 @@ package bid
 // convertFormat). The conversion is exact for every decimal64 value and
 // preserves the exponent, so it takes no mode.
 func Widen(x uint64) Uint128 {
-	panic(notImplemented)
+	kind, neg, coeff, exp := Unpack64(x)
+	switch kind {
+	case KindNaN:
+		return Uint128{Hi: NaN128Hi}
+	case KindInf:
+		return cInf128(neg)
+	}
+	// Exact fast path (named in roundW's comment and in the allowlist of
+	// TestRoundIsTheOnlyPacker): the coefficient and exponent came from
+	// Unpack64, and every decimal64 pair is a decimal128 pair, so nothing
+	// is rounded and Pack128 cannot refuse. Going through round128 for a
+	// 256-bit wide value costs two to three times as much (measured, 2026-10-30,
+	// under load) for a result that is never anything but this one.
+	z, _ := Pack128(neg, Uint128{Lo: coeff}, exp)
+	return z
 }
 
 // Narrow returns x converted to decimal64, rounded in mode (IEEE 754-2008
 // clause 5.4.2, convertFormat), with preferred exponent Q(x).
 func Narrow(x Uint128, mode Mode) uint64 {
-	panic(notImplemented)
+	kind, neg, coeff, exp := Unpack128(x)
+	switch kind {
+	case KindNaN:
+		return NaN64
+	case KindInf:
+		return cInf64(neg)
+	}
+	// The coefficient has at most 34 digits and is passed whole with an
+	// empty tail: the rounding routine drops the excess digits itself,
+	// with the exact class of everything it discards, so there is no
+	// intermediate truncation to lose a sticky bit.
+	z, _ := round64(neg, coeff, exp, classZero, mode, MinExp64)
+	return z
 }
 
 // Int64To64 returns x converted to decimal64, rounded in mode

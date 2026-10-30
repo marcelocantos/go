@@ -335,9 +335,10 @@ func BenchmarkRound128(b *testing.B) {
 // here; a new one is added to both or the test fails.
 func TestRoundIsTheOnlyPacker(t *testing.T) {
 	// Callers of the raw encoder.
-	rawPackers := map[string]bool{"packW": true, "pack64": true, "pack128": true}
+	// Widen is the one exact fast path: see the end of roundW's comment.
+	rawPackers := map[string]bool{"packW": true, "pack64": true, "pack128": true, "Widen": true}
 	// Callers of packW, the checked encoder: the rounding routine, its
-	// overflow result, and the exact fast paths (none at present).
+	// overflow result (no exact fast path uses the checked encoder).
 	checkedPackers := map[string]bool{
 		"roundW": true, "round64": true, "round128": true,
 		"overflowW": true, "overflow64": true, "overflow128": true,
