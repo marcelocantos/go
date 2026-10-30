@@ -230,6 +230,8 @@ func f32equal(p, q unsafe.Pointer) bool
 func f64equal(p, q unsafe.Pointer) bool
 func c64equal(p, q unsafe.Pointer) bool
 func c128equal(p, q unsafe.Pointer) bool
+func d64equal(p, q unsafe.Pointer) bool
+func d128equal(p, q unsafe.Pointer) bool
 func strequal(p, q unsafe.Pointer) bool
 func interequal(p, q unsafe.Pointer) bool
 func nilinterequal(p, q unsafe.Pointer) bool
@@ -245,6 +247,8 @@ func f32hash(p unsafe.Pointer, h uintptr) uintptr
 func f64hash(p unsafe.Pointer, h uintptr) uintptr
 func c64hash(p unsafe.Pointer, h uintptr) uintptr
 func c128hash(p unsafe.Pointer, h uintptr) uintptr
+func d64hash(p unsafe.Pointer, h uintptr) uintptr
+func d128hash(p unsafe.Pointer, h uintptr) uintptr
 func strhash(a unsafe.Pointer, h uintptr) uintptr
 func interhash(p unsafe.Pointer, h uintptr) uintptr
 func nilinterhash(p unsafe.Pointer, h uintptr) uintptr
