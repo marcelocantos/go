@@ -18,7 +18,8 @@ import (
 	"testing"
 )
 
-var allModes = []bid.Mode{bid.ToNearestEven, bid.ToNearestAway, bid.TowardZero, bid.TowardPositive, bid.TowardNegative, 9}
+// parseModes is every mode, with one out of range.
+var parseModes = []bid.Mode{bid.ToNearestEven, bid.ToNearestAway, bid.TowardZero, bid.TowardPositive, bid.TowardNegative, 9}
 
 // checkParse compares the kernel's Parse of s with the reference's in
 // every mode and every width.
@@ -77,7 +78,7 @@ func TestParseLongRuns(t *testing.T) {
 		cases = append(cases, "0."+zeros(n)+"1E+"+s, "0."+zeros(n-1)+"1E+"+s, "0."+zeros(n)+"15E+"+s, "-"+zeros(n)+"."+zeros(n)+"E+"+s)
 	}
 	for _, s := range cases {
-		checkParse(t, s, allModes)
+		checkParse(t, s, parseModes)
 	}
 }
 

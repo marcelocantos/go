@@ -1498,9 +1498,10 @@
 //     division's cMulPow10FullW(c, k) wideW (a coefficient scaled into the
 //     double width), cDivFullW(n wideW, d coefW) (q, r coefW) (the 128-by-64
 //     or 256-by-128 division whose quotient fits a coefficient) and cNaNW()
-//     (the canonical quiet NaN), the remainder's cModFullW, the character conversions' cSplitW(c) (hi, lo uint64) and cWideW(m Uint128) wideW, extended
-//     as the other operations need. Every coef64.go helper must
-//     inline;
+//     (the canonical quiet NaN), the remainder's cModFullW, the character
+//     conversions' cSplitW(c) (hi, lo uint64) and cWideW(m Uint128) wideW,
+//     and FMA's cAddFullW, cSubFullW and cIncFullW, extended as the other
+//     operations need. Every coef64.go helper must inline;
 //     check with -gcflags=-m=2 after changing one (no "cannot inline
 //     c…64"; plain -m does not print "cannot inline" lines).
 //     coef128.go is where T1.3.1's 128- and 256-bit arithmetic goes; it
