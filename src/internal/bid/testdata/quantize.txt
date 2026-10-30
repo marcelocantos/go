@@ -27,7 +27,8 @@ Quantize64 even exact 1E+16 1E+1 -> 1.000000000000000E+16
 Quantize64 down exact 2.17 0.001 -> 2.170
 Quantize64 even exact 9.999999999999999E+384 1E+369 -> 9.999999999999999E+384
 Quantize64 even exact 1.23456789E-390 1E-398 -> 1.23456789E-390
-Quantize64 even exact 1 1.00E+2 -> 1.00
+Quantize64 even exact 1 1.00E+2 -> 1
+Quantize64 even exact 1 -1.00 -> 1.00
 Quantize64 even exact 1234567890123456 1 -> 1234567890123456
 
 Quantize64 even inexact 2.17 0.1 -> 2.2
@@ -90,7 +91,8 @@ Quantize64 even underflow 1E-398 1E-398 -> 1E-398
 Quantize64 even underflow 5E-398 1E-397 -> 0E-397
 Quantize64 away underflow 5E-398 1E-397 -> 1E-397
 Quantize64 even underflow 1.5E-397 1E-397 -> 2E-397
-Quantize64 even underflow 1.23456789E-390 1E-391 -> 1.2345679E-390
+Quantize64 even underflow 1.23456789E-390 1E-391 -> 1.2E-390
+Quantize64 even underflow 1.23456789E-390 1E-397 -> 1.2345679E-390
 Quantize64 even underflow 9.99999999999999E-384 1E-383 -> 1E-383
 Quantize64 even underflow 1E-383 1E-398 -> 1.000000000000000E-383
 Quantize64 even underflow 1E-390 1E-398 -> 1.00000000E-390

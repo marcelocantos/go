@@ -305,8 +305,9 @@ Float64From64 even underflow 2E-324 -> 0
 Float64From64 even underflow 3E-324 -> 5e-324
 Float64From64 even underflow 2.5E-324 -> 5e-324
 Float64From64 even underflow 7.5E-324 -> 1e-323
-# 2.225073858507201E-308 is 3.8E-324 below the smallest normal 2^-1022, within half a subnormal step
-Float64From64 even underflow 2.225073858507201E-308 -> 0x1p-1022
+# 2.225073858507201E-308 is 3.8E-324 below the smallest normal 2^-1022 and 1.1E-324 above the largest subnormal
+Float64From64 even underflow 2.225073858507201E-308 -> 0x0.fffffffffffffp-1022
+Float64From64 up underflow 2.225073858507201E-308 -> 0x1p-1022
 Float64From64 even underflow 1E-310 -> 1e-310
 
 Float64From64 even zero -0 -> -0
