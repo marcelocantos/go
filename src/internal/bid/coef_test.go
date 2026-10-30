@@ -28,14 +28,29 @@ func TestGenerated(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go run gen_arith.go: %v\n%s", err, out)
 	}
-	for _, name := range []string{"zarith64.go", "zarith128.go", "zpow10.go"} {
-		want, err := os.ReadFile(filepath.Join(dir, name))
+	// Compare in both directions, so that a generated file whose template
+	// was removed is reported too.
+	generated, err := filepath.Glob(filepath.Join(dir, "z*.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	committed, err := filepath.Glob("z*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(generated) != len(committed) {
+		t.Errorf("the generator writes %d files and %d are committed: run go generate in internal/bid", len(generated), len(committed))
+	}
+	for _, path := range generated {
+		name := filepath.Base(path)
+		want, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		got, err := os.ReadFile(name)
 		if err != nil {
-			t.Fatal(err)
+			t.Errorf("%s is missing: run go generate in internal/bid", name)
+			continue
 		}
 		if !bytes.Equal(got, want) {
 			t.Errorf("%s is out of date: run go generate in internal/bid", name)

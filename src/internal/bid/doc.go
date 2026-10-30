@@ -1461,13 +1461,13 @@
 // Rules for the shared core. These bind the 128/256-bit arithmetic target
 // (T1.3.1) and every operation implemented after it.
 //
-//  1. Source of truth. Every width-dependent algorithm lives in
-//     arith_tmpl.go (//go:build ignore), written once in the template
-//     vocabulary below. gen_arith.go (//go:build ignore, run by
-//     "//go:generate go run gen_arith.go" in arith.go) writes zarith64.go
-//     and zarith128.go, which are committed, and zpow10.go, the tables of
-//     powers of ten that the helpers below index. Nobody edits a z*.go
-//     file. A test, TestGenerated, guarded by testenv.MustHaveGoRun,
+//  1. Source of truth. Every width-dependent algorithm lives in a template
+//     NAME_tmpl.go (//go:build ignore), written once in the template
+//     vocabulary below, one template per family of operations. gen_arith.go
+//     (//go:build ignore, run by "//go:generate go run gen_arith.go" in
+//     arith.go) writes zNAME64.go and zNAME128.go from each template, which
+//     are committed, and zpow10.go, the tables of powers of ten that the
+//     helpers below index. Nobody edits a z*.go file. A test, TestGenerated, guarded by testenv.MustHaveGoRun,
 //     regenerates into a scratch directory and fails on any difference from
 //     the committed files.
 //  2. The width suffix rule. In the template every width-dependent
