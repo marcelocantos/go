@@ -762,7 +762,88 @@ func evalDec(im impl, v *decVector) vecOutcome {
 	if wantNaN {
 		return vecOutcome{pass: vecRef.isNaN(f, got.x), loose: v.result != "NaN", got: gotText}
 	}
-	return vecOutcome{pass: got.x == want, got: gotText}
+	out := vecOutcome{pass: got.x == want, got: gotText}
+	if !out.pass && (op == "min" || op == "max") {
+		if why := minMaxDivergence(f, args[0], args[1], want, got.x); why != "" {
+			return vecSkip(why)
+		}
+	}
+	return out
+}
+
+// The two divergences of Min and Max from GDA, named in the package
+// documentation under "Minimum and maximum".
+const (
+	skipMinMaxNaN    = "contract: Min/Max return NaN if either operand is NaN (GDA returns the number)"
+	skipMinMaxCohort = "contract: Min/Max return x for operands equal in value and sign (GDA chooses by exponent)"
+)
+
+// minMaxDivergence reports, for a Min or Max vector that failed, whether
+// the failure is exactly one of the divergences the contract documents,
+// and returns the name of the divergence, or "" when it is not. It is
+// deliberately narrow, so that every other Min or Max failure still fails:
+//
+//   - NaN: exactly one operand is a NaN, the vector expects the other
+//     operand (GDA returns the number) and the target returned a NaN (the
+//     contract returns NaN if either operand is NaN).
+//   - Cohort: both operands are finite, equal in value and sign (members
+//     of one cohort with different exponents, or zeros of one sign), the
+//     vector expects y (GDA picks by exponent) and the target returned x
+//     (the contract returns x).
+//
+// want and got are the expected and obtained encodings.
+func minMaxDivergence(f *format, x, y, want, got bits) string {
+	a, b := f.decode(x), f.decode(y)
+	switch {
+	case (a.kind == notANumber) != (b.kind == notANumber):
+		number := x
+		if a.kind == notANumber {
+			number = y
+		}
+		if want == number && f.decode(got).kind == notANumber {
+			return skipMinMaxNaN
+		}
+	case a.kind == finite && b.kind == finite && a.neg == b.neg && cmpValue(a, b) == 0:
+		if want == y && got == x && x != y {
+			return skipMinMaxCohort
+		}
+	}
+	return ""
+}
+
+// TestMinMaxDivergence checks that minMaxDivergence excuses only the two
+// documented divergences and nothing wider.
+func TestMinMaxDivergence(t *testing.T) {
+	d := func(s string) bits {
+		x, st := dec64.parse(s, bid.ToNearestEven)
+		if st != bid.Exact {
+			t.Fatalf("parse %q: %v", s, st)
+		}
+		return x
+	}
+	qnan := dec64.encode(nan)
+	cases := []struct {
+		name          string
+		x, y, want, g bits
+		reason        string
+	}{
+		{"nan first, number expected", qnan, d("1"), d("1"), qnan, skipMinMaxNaN},
+		{"nan second, number expected", d("7"), qnan, d("7"), qnan, skipMinMaxNaN},
+		{"nan, wrong number expected", qnan, d("1"), d("2"), qnan, ""},
+		{"nan, target returned the number", qnan, d("1"), d("1"), d("1"), ""},
+		{"nan, target returned another number", qnan, d("1"), d("1"), d("2"), ""},
+		{"cohort, y expected, x returned", d("1.0"), d("1"), d("1"), d("1.0"), skipMinMaxCohort},
+		{"cohort of zeros", d("0E1"), d("0E2"), d("0E2"), d("0E1"), skipMinMaxCohort},
+		{"cohort, target returned a third value", d("1.0"), d("1"), d("1"), d("1.00"), ""},
+		{"cohort, target returned y", d("1.0"), d("1"), d("1"), d("1"), ""},
+		{"opposite zeros", d("0"), d("-0"), d("0"), d("-0"), ""},
+		{"unequal values", d("1"), d("2"), d("2"), d("1"), ""},
+	}
+	for _, c := range cases {
+		if got := minMaxDivergence(dec64, c.x, c.y, c.want, c.g); got != c.reason {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.reason)
+		}
+	}
 }
 
 // evalDecParse runs apply (which rounds to the context) and toSci (which
