@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"hash"
 	"internal/asan"
+	"internal/bid"
 	"internal/testhash"
 	"math"
 	"reflect"
@@ -262,7 +263,7 @@ func TestComparable(t *testing.T) {
 	testComparable(t, float64(0), negativeZero[float64]())
 	testComparable(t, decimal64(9))
 	testComparable(t, decimal128(42))
-	testComparable(t, decimal64(0), math.Decimal64frombits(1<<63))  // +0 == -0
+	testComparable(t, decimal64(0), math.Decimal64frombits(1<<63)) // +0 == -0
 	testComparableNoEqual(t, math.Decimal64NaN(), math.Decimal64NaN())
 	testComparableNoEqual(t, math.NaN(), math.NaN())
 	testComparableNoEqual(t, [2]string{"a", ""}, [2]string{"", "a"})
@@ -354,7 +355,7 @@ func TestWriteComparable(t *testing.T) {
 	testWriteComparable(t, float64(0), negativeZero[float64]())
 	testWriteComparable(t, decimal64(9))
 	testWriteComparable(t, decimal128(42))
-	testWriteComparable(t, decimal64(0), math.Decimal64frombits(1<<63))  // +0 == -0
+	testWriteComparable(t, decimal64(0), math.Decimal64frombits(1<<63)) // +0 == -0
 	testWriteComparableNoEqual(t, math.Decimal64NaN(), math.Decimal64NaN())
 	testWriteComparableNoEqual(t, math.NaN(), math.NaN())
 	testWriteComparableNoEqual(t, [2]string{"a", ""}, [2]string{"", "a"})
@@ -559,3 +560,161 @@ func BenchmarkComparable(b *testing.B) {
 	benchmarkComparable(b, struct{}{})
 	benchmarkComparable(b, testStruct{i: 9, u: 1, b: true, f: 9.9, p: new(int), a: 1})
 }
+
+// TestComparableDecimal checks that Comparable and WriteComparable hash a
+// decimal as map semantics (==) compares it: every member of a class below is
+// ==, so all must hash equal, whatever the sign of a zero, the cohort member,
+// or the encoding form. Members of different classes are not ==. Decimals
+// have no pure-Go hash path in this package; they reach the runtime's map
+// hasher, which uses the kernel's canonical hash key.
+func TestComparableDecimal(t *testing.T) {
+	pack64 := func(neg bool, coeff uint64, exp int) decimal64 {
+		x, ok := bid.Pack64(neg, coeff, exp)
+		if !ok {
+			t.Fatalf("Pack64(%v, %d, %d) failed", neg, coeff, exp)
+		}
+		return math.Decimal64frombits(x)
+	}
+	pack128 := func(neg bool, coeff uint64, exp int) decimal128 {
+		x, ok := bid.Pack128(neg, bid.Uint128{Lo: coeff}, exp)
+		if !ok {
+			t.Fatalf("Pack128(%v, %d, %d) failed", neg, coeff, exp)
+		}
+		return math.Decimal128frombits(x.Hi, x.Lo)
+	}
+	// Non-canonical encodings read as zero: a first-form coefficient above
+	// 10^16-1 (or 10^34-1), and every second-form encoding.
+	nonCanonZero64 := func(neg bool, biasedExp uint64) decimal64 {
+		bits := bid.MaxCoeff64 + 1 | biasedExp<<bid.ExpShift64
+		if neg {
+			bits |= bid.SignMask64
+		}
+		return math.Decimal64frombits(bits)
+	}
+	form2Zero64 := math.Decimal64frombits(bid.Form2Mask64 | 5<<bid.Form2ExpShift64)
+	nonCanonZero128 := func(neg bool, biasedExp uint64) decimal128 {
+		hi := bid.MaxCoeff128Hi + 1 | biasedExp<<bid.ExpShift128
+		if neg {
+			hi |= bid.SignMask128Hi
+		}
+		return math.Decimal128frombits(hi, 0)
+	}
+	form2Zero128 := math.Decimal128frombits(bid.Form2Mask128Hi|9<<bid.Form2ExpShift128, 7)
+
+	classes64 := [][]decimal64{
+		{pack64(false, 0, 0), pack64(true, 0, 0), pack64(false, 0, -398), pack64(true, 0, 369),
+			nonCanonZero64(false, 3), nonCanonZero64(true, 700), form2Zero64},
+		{pack64(false, 15, -1), pack64(false, 150, -2), pack64(false, 1500000000000000, -15)},
+		{pack64(true, 15, -1), pack64(true, 150, -2)},
+		{pack64(false, 1, 0), pack64(false, 10, -1), pack64(false, 1000000000000000, -15)},
+		{pack64(false, 1, 1), pack64(false, 10, 0), pack64(false, 100, -1)},
+		{pack64(false, 1, 369), pack64(false, 10, 368)},
+		{math.Decimal64Inf(1), math.Decimal64frombits(bid.Inf64 | 1<<50)},
+		{math.Decimal64Inf(-1), math.Decimal64frombits(bid.Inf64 | bid.SignMask64 | 1<<50)},
+	}
+	classes128 := [][]decimal128{
+		{pack128(false, 0, 0), pack128(true, 0, 0), pack128(false, 0, -6176), pack128(true, 0, 6111),
+			nonCanonZero128(false, 3), nonCanonZero128(true, 9000), form2Zero128},
+		{pack128(false, 15, -1), pack128(false, 150, -2), pack128(false, 15000000000000000, -16)},
+		{pack128(true, 15, -1), pack128(true, 150, -2)},
+		{pack128(false, 1, 0), pack128(false, 10, -1)},
+		{pack128(false, 1, 1), pack128(false, 10, 0)},
+		{pack128(false, 1, 6111), pack128(false, 10, 6110)},
+		{decimal128(math.Decimal64Inf(1)), math.Decimal128frombits(bid.Inf128Hi|1<<40, 5)},
+		{decimal128(math.Decimal64Inf(-1)), math.Decimal128frombits(bid.Inf128Hi|bid.SignMask128Hi|1<<40, 5)},
+	}
+
+	type S64 [1]decimal64
+	type S128 [1]decimal128
+	// check verifies the hash of a and b. Equal values must hash equal
+	// (correctness). Unequal values should hash differently (quality, up to a
+	// 2^-64 collision chance); that half runs only when distinct is set.
+	check := func(t *testing.T, a, b any, distinct bool, hash func(Seed, any) uint64) {
+		t.Helper()
+		wantEq := a == b
+		seed := MakeSeed()
+		gotEq := hash(seed, a) == hash(seed, b)
+		if wantEq && !gotEq {
+			t.Errorf("%#v == %#v but their hashes differ", a, b)
+		}
+		if !wantEq && gotEq && distinct {
+			t.Errorf("%#v != %#v but their hashes are equal", a, b)
+		}
+	}
+	comparable := func(seed Seed, v any) uint64 {
+		switch v := v.(type) {
+		case decimal64:
+			return Comparable(seed, v)
+		case decimal128:
+			return Comparable(seed, v)
+		case S64:
+			return Comparable(seed, v)
+		case S128:
+			return Comparable(seed, v)
+		}
+		panic("unexpected type")
+	}
+	written := func(seed Seed, v any) uint64 {
+		h := Hash{}
+		h.SetSeed(seed)
+		switch v := v.(type) {
+		case decimal64:
+			WriteComparable(&h, v)
+		case decimal128:
+			WriteComparable(&h, v)
+		case S64:
+			WriteComparable(&h, v)
+		case S128:
+			WriteComparable(&h, v)
+		default:
+			panic("unexpected type")
+		}
+		return h.Sum64()
+	}
+	hashers := []struct {
+		name string
+		f    func(Seed, any) uint64
+	}{{"Comparable", comparable}, {"WriteComparable", written}}
+
+	for _, hs := range hashers {
+		for _, distinct := range []bool{false, true} {
+			name := hs.name + "/Agree"
+			if distinct {
+				name = hs.name + "/Distinct"
+			}
+			t.Run(name, func(t *testing.T) {
+				if distinct && !runtimeHashesDecimalsByKernelKey {
+					t.Skip("the runtime hasher still uses the strawman decimal hash, which collides some nonzero values with their negations")
+				}
+				// Bare values and one-element arrays hash alike by design, so
+				// compare within each Go type only.
+				var bare64, arr64, bare128, arr128 []any
+				for _, c := range classes64 {
+					for _, x := range c {
+						bare64 = append(bare64, x)
+						arr64 = append(arr64, S64{x})
+					}
+				}
+				for _, c := range classes128 {
+					for _, x := range c {
+						bare128 = append(bare128, x)
+						arr128 = append(arr128, S128{x})
+					}
+				}
+				for _, all := range [][]any{bare64, arr64, bare128, arr128} {
+					for i, a := range all {
+						for _, b := range all[i:] {
+							check(t, a, b, distinct, hs.f)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+// runtimeHashesDecimalsByKernelKey is false while the runtime's d64hash and
+// d128hash are the strawman implementations, which agree with == on every
+// encoding but hash 1.5 and -1.5 alike. Set it true when the runtime hashes
+// bid.Key64 and bid.Key128 (🎯T1.5.2).
+const runtimeHashesDecimalsByKernelKey = false
