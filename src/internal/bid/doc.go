@@ -30,7 +30,7 @@
 // latitude or is silent the choice is stated and, when it follows the
 // General Decimal Arithmetic specification (Cowlishaw,
 // http://speleotrove.com/decimal/decarith.html, called GDA below, the
-// source of the decTest vectors), that is said. Every deliberate departure
+// source of IBM's published vectors), that is said. Every deliberate departure
 // from either document is marked "Divergence". Per-function comments
 // describe what a function computes and point here; a rule lives in one
 // place only.
@@ -317,7 +317,7 @@
 // non-zero and below 10^Emin in magnitude. Clause 7.5 fixes tininess
 // detection before rounding for decimal formats (it leaves the choice to
 // the implementer for binary formats only), and GDA's Subnormal
-// condition is defined the same way, so the decTest vectors apply. A
+// condition is defined the same way, so the published IBM vectors apply. A
 // tiny result is rounded at exponent MinExp in the given mode, and may
 // round to a subnormal, to zero or up to 10^Emin itself. Under clause 7.5
 // default handling the Status-returning functions report Inexact|Underflow
@@ -381,7 +381,7 @@
 // remainder and remainder-near refuse with Division impossible when the
 // integer quotient would have more than Precision digits (GDA notes this
 // as its own deviation from IEEE 754); this package computes the exact
-// remainder for any quotient, as clause 5.3.1 requires. decTest vectors
+// remainder for any quotient, as clause 5.3.1 requires. IBM vectors
 // that expect Division impossible are out of scope.
 //
 // # Sign operations

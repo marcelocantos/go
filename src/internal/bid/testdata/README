@@ -6,7 +6,7 @@ documentation (`doc.go`, the contract of the package) names. They were
 written from that documentation and from the text of IEEE 754-2008, by
 hand or with small generators that share no code with the kernel or with
 the reference oracle in `ref_test.go`. Nothing here was copied or
-transcribed from decTest, from Intel's test suite or from any other
+transcribed from IBM's published vectors, from Intel's test suite or from any other
 library's tests, and no expected result was computed with another decimal
 library. The suite is therefore an independent check: when it disagrees
 with the kernel or the oracle, the disagreement is settled against the
