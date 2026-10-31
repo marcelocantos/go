@@ -245,14 +245,16 @@ func keyW(x coefW) (kind Kind, neg bool, c coefW, exp int) {
 //     digits or more, or by scaling its exact part up to that many digits
 //     before truncating the rest, or by passing the whole exact product, as
 //     mulW does.
-//   - If class is not classZero and p has PrecisionW digits or fewer,
-//     the result is that of rounding p + ε for an arbitrarily small ε > 0
-//     ("Rounding from exact parts"): the fraction is taken to be below
-//     every rounding boundary, whatever class says beyond being non-zero.
-//     Only RoundW and RoundW's callers mean this; an operation never does.
-//     A p of zero with a non-zero class is such a value below 10^exp, and
-//     a caller meaning "arbitrarily small" passes exp <= MinExpW with it,
-//     as roundPartsW does, so that it rounds at MinExpW.
+//   - If class is not classZero and p has PrecisionW digits or fewer, no
+//     digit of p is discarded and class alone decides the rounding, taken
+//     at face value: classHalf is a tie and classAboveHalf rounds up in the
+//     nearest modes. Only roundPartsW passes such a class, and it passes
+//     classBelowHalf, which is how RoundW's sticky bit means "p + ε for an
+//     arbitrarily small ε > 0" ("Rounding from exact parts"); an operation
+//     never does, since every operation keeps a round digit. A p of zero
+//     with a non-zero class is a value below 10^exp, and a caller meaning
+//     "arbitrarily small" passes exp <= MinExpW with it, as roundPartsW
+//     does, so that it rounds at MinExpW.
 //
 // The result exponent x is exp for an exact value, raised when p has more
 // than PrecisionW digits, when exp is below floor, or when exp is above

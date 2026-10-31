@@ -16,10 +16,11 @@
 // what lets the runtime, cmd/compile (through the cmd/dist bootstrap) and
 // the standard library all import one implementation.
 //
-// Every exported function is width-suffixed: Add64 operates on decimal64
-// bit patterns and Add128 on decimal128 bit patterns. How the two widths
-// share an implementation is an internal matter that this API does not
-// decide.
+// Every exported function that works at one width is width-suffixed:
+// Add64 operates on decimal64 bit patterns and Add128 on decimal128 bit
+// patterns. [Widen] and [Narrow], which go between the widths, are the
+// exceptions. How the two widths share an implementation is an internal
+// matter that this API does not decide.
 //
 // This documentation is the contract of the package. It fixes, for every
 // operation, the result on every input, including the exceptional cases of
@@ -46,9 +47,7 @@
 //     is a valid operand, including non-canonical encodings, signaling
 //     NaNs and NaNs with payloads, and every function returns a result for
 //     it. A [Mode] value outside the five defined modes behaves as
-//     [ToNearestEven]. (Until an operation is implemented its body panics
-//     with a fixed message; that is a temporary state, not part of the
-//     contract.)
+//     [ToNearestEven].
 //   - No mutable global state. The package has no variables that are
 //     written after initialization. Static tables are permitted.
 //   - Exactly one rounding per operation. Every operation computes its
@@ -107,7 +106,10 @@
 // # Conditions
 //
 // IEEE 754-2008 clause 7 defines five exceptions. This package delivers
-// the clause 7 default result for each and raises no flags. Arithmetic,
+// the clause 7 default result for each. Divergence: clause 7.1 requires
+// that each exception also raise a status flag the program can test and
+// clear; this package has no flags, as Go's binary floating point has
+// none. Arithmetic,
 // Widen, Narrow, the conversions from integers and the Float conversions
 // return a value and nothing else; the caller cannot learn whether it was
 // exact. The three families of conversion where the caller must act on the
@@ -150,8 +152,10 @@
 // sign is one cohort too, with exponents over the whole range.
 //
 // The character form used throughout this documentation and produced by
-// Append64 and Append128 is the to-scientific-string form of GDA, which
-// IEEE 754-2008 clause 5.12 adopts. For a finite value, the coefficient is
+// Append64 and Append128 is the to-scientific-string form of GDA. IEEE
+// 754-2008 clause 5.12 requires a conversion to character form that is
+// exact and preserves the quantum, and GDA's form meets it; the standard
+// fixes no particular notation. For a finite value, the coefficient is
 // written with all its digits and the adjusted exponent a = Q(x) +
 // (digits - 1) is computed. If Q(x) <= 0 and a >= -6 the value is written
 // in plain notation: the coefficient digits with a decimal point inserted
@@ -304,9 +308,12 @@
 // # Underflow and subnormal results
 //
 // A non-zero finite value whose magnitude is below 10^Emin (1E-383 for
-// decimal64, 1E-6143 for decimal128) is subnormal; its encoding has
-// exponent MinExp and fewer than Precision digits (IEEE 754-2008 clause
-// 3.3). A result is tiny when its exact value, before any rounding, is
+// decimal64, 1E-6143 for decimal128) is subnormal; its coefficient has
+// fewer than Precision digits at exponent MinExp, and like any value it
+// may be encoded at any exponent of its cohort (IEEE 754-2008 clause 3.3):
+// 1E-390 is a subnormal decimal64 with coefficient 1 and exponent -390.
+// An inexact subnormal result is encoded at MinExp, as the inexact-result
+// rule gives. A result is tiny when its exact value, before any rounding, is
 // non-zero and below 10^Emin in magnitude. Clause 7.5 fixes tininess
 // detection before rounding for decimal formats (it leaves the choice to
 // the implementer for binary formats only), and GDA's Subnormal
@@ -455,9 +462,11 @@
 // to decimal64 in the given mode, and the inexact result then has 16
 // digits and a positive exponent as the inexact-result rule gives.
 //
-// Int64From64, Uint64From64 and the decimal128 forms are convertToInteger
-// of clauses 5.4.1 and 5.8: x is rounded to an integer in the given mode
-// and converted. The language conversion uses TowardZero. The Status is
+// Int64From64, Uint64From64 and the decimal128 forms are the
+// convertToIntegerExact{...} operations of clauses 5.4.1 and 5.8, which
+// signal inexact (the plain convertToInteger{...} operations do not): x is
+// rounded to an integer in the given mode and converted. The language
+// conversion uses TowardZero. The Status is
 // Exact when x is an integer in range, Inexact when a non-zero fraction
 // was discarded and the integer is in range, Inexact|Overflow when the
 // rounded integer is outside the range of the result type (the result is
@@ -1467,9 +1476,10 @@
 //     (//go:build ignore, run by "//go:generate go run gen_arith.go" in
 //     arith.go) writes zNAME64.go and zNAME128.go from each template, which
 //     are committed, and zpow10.go, the tables of powers of ten that the
-//     helpers below index. Nobody edits a z*.go file. A test, TestGenerated, guarded by testenv.MustHaveGoRun,
-//     regenerates into a scratch directory and fails on any difference from
-//     the committed files.
+//     helpers below index. Nobody edits a z*.go file. A test,
+//     TestGenerated, guarded by testenv.MustHaveGoRun, regenerates into a
+//     scratch directory and fails on any difference from the committed
+//     files.
 //  2. The width suffix rule. In the template every width-dependent
 //     identifier ends in a capital W and no other identifier does. The
 //     generator replaces that final W with 64 or 128 and does nothing
@@ -1489,7 +1499,7 @@
 //     functions over coefW and wideW, defined with identical signatures in
 //     coef64.go and coef128.go (one file per width, nothing else in them):
 //     cIsZeroW, cCmpW, cAddW, cSubW, cOddW, cDigitsW, cMulPow10W(c, k),
-//     cDivPow10W(c, k) (q, r coefW), cHalfW(k) (5×10^(k-1)), cGtMaxW,
+//     cDivPow10W(c, k) (q, r coefW), cGtMaxW,
 //     cPow10W(k), cMulFullW(a, b) wideW, cReduceW(p wideW, k) (q coefW,
 //     sticky bool) and cLenFullW(p wideW) int, with the decimal-digit
 //     primitives cShiftW, cShiftFullW, cReduceClassW, cScaleW and cScaleFullW
@@ -1528,9 +1538,11 @@
 // # Dependencies
 //
 // The files that cmd/dist compiles for the compiler bootstrap import only
-// math/bits. Conversion to and from binary floating point lives in a file
-// excluded from the bootstrap build (see float.go), because it shares
+// math/bits. Conversion from decimal to binary floating point lives in
+// float.go, which is excluded from the bootstrap build, because it shares
 // internal/strconv's exact machinery, which the minimum bootstrap toolchain
 // does not provide, and because the compiler never needs it: constants are
-// exact and are encoded through [Round64] and [Round128].
+// exact and are encoded through [Round64] and [Round128]. Conversion from
+// binary to decimal (fromfloat.go and its generated files) needs only
+// math/bits and is compiled everywhere.
 package bid

@@ -98,12 +98,6 @@ func cDivPow1064(c coef64, k int) (q, r coef64) {
 	return c / p, c % p
 }
 
-// cHalf64 returns 5 × 10^(k-1), half of 10^k: the value of a discarded
-// k-digit tail at which rounding is a tie. Precondition: 1 <= k <= 19.
-func cHalf64(k int) coef64 {
-	return 5 * pow10tab64[k-1]
-}
-
 // cGtMax64 reports whether c exceeds the largest decimal64 coefficient.
 func cGtMax64(c coef64) bool {
 	return c > MaxCoeff64

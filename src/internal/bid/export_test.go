@@ -46,8 +46,6 @@ var (
 	CDivPow1064     = cDivPow1064
 	CGtMax128       = cGtMax128
 	CGtMax64        = cGtMax64
-	CHalf128        = cHalf128
-	CHalf64         = cHalf64
 	CIsZero128      = cIsZero128
 	CIsZero64       = cIsZero64
 	CLenFull128     = cLenFull128

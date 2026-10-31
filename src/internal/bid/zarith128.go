@@ -234,14 +234,16 @@ func key128(x coef128) (kind Kind, neg bool, c coef128, exp int) {
 //     digits or more, or by scaling its exact part up to that many digits
 //     before truncating the rest, or by passing the whole exact product, as
 //     mul128 does.
-//   - If class is not classZero and p has Precision128 digits or fewer,
-//     the result is that of rounding p + ε for an arbitrarily small ε > 0
-//     ("Rounding from exact parts"): the fraction is taken to be below
-//     every rounding boundary, whatever class says beyond being non-zero.
-//     Only Round128 and Round128's callers mean this; an operation never does.
-//     A p of zero with a non-zero class is such a value below 10^exp, and
-//     a caller meaning "arbitrarily small" passes exp <= MinExp128 with it,
-//     as roundParts128 does, so that it rounds at MinExp128.
+//   - If class is not classZero and p has Precision128 digits or fewer, no
+//     digit of p is discarded and class alone decides the rounding, taken
+//     at face value: classHalf is a tie and classAboveHalf rounds up in the
+//     nearest modes. Only roundParts128 passes such a class, and it passes
+//     classBelowHalf, which is how Round128's sticky bit means "p + ε for an
+//     arbitrarily small ε > 0" ("Rounding from exact parts"); an operation
+//     never does, since every operation keeps a round digit. A p of zero
+//     with a non-zero class is a value below 10^exp, and a caller meaning
+//     "arbitrarily small" passes exp <= MinExp128 with it, as roundParts128
+//     does, so that it rounds at MinExp128.
 //
 // The result exponent x is exp for an exact value, raised when p has more
 // than Precision128 digits, when exp is below floor, or when exp is above

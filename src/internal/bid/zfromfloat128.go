@@ -57,9 +57,10 @@ func fromFloat128(kind Kind, neg bool, m uint64, e int, mode Mode) coef128 {
 	case e >= 0:
 		// v is a larger integer, and q = ⌊v / 10^k⌋ = ⌊m × 2^(e-k) / 5^k⌋
 		// with the sticky bit the exact remainder of that division (the two
-		// quotients are of one rational). k < e: v < 2^(53+e) puts its
-		// adjusted exponent below 0.302 × (53 + e), which is below e + 16 -
-		// Precision128 for every e >= 0.
+		// quotients are of one rational). k < e holds: this branch needs
+		// bits.Len64(m) + e > 128, so e >= 76, and k = t - Precision128 with
+		// t <= log10(2^(53+e)) < 0.302 × (53 + e), which is below e + 16
+		// for every e >= 0 and so below e + Precision128.
 		k := -s
 		var x floatNat
 		x.setShl(m, e-k)

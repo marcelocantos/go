@@ -73,13 +73,6 @@ func cDivPow10128(c coef128, k int) (q, r coef128) {
 	return u128Div(c, pow10tab128[k])
 }
 
-// cHalf128 returns 5 × 10^(k-1), half of 10^k: the value of a discarded
-// k-digit tail at which rounding is a tie. Precondition: 1 <= k <= 38.
-func cHalf128(k int) coef128 {
-	h, _ := u128Mul64(pow10tab128[k-1], 5)
-	return h
-}
-
 // cGtMax128 reports whether c exceeds the largest decimal128 coefficient.
 func cGtMax128(c coef128) bool {
 	return u128GtMaxCoeff(c)

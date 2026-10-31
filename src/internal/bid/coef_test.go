@@ -187,11 +187,6 @@ func checkCoef64(t *testing.T, a, b uint64, k int) {
 	if big64(q).Cmp(wq) != 0 || big64(r).Cmp(wr) != 0 {
 		t.Errorf("cDivPow1064(%d, %d) = %d, %d, want %v, %v", a, k, q, r, wq, wr)
 	}
-	if k >= 1 {
-		if got, want := bid.CHalf64(k), new(big.Int).Mul(big.NewInt(5), bigPow10(k-1)); big64(got).Cmp(want) != 0 {
-			t.Errorf("cHalf64(%d) = %d, want %v", k, got, want)
-		}
-	}
 	if M := new(big.Int).Mul(A, P); M.Cmp(bigTwo64) < 0 {
 		if got := bid.CMulPow1064(a, k); big64(got).Cmp(M) != 0 {
 			t.Errorf("cMulPow1064(%d, %d) = %d, want %v", a, k, got, M)
@@ -301,9 +296,6 @@ func checkCoef128(t *testing.T, a, b bid.Uint128, k int) {
 	wq, wr := new(big.Int).DivMod(A, P, new(big.Int))
 	eq128(t, "cDivPow10128 q", q, wq)
 	eq128(t, "cDivPow10128 r", r, wr)
-	if k1 >= 1 {
-		eq128(t, "cHalf128", bid.CHalf128(k1), new(big.Int).Mul(big.NewInt(5), bigPow10(k1-1)))
-	}
 	if M := new(big.Int).Mul(A, P); M.Cmp(bigTwo128) < 0 {
 		eq128(t, "cMulPow10128", bid.CMulPow10128(a, k1), M)
 	} else {
