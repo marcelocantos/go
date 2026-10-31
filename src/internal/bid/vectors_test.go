@@ -39,17 +39,32 @@ package bid_test
 // or a compatible grant.
 //
 // Intel readtest.in. The Intel Decimal Floating-Point Math Library
-// (IntelRDFPMathLib), which ships TESTS/readtest.in, is distributed under a
-// BSD-style licence: redistribution and use in source and binary forms,
-// with or without modification, are permitted provided that the copyright
-// notice, the list of conditions and the disclaimer are retained. This
-// description follows the text of target T1.2.2; it was NOT checked against
-// the licence file or the readtest.in header of an actual library release,
-// because the file is not on the machine this runner was written on, and it
-// must be checked before it is relied on. Even a permissive licence obliges
-// the tree to carry Intel's notice with a copy of the file, and readtest.in
-// is several megabytes of generated data, which is not wanted in the Go
-// repository.
+// (IntelRDFPMathLib) ships the vectors as TESTS/readtest.in. Source: the
+// release IntelRDFPMathLib20U2 (version 2.0 update 2), downloaded from
+// https://netlib.org/misc/intel/IntelRDFPMathLib20U2.tar.gz, whose sha256
+// is 93c0c78e0989df88f8540bf38d6743734804cef1e40706fd8fe5c6a03f79e173.
+// The licence is the file eula.txt at the top of that release, which
+// begins
+//
+//	Copyright (c) 2018, Intel Corp.
+//
+//	All rights reserved.
+//
+//	Redistribution and use in source and binary forms, with or without modification,
+//	are permitted provided that the following conditions are met:
+//
+// and lists three conditions: redistributions of source code retain the
+// copyright notice, the list of conditions and the disclaimer;
+// redistributions in binary form reproduce them in the documentation or
+// other materials provided with the distribution; and the name of Intel
+// Corporation and the names of its contributors may not be used to endorse
+// or promote products derived from the software without specific prior
+// written permission. A disclaimer of warranties and of liability follows.
+// That is the three-clause BSD licence. readtest.in itself carries no
+// notice; the one in eula.txt covers the release. Even so permissive a
+// licence obliges the tree to carry Intel's notice with a copy of the
+// file, and readtest.in is 127,118 lines (9.6 MB) of generated data, which
+// is not wanted in the Go repository.
 //
 // So both sets stay out of tree: decTest because nothing licenses its
 // redistribution, Intel readtest.in because its notice would have to travel
@@ -93,17 +108,102 @@ package bid_test
 // contract (NaN payloads, hex encodings, Division impossible), and rounding
 // modes the contract does not have (half_down, up, 05up).
 //
-// Intel readtest.in. Lines have the form
+// Intel readtest.in. A line is
 //
-//	bid64_add 0 [31c0000000000001] [31c0000000000002] [31c0000000000003] 00
+//	function rounding operand... result status [trailing field...]
 //
-// that is, function, rounding code (0 nearest even, 1 down, 2 up, 3 toward
-// zero, 4 nearest away), the operands and the expected result as hex
-// encodings in brackets (a decimal128 as 32 hex digits), and the expected
-// status flags in hex, which are ignored for the same reason. The parser
-// was written from the documented line format and has been run against
-// hand-written lines only (TestIntelLineParser). It is unexercised against
-// the real file.
+// separated by white space, where "--" starts a comment (a whole-line
+// comment or a remark such as "-- MinDen"). The function is bid32_,
+// bid64_ or bid128_ and the operation, or binaryNN_to_bidNN, or bid_ and
+// the name of a library function that is not an operation. A mixed-width
+// function, such as bid128dd_add or bid64qq_sub, has letters d (decimal64)
+// and q (decimal128) after the prefix, one for each operand, and the prefix
+// gives the result's format. The rounding code is 0 nearest even, 1 toward
+// negative, 2 toward positive, 3 toward zero, 4 nearest away. A decimal
+// operand or result is a hex encoding in brackets (16 digits for
+// decimal64, 32 digits or two groups of 16 separated by a comma for
+// decimal128, in either case), or text that the harness converts to the
+// operand's format first: a numeral ("0", "-0", "+8898.E5") or one of the
+// words Inf, Infinity, NaN, QNaN and SNaN in any case, each with an
+// optional sign. The runner reads text with the reference codec, rounding
+// to nearest even whatever the line's code, which is what the harness does
+// (the code applies to the operation, not to reading its operands); only
+// from_string hands its text to the target's Parse, in the line's mode.
+// A predicate's result is 0 or 1, an integer conversion's result a decimal
+// integer, a conversion to binary a hex bit pattern in brackets (8 or 16
+// digits; the operand of binaryNN_to_bidNN is one too, or text that the
+// harness converts to binary first), and to_string's an Intel-style string
+// such as "+55E+0" or "-Inf". The status is hex digits with an optional
+// 0x: 0x01 invalid, 0x04 division by zero, 0x08 overflow, 0x10 underflow,
+// 0x20 inexact (0x02 is a binary-operand flag the contract does not have).
+// Trailing fields are "ulp=x" (the error of an approximate result; the
+// runner runs a vector with a zero ulp, which is exact, and skips one with
+// a non-zero ulp), "underflow_before_only" (a remark on the status: the
+// contract detects tininess before rounding) and "longintsize=n" (lrint
+// and lround, which are skipped).
+//
+// The mapping, by Intel function:
+//
+//	add, sub, mul, div, fma         Add, Sub, Mul, Div, FMA at the line's mode
+//	bid128dd_add, bid128dqd_fma ... the decimal64 operands widened (exact),
+//	                                then the decimal128 operation: one rounding
+//	rem, fmod                       Rem (IEEE remainder), Mod (truncated)
+//	quantize                        Quantize
+//	round_integral_{nearest_even,   RoundToIntegral in the mode named; _exact
+//	  nearest_away,zero,positive,   and nearbyint in the line's mode
+//	  negative,exact}, nearbyint
+//	negate, abs, copySign           Neg, Abs, CopySign
+//	minnum, maxnum                  Min, Max, with the divergences of
+//	                                minMaxDivergence
+//	quiet_*, signaling_*            Equal, Less, LessEqual and Compare; the two
+//	                                prefixes differ only in flags
+//	sameQuantum, totalOrder,        SameQuantum, TotalOrder (totalOrderMag on
+//	  totalOrderMag                 the absolute values)
+//	isCanonical, isFinite, isInf,   IsCanonical, IsFinite, IsInf, IsNaN,
+//	  isNaN, isNormal, isSignaling, (finite, non-zero, not subnormal),
+//	  isSigned, isSubnormal, isZero IsSignaling, Signbit, IsSubnormal, IsZero
+//	class                           the class from the predicates
+//	to_int{8,16,32,64}_*,           Int64From, with the rounding the suffix
+//	  to_uint{8,16,32,64}_*,        names (int toward zero, rnint nearest
+//	  llrint, llround               even, rninta nearest away, floor, ceil;
+//	                                an x also expects inexact) and a range
+//	                                check; Uint64From for the unsigned
+//	from_{int,uint}{32,64}          Int64To, Uint64To; the status through Round
+//	to_binary{32,64}                Float32From, Float64From
+//	binary{32,64}_to_bid{64,128}    Float32To, Float64To
+//	bid64_to_bid128, bid128_to_bid64 Widen, Narrow
+//	to_string                       Unpack, written in Intel's notation
+//	from_string                     Parse, with its Status
+//
+// Status. A comparison of flags is made where the kernel returns a Status:
+// from_string (Parse), the conversions to integers (Int64From and
+// Uint64From), and the conversions from integers (Round). Every other
+// operation returns no Status, so its vector passes on the result alone;
+// those passes are counted under a note that says so. An integer
+// conversion of a value out of range, a NaN or an infinity is expected to
+// raise invalid and return the integer indefinite, where the contract
+// saturates and reports Overflow, or reports Invalid and returns 0 for a
+// NaN: the runner requires the kernel to report one of those and does not
+// compare the value, and counts the pass under a note. A conversion whose
+// name has no x raises no inexact. A few vectors print a uint32 result of
+// 2^31 or more as the negative int32 with the same bits, and the runner
+// reads both.
+//
+// Results are compared bit for bit, except that any NaN expected matches
+// any NaN got (counted as "NaN modulo payload"). Min and Max, and
+// TotalOrder on NaNs of one sign, are skipped where they diverge from
+// minNum and maxNum and from clause 5.10 in the documented way and in no
+// other. Each skip has a reason, counted. Not mapped, each with its own
+// reason: the C99 functions and transcendental functions, sqrt, lrint,
+// lround, scalbn and scalbln, ldexp, fdim, frexp, modf, ilogb, logb, the
+// next functions, minNumMag and maxNumMag, quantum and quantexp, copy,
+// the inf and nan constructors, the library's flag and rounding-attribute
+// functions, DPD and strtod; the bid32 and binary80 and binary128 formats;
+// a mixed-width function with a decimal64 result and a decimal128 operand,
+// which would need one rounding from two operands of the wider format
+// where the kernel would round twice; and the vectors recorded as
+// erroneous in the file (the count is in the run's output, with the line
+// number and the justification).
 //
 // # Running it
 //
@@ -119,10 +219,12 @@ package bid_test
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"internal/bid"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -152,7 +254,8 @@ var vecRef = reference{}
 type vecOutcome struct {
 	skip  string // non-empty: the vector was skipped, for this reason
 	pass  bool
-	loose bool // passed by NaN tolerance
+	loose bool   // passed by NaN tolerance
+	note  string // non-empty: passed, but did not check this
 	got   string
 }
 
@@ -162,11 +265,12 @@ func vecSkip(reason string) vecOutcome { return vecOutcome{skip: reason} }
 type vecTally struct {
 	pass, fail, loose int
 	skip              map[string]int
+	note              map[string]int // passes by what they did not check
 	failByOp          map[string]int
 }
 
 func newVecTally() *vecTally {
-	return &vecTally{skip: map[string]int{}, failByOp: map[string]int{}}
+	return &vecTally{skip: map[string]int{}, note: map[string]int{}, failByOp: map[string]int{}}
 }
 
 func (t *vecTally) add(op string, o vecOutcome) {
@@ -177,6 +281,9 @@ func (t *vecTally) add(op string, o vecOutcome) {
 		t.pass++
 		if o.loose {
 			t.loose++
+		}
+		if o.note != "" {
+			t.note[o.note]++
 		}
 	default:
 		t.fail++
@@ -190,6 +297,9 @@ func (t *vecTally) merge(u *vecTally) {
 	t.loose += u.loose
 	for k, n := range u.skip {
 		t.skip[k] += n
+	}
+	for k, n := range u.note {
+		t.note[k] += n
 	}
 	for k, n := range u.failByOp {
 		t.failByOp[k] += n
@@ -224,6 +334,19 @@ func (t *vecTally) summary(name string) string {
 	})
 	for _, r := range reasons {
 		fmt.Fprintf(&sb, "\n    skip %-6d %s", t.skip[r], r)
+	}
+	notes := make([]string, 0, len(t.note))
+	for r := range t.note {
+		notes = append(notes, r)
+	}
+	sort.Slice(notes, func(i, j int) bool {
+		if t.note[notes[i]] != t.note[notes[j]] {
+			return t.note[notes[i]] > t.note[notes[j]]
+		}
+		return notes[i] < notes[j]
+	})
+	for _, r := range notes {
+		fmt.Fprintf(&sb, "\n    note %-6d %s", t.note[r], r)
 	}
 	return sb.String()
 }
@@ -771,11 +894,12 @@ func evalDec(im impl, v *decVector) vecOutcome {
 	return out
 }
 
-// The two divergences of Min and Max from GDA, named in the package
-// documentation under "Minimum and maximum".
+// The divergences of Min and Max from GDA and from IEEE 754-2008 minNum and
+// maxNum, named in the package documentation under "Minimum and maximum".
 const (
 	skipMinMaxNaN    = "contract: Min/Max return NaN if either operand is NaN (GDA returns the number)"
 	skipMinMaxCohort = "contract: Min/Max return x for operands equal in value and sign (GDA chooses by exponent)"
+	skipMinMaxZero   = "contract: Min/Max order -0 before +0 (IEEE minNum and maxNum leave the zero's sign open)"
 )
 
 // minMaxDivergence reports, for a Min or Max vector that failed, whether
@@ -790,9 +914,15 @@ const (
 //     of one cohort with different exponents, or zeros of one sign), the
 //     vector expects y (GDA picks by exponent) and the target returned x
 //     (the contract returns x).
+//   - Zero: the operands are zeros of opposite signs and the vector expects
+//     one of them where the target returned the other (the contract puts -0
+//     before +0; IEEE 754-2008 clause 5.3.1 allows either result).
 //
-// want and got are the expected and obtained encodings.
+// The operand returned is canonicalized (see "Minimum and maximum"), so the
+// expected value is compared with the canonical form of the operand. want
+// and got are the expected and obtained encodings.
 func minMaxDivergence(f *format, x, y, want, got bits) string {
+	canon := func(b bits) bits { return f.encode(f.decode(b)) }
 	a, b := f.decode(x), f.decode(y)
 	switch {
 	case (a.kind == notANumber) != (b.kind == notANumber):
@@ -800,12 +930,16 @@ func minMaxDivergence(f *format, x, y, want, got bits) string {
 		if a.kind == notANumber {
 			number = y
 		}
-		if want == number && f.decode(got).kind == notANumber {
+		if want == canon(number) && f.decode(got).kind == notANumber {
 			return skipMinMaxNaN
 		}
 	case a.kind == finite && b.kind == finite && a.neg == b.neg && cmpValue(a, b) == 0:
-		if want == y && got == x && x != y {
+		if want == canon(y) && got == canon(x) && canon(x) != canon(y) {
 			return skipMinMaxCohort
+		}
+	case a.kind == finite && b.kind == finite && a.neg != b.neg && a.coeff.Sign() == 0 && b.coeff.Sign() == 0:
+		if (want == canon(x) && got == canon(y)) || (want == canon(y) && got == canon(x)) {
+			return skipMinMaxZero
 		}
 	}
 	return ""
@@ -836,7 +970,9 @@ func TestMinMaxDivergence(t *testing.T) {
 		{"cohort of zeros", d("0E1"), d("0E2"), d("0E2"), d("0E1"), skipMinMaxCohort},
 		{"cohort, target returned a third value", d("1.0"), d("1"), d("1"), d("1.00"), ""},
 		{"cohort, target returned y", d("1.0"), d("1"), d("1"), d("1"), ""},
-		{"opposite zeros", d("0"), d("-0"), d("0"), d("-0"), ""},
+		{"opposite zeros, the other zero expected", d("0"), d("-0"), d("0"), d("-0"), skipMinMaxZero},
+		{"opposite zeros, a third value", d("0"), d("-0"), d("1"), d("-0"), ""},
+		{"opposite zeros, the target returned a third value", d("0"), d("-0"), d("0"), d("0.0"), ""},
 		{"unequal values", d("1"), d("2"), d("2"), d("1"), ""},
 	}
 	for _, c := range cases {
@@ -913,8 +1049,43 @@ func evalDecParse(im impl, f *format, v *decVector, apply bool) vecOutcome {
 
 // ------------------------------------------------------------------ Intel
 
-// intelVector is one readtest.in line: function, rounding code, and the
-// remaining fields (operands, expected result, expected status).
+// The status flags of the Intel library (the BID_*_EXCEPTION bits). The
+// denormal bit, 0x02, is a binary-operand flag that the contract does not
+// have.
+const (
+	intelInvalid   = 0x01
+	intelOverflow  = 0x08
+	intelUnderflow = 0x10
+	intelInexact   = 0x20
+)
+
+// The class codes of the Intel library's class function, which are the
+// classes of IEEE 754-2008 clause 5.7.2 numbered from the signaling NaN.
+const (
+	intelClassSNaN = iota
+	intelClassQNaN
+	intelClassNegInf
+	intelClassNegNormal
+	intelClassNegSubnormal
+	intelClassNegZero
+	intelClassPosZero
+	intelClassPosSubnormal
+	intelClassPosNormal
+	intelClassPosInf
+)
+
+// Notes on passes: what a passing vector did not check, counted by name.
+const (
+	noteNoStatus = "result matches; status flags not compared (the kernel operation returns no Status)"
+	noteIntInv   = "result matches; the value of an out-of-range integer conversion not compared (Intel: the integer indefinite; contract: saturation)"
+	noteSyntax   = "result matches; Syntax status not compared (Intel reports no flag for a malformed numeral)"
+	noteString   = "result matches through the sign, coefficient and exponent (Intel's notation differs from Append's)"
+)
+
+// intelVector is one readtest.in line: the function name, the rounding code
+// and every field after them (operands, expected result, expected status and
+// optional trailing fields). The fields were split at white space; a "--"
+// starts a comment.
 type intelVector struct {
 	line   int
 	name   string
@@ -922,40 +1093,21 @@ type intelVector struct {
 	fields []string
 }
 
-// parseIntelLine parses one line of readtest.in. ok is false for blank
-// lines, comments and lines of another shape.
+// parseIntelLine parses one line of readtest.in. ok is false for blank lines
+// and comment lines.
 func parseIntelLine(text string, n int) (*intelVector, bool) {
-	text = strings.TrimSpace(text)
-	if text == "" || strings.HasPrefix(text, "--") {
-		return nil, false
-	}
 	toks := vecTokens(text)
-	if len(toks) < 4 || !strings.HasPrefix(toks[0].s, "bid") {
+	if len(toks) == 0 {
 		return nil, false
 	}
-	v := &intelVector{line: n, name: toks[0].s, round: toks[1].s}
-	for _, tk := range toks[2:] {
-		v.fields = append(v.fields, tk.s)
+	v := &intelVector{line: n, name: toks[0].s}
+	if len(toks) > 1 {
+		v.round = toks[1].s
+		for _, tk := range toks[2:] {
+			v.fields = append(v.fields, tk.s)
+		}
 	}
 	return v, true
-}
-
-// intelHex reads a bracketed hex encoding of the given width.
-func intelHex(s string, width int) (bits, bool) {
-	s = strings.TrimSuffix(strings.TrimPrefix(s, "["), "]")
-	if s == "" || len(s) > width/4 {
-		return bits{}, false
-	}
-	for len(s) < width/4 {
-		s = "0" + s
-	}
-	if width == 64 {
-		lo, err := strconv.ParseUint(s, 16, 64)
-		return bits{Lo: lo}, err == nil
-	}
-	hi, err1 := strconv.ParseUint(s[:16], 16, 64)
-	lo, err2 := strconv.ParseUint(s[16:], 16, 64)
-	return bits{Hi: hi, Lo: lo}, err1 == nil && err2 == nil
 }
 
 func intelMode(code string) (bid.Mode, bool) {
@@ -974,102 +1126,939 @@ func intelMode(code string) (bid.Mode, bool) {
 	return 0, false
 }
 
-// intelOps maps the function name after the bid64_ or bid128_ prefix to a
-// decOp, with the fixed rounding mode for the round_integral variants.
-// Function names and argument orders are from the documented format; they
-// have not been checked against the real file.
-var intelOps = map[string]struct {
-	decOp
-	fixed *bid.Mode
-}{
-	"add":                         {decOps["add"], nil},
-	"sub":                         {decOps["subtract"], nil},
-	"mul":                         {decOps["multiply"], nil},
-	"div":                         {decOps["divide"], nil},
-	"fma":                         {decOps["fma"], nil},
-	"rem":                         {decOps["remaindernear"], nil},
-	"quantize":                    {decOps["quantize"], nil},
-	"negate":                      {decOps["copynegate"], nil},
-	"abs":                         {decOps["abs"], nil},
-	"round_integral_exact":        {decOps["tointegralx"], nil},
-	"round_integral_nearest_even": {decOps["tointegralx"], modePtr(bid.ToNearestEven)},
-	"round_integral_nearest_away": {decOps["tointegralx"], modePtr(bid.ToNearestAway)},
-	"round_integral_zero":         {decOps["tointegralx"], modePtr(bid.TowardZero)},
-	"round_integral_positive":     {decOps["tointegralx"], modePtr(bid.TowardPositive)},
-	"round_integral_negative":     {decOps["tointegralx"], modePtr(bid.TowardNegative)},
-	"sameQuantum":                 {decOps["samequantum"], nil},
-	"quiet_equal": {decOp{2, false, true, func(im impl, f *format, a []bits, m bid.Mode) decRes {
-		return resBool(im.equal(f, a[0], a[1]))
-	}}, nil},
-	"quiet_less": {decOp{2, false, true, func(im impl, f *format, a []bits, m bid.Mode) decRes {
-		return resBool(im.less(f, a[0], a[1]))
-	}}, nil},
-	"quiet_less_equal": {decOp{2, false, true, func(im impl, f *format, a []bits, m bid.Mode) decRes {
-		return resBool(im.lessEqual(f, a[0], a[1]))
-	}}, nil},
-	"totalOrder": {decOp{2, false, true, func(im impl, f *format, a []bits, m bid.Mode) decRes {
-		return resBool(im.totalOrder(f, a[0], a[1]))
-	}}, nil},
+// intelHex reads a bracketed hex encoding of the given width: exactly
+// width/4 digits, or for 128 bits two groups of 16 digits separated by a
+// comma. Digits may be of either case.
+func intelHex(s string, width int) (bits, bool) {
+	if len(s) < 2 || s[0] != '[' || s[len(s)-1] != ']' {
+		return bits{}, false
+	}
+	s = s[1 : len(s)-1]
+	if width == 128 {
+		if hi, lo, ok := strings.Cut(s, ","); ok {
+			s = hi + lo
+			if len(hi) != 16 || len(lo) != 16 {
+				return bits{}, false
+			}
+		}
+	}
+	if len(s) != width/4 {
+		return bits{}, false
+	}
+	if width == 64 {
+		lo, err := strconv.ParseUint(s, 16, 64)
+		return bits{Lo: lo}, err == nil
+	}
+	hi, err1 := strconv.ParseUint(s[:16], 16, 64)
+	lo, err2 := strconv.ParseUint(s[16:], 16, 64)
+	return bits{Hi: hi, Lo: lo}, err1 == nil && err2 == nil
 }
 
-func modePtr(m bid.Mode) *bid.Mode { return &m }
+// intelSignalingNaN is the positive signaling NaN with a zero payload.
+func intelSignalingNaN(f *format) bits {
+	if f.width == 64 {
+		return bits{Lo: 0x7e << 56}
+	}
+	return bits{Hi: 0x7e << 56}
+}
+
+// intelDecimal reads a decimal operand or expected result of format f. The
+// readtest file writes one either as a bracketed hex encoding, or as text
+// that the harness converts with the library's own string conversion, to
+// nearest even whatever the line's rounding code: a numeral, or one of the
+// words Inf, Infinity, NaN, QNaN and SNaN in either case, each with an
+// optional sign. The numeral is read with the reference model's codec.
+// (A directed mode here made the operand of a directed-mode vector differ
+// from the library's by one unit in the last place, and overflow where the
+// library gets an infinity.)
+func intelDecimal(f *format, tok string) (bits, string) {
+	if strings.HasPrefix(tok, "[") {
+		x, ok := intelHex(tok, f.width)
+		switch {
+		case ok:
+			return x, ""
+		case !strings.HasSuffix(tok, "]"):
+			return bits{}, "malformed line: hex literal with no closing bracket"
+		}
+		return bits{}, "malformed line: hex literal is not of the operand's width"
+	}
+	body := strings.TrimLeft(tok, "+-")
+	neg := strings.HasPrefix(tok, "-")
+	if len(tok)-len(body) > 1 {
+		return bits{}, "operand: text outside the contract's numeral grammar"
+	}
+	var x bits
+	switch strings.ToLower(body) {
+	case "nan", "qnan":
+		x = f.encode(nan)
+	case "snan":
+		x = intelSignalingNaN(f)
+	case "inf", "infinity":
+		x = f.encode(value{kind: infinite})
+	default:
+		var st bid.Status
+		if x, st = f.parse(tok, bid.ToNearestEven); st&bid.Syntax != 0 {
+			return bits{}, "operand: text outside the contract's numeral grammar"
+		}
+		return x, ""
+	}
+	if neg {
+		x = vecRef.neg(f, x)
+	}
+	return x, ""
+}
+
+// intelFlags renders a Status as the Intel flags it corresponds to. Syntax
+// has no flag.
+func intelFlags(st bid.Status) uint64 {
+	var m uint64
+	if st&bid.Invalid != 0 {
+		m |= intelInvalid
+	}
+	if st&bid.Overflow != 0 {
+		m |= intelOverflow
+	}
+	if st&bid.Underflow != 0 {
+		m |= intelUnderflow
+	}
+	if st&bid.Inexact != 0 {
+		m |= intelInexact
+	}
+	return m
+}
+
+// intelSkipOps are the functions of the file that have no counterpart in
+// the kernel API, each with the reason that is counted.
+var intelSkipOps = map[string]string{
+	"sqrt":    "op: square root (not in the contract)",
+	"atan2":   "op: atan2 (not in the contract)",
+	"lrint":   "op: lrint (depends on the C long size; the 64-bit form is llrint)",
+	"lround":  "op: lround (depends on the C long size; the 64-bit form is llround)",
+	"scalbn":  "op: scalbn (not in the contract)",
+	"scalbln": "op: scalbln (not in the contract)",
+	"ldexp":   "op: ldexp (not in the contract)",
+
+	"acos": "op: transcendental function (not in the contract)", "acosh": "op: transcendental function (not in the contract)",
+	"asin": "op: transcendental function (not in the contract)", "asinh": "op: transcendental function (not in the contract)",
+	"atan": "op: transcendental function (not in the contract)", "atanh": "op: transcendental function (not in the contract)",
+	"cos": "op: transcendental function (not in the contract)", "cosh": "op: transcendental function (not in the contract)",
+	"sin": "op: transcendental function (not in the contract)", "sinh": "op: transcendental function (not in the contract)",
+	"tan": "op: transcendental function (not in the contract)", "tanh": "op: transcendental function (not in the contract)",
+	"exp": "op: transcendental function (not in the contract)", "exp2": "op: transcendental function (not in the contract)",
+	"exp10": "op: transcendental function (not in the contract)", "expm1": "op: transcendental function (not in the contract)",
+	"log": "op: transcendental function (not in the contract)", "log2": "op: transcendental function (not in the contract)",
+	"log10": "op: transcendental function (not in the contract)", "log1p": "op: transcendental function (not in the contract)",
+	"pow": "op: transcendental function (not in the contract)", "cbrt": "op: transcendental function (not in the contract)",
+	"hypot": "op: transcendental function (not in the contract)", "erf": "op: transcendental function (not in the contract)",
+	"erfc": "op: transcendental function (not in the contract)", "lgamma": "op: transcendental function (not in the contract)",
+	"tgamma": "op: transcendental function (not in the contract)",
+
+	"fdim":       "op: fdim (not in the contract)",
+	"frexp":      "op: frexp (not in the contract)",
+	"modf":       "op: modf (not in the contract)",
+	"ilogb":      "op: ilogb (not in the contract)",
+	"logb":       "op: logb (not in the contract)",
+	"nextafter":  "op: nextUp, nextDown, nextAfter (not in the contract)",
+	"nexttoward": "op: nextUp, nextDown, nextAfter (not in the contract)",
+	"nextup":     "op: nextUp, nextDown, nextAfter (not in the contract)",
+	"nextdown":   "op: nextUp, nextDown, nextAfter (not in the contract)",
+
+	"minnum_mag": "op: minNumMag, maxNumMag (not in the contract)",
+	"maxnum_mag": "op: minNumMag, maxNumMag (not in the contract)",
+	"quantexp":   "op: quantum, quantexp, radix (inspection of the format, not in the contract)",
+	"llquantexp": "op: quantum, quantexp, radix (inspection of the format, not in the contract)",
+	"quantum":    "op: quantum, quantexp, radix (inspection of the format, not in the contract)",
+	"radix":      "op: quantum, quantexp, radix (inspection of the format, not in the contract)",
+	"copy":       "op: copy (the identity; the kernel has no function for it)",
+	"inf":        "op: inf and nan constructors (no kernel counterpart)",
+	"nan":        "op: inf and nan constructors (no kernel counterpart)",
+}
+
+var (
+	intelName     = regexp.MustCompile(`^bid(32|64|128)([dq]*)_(\w+)$`)
+	intelBinary   = regexp.MustCompile(`^binary(32|64|80|128)_to_bid(32|64|128)$`)
+	intelToInt    = regexp.MustCompile(`^to_(u?)int(8|16|32|64)_(x?)(int|rnint|rninta|floor|ceil)$`)
+	intelFromInt  = regexp.MustCompile(`^from_(u?)int(32|64)$`)
+	intelToBinary = regexp.MustCompile(`^to_binary(32|64|80|128)$`)
+)
+
+// intelIntModes maps the rounding part of a conversion to integer's name to
+// the kernel's mode.
+var intelIntModes = map[string]bid.Mode{
+	"int":    bid.TowardZero,
+	"rnint":  bid.ToNearestEven,
+	"rninta": bid.ToNearestAway,
+	"floor":  bid.TowardNegative,
+	"ceil":   bid.TowardPositive,
+}
+
+// intelPredicates are the comparison predicates of clause 5.11, named as the
+// file names them after "quiet_" and "signaling_". The two prefixes differ
+// only in the flags they raise.
+var intelPredicates = map[string]func(im impl, f *format, x, y bits) bool{
+	"equal":             func(im impl, f *format, x, y bits) bool { return im.equal(f, x, y) },
+	"not_equal":         func(im impl, f *format, x, y bits) bool { return !im.equal(f, x, y) },
+	"greater":           func(im impl, f *format, x, y bits) bool { return im.less(f, y, x) },
+	"greater_equal":     func(im impl, f *format, x, y bits) bool { return im.lessEqual(f, y, x) },
+	"greater_unordered": func(im impl, f *format, x, y bits) bool { return !im.lessEqual(f, x, y) },
+	"less":              func(im impl, f *format, x, y bits) bool { return im.less(f, x, y) },
+	"less_equal":        func(im impl, f *format, x, y bits) bool { return im.lessEqual(f, x, y) },
+	"less_unordered":    func(im impl, f *format, x, y bits) bool { return !im.lessEqual(f, y, x) },
+	"not_greater":       func(im impl, f *format, x, y bits) bool { return !im.less(f, y, x) },
+	"not_less":          func(im impl, f *format, x, y bits) bool { return !im.less(f, x, y) },
+	"ordered": func(im impl, f *format, x, y bits) bool {
+		_, ok := im.compare(f, x, y)
+		return ok
+	},
+	"unordered": func(im impl, f *format, x, y bits) bool {
+		_, ok := im.compare(f, x, y)
+		return !ok
+	},
+}
+
+// intelClassOps are the one-operand predicates of the file.
+var intelClassOps = map[string]func(im impl, f *format, x bits) bool{
+	"isCanonical": func(im impl, f *format, x bits) bool { return im.isCanonical(f, x) },
+	"isFinite":    func(im impl, f *format, x bits) bool { return im.isFinite(f, x) },
+	"isInf":       func(im impl, f *format, x bits) bool { return im.isInf(f, x) },
+	"isNaN":       func(im impl, f *format, x bits) bool { return im.isNaN(f, x) },
+	"isSignaling": func(im impl, f *format, x bits) bool { return im.isSignaling(f, x) },
+	"isSigned":    func(im impl, f *format, x bits) bool { return im.signbit(f, x) },
+	"isSubnormal": func(im impl, f *format, x bits) bool { return im.isSubnormal(f, x) },
+	"isZero":      func(im impl, f *format, x bits) bool { return im.isZero(f, x) },
+	"isNormal": func(im impl, f *format, x bits) bool {
+		return im.isFinite(f, x) && !im.isZero(f, x) && !im.isSubnormal(f, x)
+	},
+}
+
+// intelClass is the class function of the file for x.
+func intelClass(im impl, f *format, x bits) int {
+	neg := im.signbit(f, x)
+	pick := func(pos, negative int) int {
+		if neg {
+			return negative
+		}
+		return pos
+	}
+	switch {
+	case im.isSignaling(f, x):
+		return intelClassSNaN
+	case im.isNaN(f, x):
+		return intelClassQNaN
+	case im.isInf(f, x):
+		return pick(intelClassPosInf, intelClassNegInf)
+	case im.isZero(f, x):
+		return pick(intelClassPosZero, intelClassNegZero)
+	case im.isSubnormal(f, x):
+		return pick(intelClassPosSubnormal, intelClassNegSubnormal)
+	}
+	return pick(intelClassPosNormal, intelClassNegNormal)
+}
+
+// intelCall is one vector in the course of being evaluated.
+type intelCall struct {
+	im   impl
+	v    *intelVector
+	op   string    // the function name after the format prefix
+	f    *format   // the format of the result (the prefix of the name)
+	args []*format // the format of each operand: f unless the name has d and q letters
+	mode bid.Mode
+}
+
+// split divides the fields of the vector into n operands, the expected
+// result, the expected status flags and the trailing fields, and checks the
+// trailing fields. A non-empty skip is the reason the vector cannot run.
+func (c *intelCall) split(n int) (ops []string, res string, want uint64, skip string) {
+	fields := c.v.fields
+	if len(fields) < n+2 {
+		return nil, "", 0, "malformed line: fewer fields than the function takes"
+	}
+	st, err := strconv.ParseUint(strings.TrimPrefix(fields[n+1], "0x"), 16, 16)
+	if err != nil {
+		return nil, "", 0, "malformed line: the status field is not hexadecimal"
+	}
+	for _, e := range fields[n+2:] {
+		switch {
+		case strings.HasPrefix(e, "ulp="):
+			if u, err := strconv.ParseFloat(e[len("ulp="):], 64); err != nil {
+				return nil, "", 0, "field: unreadable ulp column"
+			} else if u != 0 {
+				return nil, "", 0, "field: non-zero ulp column (the expected result is an approximation)"
+			}
+		case e == "underflow_before_only":
+			// A note on the status flags: tininess is judged before
+			// rounding, as the contract does.
+		case e == "undefrlow_before_only":
+			return nil, "", 0, fmt.Sprintf("erroneous vector readtest.in:%d (%s): the trailing field is a misspelling of underflow_before_only", c.v.line, c.v.name)
+		default:
+			return nil, "", 0, "field: unrecognized trailing field"
+		}
+	}
+	return fields[:n], fields[n], st, ""
+}
+
+// operands reads the operands in their own formats and widens them to the
+// result's format. A decimal128 operand of a decimal64 result would need a
+// second rounding in the kernel, so the vector is skipped.
+func (c *intelCall) operands(ops []string) ([]bits, string) {
+	out := make([]bits, len(ops))
+	for i, tok := range ops {
+		x, why := intelDecimal(c.args[i], tok)
+		if why != "" {
+			return nil, why
+		}
+		switch {
+		case c.args[i] == c.f:
+		case c.args[i] == dec64 && c.f == dec128:
+			x = c.im.widen(x)
+		default:
+			return nil, "kernel: mixed-width form with a decimal64 result needs one rounding from decimal128 operands (the kernel would round twice)"
+		}
+		out[i] = x
+	}
+	return out, ""
+}
+
+// run calls fn, turning a kernel that is not implemented into a skip and a
+// panic into a failure. ok is false when o is the outcome to return.
+func intelRun(fn func()) (o vecOutcome, ok bool) {
+	implemented, err := try(fn)
+	switch {
+	case !implemented:
+		return vecSkip("kernel: not implemented"), false
+	case err != nil:
+		return vecOutcome{got: err.Error()}, false
+	}
+	return vecOutcome{}, true
+}
+
+// noted marks a passing outcome with what it did not check.
+func (o vecOutcome) noted(note string) vecOutcome {
+	if o.pass {
+		o.note = note
+	}
+	return o
+}
 
 // evalIntel runs one readtest.in vector against im.
 func evalIntel(im impl, v *intelVector) vecOutcome {
-	var f *format
-	var rest string
+	if v.round == "" {
+		return vecSkip("malformed line: no rounding code")
+	}
+	if m := intelBinary.FindStringSubmatch(v.name); m != nil {
+		return evalIntelFromBinary(im, v, m[1], m[2])
+	}
 	switch {
-	case strings.HasPrefix(v.name, "bid64_"):
-		f, rest = dec64, strings.TrimPrefix(v.name, "bid64_")
-	case strings.HasPrefix(v.name, "bid128_"):
-		f, rest = dec128, strings.TrimPrefix(v.name, "bid128_")
-	default:
-		return vecSkip("format: not decimal64 or decimal128")
+	case strings.HasPrefix(v.name, "bid_"):
+		return vecSkip("op: library state, rounding attribute, flag, DPD or strtod function (not a decimal operation)")
+	case v.name == "str64":
+		return vecSkip("op: str64 (a string round trip of the C library)")
 	}
-	switch rest {
-	case "to_bid128", "to_bid64":
-		return evalIntelConvert(im, f, v, rest)
+	m := intelName.FindStringSubmatch(v.name)
+	if m == nil {
+		return vecSkip("op: unknown function")
 	}
-	spec, ok := intelOps[rest]
-	if !ok {
-		return vecSkip("op: not mapped to the kernel API")
+	width, letters, op := m[1], m[2], m[3]
+	switch {
+	case width == "32":
+		return vecSkip("format: bid32 (not decimal64 or decimal128)")
+	case intelToBinary.MatchString(op) && (strings.HasSuffix(op, "80") || strings.HasSuffix(op, "128")):
+		return vecSkip("format: binary" + strings.TrimPrefix(op, "to_binary") + " (not a binary format of the contract)")
+	case op == "to_bid32":
+		return vecSkip("format: bid32 (not decimal64 or decimal128)")
 	}
-	// operands, expected result, expected status
-	if len(v.fields) != spec.n+2 {
-		return vecSkip("malformed line")
+	if why, ok := intelSkipOps[op]; ok {
+		return vecSkip(why)
 	}
 	mode, ok := intelMode(v.round)
 	if !ok {
 		return vecSkip("context: rounding code unknown")
 	}
-	if spec.fixed != nil {
-		mode = *spec.fixed
+	c := &intelCall{im: im, v: v, op: op, f: dec64, mode: mode}
+	if width == "128" {
+		c.f = dec128
 	}
-	args := make([]bits, spec.n)
-	for i := range args {
-		if args[i], ok = intelHex(v.fields[i], f.width); !ok {
-			return vecSkip("malformed line")
+	for _, l := range letters {
+		if l == 'd' {
+			c.args = append(c.args, dec64)
+		} else {
+			c.args = append(c.args, dec128)
 		}
 	}
-	resField := v.fields[spec.n]
-	var want bits
-	if !spec.text {
-		if want, ok = intelHex(resField, f.width); !ok {
-			return vecSkip("malformed line")
-		}
-	}
-	var got decRes
-	implemented, err := try(func() { got = spec.run(im, f, args, mode) })
+	arity := map[string]int{"add": 2, "sub": 2, "mul": 2, "div": 2, "fma": 3}[op]
 	switch {
-	case !implemented:
-		return vecSkip("kernel: not implemented")
-	case err != nil:
-		return vecOutcome{got: err.Error()}
+	case letters != "" && (arity == 0 || len(letters) != arity):
+		return vecSkip("op: mixed-width form not mapped")
+	case letters == "":
+		for range 3 {
+			c.args = append(c.args, c.f)
+		}
 	}
-	if spec.text {
-		return vecOutcome{pass: got.text == resField, got: got.text}
+	return c.eval()
+}
+
+// eval dispatches on the function name.
+func (c *intelCall) eval() vecOutcome {
+	im, f, mode := c.im, c.f, c.mode
+	op := c.op
+	switch op {
+	case "add":
+		return c.arith(2, func(a []bits) bits { return im.add(f, a[0], a[1], mode) })
+	case "sub":
+		return c.arith(2, func(a []bits) bits { return im.sub(f, a[0], a[1], mode) })
+	case "mul":
+		return c.arith(2, func(a []bits) bits { return im.mul(f, a[0], a[1], mode) })
+	case "div":
+		return c.arith(2, func(a []bits) bits { return im.div(f, a[0], a[1], mode) })
+	case "fma":
+		return c.arith(3, func(a []bits) bits { return im.fma(f, a[0], a[1], a[2], mode) })
+	case "rem":
+		return c.arith(2, func(a []bits) bits { return im.rem(f, a[0], a[1]) })
+	case "fmod":
+		return c.arith(2, func(a []bits) bits { return im.mod(f, a[0], a[1]) })
+	case "quantize":
+		return c.arith(2, func(a []bits) bits { return im.quantize(f, a[0], a[1], mode) })
+	case "negate":
+		return c.arith(1, func(a []bits) bits { return im.neg(f, a[0]) })
+	case "abs":
+		return c.arith(1, func(a []bits) bits { return im.abs(f, a[0]) })
+	case "copySign":
+		return c.arith(2, func(a []bits) bits { return im.copySign(f, a[0], a[1]) })
+	case "round_integral_exact", "nearbyint":
+		return c.arith(1, func(a []bits) bits { return im.roundToIntegral(f, a[0], mode) })
+	case "round_integral_nearest_even":
+		return c.arith(1, func(a []bits) bits { return im.roundToIntegral(f, a[0], bid.ToNearestEven) })
+	case "round_integral_nearest_away":
+		return c.arith(1, func(a []bits) bits { return im.roundToIntegral(f, a[0], bid.ToNearestAway) })
+	case "round_integral_zero":
+		return c.arith(1, func(a []bits) bits { return im.roundToIntegral(f, a[0], bid.TowardZero) })
+	case "round_integral_positive":
+		return c.arith(1, func(a []bits) bits { return im.roundToIntegral(f, a[0], bid.TowardPositive) })
+	case "round_integral_negative":
+		return c.arith(1, func(a []bits) bits { return im.roundToIntegral(f, a[0], bid.TowardNegative) })
+	case "minnum":
+		return c.minMax(false)
+	case "maxnum":
+		return c.minMax(true)
+	case "sameQuantum":
+		return c.predicate(2, func(a []bits) bool { return im.sameQuantum(f, a[0], a[1]) })
+	case "totalOrder":
+		return c.totalOrder(false)
+	case "totalOrderMag":
+		return c.totalOrder(true)
+	case "class":
+		return c.class()
+	case "to_bid128", "to_bid64":
+		return c.convertWidth()
+	case "to_string":
+		return c.toString()
+	case "from_string":
+		return c.fromString()
+	case "llrint":
+		return c.toInt(false, 64, true, mode)
+	case "llround":
+		return c.toInt(false, 64, false, bid.ToNearestAway)
 	}
-	return intelCompare(f, got.x, want)
+	if fn, ok := intelClassOps[op]; ok {
+		return c.predicate(1, func(a []bits) bool { return fn(im, f, a[0]) })
+	}
+	for _, prefix := range []string{"quiet_", "signaling_"} {
+		if rest, ok := strings.CutPrefix(op, prefix); ok {
+			if fn, ok := intelPredicates[rest]; ok {
+				return c.predicate(2, func(a []bits) bool { return fn(im, f, a[0], a[1]) })
+			}
+		}
+	}
+	if m := intelToInt.FindStringSubmatch(op); m != nil {
+		n, _ := strconv.Atoi(m[2])
+		return c.toInt(m[1] == "u", n, m[3] == "x", intelIntModes[m[4]])
+	}
+	if m := intelFromInt.FindStringSubmatch(op); m != nil {
+		n, _ := strconv.Atoi(m[2])
+		return c.fromInt(m[1] == "u", n)
+	}
+	if m := intelToBinary.FindStringSubmatch(op); m != nil {
+		return c.toBinary(m[1])
+	}
+	return vecSkip("op: not mapped to the kernel API")
+}
+
+// arith runs a function of n decimal operands with a decimal result.
+func (c *intelCall) arith(n int, fn func(a []bits) bits) vecOutcome {
+	ops, res, _, skip := c.split(n)
+	if skip != "" {
+		return vecSkip(skip)
+	}
+	a, why := c.operands(ops)
+	if why != "" {
+		return vecSkip(why)
+	}
+	want, why := intelDecimal(c.f, res)
+	if why != "" {
+		return vecSkip(why)
+	}
+	var got bits
+	if o, ok := intelRun(func() { got = fn(a) }); !ok {
+		return o
+	}
+	return intelCompare(c.f, got, want).noted(noteNoStatus)
+}
+
+// minMax runs minnum and maxnum, which differ from the contract's Min and
+// Max on a NaN operand and on a cohort (see minMaxDivergence).
+func (c *intelCall) minMax(max bool) vecOutcome {
+	ops, res, _, skip := c.split(2)
+	if skip != "" {
+		return vecSkip(skip)
+	}
+	a, why := c.operands(ops)
+	if why != "" {
+		return vecSkip(why)
+	}
+	want, why := intelDecimal(c.f, res)
+	if why != "" {
+		return vecSkip(why)
+	}
+	var got bits
+	if o, ok := intelRun(func() {
+		if max {
+			got = c.im.max(c.f, a[0], a[1])
+		} else {
+			got = c.im.min(c.f, a[0], a[1])
+		}
+	}); !ok {
+		return o
+	}
+	out := intelCompare(c.f, got, want)
+	if !out.pass {
+		if why := minMaxDivergence(c.f, a[0], a[1], want, got); why != "" {
+			return vecSkip(why)
+		}
+	}
+	return out.noted(noteNoStatus)
+}
+
+// predicate runs a function of n operands with a 0 or 1 result.
+func (c *intelCall) predicate(n int, fn func(a []bits) bool) vecOutcome {
+	ops, res, _, skip := c.split(n)
+	if skip != "" {
+		return vecSkip(skip)
+	}
+	a, why := c.operands(ops)
+	if why != "" {
+		return vecSkip(why)
+	}
+	if res != "0" && res != "1" {
+		return vecSkip("malformed line: a predicate's result is not 0 or 1")
+	}
+	var got bool
+	if o, ok := intelRun(func() { got = fn(a) }); !ok {
+		return o
+	}
+	gotText := "0"
+	if got {
+		gotText = "1"
+	}
+	return vecOutcome{pass: gotText == res, got: gotText}.noted(noteNoStatus)
+}
+
+// totalOrder runs totalOrder and totalOrderMag. The contract orders a NaN by
+// its sign alone, so two NaNs of one sign are ordered both ways; the
+// standard also orders by signaling bit and payload. A vector that expects
+// that order is the documented divergence.
+func (c *intelCall) totalOrder(mag bool) vecOutcome {
+	ops, res, _, skip := c.split(2)
+	if skip != "" {
+		return vecSkip(skip)
+	}
+	a, why := c.operands(ops)
+	if why != "" {
+		return vecSkip(why)
+	}
+	if res != "0" && res != "1" {
+		return vecSkip("malformed line: a predicate's result is not 0 or 1")
+	}
+	if mag {
+		a[0], a[1] = c.im.abs(c.f, a[0]), c.im.abs(c.f, a[1])
+	}
+	var got bool
+	if o, ok := intelRun(func() { got = c.im.totalOrder(c.f, a[0], a[1]) }); !ok {
+		return o
+	}
+	gotText := "0"
+	if got {
+		gotText = "1"
+	}
+	out := vecOutcome{pass: gotText == res, got: gotText}
+	if !out.pass && vecRef.isNaN(c.f, a[0]) && vecRef.isNaN(c.f, a[1]) &&
+		vecRef.signbit(c.f, a[0]) == vecRef.signbit(c.f, a[1]) {
+		return vecSkip("contract: TotalOrder ignores the signaling bit and the payload of NaNs of one sign")
+	}
+	return out.noted(noteNoStatus)
+}
+
+// class runs class, whose result is a class code.
+func (c *intelCall) class() vecOutcome {
+	ops, res, _, skip := c.split(1)
+	if skip != "" {
+		return vecSkip(skip)
+	}
+	a, why := c.operands(ops)
+	if why != "" {
+		return vecSkip(why)
+	}
+	var got int
+	if o, ok := intelRun(func() { got = intelClass(c.im, c.f, a[0]) }); !ok {
+		return o
+	}
+	return vecOutcome{pass: strconv.Itoa(got) == res, got: strconv.Itoa(got)}.noted(noteNoStatus)
+}
+
+// convertWidth runs bid64_to_bid128 (Widen) and bid128_to_bid64 (Narrow in
+// the line's mode). The name's prefix is the operand's format.
+func (c *intelCall) convertWidth() vecOutcome {
+	to := dec128
+	if c.op == "to_bid64" {
+		to = dec64
+	}
+	if to == c.f {
+		return vecSkip("op: not mapped to the kernel API")
+	}
+	ops, res, _, skip := c.split(1)
+	if skip != "" {
+		return vecSkip(skip)
+	}
+	x, why := intelDecimal(c.f, ops[0])
+	if why != "" {
+		return vecSkip(why)
+	}
+	want, why := intelDecimal(to, res)
+	if why != "" {
+		return vecSkip(why)
+	}
+	var got bits
+	if o, ok := intelRun(func() {
+		if to == dec128 {
+			got = c.im.widen(x)
+		} else {
+			got = c.im.narrow(x, c.mode)
+		}
+	}); !ok {
+		return o
+	}
+	return intelCompare(to, got, want).noted(noteNoStatus)
+}
+
+// toInt runs the conversions to an integer of the given width, signedness
+// and rounding. A conversion whose name has an x raises inexact; the others
+// do not, so their inexact flag is not expected.
+func (c *intelCall) toInt(unsigned bool, n int, inexact bool, mode bid.Mode) vecOutcome {
+	ops, res, want, skip := c.split(1)
+	if skip != "" {
+		return vecSkip(skip)
+	}
+	x, why := intelDecimal(c.f, ops[0])
+	if why != "" {
+		return vecSkip(why)
+	}
+	var (
+		sv  int64
+		uv  uint64
+		st  bid.Status
+		out bool // the rounded value is outside the integer type
+	)
+	if o, ok := intelRun(func() {
+		if unsigned {
+			uv, st = c.im.uint64From(c.f, x, mode)
+			out = st&(bid.Invalid|bid.Overflow) != 0 || n < 64 && uv>>n != 0
+		} else {
+			sv, st = c.im.int64From(c.f, x, mode)
+			out = st&(bid.Invalid|bid.Overflow) != 0 || n < 64 && (sv < -1<<(n-1) || sv > 1<<(n-1)-1)
+		}
+	}); !ok {
+		return o
+	}
+	gotText := fmt.Sprintf("%d %s", sv, statusString(st))
+	if unsigned {
+		gotText = fmt.Sprintf("%d %s", uv, statusString(st))
+	}
+	if out || want&intelInvalid != 0 {
+		// Intel returns the integer indefinite for every operand out of
+		// range; the contract saturates, or returns 0 for a NaN. The value
+		// is not comparable, so only the report is.
+		return vecOutcome{pass: out && want&intelInvalid != 0, got: gotText}.noted(noteIntInv)
+	}
+	if want&^intelInexact != 0 {
+		return vecOutcome{got: gotText + " (Intel status has other flags)"}
+	}
+	var same bool
+	if unsigned {
+		w, err := strconv.ParseUint(res, 10, 64)
+		if i, err2 := strconv.ParseInt(res, 10, 64); err != nil && err2 == nil && n < 64 && i >= -1<<(n-1) {
+			// Some vectors print a result of 2^(n-1) or more as the
+			// negative integer with the same n bits.
+			w, err = uint64(i)&(1<<n-1), nil
+		}
+		if err != nil {
+			return vecSkip("malformed line: the integer result is unreadable")
+		}
+		same = w == uv
+	} else {
+		w, err := strconv.ParseInt(res, 10, 64)
+		if err != nil {
+			return vecSkip("malformed line: the integer result is unreadable")
+		}
+		same = w == sv
+	}
+	wantInexact := want&intelInexact != 0
+	gotInexact := st&bid.Inexact != 0
+	if !inexact && wantInexact {
+		return vecOutcome{got: gotText + " (Intel raised inexact for a conversion without x)"}
+	}
+	return vecOutcome{pass: same && (!inexact || wantInexact == gotInexact), got: gotText}
+}
+
+// fromInt runs the conversions from an integer type to decimal; the status
+// is compared through Round, which reports one.
+func (c *intelCall) fromInt(unsigned bool, n int) vecOutcome {
+	ops, res, want, skip := c.split(1)
+	if skip != "" {
+		return vecSkip(skip)
+	}
+	var (
+		neg bool
+		mag uint64
+	)
+	if unsigned {
+		u, err := strconv.ParseUint(ops[0], 10, n)
+		if err != nil {
+			return vecSkip("malformed line: the integer operand is unreadable or out of its type")
+		}
+		mag = u
+	} else {
+		i, err := strconv.ParseInt(ops[0], 10, n)
+		if err != nil {
+			return vecSkip("malformed line: the integer operand is unreadable or out of its type")
+		}
+		neg = i < 0
+		mag = uint64(i)
+		if neg {
+			mag = -mag
+		}
+	}
+	wantBits, why := intelDecimal(c.f, res)
+	if why != "" {
+		return vecSkip(why)
+	}
+	var (
+		got bits
+		st  bid.Status
+	)
+	if o, ok := intelRun(func() {
+		switch {
+		case unsigned:
+			got = c.im.uint64To(c.f, mag, c.mode)
+		default:
+			i := int64(mag)
+			if neg {
+				i = -int64(mag)
+			}
+			got = c.im.int64To(c.f, i, c.mode)
+		}
+		_, st = c.im.round(c.f, neg, bid.Uint128{Lo: mag}, 0, false, c.mode)
+	}); !ok {
+		return o
+	}
+	out := intelCompare(c.f, got, wantBits)
+	if out.pass && intelFlags(st) != want {
+		return vecOutcome{got: out.got + " " + statusString(st)}
+	}
+	return out
+}
+
+// toBinary runs the conversions to binary32 and binary64.
+func (c *intelCall) toBinary(width string) vecOutcome {
+	ops, res, _, skip := c.split(1)
+	if skip != "" {
+		return vecSkip(skip)
+	}
+	x, why := intelDecimal(c.f, ops[0])
+	if why != "" {
+		return vecSkip(why)
+	}
+	n := 64
+	if width == "32" {
+		n = 32
+	}
+	want, ok := intelBinaryBits(res, n)
+	if !ok {
+		return vecSkip("malformed line: the binary result is not a hex literal of its width")
+	}
+	var got uint64
+	if o, ok := intelRun(func() {
+		if n == 32 {
+			got = uint64(math.Float32bits(c.im.float32From(c.f, x, c.mode)))
+		} else {
+			got = math.Float64bits(c.im.float64From(c.f, x, c.mode))
+		}
+	}); !ok {
+		return o
+	}
+	return intelCompareBinary(n, got, want).noted(noteNoStatus)
+}
+
+// intelBinaryBits reads a bracketed hex literal of a binary format of n bits.
+func intelBinaryBits(s string, n int) (uint64, bool) {
+	if len(s) != n/4+2 || s[0] != '[' || s[len(s)-1] != ']' {
+		return 0, false
+	}
+	b, err := strconv.ParseUint(s[1:len(s)-1], 16, 64)
+	return b, err == nil
+}
+
+// intelCompareBinary compares binary bit patterns, any NaN matching any NaN.
+func intelCompareBinary(n int, got, want uint64) vecOutcome {
+	gotText := fmt.Sprintf("%0*x", n/4, got)
+	isNaN := func(b uint64) bool {
+		if n == 32 {
+			return math.IsNaN(float64(math.Float32frombits(uint32(b))))
+		}
+		return math.IsNaN(math.Float64frombits(b))
+	}
+	if isNaN(want) {
+		return vecOutcome{pass: isNaN(got), loose: got != want, got: gotText}
+	}
+	return vecOutcome{pass: got == want, got: gotText}
+}
+
+// evalIntelFromBinary runs binary32_to_bid64 and its relatives. The
+// operand is the bit pattern of the binary value.
+func evalIntelFromBinary(im impl, v *intelVector, from, to string) vecOutcome {
+	switch {
+	case from == "80" || from == "128":
+		return vecSkip("format: binary" + from + " (not a binary format of the contract)")
+	case to == "32":
+		return vecSkip("format: bid32 (not decimal64 or decimal128)")
+	}
+	mode, ok := intelMode(v.round)
+	if !ok {
+		return vecSkip("context: rounding code unknown")
+	}
+	f := dec64
+	if to == "128" {
+		f = dec128
+	}
+	c := &intelCall{im: im, v: v, op: v.name, f: f, mode: mode}
+	ops, res, _, skip := c.split(1)
+	if skip != "" {
+		return vecSkip(skip)
+	}
+	n := 64
+	if from == "32" {
+		n = 32
+	}
+	// The operand is the bit pattern, or text that the harness converts to
+	// the binary format first, to nearest even.
+	var x float64
+	if strings.HasPrefix(ops[0], "[") {
+		b, ok := intelBinaryBits(ops[0], n)
+		if !ok {
+			return vecSkip("malformed line: the binary operand is not a hex literal of its width")
+		}
+		x = math.Float64frombits(b)
+		if n == 32 {
+			x = float64(math.Float32frombits(uint32(b)))
+		}
+	} else {
+		var err error
+		if x, err = strconv.ParseFloat(ops[0], n); err != nil && !errors.Is(err, strconv.ErrRange) {
+			return vecSkip("operand: text outside the contract's numeral grammar")
+		}
+	}
+	want, why := intelDecimal(f, res)
+	if why != "" {
+		return vecSkip(why)
+	}
+	var got bits
+	if o, ok := intelRun(func() {
+		if n == 32 {
+			got = im.float32To(f, float32(x), mode)
+		} else {
+			got = im.float64To(f, x, mode)
+		}
+	}); !ok {
+		return o
+	}
+	return intelCompare(f, got, want).noted(noteNoStatus)
+}
+
+// toString runs to_string. Intel writes a sign, the coefficient, E and a
+// signed exponent ("+55E+0"), "+Inf", "+NaN" and "+SNaN", where the
+// contract's Append writes the GDA form, so the check is on the operand's
+// sign, coefficient and exponent.
+func (c *intelCall) toString() vecOutcome {
+	ops, res, _, skip := c.split(1)
+	if skip != "" {
+		return vecSkip(skip)
+	}
+	x, why := intelDecimal(c.f, ops[0])
+	if why != "" {
+		return vecSkip(why)
+	}
+	var got string
+	if o, ok := intelRun(func() {
+		sign := "+"
+		if c.im.signbit(c.f, x) {
+			sign = "-"
+		}
+		switch {
+		case c.im.isSignaling(c.f, x):
+			got = sign + "SNaN"
+		case c.im.isNaN(c.f, x):
+			got = sign + "NaN"
+		case c.im.isInf(c.f, x):
+			got = sign + "Inf"
+		default:
+			_, _, coeff, exp := c.im.unpack(c.f, x)
+			got = fmt.Sprintf("%s%sE%+d", sign, fromUint128(coeff), exp)
+		}
+	}); !ok {
+		return o
+	}
+	return vecOutcome{pass: got == res, got: got}.noted(noteString)
+}
+
+// fromString runs from_string through the target's Parse in the line's
+// mode. Intel reports nothing for a malformed numeral, which the contract
+// reports as Syntax, and returns NaN for it; bid128 also accepts a numeral
+// with a trailing letter E, which bid64 and the contract refuse.
+func (c *intelCall) fromString() vecOutcome {
+	ops, res, want, skip := c.split(1)
+	if skip != "" {
+		return vecSkip(skip)
+	}
+	if c.f == dec128 && ops[0] == "1.1E-2E" {
+		return vecSkip(fmt.Sprintf("erroneous vector readtest.in:%d (%s): the numeral ends in a stray E, which bid64_from_string of the same file rejects with NaN and clause 5.12.1 does not allow", c.v.line, c.v.name))
+	}
+	wantBits, why := intelDecimal(c.f, res)
+	if why != "" {
+		return vecSkip(why)
+	}
+	var (
+		got bits
+		st  bid.Status
+	)
+	if o, ok := intelRun(func() { got, st = c.im.parse(c.f, ops[0], c.mode) }); !ok {
+		return o
+	}
+	out := intelCompare(c.f, got, wantBits)
+	if st&bid.Syntax != 0 {
+		return out.noted(noteSyntax)
+	}
+	if out.pass && intelFlags(st) != want {
+		return vecOutcome{got: out.got + " " + statusString(st)}
+	}
+	return out
 }
 
 // intelCompare compares bits, treating any NaN as equal to any NaN.
@@ -1082,42 +2071,6 @@ func intelCompare(f *format, got, want bits) vecOutcome {
 		return vecOutcome{pass: vecRef.isNaN(f, got), loose: got != want, got: gotText}
 	}
 	return vecOutcome{pass: got == want, got: gotText}
-}
-
-// evalIntelConvert handles bid64_to_bid128 (Widen) and bid128_to_bid64
-// (Narrow with the line's rounding mode).
-func evalIntelConvert(im impl, from *format, v *intelVector, rest string) vecOutcome {
-	to := dec128
-	if rest == "to_bid64" {
-		to = dec64
-	}
-	if len(v.fields) != 3 {
-		return vecSkip("malformed line")
-	}
-	mode, ok := intelMode(v.round)
-	if !ok {
-		return vecSkip("context: rounding code unknown")
-	}
-	x, ok1 := intelHex(v.fields[0], from.width)
-	want, ok2 := intelHex(v.fields[1], to.width)
-	if !ok1 || !ok2 {
-		return vecSkip("malformed line")
-	}
-	var got bits
-	implemented, err := try(func() {
-		if to == dec128 {
-			got = im.widen(x)
-		} else {
-			got = im.narrow(x, mode)
-		}
-	})
-	switch {
-	case !implemented:
-		return vecSkip("kernel: not implemented")
-	case err != nil:
-		return vecOutcome{got: err.Error()}
-	}
-	return intelCompare(to, got, want)
 }
 
 func runIntelFile(t *testing.T, im impl, path string) *vecTally {
@@ -1133,11 +2086,14 @@ func runIntelFile(t *testing.T, im impl, path string) *vecTally {
 	shown := 0
 	sc := bufio.NewScanner(fh)
 	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
+	lines, vectors := 0, 0
 	for n := 1; sc.Scan(); n++ {
+		lines++
 		v, ok := parseIntelLine(sc.Text(), n)
 		if !ok {
 			continue
 		}
+		vectors++
 		o := evalIntel(im, v)
 		tally.add(v.name, o)
 		if o.skip == "" && !o.pass && (*vecAll || shown < *vecShow) {
@@ -1147,6 +2103,10 @@ func runIntelFile(t *testing.T, im impl, path string) *vecTally {
 	}
 	if err := sc.Err(); err != nil {
 		t.Fatal(err)
+	}
+	t.Logf("readtest.in: %d lines, %d vectors, %d blank or comment", lines, vectors, lines-vectors)
+	if got := tally.pass + tally.fail + tally.skipped(); got != vectors {
+		t.Errorf("readtest.in: %d vectors but %d accounted for", vectors, got)
 	}
 	t.Log(tally.summary("readtest.in"))
 	if tally.fail > shown {
@@ -1242,59 +2202,281 @@ t012 add 1 2 -> 3
 	}
 }
 
-// TestIntelLineParser checks the readtest.in parser and mapping on
-// hand-written lines, against the reference model. These lines were written
-// from the documented format, not copied from the real file.
+// TestIntelLineParser checks the readtest.in parser and the mapping, on
+// lines of each shape the runner handles, against the reference model and
+// the kernel. The lines have the shapes of the real file, but their values
+// are the trivial ones that any set of decimal vectors starts with (zero,
+// infinities, NaNs, small integers) or ones worked out by hand from the
+// contract, not copied from the file, because the file's licence notice
+// must travel with any copy. It needs no vectors.
 func TestIntelLineParser(t *testing.T) {
-	const src = `
--- a comment
-bid64_add 0 [31c0000000000001] [31c0000000000002] [31c0000000000003] 00
-bid64_sub 0 [31c0000000000003] [31c0000000000001] [31c0000000000002] 00
-bid64_mul 0 [31c0000000000002] [31c0000000000003] [31c0000000000006] 00
-bid64_div 0 [31c0000000000001] [31c0000000000003] [2fcbd7a625405555] 20
-bid64_div 2 [31c0000000000001] [31c0000000000003] [2fcbd7a625405556] 20
-bid64_add 0 [7c00000000000000] [31c0000000000001] [7c00000000000000] 00
-bid64_add 0 [7e00000000000001] [31c0000000000001] [7c00000000000000] 01
-bid128_add 0 [30400000000000000000000000000001] [30400000000000000000000000000002] [30400000000000000000000000000003] 00
-bid64_to_bid128 0 [31c0000000000001] [30400000000000000000000000000001] 00
-bid128_to_bid64 0 [30400000000000000000000000000003] [31c0000000000003] 00
-bid64_quiet_less 0 [31c0000000000001] [31c0000000000002] 1 00
-bid64_sqrt 0 [31c0000000000004] [31c0000000000002] 00
-bid64_add 9 [31c0000000000001] [31c0000000000002] [31c0000000000003] 00
-bid32_add 0 [32800001] [32800002] [32800003] 00
-bid64_add 0 [31c0000000000001] [31c0000000000002] [31c0000000000004] 00
-`
-	skips := map[int]string{
-		12: "op: not mapped to the kernel API",
-		13: "context: rounding code unknown",
-		14: "format: not decimal64 or decimal128",
+	const (
+		pass = "pass"
+		fail = "fail" // a wrong expectation must fail, not skip
+	)
+	cases := []struct {
+		line string
+		want string // pass, fail, or the prefix of the skip reason
+	}{
+		// Arithmetic: hex operands, text operands, comma form, words.
+		{"bid64_add 0 [31c0000000000001] [31c0000000000002] [31c0000000000003] 00", pass},
+		{"bid64_add 0 [31C0000000000001] [31C0000000000002] [31C0000000000003] 00", pass},
+		{"bid64_add 0 1 2 [31c0000000000003] 00", pass},
+		{"bid64_add 0 -0.5 +1.5E0 [31a000000000000a] 00", pass},
+		{"bid64_add 0 1 2 [31c0000000000004] 00", fail},
+		{"bid64_add 0 -0 0 [31c0000000000000] 00", pass},
+		{"bid64_add 1 -0 0 [b1c0000000000000] 00", pass},
+		{"bid64_add 1 -0 0 [31c0000000000000] 00", fail},
+		{"bid64_add 0 QNaN 1 [7c00000000000000] 00", pass},
+		{"bid64_add 0 SNaN 1 [7c00000000000000] 01", pass},
+		{"bid64_add 0 Infinity -Infinity [7c00000000000000] 01", pass},
+		{"bid64_add 0 +Inf 1 [7800000000000000] 00", pass},
+		{"bid64_add 0 inf -inf [7c00000000000000] 01", pass},
+		{"bid64_sub 0 0 0 [31c0000000000000] 00", pass},
+		{"bid64_sub 1 0 0 [b1c0000000000000] 00", pass},
+		{"bid64_mul 0 3 -0 [b1c0000000000000] 00", pass},
+		{"bid64_div 0 [31c0000000000001] [31c0000000000003] [2fcbd7a625405555] 20", pass},
+		{"bid64_div 2 [31c0000000000001] [31c0000000000003] [2fcbd7a625405556] 20", pass},
+		{"bid64_div 1 [31c0000000000001] [31c0000000000003] [2fcbd7a625405556] 20", fail},
+		{"bid64_div 0 1 3 [2fcbd7a625405556] 20", fail},
+		{"bid64_fma 0 [31c0000000000002] [31c0000000000003] [31c0000000000004] [31c000000000000a] 00", pass},
+		{"bid64_fma 0 2 3 4 10 00", pass},
+		{"bid128_add 0 [30400000000000000000000000000001] [3040000000000000,0000000000000002] [30400000000000000000000000000003] 00", pass},
+		{"bid128_add 0 1 2 [3040000000000000,0000000000000003] 00", pass},
+		{"bid128_mul 0 0 Infinity [7c000000000000000000000000000000] 01", pass},
+		{"bid128_div 0 1 3 [2ffe314dc6448d9338c15b0a00000000] 20", fail},
+		// Mixed-width forms: decimal64 operands widened, one rounding.
+		{"bid128dd_add 0 [31c0000000000001] [31c0000000000002] [30400000000000000000000000000003] 00", pass},
+		{"bid128ddd_fma 0 2 3 4 [3040000000000000000000000000000a] 00", pass},
+		{"bid128dq_mul 0 [31c0000000000002] [30400000000000000000000000000003] [30400000000000000000000000000006] 00", pass},
+		{"bid128qd_div 0 [30400000000000000000000000000001] [31c0000000000004] [303c0000000000000000000000000019] 00", pass},
+		{"bid64qq_add 0 [30400000000000000000000000000001] [30400000000000000000000000000002] [31c0000000000003] 00", "kernel: mixed-width"},
+		{"bid64dq_sub 0 [31c0000000000001] [30400000000000000000000000000002] [b1c0000000000001] 00", "kernel: mixed-width"},
+		// Remainders, quantize, rounding to an integral value.
+		{"bid64_rem 0 7 4 [b1c0000000000001] 00", pass},
+		{"bid64_fmod 0 7 4 [31c0000000000003] 00 ulp=0.0000000000", pass},
+		{"bid64_fmod 0 7 4 [31c0000000000003] 00 ulp=1.0000000000e+00", "field: non-zero ulp"},
+		{"bid64_fmod 0 7 4 [31c0000000000003] 00 -- x=7,y=4", pass},
+		{"bid64_quantize 0 [31a000000000000a] [31c0000000000000] [31c0000000000001] 20", pass},
+		{"bid64_round_integral_nearest_even 0 2.5 [31c0000000000002] 00", pass},
+		{"bid64_round_integral_nearest_away 0 2.5 [31c0000000000003] 00", pass},
+		{"bid64_round_integral_zero 0 -2.5 [b1c0000000000002] 00", pass},
+		{"bid64_round_integral_negative 2 2.5 [31c0000000000002] 00", pass},
+		{"bid64_round_integral_positive 1 2.5 [31c0000000000003] 00", pass},
+		{"bid64_round_integral_exact 1 -2.5 [b1c0000000000003] 20", pass},
+		{"bid64_round_integral_exact 2 -2.5 [b1c0000000000002] 20", pass},
+		{"bid64_nearbyint 2 2.1 [31c0000000000003] 00", pass},
+		{"bid128_round_integral_exact 0 -Infinity [f8000000000000000000000000000000] 00", pass},
+		// Sign operations, minnum and maxnum.
+		{"bid64_negate 0 -0 [31c0000000000000] 00", pass},
+		{"bid64_abs 0 -Infinity [7800000000000000] 00", pass},
+		{"bid128_abs 0 -0 [30400000000000000000000000000000] 00", pass},
+		{"bid64_copySign 0 5 -2 [b1c0000000000005] 00", pass},
+		{"bid64_minnum 0 1 2 [31c0000000000001] 00", pass},
+		{"bid64_maxnum 0 1 2 [31c0000000000001] 00", fail},
+		{"bid64_maxnum 0 QNaN 3 [31c0000000000003] 00", "contract: Min/Max return NaN"},
+		{"bid64_maxnum 0 QNaN 3 [31c0000000000004] 00", fail},
+		{"bid64_maxnum 0 1.0 1 [31c0000000000001] 00", "contract: Min/Max return x"},
+		{"bid64_minnum 0 -0 0 [31c0000000000000] 00", "contract: Min/Max order -0"},
+		{"bid64_minnum_mag 0 -1 2 [b1c0000000000001] 00", "op: minNumMag"},
+		// Predicates, ordering, class.
+		{"bid64_quiet_less 0 1 2 1 00", pass},
+		{"bid64_quiet_less 0 2 1 1 00", fail},
+		{"bid64_quiet_equal 0 1.0 1 1 00", pass},
+		{"bid64_quiet_not_equal 0 NaN 1 1 00", pass},
+		{"bid64_quiet_unordered 0 NaN 1 1 00", pass},
+		{"bid64_quiet_ordered 0 NaN 1 0 00", pass},
+		{"bid64_quiet_greater_unordered 0 NaN 1 1 00", pass},
+		{"bid64_quiet_less_unordered 0 2 1 0 00", pass},
+		{"bid64_quiet_not_greater 0 NaN 1 1 00", pass},
+		{"bid64_quiet_not_less 0 NaN 1 1 00", pass},
+		{"bid64_quiet_greater_equal 0 1 1 1 00", pass},
+		{"bid128_signaling_less_equal 0 SNaN 1 0 01", pass},
+		{"bid64_sameQuantum 0 1.0 2.0 1 00", pass},
+		{"bid64_sameQuantum 0 1.0 2 1 00", fail},
+		{"bid64_totalOrder 0 -0 0 1 00", pass},
+		{"bid64_totalOrder 0 0 -0 0 00", pass},
+		{"bid64_totalOrder 0 [7c00000000000000] [7e00000000000000] 0 00", "contract: TotalOrder ignores"},
+		{"bid64_totalOrder 0 -NaN NaN 1 00", pass},
+		{"bid64_totalOrderMag 0 -1 -2 1 00", pass},
+		{"bid64_class 0 -Infinity 2 00", pass},
+		{"bid64_class 0 SNaN 0 00", pass},
+		{"bid64_class 0 QNaN 1 00", pass},
+		{"bid64_class 0 [0000000000000001] 7 00", pass},
+		{"bid64_class 0 1 8 00", pass},
+		{"bid64_class 0 -1 3 00", pass},
+		{"bid64_class 0 -0 5 00", pass},
+		{"bid64_class 0 Infinity 9 00", pass},
+		{"bid64_class 0 1 3 00", fail},
+		{"bid64_isSigned 0 -0 1 00", pass},
+		{"bid64_isNormal 0 1 1 00", pass},
+		{"bid64_isNormal 0 [0000000000000001] 0 00", pass},
+		{"bid64_isSubnormal 0 [0000000000000001] 1 00", pass},
+		{"bid64_isZero 0 -0 1 00", pass},
+		{"bid64_isInf 0 -Infinity 1 00", pass},
+		{"bid64_isNaN 0 SNaN 1 00", pass},
+		{"bid64_isSignaling 0 SNaN 1 00", pass},
+		{"bid64_isSignaling 0 QNaN 0 00", pass},
+		{"bid64_isFinite 0 Infinity 0 00", pass},
+		{"bid128_isCanonical 0 [7c000000000000000000000000000000] 1 00", pass},
+		{"bid64_isZero 0 1 1 00", fail},
+		// Conversions to integers: rounding, the x variants, range.
+		{"bid64_to_int32_int 0 -2.5 -2 00", pass},
+		{"bid64_to_int32_int 0 -2.5 -3 00", fail},
+		{"bid64_to_int32_xint 0 -2.5 -2 20", pass},
+		{"bid64_to_int32_xint 0 -2.5 -2 00", fail},
+		{"bid64_to_int32_xint 0 -2 -2 00", pass},
+		{"bid64_to_int32_floor 0 -2.5 -3 00", pass},
+		{"bid64_to_int32_xceil 0 -2.5 -2 20", pass},
+		{"bid64_to_int32_rnint 0 2.5 2 00", pass},
+		{"bid64_to_int32_xrninta 0 2.5 3 20", pass},
+		{"bid64_to_int64_int 0 1E+3 1000 00", pass},
+		{"bid64_to_int8_ceil 0 2.5 3 00", pass},
+		{"bid64_to_int8_int 0 127.9 127 00", pass},
+		{"bid64_to_int8_int 0 128 -128 01", pass},
+		{"bid64_to_int8_ceil 0 127.5 -128 01", pass},
+		{"bid64_to_int16_int 0 -32768 -32768 00", pass},
+		{"bid64_to_int32_int 0 3000000000 -2147483648 01", pass},
+		{"bid64_to_int32_int 0 3000000000 -2147483648 00", fail},
+		{"bid64_to_int32_int 0 7 -2147483648 01", fail},
+		{"bid64_to_int32_int 0 NaN -2147483648 01", pass},
+		{"bid64_to_int64_int 0 -Infinity -9223372036854775808 01", pass},
+		{"bid128_to_int64_int 0 1E+30 -9223372036854775808 01", pass},
+		{"bid64_to_uint32_int 0 3000000000 3000000000 00", pass},
+		{"bid64_to_uint32_xint 0 3000000000 -1294967296 00", pass},
+		{"bid64_to_uint32_int 0 -1 4294967295 01", pass},
+		{"bid64_to_uint32_int 0 -0.5 0 00", pass},
+		{"bid64_to_uint32_xint 0 -0.5 0 20", pass},
+		{"bid64_to_uint32_int 0 4294967296 4294967295 01", pass},
+		{"bid128_to_uint64_int 0 18446744073709551615 18446744073709551615 00", pass},
+		{"bid128_to_uint64_int 0 18446744073709551615 -1 00", "malformed line: the integer result"},
+		{"bid128_to_uint64_int 0 18446744073709551616 18446744073709551615 01", pass},
+		{"bid64_to_uint64_int 0 18446744073709551615 18446744073709551615 00", fail},
+		{"bid64_to_uint8_floor 0 -0.5 0 00", "fail"},
+		{"bid64_llrint 2 2.1 3 20", pass},
+		{"bid64_llrint 0 2.5 2 20", pass},
+		{"bid64_llround 0 2.5 3 00", pass},
+		// Conversions from integers: the status is compared.
+		{"bid64_from_int32 0 -5 [b1c0000000000005] 00", pass},
+		{"bid64_from_int32 0 -5 [b1c0000000000005] 20", fail},
+		{"bid64_from_int32 0 2147483648 [31c0000000000000] 00", "malformed line: the integer operand"},
+		{"bid64_from_uint32 0 4294967295 [31c00000ffffffff] 00", pass},
+		{"bid64_from_uint64 0 18446744073709551615 [32468db8bac710cb] 20", pass},
+		{"bid64_from_uint64 0 18446744073709551615 [32468db8bac710cb] 00", fail},
+		{"bid64_from_int64 0 123 [31c000000000007b] 00", pass},
+		{"bid128_from_int64 0 -1 [b0400000000000000000000000000001] 00", pass},
+		{"bid128_from_uint64 0 18446744073709551615 [3040000000000000ffffffffffffffff] 00", pass},
+		// Conversions between formats and with binary.
+		{"bid64_to_bid128 0 [31c0000000000001] [30400000000000000000000000000001] 00", pass},
+		{"bid128_to_bid64 0 [30400000000000000000000000000003] [31c0000000000003] 00", pass},
+		{"bid128_to_bid64 0 [30400000000000000000000000000003] [31c0000000000004] 00", fail},
+		{"bid64_to_binary64 0 [31c0000000000001] [3ff0000000000000] 00", pass},
+		{"bid64_to_binary32 0 1 [3f800000] 00", pass},
+		{"bid64_to_binary64 0 0.1 [3fb999999999999a] 0x20", pass},
+		{"bid64_to_binary64 1 0.1 [3fb9999999999999] 0x20", pass},
+		{"bid64_to_binary64 1 0.1 [3fb999999999999a] 0x20", fail},
+		{"bid64_to_binary64 0 NaN [7ff8000000000000] 00", pass},
+		{"bid128_to_binary32 0 Infinity [7f800000] 00", pass},
+		{"binary64_to_bid64 0 [3ff0000000000000] [31c0000000000001] 00", pass},
+		{"binary32_to_bid64 0 [3f800000] [31c0000000000001] 00", pass},
+		{"binary32_to_bid128 0 [3fc00000] [3040000000000000,000000000000000f] 00", fail},
+		{"binary32_to_bid64 0 1.5 [31a000000000000f] 00", pass},
+		{"binary64_to_bid128 0 [7ff8000000000000] [7c000000000000000000000000000000] 00", pass},
+		// Strings.
+		{"bid64_to_string 0 [31c0000000000037] +55E+0 00", pass},
+		{"bid64_to_string 0 -Infinity -Inf 00", pass},
+		{"bid64_to_string 0 SNaN +SNaN 00", pass},
+		{"bid64_to_string 0 -NaN -NaN 00", pass},
+		{"bid128_to_string 0 -0 -0E+0 00", pass},
+		{"bid128_to_string 0 -0 -0 00", fail},
+		{"bid64_from_string 0 1. [31c0000000000001] 00", pass},
+		{"bid64_from_string 2 12345678901234565 1234567890123457e1 20", pass},
+		{"bid64_from_string 0 12345678901234565 1234567890123457e1 20", fail},
+		{"bid64_from_string 0 1.5 [31a000000000000f] 20", fail},
+		{"bid64_from_string 0 1.1P2 [7c00000000000000] 00", pass},
+		{"bid64_from_string 0 +SNAN [7e00000000000000] 00", pass},
+		{"bid64_from_string 0 +INFINITY [7800000000000000] 00", pass},
+		{"bid64_from_string 0 1E-399 [0000000000000000] 30", pass},
+		{"bid64_from_string 0 1E+385 [7800000000000000] 28", pass},
+		{"bid128_from_string 0 0e6176 0e6111 00", pass},
+		{"bid128_from_string 0 1.1E-2E [303a000000000000000000000000000b] 00", "erroneous vector"},
+		// Skipped: functions, formats and fields outside the contract.
+		{"bid32_add 0 [32800001] [32800002] [32800003] 00", "format: bid32"},
+		{"bid64_to_bid32 0 [31c0000000000001] [32800001] 00", "format: bid32"},
+		{"bid64_to_binary80 0 [31c0000000000001] [3fff8000000000000000] 00", "format: binary80"},
+		{"bid128_to_binary128 0 1 [3fff0000000000000000000000000000] 00", "format: binary128"},
+		{"binary80_to_bid64 0 [3fff8000000000000000] [31c0000000000001] 00", "format: binary80"},
+		{"binary128_to_bid128 0 [3fff0000000000000000000000000000] [30400000000000000000000000000001] 00", "format: binary128"},
+		{"binary32_to_bid32 0 [3f800000] [32800001] 00", "format: bid32"},
+		{"bid64_sqrt 0 [31c0000000000004] [31c0000000000002] 00", "op: square root"},
+		{"bid64_atan2 0 1 1 [2fe1cd1f7ceee7ab] 20 ulp=3.2e-01", "op: atan2"},
+		{"bid64_sin 0 1 [2fe1cd1f7ceee7ab] 20 ulp=3.2e-01", "op: transcendental"},
+		{"bid64_lrint 0 2.5 2 20 longintsize=32", "op: lrint"},
+		{"bid64_lround 0 2.5 3 00 longintsize=64", "op: lround"},
+		{"bid64_scalbn 0 1 2 [31c0000000000064] 00", "op: scalbn"},
+		{"bid64_nextup 0 1 [31c0000000000002] 00", "op: nextUp"},
+		{"bid64_quantexp 0 [0000000000000001] -398 00 -- MinDen", "op: quantum"},
+		{"bid64_copy 0 0 [31c0000000000000] 00", "op: copy"},
+		{"bid64_inf 0 0 [7800000000000000] 00", "op: inf and nan"},
+		{"bid_setDecimalRoundingDirection 0 0 0 00", "op: library state"},
+		{"bid_to_dpd64 0 [0020002800000000] [0004003c7dec6c4c] 00", "op: library state"},
+		{"bid_strtod64 0 1 1 0", "op: library state"},
+		{"str64 0 [4cb1bcece758ed60] [4cb1bcece758ed60] 00", "op: str64"},
+		{"bid64_frobnicate 0 1 1 00", "op: not mapped to the kernel API"},
+		{"frobnicate_64 0 1 1 00", "op: unknown function"},
+		{"bid64_add 9 [31c0000000000001] [31c0000000000002] [31c0000000000003] 00", "context: rounding code unknown"},
+		// Skipped: lines the runner cannot read, each for its own reason.
+		{"bid64_add 0 [31c0000000000001] [31c0000000000002]", "malformed line: fewer fields"},
+		{"bid64_add 0 1 2 3 zz", "malformed line: the status field"},
+		{"bid64_add 0 [31c0000000000001 [31c0000000000002] [31c0000000000003] 00", "malformed line: hex literal with no closing bracket"},
+		{"bid64_add 0 [31c00001] [31c0000000000002] [31c0000000000003] 00", "malformed line: hex literal is not of"},
+		{"bid64_add 0 1 2 [31c0000000000003] 00 whatever", "field: unrecognized trailing field"},
+		{"bid64_add 0 1 2 [31c0000000000003] 00 ulp=zz", "field: unreadable ulp"},
+		{"bid64_add 0 1 2 [31c0000000000003] 00 underflow_before_only", pass},
+		{"bid64_add 0 1 2 [31c0000000000003] 00 undefrlow_before_only", "erroneous vector"},
+		{"bid64_add 0 1x 2 [31c0000000000003] 00", "operand: text outside"},
+		{"bid64_add 0 --1 2 [31c0000000000003] 00", "malformed line"},
+		{"bid64_quiet_less 0 1 2 yes 00", "malformed line: a predicate"},
+		{"bid64_to_int32_int 0 2 two 00", "malformed line: the integer result"},
+		{"bid64_to_binary64 0 1 [3ff00000] 00", "malformed line: the binary result"},
+		{"binary64_to_bid64 0 [3ff00000] [31c0000000000001] 00", "malformed line: the binary operand"},
+		{"bid64_add", "malformed line: no rounding code"},
 	}
-	n, parsed := 0, 0
-	sc := bufio.NewScanner(strings.NewReader(src))
-	for line := 1; sc.Scan(); line++ {
-		v, ok := parseIntelLine(sc.Text(), line)
-		if !ok {
-			continue
-		}
-		parsed++
-		n++
-		o := evalIntel(reference{}, v)
-		switch {
-		case n == 15: // deliberately wrong expectation: 1+2 is not 4
-			if o.skip != "" || o.pass {
-				t.Errorf("line %d: a wrong expectation must fail, got %+v", line, o)
-			}
-		case skips[n] != "":
-			if o.skip != skips[n] {
-				t.Errorf("line %d: skip %q, want %q", line, o.skip, skips[n])
-			}
-		case o.skip != "":
-			t.Errorf("line %d (%s) skipped: %s", line, v.name, o.skip)
-		case !o.pass:
-			t.Errorf("line %d (%s) failed against the reference model: got %s", line, v.name, o.got)
+	// A "--" comment line, a blank line and a line with a trailing remark.
+	for _, text := range []string{"", "   ", "-- a comment", "--- underflow before round cases"} {
+		if v, ok := parseIntelLine(text, 1); ok {
+			t.Errorf("parseIntelLine(%q) = %+v, want no vector", text, v)
 		}
 	}
-	if parsed != 15 {
-		t.Errorf("parsed %d lines, want 15", parsed)
+	v, ok := parseIntelLine("bid64_isZero 0 -0 1 00 -- remark", 7)
+	if !ok || v.line != 7 || v.name != "bid64_isZero" || v.round != "0" || len(v.fields) != 3 || v.fields[0] != "-0" {
+		t.Errorf("parseIntelLine with a remark = %+v, %v", v, ok)
+	}
+
+	for _, im := range []struct {
+		name string
+		im   impl
+	}{{"reference", reference{}}, {"kernel", kernel{}}} {
+		for i, c := range cases {
+			v, ok := parseIntelLine(c.line, i+1)
+			if !ok {
+				t.Errorf("%s: %q: no vector", im.name, c.line)
+				continue
+			}
+			o := evalIntel(im.im, v)
+			switch {
+			case o.skip == "kernel: not implemented":
+			case c.want == pass:
+				if o.skip != "" || !o.pass {
+					t.Errorf("%s: %q: want pass, got skip %q pass %v got %s", im.name, c.line, o.skip, o.pass, o.got)
+				}
+			case c.want == fail:
+				if o.skip != "" || o.pass {
+					t.Errorf("%s: %q: want fail, got skip %q pass %v", im.name, c.line, o.skip, o.pass)
+				}
+			case !strings.HasPrefix(o.skip, c.want):
+				t.Errorf("%s: %q: want skip %q, got skip %q pass %v got %s", im.name, c.line, c.want, o.skip, o.pass, o.got)
+			}
+		}
 	}
 }
