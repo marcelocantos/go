@@ -683,9 +683,6 @@ func TestComparableDecimal(t *testing.T) {
 				name = hs.name + "/Distinct"
 			}
 			t.Run(name, func(t *testing.T) {
-				if distinct && !runtimeHashesDecimalsByKernelKey {
-					t.Skip("the runtime hasher still uses the strawman decimal hash, which collides some nonzero values with their negations")
-				}
 				// Bare values and one-element arrays hash alike by design, so
 				// compare within each Go type only.
 				var bare64, arr64, bare128, arr128 []any
@@ -713,8 +710,26 @@ func TestComparableDecimal(t *testing.T) {
 	}
 }
 
-// runtimeHashesDecimalsByKernelKey is false while the runtime's d64hash and
-// d128hash are the strawman implementations, which agree with == on every
-// encoding but hash 1.5 and -1.5 alike. Set it true when the runtime hashes
-// bid.Key64 and bid.Key128 (🎯T1.5.2).
-const runtimeHashesDecimalsByKernelKey = false
+// TestComparableDecimalStruct checks a decimal inside a struct, whose hash
+// function the compiler generates: the members of a cohort and the two zeros
+// are one key, and a different field or value is another.
+func TestComparableDecimalStruct(t *testing.T) {
+	type key struct {
+		n int
+		d decimal64
+	}
+	seed := MakeSeed()
+	neg0 := -decimal64(0)
+	if Comparable(seed, key{1, 1.5}) != Comparable(seed, key{1, 1.50}) {
+		t.Errorf("cohort members 1.5 and 1.50 hash differently in a struct")
+	}
+	if Comparable(seed, key{1, 0}) != Comparable(seed, key{1, neg0}) {
+		t.Errorf("+0 and -0 hash differently in a struct")
+	}
+	if Comparable(seed, key{1, 1.5}) == Comparable(seed, key{1, -1.5}) {
+		t.Errorf("1.5 and -1.5 hash alike in a struct")
+	}
+	if Comparable(seed, key{1, 1.5}) == Comparable(seed, key{2, 1.5}) {
+		t.Errorf("a different integer field hashes alike in a struct")
+	}
+}

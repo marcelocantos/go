@@ -43,25 +43,18 @@ import (
 // Ratchet 1: no BID encoding outside internal/bid (T1.5.8).
 // ---------------------------------------------------------------------------
 
-// envBIDRatchet gates TestNoBIDStrawman. The runtime, the compiler and the
-// library still carry copies of the BID encoding that predate this package;
-// target T1.5.2 to T1.5.7 replace them with calls into it. Until the last of
-// those lands the ratchet fails by design, so it is opt-in: run it with
-// BID_RATCHET=1 to list what is left. The gate comes off, and this check and
-// the variable go, when T1.5.7 lands, so that all.bash enforces it.
-const envBIDRatchet = "BID_RATCHET"
-
 // bidRatchetAllow names the files outside internal/bid that may contain BID
-// encoding anyway, each with the reason. It is empty: T1.5.8 accepts an empty
-// list or one that names each exception with a reason. The entries are false
-// positives of the mask rule: a 2^k-1 mask and a two-bit mask are common
-// outside BID, and the rule matches by value. Keys are slash paths
+// encoding anyway, each with the reason. T1.5.8 accepts an empty list or one
+// that names each exception with a reason. Most entries are false positives
+// of the mask rule: a 2^k-1 mask and a two-bit mask are common outside BID,
+// and the rule matches by value. Keys are slash paths
 // relative to GOROOT. An entry whose file is not flagged fails the test, so
 // the list cannot go stale.
 var bidRatchetAllow = map[string]string{
 	"src/cmd/internal/obj/dwarf.go":                                       "(1<<49)-1 is one of a series of 2^k-1 DWARF line-program opcode thresholds, not a decimal128 coefficient mask",
 	"src/crypto/internal/fips140/edwards25519/field/fe.go":                "(1<<51)-1 is the 51-bit limb mask of GF(2^255-19), not a decimal64 coefficient mask",
 	"src/crypto/internal/fips140/edwards25519/field/_asm/fe_amd64_asm.go": "(1<<51)-1 is the 51-bit limb mask of GF(2^255-19), not a decimal64 coefficient mask",
+	"test/decimal_const.go":                                               "a test program that writes the expected BID encodings by hand, so that they do not come from the kernel it judges",
 	"src/encoding/json/jsontext/state.go":                                 "0x6000_0000_0000_0000 is stateNamespaceMask, two bits of a JSON parser state word, not a BID combination field",
 }
 
@@ -456,13 +449,7 @@ func scanBIDTree(root string) ([]ratchetFinding, int, error) {
 // exponent bias of a BID format or the name of a strawman encoder (see the
 // comment above bidKindMask for the exact rules), unless the file is in
 // bidRatchetAllow.
-//
-// It is gated by BID_RATCHET=1 until target T1.5.7 has removed the strawman
-// copies; then the gate comes off.
 func TestNoBIDStrawman(t *testing.T) {
-	if os.Getenv(envBIDRatchet) == "" {
-		t.Skipf("opt-in until T1.5.7 lands (the tree still has strawman BID code): set %s=1", envBIDRatchet)
-	}
 	testenv.MustHaveSource(t)
 	root := testenv.GOROOT(t)
 	findings, nfiles, err := scanBIDTree(root)
