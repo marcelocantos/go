@@ -5,6 +5,8 @@
 package quick
 
 import (
+	"internal/bid"
+	"math"
 	"math/rand"
 	"reflect"
 	"testing"
@@ -378,6 +380,109 @@ func TestDecimalGenerate(t *testing.T) {
 	if v.Type() != reflect.TypeFor[D128Alias]() {
 		t.Errorf("Value returned type %v, want %v", v.Type(), reflect.TypeFor[D128Alias]())
 	}
+}
+
+// TestDecimalDistribution checks that the decimal generators produce only
+// canonical encodings and cover the distribution documented in quick.go:
+// specials, small integers, ordinary magnitudes and the full range.
+func TestDecimalDistribution(t *testing.T) {
+	const n = 40000
+	type stats struct {
+		canonical, nan, snan, inf, zero, negZero     int
+		subnormal, largest, smallInt, ordinary, wide int
+		minExp, maxExp                               int
+	}
+	r := rand.New(rand.NewSource(7))
+	var s64, s128 stats
+	s64.minExp, s128.minExp = 1<<30, 1<<30
+	s64.maxExp, s128.maxExp = -1<<30, -1<<30
+	record := func(s *stats, canonical bool, kind bid.Kind, neg bool, snan bool, small, ordinary, wide, zero, subnormal, largest bool, exp int) {
+		if canonical {
+			s.canonical++
+		}
+		switch kind {
+		case bid.KindNaN:
+			s.nan++
+			if snan {
+				s.snan++
+			}
+			return
+		case bid.KindInf:
+			s.inf++
+			return
+		}
+		if zero {
+			s.zero++
+			if neg {
+				s.negZero++
+			}
+		}
+		if subnormal {
+			s.subnormal++
+		}
+		if largest {
+			s.largest++
+		}
+		if small {
+			s.smallInt++
+		}
+		if ordinary {
+			s.ordinary++
+		}
+		if wide {
+			s.wide++
+		}
+		s.minExp = min(s.minExp, exp)
+		s.maxExp = max(s.maxExp, exp)
+	}
+	for range n {
+		d := randDecimal64(r)
+		bits := math.Decimal64bits(d)
+		kind, neg, c, exp := bid.Unpack64(bits)
+		record(&s64, bid.IsCanonical64(bits), kind, neg, bid.IsSignaling64(bits),
+			c < 1000 && exp == 0, c < 1000000 && exp >= -8 && exp <= 8 && exp != 0,
+			c > 1e10, c == 0, bid.IsSubnormal64(bits) && c != 0,
+			c == bid.MaxCoeff64 && exp == bid.MaxExp64, exp)
+
+		d2 := randDecimal128(r)
+		hi, lo := math.Decimal128bits(d2)
+		x2 := bid.Uint128{Hi: hi, Lo: lo}
+		kind, neg, c2, exp := bid.Unpack128(x2)
+		record(&s128, bid.IsCanonical128(x2), kind, neg, bid.IsSignaling128(x2),
+			c2.Hi == 0 && c2.Lo < 1000 && exp == 0,
+			c2.Hi == 0 && c2.Lo < 1000000 && exp >= -8 && exp <= 8 && exp != 0,
+			c2.Hi != 0 || c2.Lo > 1e10, c2.Hi == 0 && c2.Lo == 0,
+			bid.IsSubnormal128(x2) && (c2.Hi != 0 || c2.Lo != 0),
+			c2.Hi == bid.MaxCoeff128Hi && c2.Lo == bid.MaxCoeff128Lo && exp == bid.MaxExp128, exp)
+	}
+	check := func(name string, s stats, minExp, maxExp int) {
+		if s.canonical != n {
+			t.Errorf("%s: %d of %d values are not canonical", name, n-s.canonical, n)
+		}
+		// Specials are 10% of draws; NaN and infinity are 4 of 14 of those.
+		if f := float64(s.nan+s.inf) / n; f < 0.02 || f > 0.04 {
+			t.Errorf("%s: NaN/Inf fraction %.3f, want about 0.029", name, f)
+		}
+		if s.snan == 0 || s.negZero == 0 || s.subnormal == 0 || s.largest == 0 {
+			t.Errorf("%s: missing specials: snan=%d negzero=%d subnormal=%d largest=%d",
+				name, s.snan, s.negZero, s.subnormal, s.largest)
+		}
+		// Small integers are 22.5% of draws, ordinary magnitudes another 22.5%.
+		if f := float64(s.smallInt) / n; f < 0.18 || f > 0.28 {
+			t.Errorf("%s: small-integer fraction %.3f, want about 0.225", name, f)
+		}
+		if f := float64(s.ordinary) / n; f < 0.15 || f > 0.28 {
+			t.Errorf("%s: ordinary-magnitude fraction %.3f, want about 0.2", name, f)
+		}
+		if f := float64(s.wide) / n; f < 0.15 {
+			t.Errorf("%s: wide-coefficient fraction %.3f, want at least 0.15", name, f)
+		}
+		if s.minExp > minExp+100 || s.maxExp < maxExp-100 {
+			t.Errorf("%s: exponents span [%d, %d], want close to [%d, %d]", name, s.minExp, s.maxExp, minExp, maxExp)
+		}
+	}
+	check("decimal64", s64, bid.MinExp64, bid.MaxExp64)
+	check("decimal128", s128, bid.MinExp128, bid.MaxExp128)
 }
 
 func TestInt64(t *testing.T) {
