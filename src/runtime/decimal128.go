@@ -296,10 +296,10 @@ func u128NumDigits(a uint128) int {
 // --- BID128 encoding ---
 
 const (
-	bid128Bias     = 6176
-	bid128MaxExp   = 6111  // max unbiased exponent
-	bid128MinExp   = -6176 // min unbiased exponent
-	bid128SignBit  = uint64(1) << 63
+	bid128Bias    = 6176
+	bid128MaxExp  = 6111  // max unbiased exponent
+	bid128MinExp  = -6176 // min unbiased exponent
+	bid128SignBit = uint64(1) << 63
 
 	// Special value patterns (in the high 64 bits)
 	bid128Inf uint64 = 0x7800000000000000
@@ -496,91 +496,12 @@ func dsub128(x, y decimal128) decimal128 {
 	return decimal128frombits(r.Hi, r.Lo)
 }
 
-// dmul128 computes x * y for BID-encoded decimal128 values.
+// dmul128 computes x * y through the shared BID kernel.
 func dmul128(x, y decimal128) decimal128 {
 	xhi, xlo := decimal128bits(x)
 	yhi, ylo := decimal128bits(y)
-
-	if bid128IsNaN(xhi) || bid128IsNaN(yhi) {
-		return decimal128frombits(bid128NaN, 0)
-	}
-
-	xs := bid128Sign(xhi)
-	ys := bid128Sign(yhi)
-	rs := xs ^ ys
-
-	xInf := bid128IsInf(xhi)
-	yInf := bid128IsInf(yhi)
-	if xInf || yInf {
-		if xInf {
-			_, _, yc := bid128Unpack(yhi, ylo)
-			if !yInf && u128IsZero(yc) {
-				return decimal128frombits(bid128NaN, 0)
-			}
-		}
-		if yInf {
-			_, _, xc := bid128Unpack(xhi, xlo)
-			if !xInf && u128IsZero(xc) {
-				return decimal128frombits(bid128NaN, 0)
-			}
-		}
-		return decimal128frombits(rs|bid128Inf, 0)
-	}
-
-	_, xe, xc := bid128Unpack(xhi, xlo)
-	_, ye, yc := bid128Unpack(yhi, ylo)
-
-	if u128IsZero(xc) || u128IsZero(yc) {
-		re := xe + ye
-		if re < bid128MinExp {
-			re = bid128MinExp
-		}
-		if re > bid128MaxExp {
-			re = bid128MaxExp
-		}
-		return decimal128frombits(bid128Pack(rs, re, uint128Zero))
-	}
-
-	re := xe + ye
-	prodHi, prodLo := u128Mul(xc, yc)
-
-	if u128IsZero(prodHi) {
-		// Product fits in 128 bits
-		return decimal128frombits(bid128Normalize(rs, re, prodLo))
-	}
-
-	// Product needs more than 128 bits. Reduce to 34 digits.
-	rc := u256To34Digits(prodHi, prodLo, &re)
-	return decimal128frombits(bid128Normalize(rs, re, rc))
-}
-
-// u256To34Digits reduces a 256-bit number (hi:lo as two uint128) to 34 digits.
-func u256To34Digits(hi, lo uint128, exp *int) uint128 {
-	// We need to divide the 256-bit value by 10 until it fits in 34 decimal digits.
-	// Work with hi:lo as a 256-bit value.
-	var lastRem uint64
-
-	for !u128IsZero(hi) || u128Cmp(lo, bid128MaxCoeff) > 0 {
-		// Divide the 256-bit value (hi:lo) by 10.
-		// First divide hi by 10.
-		qhi, rhi := u128Div64(hi, 10)
-		// Now divide (rhi:lo.hi:lo.lo) by 10, where rhi < 10.
-		var q2, q3 uint64
-		r := rhi
-		q2, r = divlu(r, lo.hi, 10)
-		q3, lastRem = divlu(r, lo.lo, 10)
-
-		hi = qhi
-		lo = uint128{q2, q3}
-		*exp++
-	}
-
-	// Round-to-nearest-even
-	if lastRem > 5 || (lastRem == 5 && lo.lo%2 != 0) {
-		lo = u128Add(lo, uint128From64(1))
-	}
-
-	return lo
+	r := bid.Mul128(bid.Uint128{Hi: xhi, Lo: xlo}, bid.Uint128{Hi: yhi, Lo: ylo}, bid.ToNearestEven)
+	return decimal128frombits(r.Hi, r.Lo)
 }
 
 // --- Comparisons ---
