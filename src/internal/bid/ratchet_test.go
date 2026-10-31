@@ -54,8 +54,9 @@ var bidRatchetAllow = map[string]string{
 	"src/cmd/internal/obj/dwarf.go":                                       "(1<<49)-1 is one of a series of 2^k-1 DWARF line-program opcode thresholds, not a decimal128 coefficient mask",
 	"src/crypto/internal/fips140/edwards25519/field/fe.go":                "(1<<51)-1 is the 51-bit limb mask of GF(2^255-19), not a decimal64 coefficient mask",
 	"src/crypto/internal/fips140/edwards25519/field/_asm/fe_amd64_asm.go": "(1<<51)-1 is the 51-bit limb mask of GF(2^255-19), not a decimal64 coefficient mask",
-	"test/decimal_const.go":                                               "a test program that writes the expected BID encodings by hand, so that they do not come from the kernel it judges",
-	"src/encoding/json/jsontext/state.go":                                 "0x6000_0000_0000_0000 is stateNamespaceMask, two bits of a JSON parser state word, not a BID combination field",
+	"test/decimal.go":                     "a test program that writes the expected BID encodings by hand, so that they do not come from the kernel it judges",
+	"test/decimal_const.go":               "a test program that writes the expected BID encodings by hand, so that they do not come from the kernel it judges",
+	"src/encoding/json/jsontext/state.go": "0x6000_0000_0000_0000 is stateNamespaceMask, two bits of a JSON parser state word, not a BID combination field",
 }
 
 // What the ratchet flags in a non-test Go file under $GOROOT/src and
