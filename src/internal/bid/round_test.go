@@ -213,31 +213,6 @@ func TestRoundAllModesAgainstReference(t *testing.T) {
 	}
 }
 
-func TestRoundAllocs(t *testing.T) {
-	var sink64 uint64
-	var sink128 bid.Uint128
-	var sinkSt bid.Status
-	fn := func() {
-		var st bid.Status
-		sink64, st = bid.Round64(false, 1234567890123456, 0, false, bid.ToNearestEven)
-		sinkSt |= st
-		sink64, st = bid.Round64(true, 12345678901234567, -400, true, bid.TowardNegative)
-		sinkSt |= st
-		sink64, st = bid.Round64(false, 1, 400, false, bid.ToNearestEven)
-		sinkSt |= st
-		sink128, st = bid.Round128(false, bid.Uint128{Hi: 1, Lo: 1}, 0, false, bid.ToNearestEven)
-		sinkSt |= st
-		sink128, st = bid.Round128(true, bid.Uint128{Lo: 5}, -6177, true, bid.TowardPositive)
-		sinkSt |= st
-		sink128, st = bid.Round128(false, bid.Uint128{Lo: 1}, 7000, false, bid.TowardZero)
-		sinkSt |= st
-	}
-	if n := testing.AllocsPerRun(100, fn); n != 0 {
-		t.Errorf("Round64/Round128 allocate: %v allocs per run", n)
-	}
-	_, _, _ = sink64, sink128, sinkSt
-}
-
 func FuzzRound64(f *testing.F) {
 	f.Add(false, uint64(1), int64(0), false, uint8(0))
 	f.Add(false, uint64(99999999999999995), int64(368), false, uint8(0))
@@ -271,58 +246,6 @@ func FuzzRound128(f *testing.F) {
 			t.Errorf("Round128(%t, %s, %d, %t, %s) = %s, %v; reference %s, %v", neg, fromUint128(c), exp, sticky, modeName(m), display(dec128, got), st, display(dec128, want), wst)
 		}
 	})
-}
-
-var roundBench = []struct {
-	name   string
-	coeff  bid.Uint128
-	exp    int
-	sticky bool
-}{
-	{"exact16", bid.Uint128{Lo: 1234567890123456}, -5, false},
-	{"inexact17", bid.Uint128{Lo: 12345678901234567}, -5, false},
-	{"wide19", bid.Uint128{Lo: 1234567890123456789}, -5, true},
-	{"subnormal", bid.Uint128{Lo: 12345678901234567}, -410, false},
-}
-
-func BenchmarkRound64(b *testing.B) {
-	for _, bb := range roundBench {
-		b.Run(bb.name, func(b *testing.B) {
-			var sink uint64
-			for i := 0; i < b.N; i++ {
-				x, _ := bid.Round64(i&1 != 0, bb.coeff.Lo, bb.exp, bb.sticky, bid.Mode(i%5))
-				sink ^= x
-			}
-			_ = sink
-		})
-	}
-}
-
-var roundBench128 = []struct {
-	name   string
-	coeff  string
-	exp    int
-	sticky bool
-}{
-	{"exact34", "1234567890123456789012345678901234", -5, false},
-	{"inexact35", "12345678901234567890123456789012345", -5, false},
-	{"wide39", "340282366920938463463374607431768211455", -5, true},
-	{"subnormal", "12345678901234567890123456789012345", -6190, false},
-}
-
-func BenchmarkRound128(b *testing.B) {
-	for _, bb := range roundBench128 {
-		c := roundCoeff(b, bb.coeff)
-		b.Run(bb.name, func(b *testing.B) {
-			var sink bid.Uint128
-			for i := 0; i < b.N; i++ {
-				x, _ := bid.Round128(i&1 != 0, c, bb.exp, bb.sticky, bid.Mode(i%5))
-				sink.Lo ^= x.Lo
-				sink.Hi ^= x.Hi
-			}
-			_ = sink
-		})
-	}
 }
 
 // TestRoundIsTheOnlyPacker enforces the fourth criterion of the rounding

@@ -7,7 +7,6 @@ package bid_test
 import (
 	"internal/bid"
 	"math/big"
-	"math/rand/v2"
 	"testing"
 )
 
@@ -68,20 +67,6 @@ func mustBig(s string) *big.Int {
 	return v
 }
 
-func TestMulZeroAllocs(t *testing.T) {
-	x64, y64 := uint64(0x31A0000000000123), uint64(0x3180000000000456)
-	x128, y128 := bid.Uint128{Hi: 0x3040000000000123, Lo: 77}, bid.Uint128{Hi: 0x3040000000000456, Lo: 99}
-	var s64 uint64
-	var s128 bid.Uint128
-	if n := testing.AllocsPerRun(100, func() { s64 = bid.Mul64(x64, y64, bid.ToNearestEven) }); n != 0 {
-		t.Errorf("Mul64 allocates %v times", n)
-	}
-	if n := testing.AllocsPerRun(100, func() { s128 = bid.Mul128(x128, y128, bid.TowardZero) }); n != 0 {
-		t.Errorf("Mul128 allocates %v times", n)
-	}
-	_, _ = s64, s128
-}
-
 // FuzzMul checks Mul64 and Mul128 against the reference model in every
 // mode: on operands built from a coefficient and an exponent over the whole
 // range of the format, so that the products reach the overflow, fold-down
@@ -123,41 +108,4 @@ func fuzzOperand(fm *format, neg bool, hi, lo uint64, exp int) bits {
 	c.Or(c, new(big.Int).SetUint64(lo))
 	c.Mod(c, new(big.Int).Add(fm.maxCoeff, bigOne))
 	return fm.encode(value{kind: finite, neg: neg, coeff: c, exp: clamp(exp, fm.minExp, fm.maxExp)})
-}
-
-// mulBenchOperands returns pairs of finite operands of random coefficients
-// of every length and exponents within a few places of one another, the mix
-// of the spike that fixed the cost model of this package ("Width
-// parameterisation" in the package documentation).
-func mulBenchOperands(fm *format) (xs, ys []bits) {
-	r := rand.New(rand.NewPCG(1, 2))
-	operand := func() bits {
-		digits := 1 + r.IntN(fm.prec)
-		c := new(big.Int).Lsh(new(big.Int).SetUint64(r.Uint64()), 64)
-		c.Or(c, new(big.Int).SetUint64(r.Uint64())).Mod(c, pow10(digits))
-		return fm.encode(value{kind: finite, neg: r.IntN(2) == 0, coeff: c, exp: r.IntN(9) - 4})
-	}
-	for range 1024 {
-		xs = append(xs, operand())
-		ys = append(ys, operand())
-	}
-	return xs, ys
-}
-
-func BenchmarkMul64(b *testing.B) {
-	xs, ys := mulBenchOperands(dec64)
-	var sink uint64
-	for i := 0; b.Loop(); i++ {
-		sink += bid.Mul64(xs[i&1023].Lo, ys[i&1023].Lo, bid.ToNearestEven)
-	}
-	_ = sink
-}
-
-func BenchmarkMul128(b *testing.B) {
-	xs, ys := mulBenchOperands(dec128)
-	var sink bid.Uint128
-	for i := 0; b.Loop(); i++ {
-		sink = bid.Mul128(xs[i&1023], ys[i&1023], bid.ToNearestEven)
-	}
-	_ = sink
 }

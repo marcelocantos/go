@@ -428,34 +428,6 @@ func TestKeyWidenedAndLayout(t *testing.T) {
 	}
 }
 
-// TestComparisonsAllocate checks that nothing in the comparison API
-// allocates.
-func TestComparisonsAllocate(t *testing.T) {
-	x64, y64 := fin("12", 3).bits(dec64).Lo, fin("1200", 1).bits(dec64).Lo
-	x128, y128 := fin("12", 3).bits(dec128), fin("1200", 1).bits(dec128)
-	var sink int
-	var keySink bid.Key
-	for name, fn := range map[string]func(){
-		"Equal64":       func() { sink += b2i(bid.Equal64(x64, y64)) },
-		"Less64":        func() { sink += b2i(bid.Less64(x64, y64)) },
-		"LessEqual64":   func() { sink += b2i(bid.LessEqual64(x64, y64)) },
-		"Compare64":     func() { c, _ := bid.Compare64(x64, y64); sink += c },
-		"TotalOrder64":  func() { sink += b2i(bid.TotalOrder64(x64, y64)) },
-		"Key64":         func() { keySink = bid.Key64(x64) },
-		"Equal128":      func() { sink += b2i(bid.Equal128(x128, y128)) },
-		"Less128":       func() { sink += b2i(bid.Less128(x128, y128)) },
-		"LessEqual128":  func() { sink += b2i(bid.LessEqual128(x128, y128)) },
-		"Compare128":    func() { c, _ := bid.Compare128(x128, y128); sink += c },
-		"TotalOrder128": func() { sink += b2i(bid.TotalOrder128(x128, y128)) },
-		"Key128":        func() { keySink = bid.Key128(x128) },
-	} {
-		if n := testing.AllocsPerRun(100, fn); n != 0 {
-			t.Errorf("%s allocates %v times", name, n)
-		}
-	}
-	_, _ = sink, keySink
-}
-
 func b2i(b bool) int {
 	if b {
 		return 1

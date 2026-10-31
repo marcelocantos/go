@@ -110,37 +110,6 @@ func TestParseLongExponentCompensation(t *testing.T) {
 	}
 }
 
-func TestStringAllocs(t *testing.T) {
-	buf := make([]byte, 0, bid.MaxLen128)
-	long := "0." + strings.Repeat("0", 3000) + "123456789012345678901234567890123456789E+99999999999999999999"
-	var sink64 uint64
-	var sink128 bid.Uint128
-	var sinkSt bid.Status
-	var sinkLen int
-	x64s := []uint64{0, bid.Zero64, 0x6c7386f26fc0ffff, 0xfc00000000000000, bid.Inf64, bid.NaN64, 1<<63 | 0x6c7386f26fc0ffff}
-	x128s := []bid.Uint128{{}, {Hi: bid.Zero128Hi}, {Hi: 0x3041ed09bead87c0, Lo: 0x378d8e63ffffffff}, {Hi: bid.Inf128Hi}, {Hi: bid.NaN128Hi}, {Hi: 1<<63 | 0x3041ed09bead87c0, Lo: 0x378d8e63ffffffff}}
-	strs := []string{"1.50", "-0", "NaN", "inf", "12345678901234567890123456789012345678901", "1E+99999999999999999999", "0E-5", long}
-	fn := func() {
-		for _, x := range x64s {
-			sinkLen += len(bid.Append64(buf[:0], x))
-		}
-		for _, x := range x128s {
-			sinkLen += len(bid.Append128(buf[:0], x))
-		}
-		for _, s := range strs {
-			var st bid.Status
-			sink64, st = bid.Parse64(s, bid.ToNearestEven)
-			sinkSt |= st
-			sink128, st = bid.Parse128(s, bid.TowardPositive)
-			sinkSt |= st
-		}
-	}
-	if n := testing.AllocsPerRun(100, fn); n != 0 {
-		t.Errorf("Append and Parse allocate: %v allocs per run", n)
-	}
-	_, _, _, _ = sink64, sink128, sinkSt, sinkLen
-}
-
 // TestAppendLongest checks that the longest forms fit MaxLen.
 func TestAppendLongest(t *testing.T) {
 	for _, f := range []*format{dec64, dec128} {

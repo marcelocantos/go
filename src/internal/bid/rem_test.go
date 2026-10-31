@@ -197,25 +197,6 @@ func TestRemModZeros(t *testing.T) {
 	}
 }
 
-func TestRemModAllocs(t *testing.T) {
-	var sink64 uint64
-	var sink128 bid.Uint128
-	x64, y64 := remFin(dec64, false, dec64.maxCoeff, dec64.maxExp), remFin(dec64, true, big.NewInt(9999999999999997), dec64.minExp)
-	x128, y128 := remFin(dec128, false, dec128.maxCoeff, dec128.maxExp), remFin(dec128, true, new(big.Int).Sub(dec128.maxCoeff, big.NewInt(2)), dec128.minExp)
-	fn := func() {
-		sink64 = bid.Rem64(x64.Lo, y64.Lo)
-		sink64 = bid.Mod64(x64.Lo, y64.Lo)
-		sink128 = bid.Rem128(x128, y128)
-		sink128 = bid.Mod128(x128, y128)
-		sink64 = bid.Rem64(y64.Lo, x64.Lo)
-		sink128 = bid.Rem128(y128, x128)
-	}
-	if n := testing.AllocsPerRun(100, fn); n != 0 {
-		t.Errorf("Rem and Mod allocate: %v allocs per run", n)
-	}
-	_, _ = sink64, sink128
-}
-
 // remFuzzOperands draws two operands from fuzz input, biased towards what
 // the arithmetic finds hard rather than what a byte mutator finds easily.
 // The shapes are the raw encodings as given, exponents over the whole range,
@@ -281,54 +262,4 @@ func FuzzRem128(f *testing.F) {
 		x, y := remFuzzOperands(dec128, bits{Hi: xh, Lo: xl}, bits{Hi: yh, Lo: yl}, a, b, shape)
 		checkRemMod(t, dec128, x, y)
 	})
-}
-
-// The benchmarks time both operations at the two ends of the cost: no gap,
-// which is one multiply and one division, and the largest gap with a divisor
-// that fills the coefficient, which is the longest exponentiation.
-func BenchmarkRemMod(b *testing.B) {
-	var s64 uint64
-	var s128 bid.Uint128
-	cases64 := []struct {
-		name string
-		x, y bits
-	}{
-		{"SmallGap", remFin(dec64, false, big.NewInt(1234567890123456), 0), remFin(dec64, false, big.NewInt(9876543), 0)},
-		{"MaxGap", remFin(dec64, false, dec64.maxCoeff, dec64.maxExp), remFin(dec64, false, big.NewInt(9999999999999997), dec64.minExp)},
-	}
-	big34, _ := new(big.Int).SetString("9999999999999999999999999999999997", 10)
-	big34x, _ := new(big.Int).SetString("1234567890123456789012345678901234", 10)
-	big20, _ := new(big.Int).SetString("98765432109876543210", 10)
-	cases128 := []struct {
-		name string
-		x, y bits
-	}{
-		{"SmallGap", remFin(dec128, false, big34x, 0), remFin(dec128, false, big20, 0)},
-		{"MaxGap", remFin(dec128, false, dec128.maxCoeff, dec128.maxExp), remFin(dec128, false, big34, dec128.minExp)},
-	}
-	for _, c := range cases64 {
-		b.Run("Rem64/"+c.name, func(b *testing.B) {
-			for b.Loop() {
-				s64 = bid.Rem64(c.x.Lo, c.y.Lo)
-			}
-		})
-		b.Run("Mod64/"+c.name, func(b *testing.B) {
-			for b.Loop() {
-				s64 = bid.Mod64(c.x.Lo, c.y.Lo)
-			}
-		})
-	}
-	for _, c := range cases128 {
-		b.Run("Rem128/"+c.name, func(b *testing.B) {
-			for b.Loop() {
-				s128 = bid.Rem128(c.x, c.y)
-			}
-		})
-		b.Run("Mod128/"+c.name, func(b *testing.B) {
-			for b.Loop() {
-				s128 = bid.Mod128(c.x, c.y)
-			}
-		})
-	}
-	_, _ = s64, s128
 }

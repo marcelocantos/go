@@ -7,7 +7,6 @@ package bid_test
 import (
 	"internal/bid"
 	"math/big"
-	"math/rand/v2"
 	"testing"
 )
 
@@ -248,26 +247,6 @@ func TestFMANonCanonical(t *testing.T) {
 	}
 }
 
-func TestFMAAllocs(t *testing.T) {
-	far64 := [3]uint64{addOperand(t, dec64, "1E+200").Lo, addOperand(t, dec64, "1E+100").Lo, addOperand(t, dec64, "-1.5E-300").Lo}
-	far128 := [3]bid.Uint128{addOperand(t, dec128, "1E+3000"), addOperand(t, dec128, "1E+100"), addOperand(t, dec128, "-1.5E-3000")}
-	near64, near128 := addOperand(t, dec64, "1.25").Lo, addOperand(t, dec128, "1.25")
-	var sink64 uint64
-	var sink128 bid.Uint128
-	fn := func() {
-		sink64 ^= bid.FMA64(far64[0], far64[1], far64[2], bid.TowardZero)
-		sink64 ^= bid.FMA64(far64[2], far64[2], far64[0], bid.TowardZero)
-		sink64 ^= bid.FMA64(near64, near64, near64, bid.ToNearestEven)
-		sink128 = bid.FMA128(far128[0], far128[1], far128[2], bid.TowardZero)
-		sink128 = bid.FMA128(far128[2], far128[2], far128[0], bid.TowardZero)
-		sink128 = bid.FMA128(near128, near128, near128, bid.ToNearestEven)
-	}
-	if n := testing.AllocsPerRun(100, fn); n != 0 {
-		t.Errorf("FMA allocates: %v allocs per run", n)
-	}
-	_, _ = sink64, sink128
-}
-
 // fmaFuzzOperands turns the raw inputs of a fuzz target into operands. Raw
 // triples are nearly always far apart with a product out of range, so most
 // shapes build finite operands from the raw bits and weight them to where FMA
@@ -398,62 +377,4 @@ func FuzzFMA128(f *testing.F) {
 			t.Errorf("x=%s y=%s z=%s %s: kernel %s, reference %s", display(dec128, a), display(dec128, b), display(dec128, c), modeName(m), display(dec128, got), display(dec128, want))
 		}
 	})
-}
-
-// fmaBenchOperands draws triples: 60% with z within 4 places of the product's
-// exponent, 20% spread over ±(2×Precision+10), and 20% near cancellation.
-func fmaBenchOperands(f *format) [][3]bits {
-	const count = 4096
-	r := rand.New(rand.NewPCG(1, 2))
-	coeff := func() value {
-		c := new(big.Int)
-		for range r.IntN(f.prec) + 1 {
-			c.Mul(c, big.NewInt(10)).Add(c, big.NewInt(r.Int64N(10)))
-		}
-		return value{kind: finite, neg: r.IntN(2) == 0, coeff: c, exp: r.IntN(21) - 10}
-	}
-	triples := make([][3]bits, count)
-	for i := range triples {
-		x, y, z := coeff(), coeff(), coeff()
-		xb, yb := f.encode(x), f.encode(y)
-		pe := x.exp + y.exp
-		var zb bits
-		switch n := r.IntN(10); {
-		case n < 6:
-			z.exp = pe + r.IntN(9) - 4
-			zb = f.encode(z)
-		case n < 8:
-			z.exp = pe + r.IntN(2*(2*f.prec+10)+1) - (2*f.prec + 10)
-			zb = f.encode(z)
-		default:
-			p := f.mul(xb, yb, bid.ToNearestEven)
-			zb = f.withSign(p, !f.signbit(p))
-		}
-		triples[i] = [3]bits{xb, yb, zb}
-	}
-	return triples
-}
-
-func BenchmarkFMA64(b *testing.B) {
-	triples := fmaBenchOperands(dec64)
-	var sink uint64
-	i := 0
-	for b.Loop() {
-		p := &triples[i&(len(triples)-1)]
-		sink ^= bid.FMA64(p[0].Lo, p[1].Lo, p[2].Lo, bid.ToNearestEven)
-		i++
-	}
-	_ = sink
-}
-
-func BenchmarkFMA128(b *testing.B) {
-	triples := fmaBenchOperands(dec128)
-	var sink uint64
-	i := 0
-	for b.Loop() {
-		p := &triples[i&(len(triples)-1)]
-		sink ^= bid.FMA128(p[0], p[1], p[2], bid.ToNearestEven).Lo
-		i++
-	}
-	_ = sink
 }

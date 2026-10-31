@@ -444,38 +444,6 @@ func TestFloatToSpecials(t *testing.T) {
 	}
 }
 
-// TestFloatToAllocs checks that no path allocates: the integer that fits,
-// the exact value with a negative exponent, the inexact value, the large
-// integer that is divided down, the extremes of the range and the specials,
-// in every mode.
-func TestFloatToAllocs(t *testing.T) {
-	inputs := []float64{0, math.Copysign(0, -1), 1, 0.5, 0x1p-24, 0.1, 123.456, 1e23, 1e22, 1.7976931348623157e308,
-		5e-324, 0x1p-1022, math.Ldexp(1, 500), math.Ldexp(1, -500), math.Inf(1), math.NaN()}
-	var sink64 uint64
-	var sink128 bid.Uint128
-	for _, m := range floatToModes {
-		if n := testing.AllocsPerRun(100, func() {
-			for _, v := range inputs {
-				sink64 ^= bid.Float64To64(v, m)
-				sink64 ^= bid.Float32To64(float32(v), m)
-			}
-		}); n != 0 {
-			t.Errorf("Float64To64 or Float32To64 in mode %s: %v allocations", modeName(m), n)
-		}
-		if n := testing.AllocsPerRun(100, func() {
-			for _, v := range inputs {
-				x := bid.Float64To128(v, m)
-				sink128.Lo ^= x.Lo
-				x = bid.Float32To128(float32(v), m)
-				sink128.Hi ^= x.Hi
-			}
-		}); n != 0 {
-			t.Errorf("Float64To128 or Float32To128 in mode %s: %v allocations", modeName(m), n)
-		}
-	}
-	_, _ = sink64, sink128
-}
-
 // floatToFuzz is the body of the fuzz targets: the kernel against the
 // oracle and against the reference model, on the float the bits select, in
 // the mode sel selects. The remaining bits of sel choose a float that raw
@@ -551,46 +519,4 @@ func FuzzFloat32To64(f *testing.F) {
 func FuzzFloat32To128(f *testing.F) {
 	floatToFuzzSeeds(f)
 	f.Fuzz(func(t *testing.T, b uint64, sel uint8) { floatToFuzz(t, dec128, b, sel, true) })
-}
-
-// BenchmarkFloatTo measures the paths at both widths: an integer that fits,
-// an exact fraction, the typical inexact fraction, an integer divided down,
-// and the two ends of the float64 range, which are the worst cases of the
-// two multiword computations.
-func BenchmarkFloatTo(b *testing.B) {
-	cases := []struct {
-		name string
-		v    float64
-	}{
-		{"integer", 123456789},
-		{"exact-fraction", 0.5},
-		{"typical", 0.1},
-		{"typical-large", 123.456},
-		{"1e23", 1e23},
-		{"2^500", math.Ldexp(1, 500)},
-		{"max", math.MaxFloat64},
-		{"2^-500", math.Ldexp(1, -500)},
-		{"min-subnormal", 5e-324},
-	}
-	var sink64 uint64
-	var sink128 bid.Uint128
-	for _, c := range cases {
-		b.Run("64/"+c.name, func(b *testing.B) {
-			for b.Loop() {
-				sink64 ^= bid.Float64To64(c.v, bid.ToNearestEven)
-			}
-		})
-		b.Run("128/"+c.name, func(b *testing.B) {
-			for b.Loop() {
-				x := bid.Float64To128(c.v, bid.ToNearestEven)
-				sink128.Lo ^= x.Lo
-			}
-		})
-	}
-	b.Run("32to64/typical", func(b *testing.B) {
-		for b.Loop() {
-			sink64 ^= bid.Float32To64(0.1, bid.ToNearestEven)
-		}
-	})
-	_, _ = sink64, sink128
 }

@@ -124,28 +124,3 @@ func FuzzQuantBits128(f *testing.F) {
 		checkQuant128(t, bid.Uint128{Hi: xhi, Lo: xlo}, bid.Uint128{Hi: yhi, Lo: ylo}, bid.Mode(mode%5))
 	})
 }
-
-func TestQuantAllocs(t *testing.T) {
-	var sink64 uint64
-	var sink128 bid.Uint128
-	var sinkOK bool
-	x64, _ := bid.Pack64(false, 215, -2)
-	y64, _ := bid.Pack64(false, 1, -1)
-	x128, _ := bid.Pack128(true, bid.Uint128{Lo: 2500}, -3)
-	y128, _ := bid.Pack128(false, bid.Uint128{Lo: 1}, 2)
-	fn := func() {
-		for m := bid.ToNearestEven; m <= bid.TowardNegative; m++ {
-			sink64 ^= bid.RoundToIntegral64(x64, m)
-			sink64 ^= bid.Quantize64(x64, y64, m)
-			sink128.Lo ^= bid.RoundToIntegral128(x128, m).Lo
-			sink128.Lo ^= bid.Quantize128(x128, y128, m).Lo
-		}
-		sink64 ^= bid.Reduce64(x64)
-		sink128.Lo ^= bid.Reduce128(x128).Lo
-		sinkOK = bid.SameQuantum64(x64, y64) != bid.SameQuantum128(x128, y128)
-	}
-	if n := testing.AllocsPerRun(100, fn); n != 0 {
-		t.Errorf("RoundToIntegral, Quantize, Reduce and SameQuantum allocate: %v allocs per run", n)
-	}
-	_, _, _ = sink64, sink128, sinkOK
-}

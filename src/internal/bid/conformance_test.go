@@ -1064,12 +1064,19 @@ func splitVectorLine(line string) ([]string, error) {
 	return toks, nil
 }
 
-// loadConformance reads every .txt file in testdata and returns its
-// vectors. Blank lines and lines starting with # are ignored.
+// loadConformance reads every .txt file in testdata, except the benchmark
+// baselines (bench_baseline_*.txt, which bench_test.go reads), and returns
+// its vectors. Blank lines and lines starting with # are ignored.
 func loadConformance(t *testing.T) []vector {
-	files, err := filepath.Glob(filepath.Join("testdata", "*.txt"))
-	if err != nil || len(files) == 0 {
+	all, err := filepath.Glob(filepath.Join("testdata", "*.txt"))
+	if err != nil || len(all) == 0 {
 		t.Fatalf("no conformance files: %v", err)
+	}
+	var files []string
+	for _, file := range all {
+		if !strings.HasPrefix(filepath.Base(file), "bench_baseline_") {
+			files = append(files, file)
+		}
 	}
 	ops := make(map[string]bool, len(conformanceOpNames))
 	for _, name := range conformanceOpNames {

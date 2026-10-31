@@ -1,6 +1,7 @@
 # Conformance suite for internal/bid
 
-The files `*.txt` in this directory fix the expected result of every
+The files `*.txt` in this directory, except `bench_baseline_*.txt` (the
+benchmark baselines that `bench_test.go` reads), fix the expected result of every
 operation of package `internal/bid` at every boundary that the package
 documentation (`doc.go`, the contract of the package) names. They were
 written from that documentation and from the text of IEEE 754-2008, by

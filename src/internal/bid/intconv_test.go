@@ -254,35 +254,6 @@ func checkIntFrom(t *testing.T, f *format, x bits) {
 	}
 }
 
-func TestIntegerConversionsAllocs(t *testing.T) {
-	var s64 uint64
-	var s128 bid.Uint128
-	var si int64
-	var su uint64
-	var st bid.Status
-	x64 := decimalOf(dec64, true, "1234567890123456", -3)
-	x128 := decimalOf(dec128, false, "92233720368547758075", -1)
-	fn := func() {
-		s64 = bid.Int64To64(math.MinInt64, bid.TowardZero)
-		s64 = bid.Uint64To64(math.MaxUint64, bid.ToNearestEven)
-		s128 = bid.Int64To128(math.MinInt64)
-		s128 = bid.Uint64To128(math.MaxUint64)
-		var s bid.Status
-		si, s = bid.Int64From64(x64.Lo, bid.ToNearestAway)
-		st |= s
-		su, s = bid.Uint64From64(x64.Lo, bid.TowardPositive)
-		st |= s
-		si, s = bid.Int64From128(x128, bid.ToNearestEven)
-		st |= s
-		su, s = bid.Uint64From128(x128, bid.TowardNegative)
-		st |= s
-	}
-	if n := testing.AllocsPerRun(100, fn); n != 0 {
-		t.Errorf("the integer conversions allocate: %v allocs per run", n)
-	}
-	_, _, _, _, _ = s64, s128, si, su, st
-}
-
 func FuzzIntegerConversions64(f *testing.F) {
 	f.Add(int64(math.MinInt64), uint64(math.MaxUint64), false, uint64(1234567890123456), int16(-3), uint64(0), uint8(0))
 	f.Add(int64(100000000000000149), uint64(10000000000000000005), true, uint64(9999999999999999), int16(369), uint64(0), uint8(3))

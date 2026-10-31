@@ -90,45 +90,6 @@ func TestWidenNarrowRoundTrip(t *testing.T) {
 	}
 }
 
-// TestWidenNarrowAllocs checks that neither conversion allocates, on
-// finite values, special values and every mode.
-func TestWidenNarrowAllocs(t *testing.T) {
-	c, _ := new(big.Int).SetString("1769609755703054503235303742165", 10)
-	in128 := []bits{
-		dec128.encode(value{kind: finite, coeff: c, exp: 167}),
-		dec128.encode(value{kind: finite, neg: true, coeff: c, exp: -6000}),
-		dec128.encode(value{kind: finite, coeff: c, exp: 6000}),
-		dec128.encode(value{kind: finite, coeff: new(big.Int), exp: 1000}),
-		{Hi: bid.NaN128Hi},
-		{Hi: bid.Inf128Hi},
-	}
-	in64 := []uint64{
-		dec64.encode(value{kind: finite, coeff: big.NewInt(1234567890123456), exp: 369}).Lo,
-		dec64.encode(value{kind: finite, coeff: big.NewInt(1), exp: -398}).Lo,
-		bid.NaN64,
-		bid.Inf64,
-	}
-	var sink64 uint64
-	var sink128 bits
-	if n := testing.AllocsPerRun(100, func() {
-		for _, x := range in64 {
-			sink128.Lo += bid.Widen(x).Lo
-		}
-	}); n != 0 {
-		t.Errorf("Widen: %v allocations", n)
-	}
-	for _, m := range convertModes {
-		if n := testing.AllocsPerRun(100, func() {
-			for _, x := range in128 {
-				sink64 += bid.Narrow(x, m)
-			}
-		}); n != 0 {
-			t.Errorf("Narrow in mode %s: %v allocations", modeName(m), n)
-		}
-	}
-	_, _ = sink64, sink128
-}
-
 // convertFuzz checks Widen on a decimal64 encoding and Narrow on a
 // decimal128 encoding against the reference model. The raw bit patterns
 // reach non-canonical encodings and payload NaNs; the canonical value

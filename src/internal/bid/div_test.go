@@ -197,32 +197,6 @@ func TestDivExactQuotients(t *testing.T) {
 	}
 }
 
-func TestDivAllocs(t *testing.T) {
-	var sink64 uint64
-	var sink128 bid.Uint128
-	x64, _ := dec64.parse("1", bid.ToNearestEven)
-	y64, _ := dec64.parse("70000000000000", bid.ToNearestEven)
-	e64, _ := dec64.parse("8.00", bid.ToNearestEven)
-	two64, _ := dec64.parse("2", bid.ToNearestEven)
-	x128, _ := dec128.parse("1", bid.ToNearestEven)
-	y128, _ := dec128.parse("12345678901234567890", bid.ToNearestEven)
-	e128, _ := dec128.parse("1.00", bid.ToNearestEven)
-	one128, _ := dec128.parse("1.0", bid.ToNearestEven)
-	fn := func() {
-		sink64 ^= bid.Div64(x64.Lo, y64.Lo, bid.ToNearestEven)
-		sink64 ^= bid.Div64(e64.Lo, two64.Lo, bid.TowardPositive)
-		sink64 ^= bid.Div64(x64.Lo, 0, bid.ToNearestEven)
-		r := bid.Div128(x128, y128, bid.ToNearestEven)
-		sink128.Lo ^= r.Lo
-		r = bid.Div128(e128, one128, bid.TowardNegative)
-		sink128.Lo ^= r.Lo
-	}
-	if n := testing.AllocsPerRun(100, fn); n != 0 {
-		t.Errorf("Div64/Div128 allocate: %v allocs per run", n)
-	}
-	_, _ = sink64, sink128
-}
-
 // The fuzz targets compare the kernel with the reference model on raw bit
 // patterns, canonical or not, under all five modes and one outside them.
 
@@ -277,58 +251,4 @@ func FuzzDiv128(f *testing.F) {
 			}
 		}
 	})
-}
-
-// The benchmarks time typical and worst operands: an inexact quotient of
-// two Precision-digit coefficients (the common case), an exact quotient
-// with trailing zeros to strip, the widest scaling (one digit over
-// Precision digits) and a special-value exit.
-var divBench = []struct {
-	name string
-	x, y string
-}{
-	{"inexact", "1234567890123456", "7777777777777777"},
-	{"exact", "8.00", "2"},
-	{"widest", "1", "9999999999999999"},
-	{"byzero", "1", "0"},
-}
-
-var divBench128 = []struct {
-	name string
-	x, y string
-}{
-	{"inexact", "1234567890123456789012345678901234", "7777777777777777777777777777777777"},
-	{"exact", "8.00", "2"},
-	{"widest", "1", "9999999999999999999999999999999999"},
-	{"byzero", "1", "0"},
-}
-
-func BenchmarkDiv64(b *testing.B) {
-	for _, bb := range divBench {
-		x, _ := dec64.parse(bb.x, bid.ToNearestEven)
-		y, _ := dec64.parse(bb.y, bid.ToNearestEven)
-		b.Run(bb.name, func(b *testing.B) {
-			var sink uint64
-			for i := 0; i < b.N; i++ {
-				sink ^= bid.Div64(x.Lo, y.Lo, bid.ToNearestEven)
-			}
-			_ = sink
-		})
-	}
-}
-
-func BenchmarkDiv128(b *testing.B) {
-	for _, bb := range divBench128 {
-		x, _ := dec128.parse(bb.x, bid.ToNearestEven)
-		y, _ := dec128.parse(bb.y, bid.ToNearestEven)
-		b.Run(bb.name, func(b *testing.B) {
-			var sink bid.Uint128
-			for i := 0; i < b.N; i++ {
-				r := bid.Div128(x, y, bid.ToNearestEven)
-				sink.Lo ^= r.Lo
-				sink.Hi ^= r.Hi
-			}
-			_ = sink
-		})
-	}
 }

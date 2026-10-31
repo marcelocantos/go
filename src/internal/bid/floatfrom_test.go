@@ -645,68 +645,6 @@ func TestFloatFromOracle(t *testing.T) {
 	}
 }
 
-// TestFloatFromAllocs checks that no path allocates: the fast path, the tie
-// that needs the exact path, the subnormals, the range decisions, and the
-// modes that always take the exact path.
-func TestFloatFromAllocs(t *testing.T) {
-	long := new(big.Int).Mul(big.NewInt(1<<53+1), new(big.Int).Exp(big.NewInt(5), big.NewInt(25), nil))
-	maxCoeff := new(big.Int).Sub(pow10(34), bigOne)
-	inputs128 := []bits{
-		floatFromEncode(dec128, false, big.NewInt(1), 36),
-		floatFromEncode(dec128, false, long, -25),
-		floatFromEncode(dec128, true, new(big.Int).Add(long, bigOne), -25),
-		floatFromEncode(dec128, false, maxCoeff, 0),
-		floatFromEncode(dec128, false, maxCoeff, -360), // subnormal in float64
-		floatFromEncode(dec128, false, maxCoeff, 274),  // near the largest
-		floatFromEncode(dec128, true, maxCoeff, 6000),  // decided by size
-		floatFromEncode(dec128, false, big.NewInt(0), -6000),
-		{Hi: bid.NaN128Hi},
-		{Hi: bid.Inf128Hi},
-	}
-	inputs64 := []uint64{
-		floatFromEncode(dec64, false, big.NewInt(1), 36).Lo,
-		floatFromEncode(dec64, false, big.NewInt(9007199254740993), 0).Lo,
-		floatFromEncode(dec64, false, big.NewInt(9999999999999999), -320).Lo,
-		floatFromEncode(dec64, true, big.NewInt(9999999999999999), 293).Lo,
-		floatFromEncode(dec64, false, big.NewInt(0), 0).Lo,
-		bid.NaN64,
-		bid.Inf64,
-	}
-	var sink64 float64
-	var sink32 float32
-	for _, m := range floatFromModes {
-		if n := testing.AllocsPerRun(100, func() {
-			for _, x := range inputs64 {
-				sink64 += bid.Float64From64(x, m)
-			}
-		}); n != 0 {
-			t.Errorf("Float64From64 in mode %s: %v allocations", modeName(m), n)
-		}
-		if n := testing.AllocsPerRun(100, func() {
-			for _, x := range inputs128 {
-				sink64 += bid.Float64From128(x, m)
-			}
-		}); n != 0 {
-			t.Errorf("Float64From128 in mode %s: %v allocations", modeName(m), n)
-		}
-		if n := testing.AllocsPerRun(100, func() {
-			for _, x := range inputs64 {
-				sink32 += bid.Float32From64(x, m)
-			}
-		}); n != 0 {
-			t.Errorf("Float32From64 in mode %s: %v allocations", modeName(m), n)
-		}
-		if n := testing.AllocsPerRun(100, func() {
-			for _, x := range inputs128 {
-				sink32 += bid.Float32From128(x, m)
-			}
-		}); n != 0 {
-			t.Errorf("Float32From128 in mode %s: %v allocations", modeName(m), n)
-		}
-	}
-	_, _ = sink64, sink32
-}
-
 // floatFromFuzz is the body of the fuzz targets: the raw encoding of the
 // input, and then a canonical value and a value at or beside a binary tie
 // that the input selects within b's range, which raw encodings rarely reach.
@@ -787,32 +725,4 @@ func FuzzFloat32From128(f *testing.F) {
 	f.Fuzz(func(t *testing.T, hi, lo uint64, e int16, sel uint8) {
 		floatFromFuzz(t, dec128, binary32, hi, lo, e, sel)
 	})
-}
-
-// BenchmarkFloatFrom measures the paths: a short coefficient and a long one,
-// which take the fast scaling path; a subnormal and a directed mode, which take the
-// exact path; and an exponent decided by size.
-func BenchmarkFloatFrom(b *testing.B) {
-	long, _ := new(big.Int).SetString("1234567890123456789012345678901234", 10)
-	cases := []struct {
-		name string
-		x    bits
-		m    bid.Mode
-	}{
-		{"short", floatFromEncode(dec128, false, big.NewInt(12345), -2), bid.ToNearestEven},
-		{"long", floatFromEncode(dec128, false, long, -30), bid.ToNearestEven},
-		{"subnormal", floatFromEncode(dec128, false, long, -350), bid.ToNearestEven},
-		{"directed", floatFromEncode(dec128, false, long, -30), bid.TowardZero},
-		{"directed-extreme", floatFromEncode(dec128, false, long, 270), bid.TowardZero},
-		{"far", floatFromEncode(dec128, false, long, 5000), bid.ToNearestEven},
-	}
-	var sink float64
-	for _, c := range cases {
-		b.Run(c.name, func(b *testing.B) {
-			for b.Loop() {
-				sink += bid.Float64From128(c.x, c.m)
-			}
-		})
-	}
-	_ = sink
 }

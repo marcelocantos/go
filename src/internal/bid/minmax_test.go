@@ -9,29 +9,6 @@ import (
 	"testing"
 )
 
-func TestMinMaxAllocs(t *testing.T) {
-	x64, _ := bid.Parse64("1.50", bid.ToNearestEven)
-	y64, _ := bid.Parse64("-2", bid.ToNearestEven)
-	x128, _ := bid.Parse128("1.50", bid.ToNearestEven)
-	y128, _ := bid.Parse128("-2", bid.ToNearestEven)
-	var r64 uint64
-	var r128 bid.Uint128
-	for _, tt := range []struct {
-		name string
-		f    func()
-	}{
-		{"Min64", func() { r64 = bid.Min64(x64, y64) }},
-		{"Max64", func() { r64 = bid.Max64(x64, y64) }},
-		{"Min128", func() { r128 = bid.Min128(x128, y128) }},
-		{"Max128", func() { r128 = bid.Max128(x128, y128) }},
-	} {
-		if got := testing.AllocsPerRun(100, tt.f); got != 0 {
-			t.Errorf("%s allocates %v times", tt.name, got)
-		}
-	}
-	_, _ = r64, r128
-}
-
 // TestMinMaxNonCanonical checks that a returned operand is canonicalized: a
 // BID64 second-form coefficient above 10^16-1 reads as a zero with its sign
 // and exponent, and that zero is what comes back.

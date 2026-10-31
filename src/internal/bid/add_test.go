@@ -6,8 +6,6 @@ package bid_test
 
 import (
 	"internal/bid"
-	"math/big"
-	"math/rand/v2"
 	"testing"
 )
 
@@ -176,26 +174,6 @@ func TestAddAllModesAgainstReference(t *testing.T) {
 	}
 }
 
-func TestAddAllocs(t *testing.T) {
-	x64, y64 := addOperand(t, dec64, "1E+300").Lo, addOperand(t, dec64, "-1.5E-300").Lo
-	x128, y128 := addOperand(t, dec128, "1E+3000"), addOperand(t, dec128, "-1.5E-3000")
-	near64, near128 := addOperand(t, dec64, "1.25").Lo, addOperand(t, dec128, "1.25")
-	var sink64 uint64
-	var sink128 bid.Uint128
-	fn := func() {
-		sink64 ^= bid.Add64(x64, y64, bid.TowardZero)
-		sink64 ^= bid.Sub64(near64, y64, bid.ToNearestEven)
-		sink64 ^= bid.Add64(near64, near64, bid.ToNearestEven)
-		sink128 = bid.Add128(x128, y128, bid.TowardZero)
-		sink128 = bid.Sub128(near128, y128, bid.ToNearestEven)
-		sink128 = bid.Add128(near128, near128, bid.ToNearestEven)
-	}
-	if n := testing.AllocsPerRun(100, fn); n != 0 {
-		t.Errorf("Add and Sub allocate: %v allocs per run", n)
-	}
-	_, _ = sink64, sink128
-}
-
 // FuzzAdd64 and FuzzAdd128 compare the kernel with the reference on operands
 // that are raw encodings, non-canonical ones included. Most raw pairs are far
 // apart, so a non-zero near moves y to within near places of x, which is
@@ -256,57 +234,4 @@ func FuzzAdd128(f *testing.F) {
 			t.Errorf("x=%s y=%s %s sub=%t: kernel %s, reference %s", display(dec128, x), display(dec128, y), modeName(m), sub, display(dec128, got), display(dec128, want))
 		}
 	})
-}
-
-// addBenchOperands draws the mix of the width spike in the package
-// documentation: 70% with exponents within 4 of each other, 20% spread over
-// ±(Precision+10) and 10% equal.
-func addBenchOperands(f *format) [][2]bits {
-	const count = 4096
-	r := rand.New(rand.NewPCG(1, 2))
-	coeff := func() value {
-		c := new(big.Int)
-		for range r.IntN(f.prec) + 1 {
-			c.Mul(c, big.NewInt(10)).Add(c, big.NewInt(r.Int64N(10)))
-		}
-		return value{kind: finite, neg: r.IntN(2) == 0, coeff: c, exp: r.IntN(21) - 10}
-	}
-	pairs := make([][2]bits, count)
-	for i := range pairs {
-		x, y := coeff(), coeff()
-		switch n := r.IntN(10); {
-		case n < 7:
-			y.exp = x.exp + r.IntN(9) - 4
-		case n < 9:
-			y.exp = x.exp + r.IntN(2*(f.prec+10)+1) - (f.prec + 10)
-		default:
-			y = x
-		}
-		pairs[i] = [2]bits{f.encode(x), f.encode(y)}
-	}
-	return pairs
-}
-
-func BenchmarkAdd64(b *testing.B) {
-	pairs := addBenchOperands(dec64)
-	var sink uint64
-	i := 0
-	for b.Loop() {
-		p := &pairs[i&(len(pairs)-1)]
-		sink ^= bid.Add64(p[0].Lo, p[1].Lo, bid.ToNearestEven)
-		i++
-	}
-	_ = sink
-}
-
-func BenchmarkAdd128(b *testing.B) {
-	pairs := addBenchOperands(dec128)
-	var sink uint64
-	i := 0
-	for b.Loop() {
-		p := &pairs[i&(len(pairs)-1)]
-		sink ^= bid.Add128(p[0], p[1], bid.ToNearestEven).Lo
-		i++
-	}
-	_ = sink
 }
