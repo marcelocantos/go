@@ -673,7 +673,7 @@ func TestKernel(t *testing.T) {
 					t.Errorf("%s: the kernel panicked %q on %d of %d cases after implementing the first", st.name, notImplemented, unimplemented, n)
 				}
 				if len(counts) > 0 {
-					t.Errorf("%s: mismatches by class over %d cases: %v", st.name, n, counts)
+					t.Errorf("%s: mismatches by class over %d cases with -bid.seed=%d: %v", st.name, n, *seedFlag, counts)
 				}
 			})
 		}
