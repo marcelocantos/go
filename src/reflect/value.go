@@ -1691,10 +1691,10 @@ func (v Value) IsZero() bool {
 		return v.Uint() == 0
 	case Float32, Float64:
 		return v.Float() == 0
-	case Decimal64:
-		return *(*uint64)(v.ptr) == 0
-	case Decimal128:
-		return *(*[2]uint64)(v.ptr) == [2]uint64{}
+	case Decimal64, Decimal128:
+		// By value, as for floats: every member of the zero cohort, of either
+		// sign, is zero, and only one of them has all bits clear.
+		return v.Decimal() == 0
 	case Complex64, Complex128:
 		return v.Complex() == 0
 	case Array:
