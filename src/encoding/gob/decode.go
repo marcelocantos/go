@@ -364,17 +364,14 @@ func decComplex128(i *decInstr, state *decoderState, value reflect.Value) {
 
 // decDecimal64 decodes a uint64 and stores it as a decimal64 in value.
 func decDecimal64(i *decInstr, state *decoderState, value reflect.Value) {
-	bits := state.decodeUint()
-	*(*uint64)(unsafe.Pointer(value.Addr().Pointer())) = bits
+	*(*decimal64)(unsafe.Pointer(value.Addr().Pointer())) = math.Decimal64frombits(state.decodeUint())
 }
 
 // decDecimal128 decodes two uint64 values and stores them as a decimal128 in value.
 func decDecimal128(i *decInstr, state *decoderState, value reflect.Value) {
 	lo := state.decodeUint()
 	hi := state.decodeUint()
-	p := (*[2]uint64)(unsafe.Pointer(value.Addr().Pointer()))
-	p[0] = lo
-	p[1] = hi
+	value.SetDecimal(math.Decimal128frombits(hi, lo))
 }
 
 // decUint8Slice decodes a byte slice and stores in value a slice header

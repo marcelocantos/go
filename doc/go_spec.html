@@ -8268,6 +8268,8 @@ set to the <i>zero value</i> for its type: <code>false</code> for booleans,
 for strings, and <code>nil</code> for pointers, functions, interfaces, slices, channels, and maps.
 This initialization is done recursively, so for instance each element of an
 array of structs will have its fields zeroed if no value is specified.
+The zero value of a decimal floating-point type is the result of converting
+the integer constant <code>0</code> to that type.
 </p>
 <p>
 These two simple declarations are equivalent:

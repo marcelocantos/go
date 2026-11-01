@@ -16,6 +16,13 @@
 // what lets the runtime, cmd/compile (through the cmd/dist bootstrap) and
 // the standard library all import one implementation.
 //
+// The bit patterns here are always BID encodings. A value of a decimal type
+// in memory is not: it is its encoding XORed with [Zero64], or with
+// [Zero128Hi] in the high word, so that all bits clear is the zero value 0E+0,
+// the result of converting the integer 0. Callers convert at the boundary:
+// cmd/compile for operators and constants, the runtime for hashing and
+// printing, and math's bits functions for everyone else.
+//
 // Every exported function that works at one width is width-suffixed:
 // Add64 operates on decimal64 bit patterns and Add128 on decimal128 bit
 // patterns. [Widen] and [Narrow], which go between the widths, are the

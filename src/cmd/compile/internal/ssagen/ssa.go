@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"go/constant"
 	"html"
+	"internal/bid"
 	"internal/buildcfg"
 	"internal/goexperiment"
 	"internal/runtime/gc"
@@ -1443,8 +1444,8 @@ func (s *state) constFloat32(t *types.Type, c float64) *ssa.Value {
 func (s *state) constFloat64(t *types.Type, c float64) *ssa.Value {
 	return s.f.ConstFloat64(t, c)
 }
-func (s *state) constDecimal64(t *types.Type, bid uint64) *ssa.Value {
-	return s.f.ConstDecimal64(t, bid)
+func (s *state) constDecimal64(t *types.Type, bits uint64) *ssa.Value {
+	return s.f.ConstDecimal64(t, bits)
 }
 
 // constDecimal returns the value of the constant c converted to the decimal
@@ -4783,9 +4784,9 @@ func (s *state) zeroVal(t *types.Type) *ssa.Value {
 		}
 
 	case t.IsDecimal():
-		// Zero value for decimal types is BID encoding of +0.0 (all bits zero).
+		// The zero value of a decimal type is all bits clear, which is the
+		// memory form of 0E+0.
 		if t.Kind() == types.TDECIMAL128 {
-			// decimal128 zero: both halves are zero (BID128 +0.0 = all bits zero).
 			z := s.constInt64(types.Types[types.TUINT64], 0)
 			return s.entryNewValue2(ssaop.OpDecimal128Make, t, z, z)
 		}
@@ -4992,26 +4993,33 @@ func (s *state) softDecimalOp(op ir.Op, rt *types.Type, args ...*ssa.Value) *ssa
 }
 
 // softDecimalCall calls the runtime function fn, passing decimal arguments
-// and returning a decimal result as bit patterns.
+// and returning a decimal result as BID bit patterns. A decimal value in SSA
+// and in memory is its BID encoding XORed with the encoding of 0E+0, so that
+// all bits clear is the zero value. XORing again here converts between the
+// two. The mask leaves the sign bit alone, so negation needs no conversion.
 func (s *state) softDecimalCall(fn *obj.LSym, rt *types.Type, args ...*ssa.Value) *ssa.Value {
 	u64 := types.Types[types.TUINT64]
+	zero64 := s.constInt64(u64, int64(bid.Zero64))
+	zero128Hi := s.constInt64(u64, int64(bid.Zero128Hi))
 	callArgs := make([]*ssa.Value, 0, 2*len(args))
 	for _, a := range args {
 		switch a.Type.Kind() {
 		case types.TDECIMAL64:
-			callArgs = append(callArgs, s.newValue1(ssaop.OpCopy, u64, a))
+			callArgs = append(callArgs, s.newValue2(ssaop.OpXor64, u64, s.newValue1(ssaop.OpCopy, u64, a), zero64))
 		case types.TDECIMAL128:
-			callArgs = append(callArgs, s.newValue1(ssaop.OpDecimal128Hi, u64, a), s.newValue1(ssaop.OpDecimal128Lo, u64, a))
+			hi := s.newValue2(ssaop.OpXor64, u64, s.newValue1(ssaop.OpDecimal128Hi, u64, a), zero128Hi)
+			callArgs = append(callArgs, hi, s.newValue1(ssaop.OpDecimal128Lo, u64, a))
 		default:
 			callArgs = append(callArgs, a)
 		}
 	}
 	switch rt.Kind() {
 	case types.TDECIMAL64:
-		return s.newValue1(ssaop.OpCopy, rt, s.rtcall(fn, true, []*types.Type{u64}, callArgs...)[0])
+		res := s.rtcall(fn, true, []*types.Type{u64}, callArgs...)
+		return s.newValue1(ssaop.OpCopy, rt, s.newValue2(ssaop.OpXor64, u64, res[0], zero64))
 	case types.TDECIMAL128:
 		res := s.rtcall(fn, true, []*types.Type{u64, u64}, callArgs...)
-		return s.newValue2(ssaop.OpDecimal128Make, rt, res[1], res[0])
+		return s.newValue2(ssaop.OpDecimal128Make, rt, res[1], s.newValue2(ssaop.OpXor64, u64, res[0], zero128Hi))
 	}
 	return s.rtcall(fn, true, []*types.Type{rt}, callArgs...)[0]
 }

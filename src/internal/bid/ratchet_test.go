@@ -56,6 +56,7 @@ var bidRatchetAllow = map[string]string{
 	"src/crypto/internal/fips140/edwards25519/field/_asm/fe_amd64_asm.go": "(1<<51)-1 is the 51-bit limb mask of GF(2^255-19), not a decimal64 coefficient mask",
 	"test/decimal.go":                     "a test program that writes the expected BID encodings by hand, so that they do not come from the kernel it judges",
 	"test/decimal_const.go":               "a test program that writes the expected BID encodings by hand, so that they do not come from the kernel it judges",
+	"test/decimal_zero.go":                "a test program that writes the expected BID encodings by hand, so that they do not come from the kernel it judges",
 	"src/encoding/json/jsontext/state.go": "0x6000_0000_0000_0000 is stateNamespaceMask, two bits of a JSON parser state word, not a BID combination field",
 }
 

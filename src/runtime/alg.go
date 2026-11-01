@@ -155,7 +155,7 @@ func c128hash(p unsafe.Pointer, h uintptr) uintptr {
 // sign of a zero. A NaN hashes randomly, as in f64hash, since it is not equal
 // to itself.
 func d64hash(p unsafe.Pointer, h uintptr) uintptr {
-	k := bid.Key64(*(*uint64)(p))
+	k := bid.Key64(d64load(p))
 	if k.Kind == bid.KindNaN {
 		return trimHash(c1 * (c0 ^ h ^ uintptr(rand())))
 	}
@@ -171,7 +171,7 @@ func d128hash(p unsafe.Pointer, h uintptr) uintptr {
 }
 
 func d64equal(p, q unsafe.Pointer) bool {
-	return bid.Equal64(*(*uint64)(p), *(*uint64)(q))
+	return bid.Equal64(d64load(p), d64load(q))
 }
 
 func d128equal(p, q unsafe.Pointer) bool {

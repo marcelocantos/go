@@ -54,12 +54,14 @@ func dmax128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
 	return z.Hi, z.Lo
 }
 
-// d128load returns the bit pattern of the decimal128 at p. A decimal128 is
+// d128load returns the BID bit pattern of the decimal128 at p. A decimal128 is
 // stored as its low half followed by its high half, on every target (see
-// dec.rules in cmd/compile/internal/ssa/_gen).
+// dec.rules in cmd/compile/internal/ssa/_gen), and its high half is XORed with
+// the high word of the encoding of 0E+0, so that all bits clear is the zero
+// value.
 func d128load(p unsafe.Pointer) bid.Uint128 {
 	x := (*[2]uint64)(p)
-	return bid.Uint128{Hi: x[1], Lo: x[0]}
+	return bid.Uint128{Hi: x[1] ^ bid.Zero128Hi, Lo: x[0]}
 }
 
 // printdecimal128 prints x for the builtin print and println, in the

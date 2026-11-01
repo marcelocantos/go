@@ -5,8 +5,9 @@
 // Soft-decimal entry points for decimal64, the counterpart of
 // softfloat64.go. The compiler lowers the decimal64 operators to calls to
 // these functions (see softDecimalOps in cmd/compile/internal/ssagen), which
-// pass a decimal64 as its BID bit pattern. All of the arithmetic is in
-// internal/bid. The language rounds to nearest, ties to even.
+// pass a decimal64 as its BID bit pattern, having converted it from its memory
+// form. All of the arithmetic is in internal/bid. The language rounds to
+// nearest, ties to even.
 
 package runtime
 
@@ -27,9 +28,16 @@ func dle64(x, y uint64) bool { return bid.LessEqual64(x, y) }
 func dmin64(x, y uint64) uint64 { return bid.Min64(x, y) }
 func dmax64(x, y uint64) uint64 { return bid.Max64(x, y) }
 
+// d64load returns the BID bit pattern of the decimal64 at p. In memory a
+// decimal64 is that pattern XORed with the encoding of 0E+0, so that all bits
+// clear is the zero value.
+func d64load(p unsafe.Pointer) uint64 {
+	return *(*uint64)(p) ^ bid.Zero64
+}
+
 // printdecimal64 prints x for the builtin print and println, in the character
 // form of internal/bid, which preserves the quantum.
 func printdecimal64(x decimal64) {
 	var buf [bid.MaxLen64]byte
-	gwrite(bid.Append64(buf[:0], *(*uint64)(unsafe.Pointer(&x))))
+	gwrite(bid.Append64(buf[:0], d64load(unsafe.Pointer(&x))))
 }

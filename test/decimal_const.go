@@ -13,8 +13,8 @@
 package main
 
 import (
+	"math"
 	"math/big"
-	"unsafe"
 )
 
 var bad bool
@@ -70,10 +70,13 @@ func want128(neg bool, coeff string, exp int) [2]uint64 {
 }
 
 //go:noinline
-func bits64(d decimal64) uint64 { return *(*uint64)(unsafe.Pointer(&d)) }
+func bits64(d decimal64) uint64 { return math.Decimal64bits(d) }
 
 //go:noinline
-func bits128(d decimal128) [2]uint64 { return *(*[2]uint64)(unsafe.Pointer(&d)) }
+func bits128(d decimal128) [2]uint64 {
+	hi, lo := math.Decimal128bits(d)
+	return [2]uint64{lo, hi}
+}
 
 // check64 compares the variable g, from static data, and the argument l,
 // materialized by SSA at the call site, with want.

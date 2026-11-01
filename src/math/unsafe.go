@@ -4,7 +4,10 @@
 
 package math
 
-import "unsafe"
+import (
+	"internal/bid"
+	"unsafe"
+)
 
 // Despite being an exported symbol,
 // Float32bits is linknamed by widely used packages.
@@ -40,22 +43,29 @@ func Float64bits(f float64) uint64 { return *(*uint64)(unsafe.Pointer(&f)) }
 // Float64frombits(Float64bits(x)) == x.
 func Float64frombits(b uint64) float64 { return *(*float64)(unsafe.Pointer(&b)) }
 
+// In memory, a decimal value is its BID encoding XORed with the encoding of
+// the integer 0 converted to its type, so that all bits clear is the zero
+// value. The functions below convert between the two.
+
 // Decimal64bits returns the IEEE 754-2008 BID (Binary Integer Decimal)
 // representation of d as a uint64.
 // Decimal64bits(Decimal64frombits(x)) == x.
-func Decimal64bits(d decimal64) uint64 { return *(*uint64)(unsafe.Pointer(&d)) }
+func Decimal64bits(d decimal64) uint64 { return *(*uint64)(unsafe.Pointer(&d)) ^ bid.Zero64 }
 
 // Decimal64frombits returns the decimal64 value corresponding to the
 // IEEE 754-2008 BID encoding b.
 // Decimal64frombits(Decimal64bits(x)) == x.
-func Decimal64frombits(b uint64) decimal64 { return *(*decimal64)(unsafe.Pointer(&b)) }
+func Decimal64frombits(b uint64) decimal64 {
+	b ^= bid.Zero64
+	return *(*decimal64)(unsafe.Pointer(&b))
+}
 
 // Decimal128bits returns the IEEE 754-2008 BID (Binary Integer Decimal)
 // representation of d as two uint64 values (hi, lo).
 // Decimal128frombits(Decimal128bits(x)) == x.
 func Decimal128bits(d decimal128) (hi, lo uint64) {
 	p := (*[2]uint64)(unsafe.Pointer(&d))
-	return p[1], p[0] // stored as [lo, hi] in little-endian memory
+	return p[1] ^ bid.Zero128Hi, p[0] // stored as [lo, hi] on every target
 }
 
 // Decimal128frombits returns the decimal128 value corresponding to the
@@ -65,6 +75,6 @@ func Decimal128frombits(hi, lo uint64) decimal128 {
 	var d decimal128
 	p := (*[2]uint64)(unsafe.Pointer(&d))
 	p[0] = lo
-	p[1] = hi
+	p[1] = hi ^ bid.Zero128Hi
 	return d
 }

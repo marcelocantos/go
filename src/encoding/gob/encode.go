@@ -13,7 +13,6 @@ import (
 	"math/bits"
 	"reflect"
 	"sync"
-	"unsafe"
 )
 
 const uint64Size = 8
@@ -238,10 +237,10 @@ func encComplex(i *encInstr, state *encoderState, v reflect.Value) {
 
 // encDecimal64 encodes a decimal64 value referenced by v.
 // decimal64 values are transmitted as their raw uint64 BID bits.
+// Only the zero value is omitted, not a zero with another exponent or sign.
 func encDecimal64(i *encInstr, state *encoderState, v reflect.Value) {
-	d := v.Interface().(decimal64)
-	bits := *(*uint64)(unsafe.Pointer(&d))
-	if bits != 0 || state.sendZero {
+	bits := math.Decimal64bits(v.Convert(reflect.TypeFor[decimal64]()).Interface().(decimal64))
+	if bits != math.Decimal64bits(0) || state.sendZero {
 		state.update(i)
 		state.encodeUint(bits)
 	}
@@ -250,12 +249,12 @@ func encDecimal64(i *encInstr, state *encoderState, v reflect.Value) {
 // encDecimal128 encodes a decimal128 value referenced by v.
 // decimal128 values are transmitted as two uint64 values (lo, hi) of the BID encoding.
 func encDecimal128(i *encInstr, state *encoderState, v reflect.Value) {
-	d := v.Interface().(decimal128)
-	p := (*[2]uint64)(unsafe.Pointer(&d))
-	if p[0] != 0 || p[1] != 0 || state.sendZero {
+	hi, lo := math.Decimal128bits(v.Decimal())
+	zeroHi, zeroLo := math.Decimal128bits(0)
+	if hi != zeroHi || lo != zeroLo || state.sendZero {
 		state.update(i)
-		state.encodeUint(p[0])
-		state.encodeUint(p[1])
+		state.encodeUint(lo)
+		state.encodeUint(hi)
 	}
 }
 

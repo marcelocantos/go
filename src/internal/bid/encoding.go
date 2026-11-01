@@ -97,6 +97,8 @@ const (
 
 // Canonical encodings of the special values and of +0 with exponent 0.
 // The decimal128 constants give the high word; the low word is zero.
+// The memory form of a value is its encoding XORed with Zero64 or Zero128Hi,
+// so that all bits clear means 0E+0. Neither has the sign bit set.
 // Negative infinity is Inf64 | SignMask64.
 const (
 	Inf64  uint64 = SpecialMask64

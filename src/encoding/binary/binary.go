@@ -353,11 +353,9 @@ func decodeFast(bs []byte, order ByteOrder, data any) bool {
 	case *float64:
 		*data = math.Float64frombits(order.Uint64(bs))
 	case *decimal64:
-		bits := order.Uint64(bs)
-		*data = *(*decimal64)(unsafe.Pointer(&bits))
+		*data = math.Decimal64frombits(order.Uint64(bs))
 	case *decimal128:
-		bits := [2]uint64{order.Uint64(bs), order.Uint64(bs[8:])}
-		*data = *(*decimal128)(unsafe.Pointer(&bits))
+		*data = math.Decimal128frombits(order.Uint64(bs[8:]), order.Uint64(bs))
 	case []bool:
 		for i, x := range bs[:len(data)] { // Easier to loop over the input for 8-bit values.
 			data[i] = x != 0
@@ -402,13 +400,11 @@ func decodeFast(bs []byte, order ByteOrder, data any) bool {
 		}
 	case []decimal64:
 		for i := range data {
-			bits := order.Uint64(bs[8*i:])
-			data[i] = *(*decimal64)(unsafe.Pointer(&bits))
+			data[i] = math.Decimal64frombits(order.Uint64(bs[8*i:]))
 		}
 	case []decimal128:
 		for i := range data {
-			bits := [2]uint64{order.Uint64(bs[16*i:]), order.Uint64(bs[16*i+8:])}
-			data[i] = *(*decimal128)(unsafe.Pointer(&bits))
+			data[i] = math.Decimal128frombits(order.Uint64(bs[16*i+8:]), order.Uint64(bs[16*i:]))
 		}
 	default:
 		return false
@@ -606,26 +602,26 @@ func encodeFast(bs []byte, order ByteOrder, data any) {
 			order.PutUint64(bs[8*i:], math.Float64bits(x))
 		}
 	case *decimal64:
-		order.PutUint64(bs, *(*uint64)(unsafe.Pointer(v)))
+		order.PutUint64(bs, math.Decimal64bits(*v))
 	case decimal64:
-		order.PutUint64(bs, *(*uint64)(unsafe.Pointer(&v)))
+		order.PutUint64(bs, math.Decimal64bits(v))
 	case []decimal64:
 		for i := range v {
-			order.PutUint64(bs[8*i:], *(*uint64)(unsafe.Pointer(&v[i])))
+			order.PutUint64(bs[8*i:], math.Decimal64bits(v[i]))
 		}
 	case *decimal128:
-		bits := *(*[2]uint64)(unsafe.Pointer(v))
-		order.PutUint64(bs, bits[0])
-		order.PutUint64(bs[8:], bits[1])
+		hi, lo := math.Decimal128bits(*v)
+		order.PutUint64(bs, lo)
+		order.PutUint64(bs[8:], hi)
 	case decimal128:
-		bits := *(*[2]uint64)(unsafe.Pointer(&v))
-		order.PutUint64(bs, bits[0])
-		order.PutUint64(bs[8:], bits[1])
+		hi, lo := math.Decimal128bits(v)
+		order.PutUint64(bs, lo)
+		order.PutUint64(bs[8:], hi)
 	case []decimal128:
 		for i := range v {
-			bits := *(*[2]uint64)(unsafe.Pointer(&v[i]))
-			order.PutUint64(bs[16*i:], bits[0])
-			order.PutUint64(bs[16*i+8:], bits[1])
+			hi, lo := math.Decimal128bits(v[i])
+			order.PutUint64(bs[16*i:], lo)
+			order.PutUint64(bs[16*i+8:], hi)
 		}
 	}
 }
@@ -957,11 +953,11 @@ func (d *decoder) value(v reflect.Value) {
 		v.SetFloat(math.Float64frombits(d.uint64()))
 
 	case reflect.Decimal64:
-		*(*uint64)(unsafe.Pointer(v.Addr().Pointer())) = d.uint64()
+		*(*decimal64)(unsafe.Pointer(v.Addr().Pointer())) = math.Decimal64frombits(d.uint64())
 	case reflect.Decimal128:
-		p := (*[2]uint64)(unsafe.Pointer(v.Addr().Pointer()))
-		p[0] = d.uint64()
-		p[1] = d.uint64()
+		lo := d.uint64()
+		hi := d.uint64()
+		v.SetDecimal(math.Decimal128frombits(hi, lo))
 
 	case reflect.Complex64:
 		v.SetComplex(complex(
@@ -1029,13 +1025,11 @@ func (e *encoder) value(v reflect.Value) {
 		e.uint64(math.Float64bits(v.Float()))
 
 	case reflect.Decimal64:
-		d := v.Interface().(decimal64)
-		e.uint64(*(*uint64)(unsafe.Pointer(&d)))
+		e.uint64(math.Decimal64bits(v.Convert(reflect.TypeFor[decimal64]()).Interface().(decimal64)))
 	case reflect.Decimal128:
-		d := v.Interface().(decimal128)
-		p := (*[2]uint64)(unsafe.Pointer(&d))
-		e.uint64(p[0])
-		e.uint64(p[1])
+		hi, lo := math.Decimal128bits(v.Decimal())
+		e.uint64(lo)
+		e.uint64(hi)
 
 	case reflect.Complex64:
 		x := v.Complex()

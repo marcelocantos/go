@@ -20,9 +20,11 @@ import (
 // and are corrected or bounded where they are used.
 const log10Of2 = 0.30103
 
-// DecimalConst returns the encoding of the numeric constant c as the decimal
-// type t, in words of the BID encoding: the bits are lo for decimal64, with hi
-// zero, and hi, lo for decimal128. Package bid rounds and encodes the value;
+// DecimalConst returns the numeric constant c as the decimal type t, in words
+// of its memory form: the bits are lo for decimal64, with hi zero, and hi, lo
+// for decimal128. The memory form is the BID encoding XORed with the encoding
+// of 0E+0, so that all bits clear is the zero value. Package bid rounds and
+// encodes the value;
 // this function only reduces it to the parts bid.Round64 and bid.Round128 take.
 // The exact value is c.Val(), so no rounding happens before bid's.
 //
@@ -38,11 +40,11 @@ func DecimalConst(t *types.Type, c Node) (lo, hi uint64) {
 		neg, coeff, exp, sticky := decimalParts(val, lit, bid.Precision128, bid.MinExp128, bid.Emax128)
 		words, low := new(big.Int).QuoRem(coeff, new(big.Int).Lsh(big.NewInt(1), 64), new(big.Int))
 		bits, _ := bid.Round128(neg, bid.Uint128{Hi: words.Uint64(), Lo: low.Uint64()}, exp, sticky, bid.ToNearestEven)
-		return bits.Lo, bits.Hi
+		return bits.Lo, bits.Hi ^ bid.Zero128Hi
 	}
 	neg, coeff, exp, sticky := decimalParts(val, lit, bid.Precision64, bid.MinExp64, bid.Emax64)
 	bits, _ := bid.Round64(neg, coeff.Uint64(), exp, sticky, bid.ToNearestEven)
-	return bits, 0
+	return bits ^ bid.Zero64, 0
 }
 
 // LiteralFloat64Val returns the value of the source literal of the float64

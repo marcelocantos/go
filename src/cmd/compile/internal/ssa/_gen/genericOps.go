@@ -365,7 +365,7 @@ var genericOps = []opData{
 	// Encodings of +inf, -inf, and -0 are fine.
 	{name: "Const32F", aux: "Float32", earlyOk: true}, // value is math.Float64frombits(uint64(auxint)) and is exactly representable as float 32
 	{name: "Const64F", aux: "Float64", earlyOk: true}, // value is math.Float64frombits(uint64(auxint))
-	{name: "Const64D", aux: "Int64"},                  // BID-encoded decimal64 stored as int64
+	{name: "Const64D", aux: "Int64"},                  // decimal64 in its memory form, stored as int64
 	{name: "ConstInterface", earlyOk: true},           // nil interface
 	{name: "ConstSlice", earlyOk: true},               // nil slice
 
