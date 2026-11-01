@@ -355,7 +355,7 @@ func decodeFast(bs []byte, order ByteOrder, data any) bool {
 	case *decimal64:
 		*data = math.Decimal64frombits(order.Uint64(bs))
 	case *decimal128:
-		*data = math.Decimal128frombits(order.Uint64(bs[8:]), order.Uint64(bs))
+		*data = getDecimal128(order, bs)
 	case []bool:
 		for i, x := range bs[:len(data)] { // Easier to loop over the input for 8-bit values.
 			data[i] = x != 0
@@ -404,7 +404,7 @@ func decodeFast(bs []byte, order ByteOrder, data any) bool {
 		}
 	case []decimal128:
 		for i := range data {
-			data[i] = math.Decimal128frombits(order.Uint64(bs[16*i+8:]), order.Uint64(bs[16*i:]))
+			data[i] = getDecimal128(order, bs[16*i:])
 		}
 	default:
 		return false
@@ -610,18 +610,12 @@ func encodeFast(bs []byte, order ByteOrder, data any) {
 			order.PutUint64(bs[8*i:], math.Decimal64bits(v[i]))
 		}
 	case *decimal128:
-		hi, lo := math.Decimal128bits(*v)
-		order.PutUint64(bs, lo)
-		order.PutUint64(bs[8:], hi)
+		putDecimal128(order, bs, *v)
 	case decimal128:
-		hi, lo := math.Decimal128bits(v)
-		order.PutUint64(bs, lo)
-		order.PutUint64(bs[8:], hi)
+		putDecimal128(order, bs, v)
 	case []decimal128:
 		for i := range v {
-			hi, lo := math.Decimal128bits(v[i])
-			order.PutUint64(bs[16*i:], lo)
-			order.PutUint64(bs[16*i+8:], hi)
+			putDecimal128(order, bs[16*i:], v[i])
 		}
 	}
 }
@@ -955,9 +949,8 @@ func (d *decoder) value(v reflect.Value) {
 	case reflect.Decimal64:
 		*(*decimal64)(unsafe.Pointer(v.Addr().Pointer())) = math.Decimal64frombits(d.uint64())
 	case reflect.Decimal128:
-		lo := d.uint64()
-		hi := d.uint64()
-		v.SetDecimal(math.Decimal128frombits(hi, lo))
+		v.SetDecimal(getDecimal128(d.order, d.buf[d.offset:]))
+		d.offset += 16
 
 	case reflect.Complex64:
 		v.SetComplex(complex(
@@ -1027,9 +1020,8 @@ func (e *encoder) value(v reflect.Value) {
 	case reflect.Decimal64:
 		e.uint64(math.Decimal64bits(v.Convert(reflect.TypeFor[decimal64]()).Interface().(decimal64)))
 	case reflect.Decimal128:
-		hi, lo := math.Decimal128bits(v.Decimal())
-		e.uint64(lo)
-		e.uint64(hi)
+		putDecimal128(e.order, e.buf[e.offset:], v.Decimal())
+		e.offset += 16
 
 	case reflect.Complex64:
 		x := v.Complex()
@@ -1109,4 +1101,29 @@ func ensure(buf []byte, n int) (buf2, pos []byte) {
 	l := len(buf)
 	buf = slices.Grow(buf, n)[:l+n]
 	return buf, buf[l:]
+}
+
+// endianProbe reads as 1 in a big-endian byte order.
+var endianProbe = [2]byte{0, 1}
+
+// getDecimal128 reads the IEEE 754 interchange encoding of a decimal128 from
+// the first 16 bytes of b. It is 128 bits in the byte order: the most
+// significant word comes first if the order is big-endian.
+func getDecimal128(order ByteOrder, b []byte) decimal128 {
+	if order.Uint16(endianProbe[:]) == 1 {
+		return math.Decimal128frombits(order.Uint64(b), order.Uint64(b[8:]))
+	}
+	return math.Decimal128frombits(order.Uint64(b[8:]), order.Uint64(b))
+}
+
+// putDecimal128 writes d to the first 16 bytes of b; see getDecimal128.
+func putDecimal128(order ByteOrder, b []byte, d decimal128) {
+	hi, lo := math.Decimal128bits(d)
+	if order.Uint16(endianProbe[:]) == 1 {
+		order.PutUint64(b, hi)
+		order.PutUint64(b[8:], lo)
+		return
+	}
+	order.PutUint64(b, lo)
+	order.PutUint64(b[8:], hi)
 }

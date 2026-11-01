@@ -369,8 +369,8 @@ func decDecimal64(i *decInstr, state *decoderState, value reflect.Value) {
 
 // decDecimal128 decodes two uint64 values and stores them as a decimal128 in value.
 func decDecimal128(i *decInstr, state *decoderState, value reflect.Value) {
-	lo := state.decodeUint()
 	hi := state.decodeUint()
+	lo := state.decodeUint()
 	value.SetDecimal(math.Decimal128frombits(hi, lo))
 }
 

@@ -247,14 +247,15 @@ func encDecimal64(i *encInstr, state *encoderState, v reflect.Value) {
 }
 
 // encDecimal128 encodes a decimal128 value referenced by v.
-// decimal128 values are transmitted as two uint64 values (lo, hi) of the BID encoding.
+// decimal128 values are transmitted as the two uint64 words of their BID
+// encoding, most significant first.
 func encDecimal128(i *encInstr, state *encoderState, v reflect.Value) {
 	hi, lo := math.Decimal128bits(v.Decimal())
 	zeroHi, zeroLo := math.Decimal128bits(0)
 	if hi != zeroHi || lo != zeroLo || state.sendZero {
 		state.update(i)
-		state.encodeUint(lo)
 		state.encodeUint(hi)
+		state.encodeUint(lo)
 	}
 }
 

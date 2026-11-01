@@ -170,3 +170,61 @@ func TestDecimalSize(t *testing.T) {
 		t.Errorf("Size([]decimal128) = %d, want 48", got)
 	}
 }
+
+// The bytes are written by hand: the IEEE 754 interchange encoding of the
+// decimal, in the requested byte order, as one number at each width.
+func TestDecimalWireBytes(t *testing.T) {
+	d64 := decimal64(1.50) // coefficient 150, exponent -2
+	big64 := []byte{0x31, 0x80, 0, 0, 0, 0, 0, 0x96}
+	little64 := []byte{0x96, 0, 0, 0, 0, 0, 0x80, 0x31}
+
+	d128 := decimal128(1.50)
+	big128 := []byte{0x30, 0x3c, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x96}
+	little128 := []byte{0x96, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x3c, 0x30}
+
+	type named decimal128
+	tests := []struct {
+		name  string
+		order ByteOrder
+		v     any
+		want  []byte
+	}{
+		{"decimal64 big", BigEndian, d64, big64},
+		{"decimal64 little", LittleEndian, d64, little64},
+		{"decimal128 big", BigEndian, d128, big128},
+		{"decimal128 little", LittleEndian, d128, little128},
+		{"pointer big", BigEndian, &d128, big128},
+		{"slice big", BigEndian, []decimal128{d128}, big128},
+		{"slice little", LittleEndian, []decimal128{d128}, little128},
+		{"struct big", BigEndian, struct{ D decimal128 }{d128}, big128},
+		{"struct little", LittleEndian, struct{ D decimal128 }{d128}, little128},
+		{"named big", BigEndian, struct{ D named }{named(d128)}, big128},
+		{"struct64 big", BigEndian, struct{ D decimal64 }{d64}, big64},
+	}
+	for _, tt := range tests {
+		var buf bytes.Buffer
+		if err := Write(&buf, tt.order, tt.v); err != nil {
+			t.Errorf("%s: Write: %v", tt.name, err)
+			continue
+		}
+		if !bytes.Equal(buf.Bytes(), tt.want) {
+			t.Errorf("%s: Write = % x, want % x", tt.name, buf.Bytes(), tt.want)
+		}
+	}
+
+	var got128 decimal128
+	if err := Read(bytes.NewReader(big128), BigEndian, &got128); err != nil || got128 != 1.5 {
+		t.Errorf("Read big decimal128 = %v, %v", got128, err)
+	}
+	if err := Read(bytes.NewReader(little128), LittleEndian, &got128); err != nil || got128 != 1.5 {
+		t.Errorf("Read little decimal128 = %v, %v", got128, err)
+	}
+	var st struct{ D decimal128 }
+	if err := Read(bytes.NewReader(big128), BigEndian, &st); err != nil || st.D != 1.5 {
+		t.Errorf("Read big struct = %v, %v", st.D, err)
+	}
+	var sl = make([]decimal128, 1)
+	if err := Read(bytes.NewReader(big128), BigEndian, sl); err != nil || sl[0] != 1.5 {
+		t.Errorf("Read big slice = %v, %v", sl[0], err)
+	}
+}

@@ -209,3 +209,16 @@ func TestDecimalInf(t *testing.T) {
 		}
 	})
 }
+
+// A decimal128 is written most significant word first. The bytes are written by
+// hand: the high word of 1 as gob's eight-byte uint, then the low word.
+func TestDecimal128WireOrder(t *testing.T) {
+	var buf bytes.Buffer
+	if err := NewEncoder(&buf).Encode(struct{ D decimal128 }{1}); err != nil {
+		t.Fatal(err)
+	}
+	want := []byte{0xf8, 0x30, 0x40, 0, 0, 0, 0, 0, 0, 0x01}
+	if !bytes.Contains(buf.Bytes(), want) {
+		t.Errorf("stream % x does not contain % x", buf.Bytes(), want)
+	}
+}
