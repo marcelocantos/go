@@ -1401,13 +1401,15 @@
 // multiply and flattens the differences there; the Add64 row is the
 // informative one.
 //
-// linux/amd64 is unmeasured: no Linux host was reachable when the spike
-// ran. The Rosetta numbers stand in only for the relative ordering of the
-// candidates and are not linux/amd64 timings. The 10% gap between
-// generated and hand-written Add64 under Rosetta, absent natively, is
-// unexplained; the first implementation target should repeat the Add64
-// and Mul64 rows on real linux/amd64 hardware before tuning anything for
-// it.
+// No Linux host was reachable when the spike ran, so the Rosetta numbers
+// stand in only for the relative ordering of the candidates and are not
+// linux/amd64 timings. The 10% gap between generated and hand-written Add64
+// under Rosetta, absent natively, is unexplained. The kernel itself has
+// since been measured on linux/amd64, on a shared CI runner (AMD EPYC 7763,
+// testdata/bench_baseline_linux_amd64.txt), where generated Add64 takes
+// 21.6 ns and Mul64 20.4 ns against 1.9 ns for float64 in the same run. The
+// spike's hand-written code no longer exists, so those rows have no
+// width-specific comparison on this platform.
 //
 // Why generation. The generated code is the hand-written code. Every
 // coefficient helper of the decimal64 instantiation inlines (the compiler
