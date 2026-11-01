@@ -1383,6 +1383,44 @@ func TestComparison(t *testing.T) {
 		D64a:      decimal64(1.5),
 		D64b:      decimal64(2.5),
 	}
+	cmpStructDecimal := func(t *testing.T) {
+		type named decimal64
+		data := struct {
+			D64, D64b   decimal64
+			D128, D128b decimal128
+			N           named
+			NaN         decimal64
+		}{1.5, 2.5, 1.50, 2.5, 1.5, 0}
+		data.NaN = data.NaN / data.NaN
+		for _, test := range []struct{ expr, want string }{
+			{"eq .D64 .D128", "true"},
+			{"eq .D64 .D128b", "false"},
+			{"eq .D128 .N", "true"},
+			{"ne .D64 .D128b", "true"},
+			{"lt .D64 .D128b", "true"},
+			{"lt .D128b .D64", "false"},
+			{"le .D64 .D128", "true"},
+			{"gt .D128b .D64", "true"},
+			{"ge .D64 .D128", "true"},
+			{"lt .N .D64b", "true"},
+			{"le .N .D128", "true"},
+			{"eq .NaN .NaN", "false"},
+			{"lt .NaN .D64", "false"},
+		} {
+			tmpl, err := New("decimal").Parse("{{" + test.expr + "}}")
+			if err != nil {
+				t.Fatalf("%q: %v", test.expr, err)
+			}
+			var b strings.Builder
+			if err := tmpl.Execute(&b, data); err != nil {
+				t.Errorf("%q: %v", test.expr, err)
+			} else if b.String() != test.want {
+				t.Errorf("%q = %s, want %s", test.expr, b.String(), test.want)
+			}
+		}
+	}
+	cmpStructDecimal(t)
+
 	for _, test := range cmpTests {
 		text := fmt.Sprintf("{{if %s}}true{{else}}false{{end}}", test.expr)
 		tmpl, err := New("empty").Parse(text)

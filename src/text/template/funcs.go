@@ -550,7 +550,7 @@ func eq(arg1 reflect.Value, arg2 ...reflect.Value) (bool, error) {
 			case intKind:
 				truth = arg1.Int() == arg.Int()
 			case decimalKind:
-				truth = arg1.Interface() == arg.Interface()
+				truth = arg1.Decimal() == arg.Decimal()
 			case stringKind:
 				truth = arg1.String() == arg.String()
 			case uintKind:
@@ -615,12 +615,7 @@ func lt(arg1, arg2 reflect.Value) (bool, error) {
 		case intKind:
 			truth = arg1.Int() < arg2.Int()
 		case decimalKind:
-			switch arg1.Kind() {
-			case reflect.Decimal64:
-				truth = arg1.Interface().(decimal64) < arg2.Interface().(decimal64)
-			case reflect.Decimal128:
-				truth = arg1.Interface().(decimal128) < arg2.Interface().(decimal128)
-			}
+			truth = arg1.Decimal() < arg2.Decimal()
 		case stringKind:
 			truth = arg1.String() < arg2.String()
 		case uintKind:
