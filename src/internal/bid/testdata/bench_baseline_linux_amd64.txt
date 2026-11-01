@@ -9,6 +9,18 @@
 #       -test.count 8 -test.benchtime 100ms
 # in the directory src/internal/bid, and the lines below are that output
 # unedited. Moving this file is a deliberate commit; see TestBenchRatchet.
+#
+# The ratchet is TestBenchRatchet, opt-in:
+#   go test -run TestBenchRatchet internal/bid -args -bid.ratchet
+# It measures each row in short runs and takes the smallest time, as it does
+# for the samples below. A row fails when its time is over
+#   baseline * (1 + ratchet-band) + ratchet-slack-ns
+# or when it allocates. The band is 20% until a quiet baseline exists; the
+# slack stands for the timer resolution on rows of about a nanosecond. The
+# baseline moves only by a deliberate commit that replaces this file.
+#
+# ratchet-band: 0.20
+# ratchet-slack-ns: 0.5
 goos: linux
 goarch: amd64
 pkg: internal/bid
