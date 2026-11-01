@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-// --- FormatDecimal64 / AppendDecimal64 tests ---
+// --- FormatDecimal / AppendDecimal tests ---
 
 type dtoaTest struct {
 	d    decimal64
@@ -155,9 +155,9 @@ func zeros(n int) string {
 
 func TestFormatDecimal64(t *testing.T) {
 	for i, test := range dtoaTests {
-		s := FormatDecimal64(test.d, test.fmt, test.prec)
+		s := FormatDecimal(decimal128(test.d), test.fmt, test.prec, 64)
 		if s != test.s {
-			t.Errorf("#%d: FormatDecimal64(%v, %c, %d) = %q, want %q",
+			t.Errorf("#%d: FormatDecimal(%v, %c, %d) = %q, want %q",
 				i, test.d, test.fmt, test.prec, s, test.s)
 		}
 	}
@@ -165,18 +165,18 @@ func TestFormatDecimal64(t *testing.T) {
 
 func TestAppendDecimal64(t *testing.T) {
 	for i, test := range dtoaTests {
-		b := AppendDecimal64([]byte("abc"), test.d, test.fmt, test.prec)
+		b := AppendDecimal([]byte("abc"), decimal128(test.d), test.fmt, test.prec, 64)
 		if string(b) != "abc"+test.s {
-			t.Errorf("#%d: AppendDecimal64(\"abc\", %v, %c, %d) = %q, want %q",
+			t.Errorf("#%d: AppendDecimal(\"abc\", %v, %c, %d) = %q, want %q",
 				i, test.d, test.fmt, test.prec, string(b), "abc"+test.s)
 		}
 	}
 }
 
-// --- FormatDecimal128 / AppendDecimal128 tests ---
+// --- FormatDecimal / AppendDecimal tests ---
 
 func mustParseD128(s string) decimal128 {
-	d, err := ParseDecimal128(s)
+	d, err := ParseDecimal(s, 128)
 	if err != nil {
 		panic("mustParseD128: " + err.Error())
 	}
@@ -206,7 +206,7 @@ var dtoa128Tests = []dtoa128Test{
 }
 
 func init() {
-	// Add test case requiring ParseDecimal128 (34-digit precision)
+	// Add test case requiring ParseDecimal (34-digit precision)
 	dtoa128Tests = append(dtoa128Tests, dtoa128Test{
 		mustParseD128("1234567890123456789012345678901234"),
 		'g', -1, "1.234567890123456789012345678901234e+33",
@@ -241,9 +241,9 @@ func init() {
 
 func TestFormatDecimal128(t *testing.T) {
 	for i, test := range dtoa128Tests {
-		s := FormatDecimal128(test.d, test.fmt, test.prec)
+		s := FormatDecimal(test.d, test.fmt, test.prec, 128)
 		if s != test.s {
-			t.Errorf("#%d: FormatDecimal128(%v, %c, %d) = %q, want %q",
+			t.Errorf("#%d: FormatDecimal(%v, %c, %d) = %q, want %q",
 				i, test.d, test.fmt, test.prec, s, test.s)
 		}
 	}
@@ -251,15 +251,15 @@ func TestFormatDecimal128(t *testing.T) {
 
 func TestAppendDecimal128(t *testing.T) {
 	for i, test := range dtoa128Tests {
-		b := AppendDecimal128([]byte("abc"), test.d, test.fmt, test.prec)
+		b := AppendDecimal([]byte("abc"), test.d, test.fmt, test.prec, 128)
 		if string(b) != "abc"+test.s {
-			t.Errorf("#%d: AppendDecimal128(\"abc\", %v, %c, %d) = %q, want %q",
+			t.Errorf("#%d: AppendDecimal(\"abc\", %v, %c, %d) = %q, want %q",
 				i, test.d, test.fmt, test.prec, string(b), "abc"+test.s)
 		}
 	}
 }
 
-// --- ParseDecimal64 tests ---
+// --- ParseDecimal tests ---
 
 type atodTest struct {
 	in  string
@@ -431,13 +431,13 @@ func checkParseDecimal(t *testing.T, i int, fn string, test atodTest, format fun
 
 func TestParseDecimal64(t *testing.T) {
 	for i, test := range atod64Tests {
-		d, err := ParseDecimal64(test.in)
-		checkParseDecimal(t, i, "ParseDecimal64", test,
-			func(d any) string { return FormatDecimal64(d.(decimal64), 'g', -1) }, d, err)
+		d, err := parseDecimal64(test.in)
+		checkParseDecimal(t, i, "ParseDecimal", test,
+			func(d any) string { return FormatDecimal(decimal128(d.(decimal64)), 'g', -1, 64) }, d, err)
 	}
 }
 
-// --- ParseDecimal128 tests ---
+// --- ParseDecimal tests ---
 
 var atod128Tests = []atodTest{
 	// Invalid
@@ -518,9 +518,9 @@ var atod128Tests = []atodTest{
 
 func TestParseDecimal128(t *testing.T) {
 	for i, test := range atod128Tests {
-		d, err := ParseDecimal128(test.in)
-		checkParseDecimal(t, i, "ParseDecimal128", test,
-			func(d any) string { return FormatDecimal128(d.(decimal128), 'g', -1) }, d, err)
+		d, err := ParseDecimal(test.in, 128)
+		checkParseDecimal(t, i, "ParseDecimal", test,
+			func(d any) string { return FormatDecimal(d.(decimal128), 'g', -1, 128) }, d, err)
 	}
 }
 
@@ -535,10 +535,10 @@ func TestDecimal64Roundtrip(t *testing.T) {
 		math.Decimal64Inf(1), math.Decimal64Inf(-1),
 	}
 	for _, d := range values {
-		s := FormatDecimal64(d, 'g', -1)
-		d2, err := ParseDecimal64(s)
+		s := FormatDecimal(decimal128(d), 'g', -1, 64)
+		d2, err := parseDecimal64(s)
 		if err != nil {
-			t.Errorf("ParseDecimal64(FormatDecimal64(%v)) error: %v", d, err)
+			t.Errorf("ParseDecimal(FormatDecimal(%v)) error: %v", d, err)
 			continue
 		}
 		// NaN != NaN, so check specially
@@ -549,7 +549,7 @@ func TestDecimal64Roundtrip(t *testing.T) {
 			continue
 		}
 		if d2 != d {
-			t.Errorf("roundtrip %v: FormatDecimal64 = %q, ParseDecimal64 back = %v", d, s, d2)
+			t.Errorf("roundtrip %v: FormatDecimal = %q, ParseDecimal back = %v", d, s, d2)
 		}
 	}
 }
@@ -561,15 +561,15 @@ func TestDecimal128Roundtrip(t *testing.T) {
 		"NaN", "+Inf", "-Inf",
 	}
 	for _, s := range values {
-		d, err := ParseDecimal128(s)
+		d, err := ParseDecimal(s, 128)
 		if err != nil {
-			t.Errorf("ParseDecimal128(%q) error: %v", s, err)
+			t.Errorf("ParseDecimal(%q) error: %v", s, err)
 			continue
 		}
-		s2 := FormatDecimal128(d, 'g', -1)
-		d2, err := ParseDecimal128(s2)
+		s2 := FormatDecimal(d, 'g', -1, 128)
+		d2, err := ParseDecimal(s2, 128)
 		if err != nil {
-			t.Errorf("ParseDecimal128(%q) error: %v", s2, err)
+			t.Errorf("ParseDecimal(%q) error: %v", s2, err)
 			continue
 		}
 		if d != d {
@@ -697,17 +697,17 @@ func TestFormatDecimalRounding(t *testing.T) {
 			for _, f := range []byte{'e', 'f'} {
 				var got string
 				if width.bits == 64 {
-					d, err := ParseDecimal64(in)
+					d, err := parseDecimal64(in)
 					if err != nil {
-						t.Fatalf("ParseDecimal64(%q): %v", in, err)
+						t.Fatalf("ParseDecimal(%q): %v", in, err)
 					}
-					got = FormatDecimal64(d, f, prec)
+					got = FormatDecimal(decimal128(d), f, prec, 64)
 				} else {
-					d, err := ParseDecimal128(in)
+					d, err := ParseDecimal(in, 128)
 					if err != nil {
-						t.Fatalf("ParseDecimal128(%q): %v", in, err)
+						t.Fatalf("ParseDecimal(%q): %v", in, err)
 					}
-					got = FormatDecimal128(d, f, prec)
+					got = FormatDecimal(d, f, prec, 128)
 				}
 				c, _ := new(big.Int).SetString(coeff, 10)
 				want := ""
@@ -754,13 +754,13 @@ func TestFormatDecimal64Quantum(t *testing.T) {
 		{"42", 'f', "42"},
 	}
 	for _, test := range tests {
-		d, err := ParseDecimal64(test.in)
+		d, err := parseDecimal64(test.in)
 		if err != nil {
-			t.Fatalf("ParseDecimal64(%q): %v", test.in, err)
+			t.Fatalf("ParseDecimal(%q): %v", test.in, err)
 		}
-		got := FormatDecimal64(d, test.fmt, -2) // -2 = quantum-preserving sentinel
+		got := FormatDecimal(decimal128(d), test.fmt, -2, 64) // -2 = quantum-preserving sentinel
 		if got != test.out {
-			t.Errorf("FormatDecimal64(Parse(%q), %c, -2) = %q, want %q",
+			t.Errorf("FormatDecimal(Parse(%q), %c, -2) = %q, want %q",
 				test.in, test.fmt, got, test.out)
 		}
 	}
@@ -782,10 +782,10 @@ func FuzzDecimal64RoundTrip(f *testing.F) {
 		}
 		d := math.Decimal64frombits(b)
 		for _, prec := range []int{-1, -2} {
-			s := FormatDecimal64(d, 'e', prec)
-			d2, err := ParseDecimal64(s)
+			s := FormatDecimal(decimal128(d), 'e', prec, 64)
+			d2, err := parseDecimal64(s)
 			if err != nil {
-				t.Fatalf("ParseDecimal64(FormatDecimal64(%#x, 'e', %d) = %q): %v", b, prec, s, err)
+				t.Fatalf("ParseDecimal(FormatDecimal(%#x, 'e', %d) = %q): %v", b, prec, s, err)
 			}
 			if math.IsDecimal64NaN(d) {
 				if !math.IsDecimal64NaN(d2) {
@@ -798,7 +798,7 @@ func FuzzDecimal64RoundTrip(f *testing.F) {
 			}
 			// -2 keeps the quantum, so formatting again gives the same text.
 			if prec == -2 {
-				if s2 := FormatDecimal64(d2, 'e', prec); s2 != s {
+				if s2 := FormatDecimal(decimal128(d2), 'e', prec, 64); s2 != s {
 					t.Fatalf("%#x: %q parses and formats as %q", b, s, s2)
 				}
 			}
@@ -821,10 +821,10 @@ func FuzzDecimal128RoundTrip(f *testing.F) {
 		}
 		d := math.Decimal128frombits(hi, lo)
 		for _, prec := range []int{-1, -2} {
-			s := FormatDecimal128(d, 'e', prec)
-			d2, err := ParseDecimal128(s)
+			s := FormatDecimal(d, 'e', prec, 128)
+			d2, err := ParseDecimal(s, 128)
 			if err != nil {
-				t.Fatalf("ParseDecimal128(FormatDecimal128(%#x:%#x, 'e', %d) = %q): %v", hi, lo, prec, s, err)
+				t.Fatalf("ParseDecimal(FormatDecimal(%#x:%#x, 'e', %d) = %q): %v", hi, lo, prec, s, err)
 			}
 			if math.IsDecimal128NaN(d) {
 				if !math.IsDecimal128NaN(d2) {
@@ -837,7 +837,7 @@ func FuzzDecimal128RoundTrip(f *testing.F) {
 				t.Fatalf("%#x:%#x: %q parses to %#x:%#x", hi, lo, s, hi2, lo2)
 			}
 			if prec == -2 {
-				if s2 := FormatDecimal128(d2, 'e', prec); s2 != s {
+				if s2 := FormatDecimal(d2, 'e', prec, 128); s2 != s {
 					t.Fatalf("%#x:%#x: %q parses and formats as %q", hi, lo, s, s2)
 				}
 			}
@@ -863,7 +863,7 @@ func BenchmarkFormatDecimal64(b *testing.B) {
 	for _, bm := range benchmarks {
 		b.Run(bm.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				FormatDecimal64(bm.d, bm.fmt, bm.prec)
+				FormatDecimal(decimal128(bm.d), bm.fmt, bm.prec, 64)
 			}
 		})
 	}
@@ -882,7 +882,7 @@ func BenchmarkParseDecimal64(b *testing.B) {
 	for _, bm := range benchmarks {
 		b.Run(bm.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				ParseDecimal64(bm.s)
+				parseDecimal64(bm.s)
 			}
 		})
 	}
@@ -924,19 +924,24 @@ func TestFormatDecimalCanonical(t *testing.T) {
 			fmt  byte
 			want string
 		}{{'g', tt.g}, {'e', tt.e}, {'f', tt.f}} {
-			if got := FormatDecimal64(d, c.fmt, -1); got != c.want {
-				t.Errorf("FormatDecimal64(%d×10^%d, %c, -1) = %q, want %q", tt.coeff, tt.exp, c.fmt, got, c.want)
+			if got := FormatDecimal(decimal128(d), c.fmt, -1, 64); got != c.want {
+				t.Errorf("FormatDecimal(%d×10^%d, %c, -1) = %q, want %q", tt.coeff, tt.exp, c.fmt, got, c.want)
 			}
-			if got := FormatDecimal128(decimal128(d), c.fmt, -1); got != c.want {
-				t.Errorf("FormatDecimal128(%d×10^%d, %c, -1) = %q, want %q", tt.coeff, tt.exp, c.fmt, got, c.want)
+			if got := FormatDecimal(decimal128(d), c.fmt, -1, 128); got != c.want {
+				t.Errorf("FormatDecimal(%d×10^%d, %c, -1) = %q, want %q", tt.coeff, tt.exp, c.fmt, got, c.want)
 			}
 		}
-		back, err := ParseDecimal64(tt.g)
+		back, err := parseDecimal64(tt.g)
 		if err != nil {
-			t.Errorf("ParseDecimal64(%q): %v", tt.g, err)
+			t.Errorf("ParseDecimal(%q): %v", tt.g, err)
 		}
 		if math.Decimal64bits(back) != bits {
-			t.Errorf("ParseDecimal64(%q) = %#x, want %#x", tt.g, math.Decimal64bits(back), bits)
+			t.Errorf("ParseDecimal(%q) = %#x, want %#x", tt.g, math.Decimal64bits(back), bits)
 		}
 	}
+}
+
+func parseDecimal64(s string) (decimal64, error) {
+	d, err := ParseDecimal(s, 64)
+	return decimal64(d), err
 }

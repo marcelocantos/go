@@ -681,24 +681,24 @@ func copyValue(dst reflect.Value, src []byte) (err error) {
 		dst.SetFloat(ftmp)
 	case reflect.Decimal64:
 		if len(src) == 0 {
-			dst.Set(reflect.ValueOf(decimal64(0)))
+			dst.SetDecimal(0)
 			return nil
 		}
-		dtmp, err := strconv.ParseDecimal64(strings.TrimSpace(string(src)))
+		dtmp, err := strconv.ParseDecimal(strings.TrimSpace(string(src)), 64)
 		if err != nil {
 			return err
 		}
-		dst.Set(reflect.ValueOf(dtmp))
+		dst.SetDecimal(dtmp)
 	case reflect.Decimal128:
 		if len(src) == 0 {
-			dst.Set(reflect.ValueOf(decimal128(0)))
+			dst.SetDecimal(0)
 			return nil
 		}
-		dtmp, err := strconv.ParseDecimal128(strings.TrimSpace(string(src)))
+		dtmp, err := strconv.ParseDecimal(strings.TrimSpace(string(src)), 128)
 		if err != nil {
 			return err
 		}
-		dst.Set(reflect.ValueOf(dtmp))
+		dst.SetDecimal(dtmp)
 	case reflect.Bool:
 		if len(src) == 0 {
 			dst.SetBool(false)

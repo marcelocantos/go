@@ -805,16 +805,16 @@ func (s *ss) convertFloat(str string, n int) float64 {
 
 // convertDecimal64 converts the string to a decimal64 value.
 func (s *ss) convertDecimal64(str string) decimal64 {
-	d, err := strconv.ParseDecimal64(str)
+	d, err := strconv.ParseDecimal(str, 64)
 	if err != nil {
 		s.error(err)
 	}
-	return d
+	return decimal64(d)
 }
 
 // convertDecimal128 converts the string to a decimal128 value.
 func (s *ss) convertDecimal128(str string) decimal128 {
-	d, err := strconv.ParseDecimal128(str)
+	d, err := strconv.ParseDecimal(str, 128)
 	if err != nil {
 		s.error(err)
 	}
@@ -1082,18 +1082,18 @@ func (s *ss) scanOne(verb rune, arg any) {
 				s.SkipSpace()
 				s.notEOF()
 				tok := s.floatToken()
-				d, err := strconv.ParseDecimal64(tok)
+				d, err := strconv.ParseDecimal(tok, 64)
 				if err != nil {
 					s.error(err)
 				}
-				v.SetDecimal(decimal128(d))
+				v.SetDecimal(d)
 			}
 		case reflect.Decimal128:
 			if s.okVerb(verb, floatVerbs, "decimal128") {
 				s.SkipSpace()
 				s.notEOF()
 				tok := s.floatToken()
-				d, err := strconv.ParseDecimal128(tok)
+				d, err := strconv.ParseDecimal(tok, 128)
 				if err != nil {
 					s.error(err)
 				}

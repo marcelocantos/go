@@ -106,12 +106,12 @@ func TestDecimalBasicRoundTrip(t *testing.T) {
 			switch g := got.(type) {
 			case decimal64:
 				want := v.(decimal64)
-				if strconv.FormatDecimal64(g, 'f', -1) != strconv.FormatDecimal64(want, 'f', -1) {
+				if strconv.FormatDecimal(decimal128(g), 'f', -1, 64) != strconv.FormatDecimal(decimal128(want), 'f', -1, 64) {
 					t.Errorf("got %v, want %v", g, want)
 				}
 			case decimal128:
 				want := v.(decimal128)
-				if strconv.FormatDecimal128(g, 'f', -1) != strconv.FormatDecimal128(want, 'f', -1) {
+				if strconv.FormatDecimal(g, 'f', -1, 128) != strconv.FormatDecimal(want, 'f', -1, 128) {
 					t.Errorf("got %v, want %v", g, want)
 				}
 			}
@@ -121,8 +121,8 @@ func TestDecimalBasicRoundTrip(t *testing.T) {
 
 func TestDecimalNaN(t *testing.T) {
 	// NaN values should encode and decode as the same bit pattern.
-	d64NaN, _ := strconv.ParseDecimal64("NaN")
-	d128NaN, _ := strconv.ParseDecimal128("NaN")
+	d64NaN, _ := parseDecimal64("NaN")
+	d128NaN, _ := strconv.ParseDecimal("NaN", 128)
 
 	t.Run("decimal64_NaN", func(t *testing.T) {
 		var buf bytes.Buffer
@@ -166,8 +166,8 @@ func TestDecimalNaN(t *testing.T) {
 }
 
 func TestDecimalInf(t *testing.T) {
-	d64Inf, _ := strconv.ParseDecimal64("Inf")
-	d128Inf, _ := strconv.ParseDecimal128("Inf")
+	d64Inf, _ := parseDecimal64("Inf")
+	d128Inf, _ := strconv.ParseDecimal("Inf", 128)
 
 	t.Run("decimal64_Inf", func(t *testing.T) {
 		var buf bytes.Buffer
@@ -221,4 +221,9 @@ func TestDecimal128WireOrder(t *testing.T) {
 	if !bytes.Contains(buf.Bytes(), want) {
 		t.Errorf("stream % x does not contain % x", buf.Bytes(), want)
 	}
+}
+
+func parseDecimal64(s string) (decimal64, error) {
+	d, err := strconv.ParseDecimal(s, 64)
+	return decimal64(d), err
 }

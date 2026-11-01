@@ -73,12 +73,12 @@ func TestDecimalMarshal(t *testing.T) {
 }
 
 func TestDecimalMarshalErrors(t *testing.T) {
-	d64NaN, _ := strconv.ParseDecimal64("NaN")
-	d64Inf, _ := strconv.ParseDecimal64("Inf")
-	d64NegInf, _ := strconv.ParseDecimal64("-Inf")
-	d128NaN, _ := strconv.ParseDecimal128("NaN")
-	d128Inf, _ := strconv.ParseDecimal128("Inf")
-	d128NegInf, _ := strconv.ParseDecimal128("-Inf")
+	d64NaN, _ := parseDecimal64("NaN")
+	d64Inf, _ := parseDecimal64("Inf")
+	d64NegInf, _ := parseDecimal64("-Inf")
+	d128NaN, _ := strconv.ParseDecimal("NaN", 128)
+	d128Inf, _ := strconv.ParseDecimal("Inf", 128)
+	d128NegInf, _ := strconv.ParseDecimal("-Inf", 128)
 
 	tests := []struct {
 		name string
@@ -125,10 +125,10 @@ func TestDecimalUnmarshalStringTag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unmarshal(%s) error: %v", in, err)
 	}
-	if strconv.FormatDecimal64(got.D64, 'f', -1) != "3.14" {
+	if strconv.FormatDecimal(decimal128(got.D64), 'f', -1, 64) != "3.14" {
 		t.Errorf("D64 = %v, want 3.14", got.D64)
 	}
-	if strconv.FormatDecimal128(got.D128, 'f', -1) != "2.718" {
+	if strconv.FormatDecimal(got.D128, 'f', -1, 128) != "2.718" {
 		t.Errorf("D128 = %v, want 2.718", got.D128)
 	}
 }
@@ -168,10 +168,10 @@ func TestDecimalUnmarshal(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Unmarshal(%s) error: %v", tt.in, err)
 			}
-			if strconv.FormatDecimal64(got.D64, 'f', -1) != strconv.FormatDecimal64(tt.want.D64, 'f', -1) {
+			if strconv.FormatDecimal(decimal128(got.D64), 'f', -1, 64) != strconv.FormatDecimal(decimal128(tt.want.D64), 'f', -1, 64) {
 				t.Errorf("D64 = %v, want %v", got.D64, tt.want.D64)
 			}
-			if strconv.FormatDecimal128(got.D128, 'f', -1) != strconv.FormatDecimal128(tt.want.D128, 'f', -1) {
+			if strconv.FormatDecimal(got.D128, 'f', -1, 128) != strconv.FormatDecimal(tt.want.D128, 'f', -1, 128) {
 				t.Errorf("D128 = %v, want %v", got.D128, tt.want.D128)
 			}
 			if got.Name != tt.want.Name {
@@ -213,10 +213,10 @@ func TestDecimalRoundTrip(t *testing.T) {
 				t.Fatalf("Unmarshal error: %v", err)
 			}
 
-			if strconv.FormatDecimal64(got.D64, 'f', -1) != strconv.FormatDecimal64(tt.in.D64, 'f', -1) {
+			if strconv.FormatDecimal(decimal128(got.D64), 'f', -1, 64) != strconv.FormatDecimal(decimal128(tt.in.D64), 'f', -1, 64) {
 				t.Errorf("D64 round trip: got %v, want %v", got.D64, tt.in.D64)
 			}
-			if strconv.FormatDecimal128(got.D128, 'f', -1) != strconv.FormatDecimal128(tt.in.D128, 'f', -1) {
+			if strconv.FormatDecimal(got.D128, 'f', -1, 128) != strconv.FormatDecimal(tt.in.D128, 'f', -1, 128) {
 				t.Errorf("D128 round trip: got %v, want %v", got.D128, tt.in.D128)
 			}
 			if got.Name != tt.in.Name {
@@ -242,10 +242,10 @@ func TestDecimalStream(t *testing.T) {
 		t.Fatalf("Decode error: %v", err)
 	}
 
-	if strconv.FormatDecimal64(got.D64, 'f', -1) != strconv.FormatDecimal64(original.D64, 'f', -1) {
+	if strconv.FormatDecimal(decimal128(got.D64), 'f', -1, 64) != strconv.FormatDecimal(decimal128(original.D64), 'f', -1, 64) {
 		t.Errorf("D64 = %v, want %v", got.D64, original.D64)
 	}
-	if strconv.FormatDecimal128(got.D128, 'f', -1) != strconv.FormatDecimal128(original.D128, 'f', -1) {
+	if strconv.FormatDecimal(got.D128, 'f', -1, 128) != strconv.FormatDecimal(original.D128, 'f', -1, 128) {
 		t.Errorf("D128 = %v, want %v", got.D128, original.D128)
 	}
 }
@@ -291,4 +291,9 @@ func TestDecimalCanonicalNumber(t *testing.T) {
 			t.Errorf("round trip of %s = %s, %v", tt.want, got, err)
 		}
 	}
+}
+
+func parseDecimal64(s string) (decimal64, error) {
+	d, err := strconv.ParseDecimal(s, 64)
+	return decimal64(d), err
 }

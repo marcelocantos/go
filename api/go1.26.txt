@@ -272,10 +272,5 @@ pkg sort, method (Decimal128Slice) Sort() #0
 pkg sort, method (Decimal128Slice) Swap(int, int) #0
 pkg sort, type Decimal128Slice []decimal128 #0
 pkg strconv, func AppendDecimal([]uint8, decimal128, uint8, int, int) []uint8 #0
-pkg strconv, func AppendDecimal128([]uint8, decimal128, uint8, int) []uint8 #0
-pkg strconv, func AppendDecimal64([]uint8, decimal64, uint8, int) []uint8 #0
 pkg strconv, func FormatDecimal(decimal128, uint8, int, int) string #0
-pkg strconv, func FormatDecimal128(decimal128, uint8, int) string #0
-pkg strconv, func FormatDecimal64(decimal64, uint8, int) string #0
-pkg strconv, func ParseDecimal128(string) (decimal128, error) #0
-pkg strconv, func ParseDecimal64(string) (decimal64, error) #0
+pkg strconv, func ParseDecimal(string, int) (decimal128, error) #0

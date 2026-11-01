@@ -195,7 +195,7 @@ func TestMaxDecimal64(t *testing.T) {
 
 func TestMinMaxDecimal128(t *testing.T) {
 	d128 := func(s string) decimal128 {
-		d, _ := strconv.ParseDecimal128(s)
+		d, _ := strconv.ParseDecimal(s, 128)
 		return d
 	}
 	var (

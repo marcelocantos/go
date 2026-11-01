@@ -191,7 +191,7 @@ func TestDecimal64NonCanonical(t *testing.T) {
 func TestDecimal128NegativeZero(t *testing.T) {
 	m := make(map[decimal128]bool, 0)
 	posZero := decimal128(0)
-	negZero, _ := strconv.ParseDecimal128("-0")
+	negZero, _ := strconv.ParseDecimal("-0", 128)
 
 	m[posZero] = true
 	m[negZero] = true // should overwrite
@@ -209,7 +209,7 @@ func TestDecimal128NegativeZero(t *testing.T) {
 
 func TestDecimal128MapNan(t *testing.T) {
 	m := make(map[decimal128]int, 0)
-	nan, _ := strconv.ParseDecimal128("NaN")
+	nan, _ := strconv.ParseDecimal("NaN", 128)
 
 	m[nan] = 1
 	m[nan] = 2

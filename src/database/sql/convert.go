@@ -563,24 +563,24 @@ func convertAssignRows(dest, src any, rows *Rows) error {
 			return fmt.Errorf("converting NULL to %s is unsupported", dv.Kind())
 		}
 		s := asString(src)
-		d64, err := strconv.ParseDecimal64(s)
+		d, err := strconv.ParseDecimal(s, 64)
 		if err != nil {
 			err = strconvErr(err)
 			return fmt.Errorf("converting driver.Value type %T (%q) to a %s: %v", src, s, dv.Kind(), err)
 		}
-		dv.Set(reflect.ValueOf(d64))
+		dv.SetDecimal(d)
 		return nil
 	case reflect.Decimal128:
 		if src == nil {
 			return fmt.Errorf("converting NULL to %s is unsupported", dv.Kind())
 		}
 		s := asString(src)
-		d128, err := strconv.ParseDecimal128(s)
+		d, err := strconv.ParseDecimal(s, 128)
 		if err != nil {
 			err = strconvErr(err)
 			return fmt.Errorf("converting driver.Value type %T (%q) to a %s: %v", src, s, dv.Kind(), err)
 		}
-		dv.Set(reflect.ValueOf(d128))
+		dv.SetDecimal(d)
 		return nil
 	case reflect.String:
 		if src == nil {

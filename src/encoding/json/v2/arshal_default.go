@@ -956,11 +956,11 @@ func makeDecimal64Unmarshaler(t reflect.Type) *unmarshaler {
 			if stringify && k == '0' {
 				break
 			}
-			d, parseErr := strconv.ParseDecimal64(string(val))
+			d, parseErr := strconv.ParseDecimal(string(val), 64)
 			if parseErr != nil {
 				return newUnmarshalErrorAfterWithValue(dec, t, strconv.ErrSyntax)
 			}
-			va.Set(reflect.ValueOf(d))
+			va.SetDecimal(d)
 			return nil
 		}
 		return newUnmarshalErrorAfter(dec, t, nil)
@@ -1040,11 +1040,11 @@ func makeDecimal128Unmarshaler(t reflect.Type) *unmarshaler {
 			if stringify && k == '0' {
 				break
 			}
-			d, parseErr := strconv.ParseDecimal128(string(val))
+			d, parseErr := strconv.ParseDecimal(string(val), 128)
 			if parseErr != nil {
 				return newUnmarshalErrorAfterWithValue(dec, t, strconv.ErrSyntax)
 			}
-			va.Set(reflect.ValueOf(d))
+			va.SetDecimal(d)
 			return nil
 		}
 		return newUnmarshalErrorAfter(dec, t, nil)
