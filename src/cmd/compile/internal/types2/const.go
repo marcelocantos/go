@@ -10,6 +10,7 @@ import (
 	"cmd/compile/internal/syntax"
 	"go/constant"
 	"go/token"
+	"internal/bid"
 	. "internal/types/errors"
 	"math"
 	"math/big"
@@ -226,10 +227,10 @@ func representableConst(x constant.Value, check *Checker, typ *Basic, rounded *c
 		default:
 			panic("unreachable")
 		}
-		// A decimal constant keeps its exact value: the compiler rounds it once,
-		// when it encodes it, and no binary precision can hold it on the way.
+		// A typed constant has the value its type can hold, as for floats, so
+		// that comparing it agrees with comparing a variable that holds it.
 		if fits && rounded != nil {
-			*rounded = x
+			*rounded = roundDecimal(x, typ.kind)
 		}
 		return fits
 
@@ -285,6 +286,72 @@ func toBigFloat(x constant.Value) *big.Float {
 	default:
 		return nil
 	}
+}
+
+// roundDecimal returns the value x, which fits the decimal type kind, as the
+// kernel rounds it at run time: to nearest, ties to even. A value that needs no
+// rounding is returned as it is. So is one beyond 2^±4096, which only decimal128
+// can hold: go/constant holds it inexactly, so only the compiler, which has the
+// literal, can round it correctly.
+func roundDecimal(x constant.Value, kind BasicKind) constant.Value {
+	r, ok := constant.Val(x).(*big.Rat)
+	if !ok || r.Sign() == 0 {
+		return x
+	}
+	abs := new(big.Rat).Abs(r)
+
+	// Hand the kernel the integer part of abs × 10^-exp, with sticky standing
+	// for the rest. An estimate within 1.3 of log10(abs) gives it between one
+	// and three digits more than the format holds, which fit its coefficient.
+	const log10Of2 = 0.30103
+	estimate := int(float64(abs.Num().BitLen()-abs.Denom().BitLen()) * log10Of2)
+	precision := bid.Precision64
+	if kind == Decimal128 {
+		precision = bid.Precision128
+	}
+	exp := estimate - precision - 1
+	num, den := abs.Num(), abs.Denom()
+	power := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(max(exp, -exp))), nil)
+	if exp < 0 {
+		num = new(big.Int).Mul(num, power)
+	} else {
+		den = new(big.Int).Mul(den, power)
+	}
+	q, rem := new(big.Int).QuoRem(num, den, new(big.Int))
+	sticky := rem.Sign() != 0
+
+	coeff := new(big.Int)
+	var cexp int
+	if kind == Decimal128 {
+		lo := new(big.Int).And(q, new(big.Int).SetUint64(math.MaxUint64)).Uint64()
+		hi := new(big.Int).Rsh(q, 64).Uint64()
+		bits, _ := bid.Round128(false, bid.Uint128{Hi: hi, Lo: lo}, exp, sticky, bid.ToNearestEven)
+		_, _, c, e := bid.Unpack128(bits)
+		coeff.SetUint64(c.Hi)
+		coeff.Lsh(coeff, 64)
+		coeff.Or(coeff, new(big.Int).SetUint64(c.Lo))
+		cexp = e
+	} else {
+		bits, _ := bid.Round64(false, q.Uint64(), exp, sticky, bid.ToNearestEven)
+		_, _, c, e := bid.Unpack64(bits)
+		coeff.SetUint64(c)
+		cexp = e
+	}
+
+	power = new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(max(cexp, -cexp))), nil)
+	result := new(big.Rat).SetInt(coeff)
+	if cexp < 0 {
+		result.Quo(result, new(big.Rat).SetInt(power))
+	} else {
+		result.Mul(result, new(big.Rat).SetInt(power))
+	}
+	if result.Cmp(abs) == 0 {
+		return x
+	}
+	if r.Sign() < 0 {
+		result.Neg(result)
+	}
+	return constant.ToFloat(constant.Make(result))
 }
 
 // maxDecimal64 is the maximum finite decimal64 value: 9.999999999999999e+384

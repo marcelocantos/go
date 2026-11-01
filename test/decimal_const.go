@@ -239,7 +239,44 @@ func convert128[T ~decimal128]() (a, b, c, d T) {
 	return T(0.1), T(-1.50), T(1.234567890123456789012345678901234), T(float32(0.1))
 }
 
+// A typed constant has the value its type can hold, so comparing it agrees with
+// comparing a variable that holds it. The expected answers are written by hand.
+const (
+	nearOne64  decimal64  = 1.00000000000000001
+	nearOne128 decimal128 = 1.00000000000000001
+	halfDown   decimal64  = 1.0000000000000005 // rounds down to even
+	halfUp     decimal64  = 1.0000000000000015 // rounds up to even
+	wider                 = decimal128(nearOne64)
+	subTiny    decimal64  = 1e-399 // rounds to zero
+	oneThird   decimal64  = 1.0 / 3.0
+)
+
+func checkCompare() {
+	v64, v128 := nearOne64, nearOne128
+	if !(nearOne64 == 1) || !(v64 == 1) {
+		panic("decimal64 1.00000000000000001 != 1")
+	}
+	if nearOne128 == 1 || v128 == 1 {
+		panic("decimal128 1.00000000000000001 == 1")
+	}
+	if !(wider == 1) {
+		panic("decimal128(decimal64(1.00000000000000001)) != 1")
+	}
+	if halfDown != 1 || halfUp != 1.000000000000002 {
+		panic("a typed decimal constant does not round ties to even")
+	}
+	if !(subTiny == 0) {
+		panic("decimal64(1e-399) != 0")
+	}
+	v := oneThird
+	if oneThird != v || oneThird != 0.3333333333333333 {
+		panic("decimal64(1.0/3.0) is not 0.3333333333333333")
+	}
+}
+
 func main() {
+	checkCompare()
+
 	// Rune literals.
 	check64("rune", rune64, 'a', want64(false, 97, 0))
 	check128("rune", rune128, 'a', want128(false, "97", 0))
@@ -293,7 +330,9 @@ func main() {
 	check128("direct", direct128, 1.0/3.0, want128(false, "3333333333333333333333333333333333", -34))
 	check64("tie tail", tieTail64v, tieTail64, want64(false, 1000000000000001, -15))
 	check128("tie tail", tieTail64w, tieTail64, want128(false, "1000000000000000500000000000000333", -33))
-	check64("tie tail 128", tieTail128v, tieTail128, want64(false, 1000000000000000, -15))
+	// A typed constant rounds, and until constants carry a quantum the rounded
+	// value keeps no trailing zeros.
+	check64("tie tail 128", tieTail128v, tieTail128, want64(false, 1, 0))
 	check128("tie tail 128", tieTail128w, tieTail128, want128(false, "1000000000000000000000000000000001", -33))
 
 	// Computed constants with an exact value, which have no quantum until the
@@ -325,7 +364,7 @@ func main() {
 	// A typed binary constant converts from its exact binary value.
 	check64("float32", f32Var64, decimal64(f32Named), want64(false, 1000000014901161, -16))
 	check128("float32", f32Var128, decimal128(f32Named), want128(false, "100000001490116119384765625", -27))
-	check64("float64", f64Var64, decimal64(f64Named), want64(false, 1000000000000000, -16))
+	check64("float64", f64Var64, decimal64(f64Named), want64(false, 1, -1))
 	check128("float64", f64Var128, decimal128(f64Named), want128(false, "1000000000000000055511151231257827", -34))
 
 	// The top of the range. Constants above it do not compile.
@@ -355,7 +394,10 @@ func main() {
 	check128("sub round up", subRoundUp128, 6e-6177, want128(false, "1", -6176))
 	check64("under", under64, 1e-399, want64(false, 0, -398))
 	check128("under", under128, 1e-6177, want128(false, "0", -6176))
-	check64("negative under", negUnder64, -1e-399, want64(true, 0, -398))
+	// A typed constant that rounds to zero loses its sign, as for floats, since
+	// a constant has no negative zero. A decimal128 this small is not rounded
+	// until the compiler encodes it, which keeps the sign.
+	check64("negative under", negUnder64, -1e-399, want64(false, 0, -398))
 	check128("negative under", negUnder128, -1e-6177, want128(true, "0", -6176))
 	check64("vanish", vanish64, 1e-100000, want64(false, 0, -398))
 	check128("vanish", vanish128, 1e-100000, want128(false, "0", -6176))
