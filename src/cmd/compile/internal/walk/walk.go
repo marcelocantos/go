@@ -388,7 +388,8 @@ func mayCall(n ir.Node) bool {
 
 		// When using soft-float, these ops might be rewritten to function calls
 		// so we ensure they are evaluated first.
-		// Decimal ops always use runtime calls (no hardware support).
+		// Decimal ops always use runtime calls, since the compiler doesn't use
+		// decimal instructions yet.
 		case ir.OADD, ir.OSUB, ir.OMUL, ir.ONEG:
 			return n.Type().IsDecimal() || ssagen.Arch.SoftFloat && isSoftFloat(n.Type())
 		case ir.OLT, ir.OEQ, ir.ONE, ir.OLE, ir.OGE, ir.OGT:

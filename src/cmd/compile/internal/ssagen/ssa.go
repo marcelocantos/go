@@ -4397,7 +4397,7 @@ func (s *state) minMax(n *ir.CallExpr) *ssa.Value {
 
 	if typ.IsDecimal() {
 		// Decimal min/max has the same NaN/-0 concerns as float.
-		// No hardware support, so always call runtime.
+		// The compiler doesn't use decimal instructions yet, so always call runtime.
 		return fold(func(x, a *ssa.Value) *ssa.Value {
 			return s.softDecimalOp(n.Op(), typ, x, a)
 		})
@@ -4920,9 +4920,10 @@ func (s *state) sfcall(op ssaop.Op, args ...*ssa.Value) (*ssa.Value, bool) {
 }
 
 // softDecimalOps and softDecimalConvs name the runtime functions that
-// implement the decimal operators and conversions. No target has decimal
-// floating-point instructions, so unlike softFloatOps they apply everywhere
-// and no generic SSA op stands for them. As for soft float, the functions
+// implement the decimal operators and conversions. The compiler doesn't use
+// any target's decimal floating-point instructions yet, although POWER and Z
+// have them, so unlike softFloatOps they apply everywhere and no generic SSA op
+// stands for them. As for soft float, the functions
 // take and return bit patterns: a decimal64 is a uint64 and a decimal128 is
 // two uint64 halves, high first. See softDecimalCall.
 var (
