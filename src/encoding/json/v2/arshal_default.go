@@ -893,8 +893,7 @@ func makeDecimal64Marshaler(t reflect.Type) *marshaler {
 			return newInvalidFormatError(enc, t)
 		}
 
-		d := va.Interface().(decimal64)
-		s := strconv.FormatDecimal64(d, 'f', -1)
+		s := cleanDecimalExp(strconv.FormatDecimal(va.Decimal(), 'g', -1, 64))
 		if s == "NaN" || s == "+Inf" || s == "-Inf" {
 			err := fmt.Errorf("unsupported value: %s", s)
 			return newMarshalErrorBefore(enc, t, err)
@@ -978,8 +977,7 @@ func makeDecimal128Marshaler(t reflect.Type) *marshaler {
 			return newInvalidFormatError(enc, t)
 		}
 
-		d := va.Interface().(decimal128)
-		s := strconv.FormatDecimal128(d, 'f', -1)
+		s := cleanDecimalExp(strconv.FormatDecimal(va.Decimal(), 'g', -1, 128))
 		if s == "NaN" || s == "+Inf" || s == "-Inf" {
 			err := fmt.Errorf("unsupported value: %s", s)
 			return newMarshalErrorBefore(enc, t, err)
@@ -2435,4 +2433,13 @@ func (s *uintSet) insert(i uint) bool {
 		s.hi[iHi].set(iLo)
 		return !has
 	}
+}
+
+// cleanDecimalExp cleans up e-09 to e-9, as for floats.
+func cleanDecimalExp(s string) string {
+	n := len(s)
+	if n >= 4 && s[n-4] == 'e' && s[n-3] == '-' && s[n-2] == '0' {
+		return s[:n-2] + s[n-1:]
+	}
+	return s
 }

@@ -249,3 +249,46 @@ func TestDecimalStream(t *testing.T) {
 		t.Errorf("D128 = %v, want %v", got.D128, original.D128)
 	}
 }
+
+// A decimal marshals as its canonical string, with the exponent form float
+// values use, and unmarshals with the quantum of the text.
+func TestDecimalCanonicalNumber(t *testing.T) {
+	type named decimal64
+	tests := []struct {
+		d    decimal64
+		want string
+	}{
+		{1.50, "1.50"},
+		{1.5, "1.5"},
+		{100, "100"},
+		{1e3, "1e+03"},
+		{0.00, "0.00"},
+		{0, "0"},
+		{1e-7, "1e-7"},
+		{0.000001, "0.000001"},
+		{1e21, "1e+21"},
+	}
+	for _, tt := range tests {
+		for _, v := range []any{tt.d, decimal128(tt.d), named(tt.d), struct{ V named }{named(tt.d)}} {
+			want := tt.want
+			if _, ok := v.(struct{ V named }); ok {
+				want = `{"V":` + tt.want + `}`
+			}
+			got, err := Marshal(v)
+			if err != nil {
+				t.Errorf("Marshal(%v): %v", v, err)
+				continue
+			}
+			if string(got) != want {
+				t.Errorf("Marshal(%T(%v)) = %s, want %s", v, v, got, want)
+			}
+		}
+		var back decimal64
+		if err := Unmarshal([]byte(tt.want), &back); err != nil {
+			t.Errorf("Unmarshal(%s): %v", tt.want, err)
+		}
+		if got, err := Marshal(back); err != nil || string(got) != tt.want {
+			t.Errorf("round trip of %s = %s, %v", tt.want, got, err)
+		}
+	}
+}

@@ -18,7 +18,17 @@ import (
 // a value has, the value is rounded by the kernel's Quantize.
 
 // FormatDecimal converts a decimal128 value to a string.
-// The format fmt and precision prec follow the same rules as [FormatFloat].
+// The format fmt and precision prec follow the same rules as [FormatFloat],
+// except for the special precision -1. For a binary float that means the
+// fewest digits that round-trip the value. A decimal value also has a quantum,
+// so it means all the digits of the coefficient: 1.50 formats as "1.50", and
+// [ParseDecimal64] of that string returns the same value and quantum.
+//
+// With 'g' and 'G' and the special precision -1, the result is the canonical
+// string. It is in fixed notation unless the exponent of the leading digit is
+// less than -6 or at least 21, or the quantum is above the units digit, which
+// fixed notation can't show: 1e+03 is not 1000.
+//
 // The bitSize must be 64 for values from decimal64 or 128 for decimal128.
 func FormatDecimal(d decimal128, fmt byte, prec int, bitSize int) string {
 	return string(AppendDecimal(nil, d, fmt, prec, bitSize))
@@ -41,17 +51,11 @@ func AppendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 		return appendSpecial(dst, text[:])
 	}
 
+	if prec < 0 {
+		return appendCanonical(dst, &v, normalFormat(fmt))
+	}
 	if v.n > 0 {
-		switch {
-		case prec == -1:
-			// Shortest: strip trailing zeros.
-			for v.n > 0 && v.digs[v.n-1] == '0' {
-				v.n--
-				v.exp++
-			}
-		case prec >= 0:
-			v.round(x, normalFormat(fmt), prec)
-		}
+		v.round(x, normalFormat(fmt), prec)
 	}
 	if v.n == 0 {
 		return appendZero(dst, v.neg, fmt, prec)
@@ -289,11 +293,46 @@ func appendZero(dst []byte, neg bool, format byte, prec int) []byte {
 	}
 }
 
+// Exponents of the leading digit outside this range use exponent notation in
+// the canonical string. They are the thresholds encoding/json uses for floats.
+const (
+	canonicalMinExp = -6
+	canonicalMaxExp = 21
+)
+
+// appendCanonical appends all the digits of v, which keeps its quantum, for a
+// negative precision. A zero has one digit and the exponent of its quantum.
+func appendCanonical(dst []byte, v *finite, format byte) []byte {
+	digits, exp := v.digs[:v.n], v.exp
+	if v.n == 0 {
+		digits = []byte{'0'}
+	}
+	if v.neg {
+		dst = append(dst, '-')
+	}
+	switch format {
+	case 'e', 'E':
+		return appendExp(dst, digits, exp, format, -1)
+	case 'f':
+		if v.n == 0 {
+			exp = min(exp, 0)
+		}
+		return appendFixed(dst, digits, exp, -1)
+	}
+	e := exp + len(digits) - 1
+	if e < canonicalMinExp || e >= canonicalMaxExp || exp > 0 {
+		ef := byte('e')
+		if format == 'G' {
+			ef = 'E'
+		}
+		return appendExp(dst, digits, exp, ef, -1)
+	}
+	return appendFixed(dst, digits, exp, -1)
+}
+
 // formatDigits formats the non-zero value (-1)^neg × digits × 10^exp, where
-// format is one of 'e', 'E', 'f', 'g' and 'G'. The digits are already
-// rounded to prec if prec is not negative; prec -1 asks for the shortest
-// digits (the caller has stripped trailing zeros) and any other negative
-// prec for all of them.
+// format is one of 'e', 'E', 'f', 'g' and 'G' and prec is not negative. The
+// digits are already rounded to prec.
 func formatDigits(dst []byte, neg bool, exp int, digits []byte, format byte, prec int) []byte {
 	ndigits := len(digits)
 
@@ -315,44 +354,6 @@ func formatDigits(dst []byte, neg bool, exp int, digits []byte, format byte, pre
 		ef = 'E'
 	}
 	e := exp + ndigits - 1
-	if prec < 0 {
-		// Shortest: pick whichever of 'e' or 'f' is shorter.
-		useSci := false
-		if e < -4 {
-			useSci = true
-		} else if exp > 0 {
-			// Integer with trailing zeros (e.g., 1000 = 1×10^3).
-			// Compare lengths: fixed "1000" (e+1) vs scientific "1e+03" (varies).
-			fixedLen := e + 1
-			sciLen := 1 // leading digit
-			if ndigits > 1 {
-				sciLen += 1 + ndigits - 1 // '.' + frac digits
-			}
-			sciLen += 2 // 'e' + sign
-			ae := e
-			if ae < 0 {
-				ae = -ae
-			}
-			if ae >= 100 {
-				sciLen += 3
-			} else {
-				sciLen += 2
-			}
-			useSci = sciLen < fixedLen
-		}
-		if prec == -1 {
-			// Normalized shortest: strip trailing zeros from result.
-			if useSci {
-				return stripTrailingZeros(appendExp(dst, digits, exp, ef, -1))
-			}
-			return stripTrailingZeros(appendFixed(dst, digits, exp, -1))
-		}
-		// Quantum-preserving (prec == -2): keep coefficient's trailing zeros.
-		if useSci {
-			return appendExp(dst, digits, exp, ef, -1)
-		}
-		return appendFixed(dst, digits, exp, -1)
-	}
 	p := max(prec, 1)
 	if e >= -4 && e < p {
 		return stripTrailingZeros(appendFixed(dst, digits, exp, p-ndigits-exp))

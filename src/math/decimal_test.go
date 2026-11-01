@@ -735,7 +735,7 @@ func TestDecimal64SameQuantum(t *testing.T) {
 	for _, tt := range tests {
 		got := Decimal64SameQuantum(tt.x, tt.y)
 		if got != tt.want {
-			t.Errorf("Decimal64SameQuantum(%#g, %#g) = %v, want %v", tt.x, tt.y, got, tt.want)
+			t.Errorf("Decimal64SameQuantum(%g, %g) = %v, want %v", tt.x, tt.y, got, tt.want)
 		}
 	}
 }
@@ -755,7 +755,7 @@ func TestDecimal128SameQuantum(t *testing.T) {
 	for _, tt := range tests {
 		got := Decimal128SameQuantum(tt.x, tt.y)
 		if got != tt.want {
-			t.Errorf("Decimal128SameQuantum(%#g, %#g) = %v, want %v", tt.x, tt.y, got, tt.want)
+			t.Errorf("Decimal128SameQuantum(%g, %g) = %v, want %v", tt.x, tt.y, got, tt.want)
 		}
 	}
 }
@@ -763,7 +763,7 @@ func TestDecimal128SameQuantum(t *testing.T) {
 func TestDecimal64Quantize(t *testing.T) {
 	tests := []struct {
 		x, y decimal64
-		want string // expected %#g output
+		want string // expected %g output
 	}{
 		{3.14, 1.0, "3.1"},   // quantize 3.14 to 1 decimal place
 		{3.14, 1.00, "3.14"}, // quantize to 2 decimal places (no change)
@@ -775,13 +775,13 @@ func TestDecimal64Quantize(t *testing.T) {
 	}
 	for _, tt := range tests {
 		got := Decimal64Quantize(tt.x, tt.y)
-		s := fmt.Sprintf("%#g", got)
+		s := fmt.Sprintf("%g", got)
 		if s != tt.want {
 			// Dump raw BID bits for diagnosis.
 			d64bits := Decimal64bits(got)
 			d128 := decimal128(got)
 			p := (*[2]uint64)(unsafe.Pointer(&d128))
-			t.Errorf("Decimal64Quantize(%#g, %#g) = %s, want %s\n"+
+			t.Errorf("Decimal64Quantize(%g, %g) = %s, want %s\n"+
 				"  d64 bits: %#016x\n"+
 				"  d128 lo:  %#016x  hi: %#016x",
 				tt.x, tt.y, s, tt.want, d64bits, p[0], p[1])
@@ -792,7 +792,7 @@ func TestDecimal64Quantize(t *testing.T) {
 func TestDecimal128Quantize(t *testing.T) {
 	tests := []struct {
 		x, y decimal128
-		want string // expected %#g output
+		want string // expected %g output
 	}{
 		{3.14, 1.0, "3.1"},
 		{3.14, 1.00, "3.14"},
@@ -802,10 +802,10 @@ func TestDecimal128Quantize(t *testing.T) {
 	}
 	for _, tt := range tests {
 		got := Decimal128Quantize(tt.x, tt.y)
-		s := fmt.Sprintf("%#g", got)
+		s := fmt.Sprintf("%g", got)
 		if s != tt.want {
 			p := (*[2]uint64)(unsafe.Pointer(&got))
-			t.Errorf("Decimal128Quantize(%#g, %#g) = %s, want %s\n"+
+			t.Errorf("Decimal128Quantize(%g, %g) = %s, want %s\n"+
 				"  d128 lo: %#016x  hi: %#016x",
 				tt.x, tt.y, s, tt.want, p[0], p[1])
 		}

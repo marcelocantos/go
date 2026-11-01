@@ -128,9 +128,12 @@ func decimalParts(val constant.Value, lit string, precision, minExp, emax int) (
 		base.Fatalf("decimal constant %v has unexpected representation %T", val, u)
 	}
 
+	// A constant with no literal to give it a quantum has the exponent the
+	// integer conversion would give it, 0, or failing that the smallest
+	// coefficient that holds its value.
 	if x.Sign() == 0 {
 		if !hasQuantum {
-			quantum = minExp
+			quantum = 0
 		}
 		return false, new(big.Int), quantum, false
 	}
@@ -141,7 +144,10 @@ func decimalParts(val constant.Value, lit string, precision, minExp, emax int) (
 	scaled, _ := scaleDecimal(x, estimate-2)
 	adjusted := estimate - 2 + len(scaled.String()) - 1
 	if !hasQuantum {
-		quantum = adjusted - (bid.Precision64 - 1)
+		quantum = 0
+		if adjusted >= precision {
+			quantum = adjusted
+		}
 	}
 
 	// x has a finite expansion when its denominator, which is in lowest terms,

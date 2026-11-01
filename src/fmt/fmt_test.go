@@ -531,14 +531,14 @@ var fmtTests = []struct {
 	// decimal64
 	{"%e", decimal64(1.0), "1.000000e+00"},
 	{"%f", decimal64(1.0), "1.000000"},
-	{"%g", decimal64(1.0), "1"},
-	{"%v", decimal64(1.0), "1"},
+	{"%g", decimal64(1.0), "1.0"},
+	{"%v", decimal64(1.0), "1.0"},
 	{"%E", decimal64(1.0), "1.000000E+00"},
-	{"%G", decimal64(1.0), "1"},
+	{"%G", decimal64(1.0), "1.0"},
 	{"%F", decimal64(1.0), "1.000000"},
 	{"%e", decimal64(0.0), "0.000000e+00"},
 	{"%f", decimal64(0.0), "0.000000"},
-	{"%g", decimal64(0.0), "0"},
+	{"%g", decimal64(0.0), "0.0"},
 	{"%e", decimal64(3.14), "3.140000e+00"},
 	{"%f", decimal64(3.14), "3.140000"},
 	{"%g", decimal64(3.14), "3.14"},
@@ -574,10 +574,21 @@ var fmtTests = []struct {
 	{"%-020f", math.Decimal64Inf(-1), "-Inf                "},
 	{"%-020E", math.Decimal64NaN(), "NaN                 "},
 	// decimal128
+	{"%v", decimal64(1.50), "1.50"},
+	{"%g", decimal64(1.50), "1.50"},
+	{"%#g", decimal64(1.50), "1.50000"},
+	{"%#v", decimal64(1.50), "1.50"},
+	{"%.3f", decimal64(1.50), "1.500"},
+	{"%v", decimal64(1e3), "1e+03"},
+	{"%v", decimal64(100), "100"},
+	{"%v", decimal64(0.00), "0.00"},
+	{"%v", *new(decimal64), "0"},
+	{"%v", decimal128(1.50), "1.50"},
+	{"%v", struct{ D namedDecimal }{1.50}, "{1.50}"},
 	{"%e", decimal128(1.0), "1.000000e+00"},
 	{"%f", decimal128(1.0), "1.000000"},
-	{"%g", decimal128(1.0), "1"},
-	{"%v", decimal128(1.0), "1"},
+	{"%g", decimal128(1.0), "1.0"},
+	{"%v", decimal128(1.0), "1.0"},
 	{"%+.3e", decimal128(1.0), "+1.000e+00"},
 	{"%+.3f", decimal128(-1.0), "-1.000"},
 
@@ -1201,6 +1212,8 @@ var fmtTests = []struct {
 func zeroFill(prefix string, width int, suffix string) string {
 	return prefix + strings.Repeat("0", width-len(suffix)) + suffix
 }
+
+type namedDecimal decimal64
 
 func TestSprintf(t *testing.T) {
 	for _, tt := range fmtTests {

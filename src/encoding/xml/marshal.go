@@ -804,9 +804,9 @@ func (p *printer) marshalSimple(typ reflect.Type, val reflect.Value) (string, []
 	case reflect.Float32, reflect.Float64:
 		return strconv.FormatFloat(val.Float(), 'g', -1, val.Type().Bits()), nil, nil
 	case reflect.Decimal64:
-		return strconv.FormatDecimal64(val.Interface().(decimal64), 'g', -1), nil, nil
+		return strconv.FormatDecimal(val.Decimal(), 'g', -1, 64), nil, nil
 	case reflect.Decimal128:
-		return strconv.FormatDecimal128(val.Interface().(decimal128), 'g', -1), nil, nil
+		return strconv.FormatDecimal(val.Decimal(), 'g', -1, 128), nil, nil
 	case reflect.String:
 		return val.String(), nil, nil
 	case reflect.Bool:
@@ -917,11 +917,11 @@ func (p *printer) marshalStruct(tinfo *typeInfo, val reflect.Value) error {
 					return err
 				}
 			case reflect.Decimal64:
-				if err := emit(p, []byte(strconv.FormatDecimal64(vf.Interface().(decimal64), 'g', -1))); err != nil {
+				if err := emit(p, []byte(strconv.FormatDecimal(vf.Decimal(), 'g', -1, 64))); err != nil {
 					return err
 				}
 			case reflect.Decimal128:
-				if err := emit(p, []byte(strconv.FormatDecimal128(vf.Interface().(decimal128), 'g', -1))); err != nil {
+				if err := emit(p, []byte(strconv.FormatDecimal(vf.Decimal(), 'g', -1, 128))); err != nil {
 					return err
 				}
 			case reflect.Bool:

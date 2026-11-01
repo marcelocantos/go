@@ -606,9 +606,17 @@ var (
 	float64Encoder = (floatEncoder(64)).encode
 )
 
+// cleanDecimalExp cleans up e-09 to e-9, as for floats.
+func cleanDecimalExp(s string) string {
+	n := len(s)
+	if n >= 4 && s[n-4] == 'e' && s[n-3] == '-' && s[n-2] == '0' {
+		return s[:n-2] + s[n-1:]
+	}
+	return s
+}
+
 func decimal64Encoder(e *encodeState, v reflect.Value, opts encOpts) {
-	d := v.Interface().(decimal64)
-	s := strconv.FormatDecimal64(d, 'f', -1)
+	s := cleanDecimalExp(strconv.FormatDecimal(v.Decimal(), 'g', -1, 64))
 	if s == "NaN" || s == "+Inf" || s == "-Inf" {
 		e.error(&UnsupportedValueError{v, s})
 	}
@@ -620,8 +628,7 @@ func decimal64Encoder(e *encodeState, v reflect.Value, opts encOpts) {
 }
 
 func decimal128Encoder(e *encodeState, v reflect.Value, opts encOpts) {
-	d := v.Interface().(decimal128)
-	s := strconv.FormatDecimal128(d, 'f', -1)
+	s := cleanDecimalExp(strconv.FormatDecimal(v.Decimal(), 'g', -1, 128))
 	if s == "NaN" || s == "+Inf" || s == "-Inf" {
 		e.error(&UnsupportedValueError{v, s})
 	}

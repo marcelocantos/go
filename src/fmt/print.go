@@ -460,35 +460,15 @@ func (p *pp) fmtFloat(arg any, value reflect.Value, v float64, size int, verb ru
 // fmtDecimal formats a decimal. It mirrors fmtFloat but uses
 // strconv.AppendDecimal. Verbs b, x, X are not supported for decimals.
 func (p *pp) fmtDecimal(arg any, value reflect.Value, d decimal128, size int, verb rune) {
-	// The # flag without explicit precision activates quantum-preserving
-	// mode (prec -2): the coefficient's trailing zeros are kept, reflecting
-	// the stored precision of the decimal value.
-	quantum := p.fmt.sharp && !p.fmt.precPresent
 	switch verb {
 	case 'v':
-		prec := -1
-		if quantum {
-			prec = -2
-		}
-		p.fmt.fmtDecimal(d, size, 'g', prec)
+		p.fmt.fmtDecimal(d, size, 'g', -1)
 	case 'g', 'G':
-		prec := -1
-		if quantum {
-			prec = -2
-		}
-		p.fmt.fmtDecimal(d, size, verb, prec)
+		p.fmt.fmtDecimal(d, size, verb, -1)
 	case 'f', 'e', 'E':
-		prec := 6
-		if quantum {
-			prec = -2
-		}
-		p.fmt.fmtDecimal(d, size, verb, prec)
+		p.fmt.fmtDecimal(d, size, verb, 6)
 	case 'F':
-		prec := 6
-		if quantum {
-			prec = -2
-		}
-		p.fmt.fmtDecimal(d, size, 'f', prec)
+		p.fmt.fmtDecimal(d, size, 'f', 6)
 	default:
 		p.badVerb(arg, value, verb)
 	}
@@ -834,9 +814,9 @@ func (p *pp) printValue(value reflect.Value, verb rune, depth int) {
 	case reflect.Complex128:
 		p.fmtComplex(nil, value, f.Complex(), 128, verb)
 	case reflect.Decimal64:
-		p.fmtDecimal(nil, value, decimal128(f.Interface().(decimal64)), 64, verb)
+		p.fmtDecimal(nil, value, f.Decimal(), 64, verb)
 	case reflect.Decimal128:
-		p.fmtDecimal(nil, value, f.Interface().(decimal128), 128, verb)
+		p.fmtDecimal(nil, value, f.Decimal(), 128, verb)
 	case reflect.String:
 		p.fmtString(nil, value, f.String(), verb)
 	case reflect.Map:
