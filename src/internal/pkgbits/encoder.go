@@ -351,6 +351,12 @@ func (w *Encoder) Value(val constant.Value) {
 		w.scalar(constant.Imag(val))
 	} else {
 		w.scalar(val)
+		if w.p.version.Has(ConstQuantum) && val.Kind() == constant.Float {
+			q, ok := constant.Quantum(val)
+			if w.Bool(ok) {
+				w.Int64(int64(q))
+			}
+		}
 	}
 }
 

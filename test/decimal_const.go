@@ -230,7 +230,7 @@ var (
 )
 
 // A conversion to a type parameter is not a constant, but the compiler encodes
-// it, from the constant operand. It has no literal to take a quantum from.
+// it, from the constant operand, which keeps the quantum of its literal.
 func convert64[T ~decimal64]() (a, b, c, d T) {
 	return T(1.50), T(7), T('a'), T(float32(0.1))
 }
@@ -330,18 +330,16 @@ func main() {
 	check128("direct", direct128, 1.0/3.0, want128(false, "3333333333333333333333333333333333", -34))
 	check64("tie tail", tieTail64v, tieTail64, want64(false, 1000000000000001, -15))
 	check128("tie tail", tieTail64w, tieTail64, want128(false, "1000000000000000500000000000000333", -33))
-	// A typed constant rounds, and until constants carry a quantum the rounded
-	// value keeps no trailing zeros.
-	check64("tie tail 128", tieTail128v, tieTail128, want64(false, 1, 0))
+	// An inexact typed constant keeps every digit of its rounded coefficient.
+	check64("tie tail 128", tieTail128v, tieTail128, want64(false, 1000000000000000, -15))
 	check128("tie tail 128", tieTail128w, tieTail128, want128(false, "1000000000000000000000000000000001", -33))
 
-	// Computed constants with an exact value, which have no quantum until the
-	// constant model does: exponent 0 for an integer that fits, and the zero
-	// value for a zero.
-	check64("sum", sum64, sum, want64(false, 3, 0))
-	check128("sum", sum128, sum, want128(false, "3", 0))
-	check64("gone", gone64, gone, want64(false, 0, 0))
-	check128("gone", gone128, gone, want128(false, "0", 0))
+	// Computed constants with an exact value carry the quantum of their
+	// operands: the smaller one for a sum or difference.
+	check64("sum", sum64, sum, want64(false, 30, -1))
+	check128("sum", sum128, sum, want128(false, "30", -1))
+	check64("gone", gone64, gone, want64(false, 0, -1))
+	check128("gone", gone128, gone, want128(false, "0", -1))
 
 	// The quantum of the literal.
 	check64("literal", lit64, 1.50, want64(false, 150, -2))
@@ -364,7 +362,7 @@ func main() {
 	// A typed binary constant converts from its exact binary value.
 	check64("float32", f32Var64, decimal64(f32Named), want64(false, 1000000014901161, -16))
 	check128("float32", f32Var128, decimal128(f32Named), want128(false, "100000001490116119384765625", -27))
-	check64("float64", f64Var64, decimal64(f64Named), want64(false, 1, -1))
+	check64("float64", f64Var64, decimal64(f64Named), want64(false, 1000000000000000, -16))
 	check128("float64", f64Var128, decimal128(f64Named), want128(false, "1000000000000000055511151231257827", -34))
 
 	// The top of the range. Constants above it do not compile.
@@ -395,23 +393,22 @@ func main() {
 	check64("under", under64, 1e-399, want64(false, 0, -398))
 	check128("under", under128, 1e-6177, want128(false, "0", -6176))
 	// A typed constant that rounds to zero loses its sign, as for floats, since
-	// a constant has no negative zero. A decimal128 this small is not rounded
-	// until the compiler encodes it, which keeps the sign.
+	// a constant has no negative zero.
 	check64("negative under", negUnder64, -1e-399, want64(false, 0, -398))
-	check128("negative under", negUnder128, -1e-6177, want128(true, "0", -6176))
+	check128("negative under", negUnder128, -1e-6177, want128(false, "0", -6176))
 	check64("vanish", vanish64, 1e-100000, want64(false, 0, -398))
 	check128("vanish", vanish128, 1e-100000, want128(false, "0", -6176))
 	check64("computed subnormal", computedSub64, 1e-200*1e-198, want64(false, 1, -398))
 
 	// Conversions to a type parameter.
 	a64, b64, c64, d64 := convert64[decimal64]()
-	check64("T(1.50)", a64, a64, want64(false, 15, -1))
+	check64("T(1.50)", a64, a64, want64(false, 150, -2))
 	check64("T(7)", b64, b64, want64(false, 7, 0))
 	check64("T('a')", c64, c64, want64(false, 97, 0))
 	check64("T(float32(0.1))", d64, d64, want64(false, 1000000014901161, -16))
 	a128, b128, c128, d128 := convert128[decimal128]()
 	check128("T(0.1)", a128, a128, want128(false, "1", -1))
-	check128("T(-1.50)", b128, b128, want128(true, "15", -1))
+	check128("T(-1.50)", b128, b128, want128(true, "150", -2))
 	check128("T(34 digits)", c128, c128, want128(false, "1234567890123456789012345678901234", -33))
 	check128("T(float32(0.1))", d128, d128, want128(false, "100000001490116119384765625", -27))
 

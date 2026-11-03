@@ -10,7 +10,7 @@ import (
 	"cmd/compile/internal/syntax"
 	"go/constant"
 	"go/token"
-	"internal/bid"
+	"internal/constdecimal"
 	. "internal/types/errors"
 	"math"
 	"math/big"
@@ -218,21 +218,18 @@ func representableConst(x constant.Value, check *Checker, typ *Basic, rounded *c
 		if x.Kind() != constant.Float {
 			return false
 		}
-		var fits bool
-		switch typ.kind {
-		case Decimal64:
-			fits = fitsDecimal(x, maxDecimal64)
-		case Decimal128:
-			fits = fitsDecimal(x, maxDecimal128)
-		default:
-			panic("unreachable")
+		w := constdecimal.Decimal64
+		if typ.kind == Decimal128 {
+			w = constdecimal.Decimal128
 		}
-		// A typed constant has the value its type can hold, as for floats, so
-		// that comparing it agrees with comparing a variable that holds it.
-		if fits && rounded != nil {
-			*rounded = roundDecimal(x, typ.kind)
+		// A typed constant has the value and quantum its type can hold,
+		// rounded as at run time, as a float constant has the value its
+		// type can hold.
+		v, ok := constdecimal.Round(x, w)
+		if ok && rounded != nil {
+			*rounded = v
 		}
-		return fits
+		return ok
 
 	case isString(typ):
 		return x.Kind() == constant.String
@@ -286,97 +283,6 @@ func toBigFloat(x constant.Value) *big.Float {
 	default:
 		return nil
 	}
-}
-
-// roundDecimal returns the value x, which fits the decimal type kind, as the
-// kernel rounds it at run time: to nearest, ties to even. A value that needs no
-// rounding is returned as it is. So is one beyond 2^±4096, which only decimal128
-// can hold: go/constant holds it inexactly, so only the compiler, which has the
-// literal, can round it correctly.
-func roundDecimal(x constant.Value, kind BasicKind) constant.Value {
-	r, ok := constant.Val(x).(*big.Rat)
-	if !ok || r.Sign() == 0 {
-		return x
-	}
-	abs := new(big.Rat).Abs(r)
-
-	// Hand the kernel the integer part of abs × 10^-exp, with sticky standing
-	// for the rest. An estimate within 1.3 of log10(abs) gives it between one
-	// and three digits more than the format holds, which fit its coefficient.
-	const log10Of2 = 0.30103
-	estimate := int(float64(abs.Num().BitLen()-abs.Denom().BitLen()) * log10Of2)
-	precision := bid.Precision64
-	if kind == Decimal128 {
-		precision = bid.Precision128
-	}
-	exp := estimate - precision - 1
-	num, den := abs.Num(), abs.Denom()
-	power := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(max(exp, -exp))), nil)
-	if exp < 0 {
-		num = new(big.Int).Mul(num, power)
-	} else {
-		den = new(big.Int).Mul(den, power)
-	}
-	q, rem := new(big.Int).QuoRem(num, den, new(big.Int))
-	sticky := rem.Sign() != 0
-
-	coeff := new(big.Int)
-	var cexp int
-	if kind == Decimal128 {
-		lo := new(big.Int).And(q, new(big.Int).SetUint64(math.MaxUint64)).Uint64()
-		hi := new(big.Int).Rsh(q, 64).Uint64()
-		bits, _ := bid.Round128(false, bid.Uint128{Hi: hi, Lo: lo}, exp, sticky, bid.ToNearestEven)
-		_, _, c, e := bid.Unpack128(bits)
-		coeff.SetUint64(c.Hi)
-		coeff.Lsh(coeff, 64)
-		coeff.Or(coeff, new(big.Int).SetUint64(c.Lo))
-		cexp = e
-	} else {
-		bits, _ := bid.Round64(false, q.Uint64(), exp, sticky, bid.ToNearestEven)
-		_, _, c, e := bid.Unpack64(bits)
-		coeff.SetUint64(c)
-		cexp = e
-	}
-
-	power = new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(max(cexp, -cexp))), nil)
-	result := new(big.Rat).SetInt(coeff)
-	if cexp < 0 {
-		result.Quo(result, new(big.Rat).SetInt(power))
-	} else {
-		result.Mul(result, new(big.Rat).SetInt(power))
-	}
-	if result.Cmp(abs) == 0 {
-		return x
-	}
-	if r.Sign() < 0 {
-		result.Neg(result)
-	}
-	return constant.ToFloat(constant.Make(result))
-}
-
-// maxDecimal64 is the maximum finite decimal64 value: 9.999999999999999e+384
-var maxDecimal64 = func() *big.Float {
-	f, _, _ := new(big.Float).SetPrec(256).Parse("9.999999999999999e+384", 10)
-	return f
-}()
-
-// maxDecimal128 is the maximum finite decimal128 value: 9.999999999999999999999999999999999e+6144
-var maxDecimal128 = func() *big.Float {
-	f, _, _ := new(big.Float).SetPrec(256).Parse("9.999999999999999999999999999999999e+6144", 10)
-	return f
-}()
-
-// fitsDecimal reports whether the magnitude of x is at most max.
-func fitsDecimal(x constant.Value, max *big.Float) bool {
-	bf := toBigFloat(x)
-	if bf == nil {
-		return false
-	}
-	if bf.Sign() == 0 {
-		return true
-	}
-	abs := new(big.Float).SetPrec(256).Abs(bf)
-	return abs.Cmp(max) <= 0
 }
 
 // representable checks that a constant operand is representable in the given

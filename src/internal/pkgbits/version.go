@@ -41,6 +41,9 @@ const (
 	// of nongeneric and generic methods (go.dev/issue/81188).
 	V5
 
+	// V6: encodes the quantum of floating-point constants
+	V6
+
 	numVersions = iota
 )
 
@@ -84,6 +87,9 @@ const (
 	// nongeneric and generic methods.
 	PreserveMethodOrder
 
+	// A floating-point constant is followed by its quantum.
+	ConstQuantum
+
 	numFields = iota
 )
 
@@ -94,6 +100,7 @@ var introduced = [numFields]Version{
 	CompactCompLiterals: V3,
 	GenericMethods:      V4,
 	PreserveMethodOrder: V5,
+	ConstQuantum:        V6,
 }
 
 // removed is the version a field was removed in or 0 for fields

@@ -93,10 +93,16 @@ type (
 		s    string
 		l, r *stringVal
 	}
-	int64Val   int64                    // Int values representable as an int64
-	intVal     struct{ val *big.Int }   // Int values not representable as an int64
-	ratVal     struct{ val *big.Rat }   // Float values representable as a fraction
-	floatVal   struct{ val *big.Float } // Float values not representable as a fraction
+	int64Val int64                  // Int values representable as an int64
+	intVal   struct{ val *big.Int } // Int values not representable as an int64
+	ratVal   struct {               // Float values representable as a fraction
+		val *big.Rat
+		q   quantum
+	}
+	floatVal struct { // Float values not representable as a fraction
+		val *big.Float
+		q   quantum
+	}
 	complexVal struct{ re, im Value }
 )
 
@@ -275,11 +281,11 @@ func newRat() *big.Rat     { return new(big.Rat) }
 func newFloat() *big.Float { return new(big.Float).SetPrec(prec) }
 
 func i64toi(x int64Val) intVal   { return intVal{newInt().SetInt64(int64(x))} }
-func i64tor(x int64Val) ratVal   { return ratVal{newRat().SetInt64(int64(x))} }
-func i64tof(x int64Val) floatVal { return floatVal{newFloat().SetInt64(int64(x))} }
-func itor(x intVal) ratVal       { return ratVal{newRat().SetInt(x.val)} }
-func itof(x intVal) floatVal     { return floatVal{newFloat().SetInt(x.val)} }
-func rtof(x ratVal) floatVal     { return floatVal{newFloat().SetRat(x.val)} }
+func i64tor(x int64Val) ratVal   { return ratVal{val: newRat().SetInt64(int64(x)), q: quantum0} }
+func i64tof(x int64Val) floatVal { return floatVal{val: newFloat().SetInt64(int64(x)), q: quantum0} }
+func itor(x intVal) ratVal       { return ratVal{val: newRat().SetInt(x.val), q: quantum0} }
+func itof(x intVal) floatVal     { return floatVal{val: newFloat().SetInt(x.val), q: quantum0} }
+func rtof(x ratVal) floatVal     { return floatVal{val: newFloat().SetRat(x.val), q: x.q} }
 func vtoc(x Value) complexVal    { return complexVal{x, int64Val(0)} }
 
 func makeInt(x *big.Int) Value {
@@ -294,13 +300,13 @@ func makeRat(x *big.Rat) Value {
 	b := x.Denom()
 	if smallInt(a) && smallInt(b) {
 		// ok to remain fraction
-		return ratVal{x}
+		return ratVal{val: x}
 	}
 	// components too large => switch to float
-	return floatVal{newFloat().SetRat(x)}
+	return floatVal{val: newFloat().SetRat(x)}
 }
 
-var floatVal0 = floatVal{newFloat()}
+var floatVal0 = floatVal{val: newFloat()}
 
 func makeFloat(x *big.Float) Value {
 	// convert -0
@@ -313,14 +319,14 @@ func makeFloat(x *big.Float) Value {
 	// No attempt is made to "go back" to ratVal, even if possible,
 	// to avoid providing the illusion of a mathematically exact
 	// representation.
-	return floatVal{x}
+	return floatVal{val: x}
 }
 
 func makeComplex(re, im Value) Value {
 	if re.Kind() == Unknown || im.Kind() == Unknown {
 		return unknownVal{}
 	}
-	return complexVal{re, im}
+	return complexVal{withQuantum(re, quantum{}), withQuantum(im, quantum{})}
 }
 
 func makeFloatFromLiteral(lit string) Value {
@@ -335,7 +341,7 @@ func makeFloatFromLiteral(lit string) Value {
 				lit = "0"
 			}
 			if r, ok := newRat().SetString(lit); ok {
-				return ratVal{r}
+				return ratVal{val: r}
 			}
 		}
 		// otherwise use floats
@@ -412,9 +418,9 @@ func MakeFloat64(x float64) Value {
 		return unknownVal{}
 	}
 	if smallFloat64(x) {
-		return ratVal{newRat().SetFloat64(x + 0)} // convert -0 to 0
+		return ratVal{val: newRat().SetFloat64(x + 0)} // convert -0 to 0
 	}
-	return floatVal{newFloat().SetFloat64(x + 0)}
+	return floatVal{val: newFloat().SetFloat64(x + 0)}
 }
 
 // MakeFromLiteral returns the corresponding integer, floating-point,
@@ -438,7 +444,7 @@ func MakeFromLiteral(lit string, tok token.Token, zero uint) Value {
 
 	case token.FLOAT:
 		if x := makeFloatFromLiteral(lit); x != nil {
-			return x
+			return withQuantum(x, literalQuantum(lit))
 		}
 
 	case token.IMAG:
@@ -997,9 +1003,9 @@ func UnaryOp(op token.Token, y Value, prec uint) Value {
 		case intVal:
 			return makeInt(newInt().Neg(y.val))
 		case ratVal:
-			return makeRat(newRat().Neg(y.val))
+			return withQuantum(makeRat(newRat().Neg(y.val)), y.q)
 		case floatVal:
-			return makeFloat(newFloat().Neg(y.val))
+			return withQuantum(makeFloat(newFloat().Neg(y.val)), y.q)
 		case complexVal:
 			re := UnaryOp(token.SUB, y.re, 0)
 			im := UnaryOp(token.SUB, y.im, 0)
@@ -1126,6 +1132,14 @@ func match0(x, y Value) (_, _ Value) {
 // instead of [token.QUO]; the result is guaranteed to be [Int] in this case.
 // Division by zero leads to a run-time panic.
 func BinaryOp(x_ Value, op token.Token, y_ Value) Value {
+	z := binaryOp(x_, op, y_)
+	if z.Kind() != Float {
+		return z
+	}
+	return withQuantum(z, binaryQuantum(x_, op, y_, z))
+}
+
+func binaryOp(x_ Value, op token.Token, y_ Value) Value {
 	x, y := match(x_, y_)
 
 	switch x := x.(type) {
@@ -1432,4 +1446,152 @@ func Compare(x_ Value, op token.Token, y_ Value) bool {
 	}
 
 	panic(fmt.Sprintf("invalid comparison %v %s %v", x_, op, y_))
+}
+
+// ----------------------------------------------------------------------------
+// Quantum
+
+// A quantum is the decimal exponent of the last digit of a floating-point
+// constant, which distinguishes 1.50 from 1.5. It is part of a [Float] value
+// alongside its exact value, and it affects only conversion to a decimal
+// floating-point type and arithmetic on decimal constants. The zero quantum
+// is absent.
+type quantum struct {
+	exp int64
+	ok  bool
+}
+
+var quantum0 = quantum{exp: 0, ok: true}
+
+// maxQuantum bounds quantum arithmetic. It is far outside the range of every
+// decimal format, and a literal's exponent saturates at it.
+const maxQuantum = 1 << 40
+
+// Quantum returns the decimal exponent of the last digit of x, and whether x
+// has one. A decimal floating-point literal with n fractional digits and no
+// exponent part has quantum -n; an exponent part is added to that. An [Int]
+// value has quantum 0. A [Float] value has a quantum if it came from a decimal
+// literal or from exact arithmetic on values that have one, following the
+// preferred exponents of IEEE 754-2008 decimal arithmetic: the smaller quantum
+// for addition and subtraction, the sum for multiplication, and for division
+// the largest exponent no greater than the difference at which the quotient
+// is exact. Other values, including complex values and the results of
+// inexact division, have none.
+func Quantum(x Value) (exp int, ok bool) {
+	q := quantumOf(x)
+	return int(q.exp), q.ok
+}
+
+func quantumOf(x Value) quantum {
+	switch x := x.(type) {
+	case int64Val, intVal:
+		return quantum0
+	case ratVal:
+		return x.q
+	case floatVal:
+		return x.q
+	}
+	return quantum{}
+}
+
+// withQuantum returns x with quantum q, if x is a [Float] value.
+func withQuantum(x Value, q quantum) Value {
+	switch v := x.(type) {
+	case ratVal:
+		v.q = q
+		return v
+	case floatVal:
+		v.q = q
+		return v
+	}
+	return x
+}
+
+func clampQuantum(e int64) int64 {
+	return max(min(e, maxQuantum), -maxQuantum)
+}
+
+// literalQuantum returns the quantum of a decimal floating-point literal:
+// its exponent part less the number of its fractional digits. A hexadecimal
+// literal has none.
+func literalQuantum(lit string) quantum {
+	lit = strings.ToLower(strings.ReplaceAll(lit, "_", ""))
+	if strings.HasPrefix(lit, "0x") {
+		return quantum{}
+	}
+	mantissa, exponent, hasExponent := strings.Cut(lit, "e")
+	var e int64
+	if hasExponent {
+		// ParseInt returns the nearest int64, with an error, out of range.
+		e, _ = strconv.ParseInt(exponent, 10, 64)
+		e = clampQuantum(e)
+	}
+	if _, fraction, ok := strings.Cut(mantissa, "."); ok {
+		e -= int64(len(fraction))
+	}
+	return quantum{exp: clampQuantum(e), ok: true}
+}
+
+// binaryQuantum returns the quantum of z = x op y, a [Float] value.
+func binaryQuantum(x Value, op token.Token, y Value, z Value) quantum {
+	qx, qy := quantumOf(x), quantumOf(y)
+	if !qx.ok || !qy.ok {
+		return quantum{}
+	}
+	switch op {
+	case token.ADD, token.SUB:
+		return quantum{exp: min(qx.exp, qy.exp), ok: true}
+	case token.MUL:
+		return quantum{exp: clampQuantum(qx.exp + qy.exp), ok: true}
+	case token.QUO:
+		ideal := clampQuantum(qx.exp - qy.exp)
+		if Sign(z) == 0 {
+			return quantum{exp: ideal, ok: true}
+		}
+		r, ok := z.(ratVal)
+		if !ok {
+			// A value too large or small for a fraction is not exact.
+			return quantum{}
+		}
+		e, finite := largestExponent(r.val)
+		if !finite {
+			return quantum{}
+		}
+		return quantum{exp: min(ideal, e), ok: true}
+	}
+	return quantum{}
+}
+
+// largestExponent returns the largest e for which x × 10^-e is an integer,
+// and whether there is one, which is when x has a finite decimal expansion.
+// x must not be zero.
+func largestExponent(x *big.Rat) (int64, bool) {
+	ten := big.NewInt(10)
+	if x.IsInt() {
+		n := new(big.Int).Abs(x.Num())
+		var e int64
+		for {
+			q, r := new(big.Int).QuoRem(n, ten, new(big.Int))
+			if r.Sign() != 0 {
+				return e, true
+			}
+			n, e = q, e+1
+		}
+	}
+	d := new(big.Int).Set(x.Denom())
+	twos := int64(d.TrailingZeroBits())
+	d.Rsh(d, uint(twos))
+	five := big.NewInt(5)
+	var fives int64
+	for {
+		q, r := new(big.Int).QuoRem(d, five, new(big.Int))
+		if r.Sign() != 0 {
+			break
+		}
+		d, fives = q, fives+1
+	}
+	if !d.IsInt64() || d.Int64() != 1 {
+		return 0, false
+	}
+	return -max(twos, fives), true
 }

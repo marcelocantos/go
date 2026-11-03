@@ -273,4 +273,5 @@ pkg sort, method (Decimal128Slice) Swap(int, int) #0
 pkg sort, type Decimal128Slice []decimal128 #0
 pkg strconv, func AppendDecimal([]uint8, decimal128, uint8, int, int) []uint8 #0
 pkg strconv, func FormatDecimal(decimal128, uint8, int, int) string #0
+pkg go/constant, func Quantum(Value) (int, bool) #0
 pkg strconv, func ParseDecimal(string, int) (decimal128, error) #0

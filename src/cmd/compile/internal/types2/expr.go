@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"go/constant"
 	"go/token"
+	"internal/constdecimal"
 	. "internal/types/errors"
 )
 
@@ -906,18 +907,27 @@ checked:
 	}
 
 	if x.mode() == constant_ && y.mode() == constant_ {
-		// Don't constant-fold typed decimal arithmetic. Go constants use
-		// binary floating-point internally, which destroys the decimal
-		// quantum (trailing-zero significance). Deferring to runtime
-		// preserves quantum through BID arithmetic.
-		if isDecimal(x.typ()) {
-			x.mode_ = value
-			return
-		}
 		// if either x or y has an unknown value, the result is unknown
 		if x.val.Kind() == constant.Unknown || y.val.Kind() == constant.Unknown {
 			x.val = constant.MakeUnknown()
 			// x.typ is unchanged
+			return
+		}
+		// Typed decimal arithmetic rounds each operation as at run time,
+		// and its result takes the IEEE 754 preferred exponent.
+		if isDecimal(x.typ()) {
+			w := constdecimal.Decimal64
+			if x.typ().Underlying().(*Basic).kind == Decimal128 {
+				w = constdecimal.Decimal128
+			}
+			v, ok := constdecimal.BinaryOp(x.val, op2tok[op], y.val, w)
+			if !ok {
+				check.errorf(atPos(opPos(x.expr)), InvalidConstVal, "constant %s overflow", opName(x.expr))
+				x.invalidate()
+				return
+			}
+			x.val = v
+			x.expr = e
 			return
 		}
 		// force integer division for integer operands

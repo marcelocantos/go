@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -431,8 +432,41 @@ func (r *Decoder) Value() constant.Value {
 	val := r.scalar()
 	if isComplex {
 		val = constant.BinaryOp(val, token.ADD, constant.MakeImag(r.scalar()))
+	} else if r.common.version.Has(ConstQuantum) && val.Kind() == constant.Float && r.Bool() {
+		val = withQuantum(val, int(r.Int64()))
 	}
 	return val
+}
+
+// withQuantum returns the floating-point constant x with quantum q. The
+// writer records a quantum only for a value that is an integer coefficient
+// times ten to it, so x is rebuilt from that coefficient as a literal, which
+// is how go/constant acquires a quantum.
+func withQuantum(x constant.Value, q int) constant.Value {
+	v := new(big.Float).SetPrec(1024)
+	switch u := constant.Val(x).(type) {
+	case *big.Rat:
+		v.SetRat(u)
+	case *big.Float:
+		v.Set(u)
+	default:
+		return x
+	}
+	neg := v.Sign() < 0
+	v.Abs(v)
+	p := new(big.Float).SetPrec(1024).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(max(q, -q))), nil))
+	if q < 0 {
+		v.Mul(v, p)
+	} else {
+		v.Quo(v, p)
+	}
+	v.Add(v, big.NewFloat(0.5))
+	c, _ := v.Int(nil)
+	y := constant.MakeFromLiteral(c.String()+"e"+strconv.Itoa(q), token.FLOAT, 0)
+	if neg {
+		y = constant.UnaryOp(token.SUB, y, 0)
+	}
+	return y
 }
 
 func (r *Decoder) scalar() constant.Value {

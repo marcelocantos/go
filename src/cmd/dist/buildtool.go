@@ -133,6 +133,7 @@ var bootstrapDirs = []string{
 	"go/version",
 	"internal/abi",
 	"internal/bid",
+	"internal/constdecimal",
 	"internal/coverage",
 	"cmd/internal/cov/covcmd",
 	"internal/bisect",

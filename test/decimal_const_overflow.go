@@ -23,3 +23,13 @@ var (
 )
 
 const i decimal64 = 1e400 // ERROR "overflows|truncated"
+
+// Typed decimal constant arithmetic rounds at each operation, and a result
+// above the largest finite value is an overflow, as for floats.
+const (
+	big64   decimal64  = 9e384
+	over64             = big64 * 10 // ERROR "overflow"
+	big128  decimal128 = 9e6144
+	over128            = big128 * 10 // ERROR "overflow"
+	ok64               = big64 / 10
+)

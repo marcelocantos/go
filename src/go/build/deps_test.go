@@ -373,6 +373,9 @@ var depsRules = `
 	math/big, go/token
 	< go/constant;
 
+	go/constant, internal/bid
+	< internal/constdecimal;
+
 	FMT, internal/goexperiment
 	< internal/buildcfg;
 
@@ -637,7 +640,7 @@ var depsRules = `
 	FMT, hash/maphash
 	< container/hash;
 
-	hash/maphash, container/heap, go/constant, go/parser, internal/buildcfg, internal/goversion, internal/types/errors
+	hash/maphash, container/heap, go/constant, go/parser, internal/buildcfg, internal/constdecimal, internal/goversion, internal/types/errors
 	< go/types;
 
 	# x/tools

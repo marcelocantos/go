@@ -11,6 +11,7 @@ import (
 	"go/ast"
 	"go/constant"
 	"go/token"
+	"internal/constdecimal"
 	. "internal/types/errors"
 )
 
@@ -903,6 +904,23 @@ checked:
 		if x.val.Kind() == constant.Unknown || y.val.Kind() == constant.Unknown {
 			x.val = constant.MakeUnknown()
 			// x.typ is unchanged
+			return
+		}
+		// Typed decimal arithmetic rounds each operation as at run time,
+		// and its result takes the IEEE 754 preferred exponent.
+		if isDecimal(x.typ()) {
+			w := constdecimal.Decimal64
+			if x.typ().Underlying().(*Basic).kind == Decimal128 {
+				w = constdecimal.Decimal128
+			}
+			v, ok := constdecimal.BinaryOp(x.val, op, y.val, w)
+			if !ok {
+				check.errorf(atPos(opPos), InvalidConstVal, "constant %s overflow", opName(x.expr))
+				x.invalidate()
+				return
+			}
+			x.val = v
+			x.expr = e
 			return
 		}
 		// force integer division of integer operands

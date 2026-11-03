@@ -147,8 +147,8 @@ func NewBasicLit(pos src.XPos, typ *types.Type, val constant.Value) Node {
 
 func (n *BasicLit) Val() constant.Value       { return n.val }
 func (n *BasicLit) SetVal(val constant.Value) { n.val = val }
-func (n *BasicLit) OrigLit() string            { return n.origLit }
-func (n *BasicLit) SetOrigLit(s string)        { n.origLit = s }
+func (n *BasicLit) OrigLit() string           { return n.origLit }
+func (n *BasicLit) SetOrigLit(s string)       { n.origLit = s }
 
 // NewConstExpr returns an OLITERAL representing val, copying the
 // position and type from orig.

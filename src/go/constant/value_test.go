@@ -751,3 +751,50 @@ func TestBitLen(t *testing.T) {
 		}
 	}
 }
+
+// The expected quanta follow the propagation rules in the documentation of
+// Quantum, worked out by hand.
+func TestQuantum(t *testing.T) {
+	flt := func(s string) Value { return MakeFromLiteral(s, token.FLOAT, 0) }
+	num := func(s string) Value { return MakeFromLiteral(s, token.INT, 0) }
+	const none = "none"
+	for _, test := range []struct {
+		name string
+		v    Value
+		want string
+	}{
+		{"fraction digits", flt("1.50"), "-2"},
+		{"underscores", flt("1_000.50"), "-2"},
+		{"leading point", flt(".5"), "-1"},
+		{"trailing point", flt("5."), "0"},
+		{"exponent", flt("1.5e3"), "2"},
+		{"signed exponent", flt("1.5E-3"), "-4"},
+		{"zero", flt("0.00"), "-2"},
+		{"integer", num("150"), "0"},
+		{"octal integer", num("0755"), "0"},
+		{"hexadecimal float", flt("0x1p-2"), none},
+		{"large exponent", flt("1e-6000"), "-6000"},
+		{"addition takes the smaller", BinaryOp(flt("1.50"), token.ADD, flt("0.1")), "-2"},
+		{"subtraction takes the smaller", BinaryOp(flt("1.5"), token.SUB, flt("0.25")), "-2"},
+		{"integer operand has quantum 0", BinaryOp(flt("1.5"), token.ADD, num("2")), "-1"},
+		{"multiplication adds", BinaryOp(flt("1.50"), token.MUL, flt("1.20")), "-4"},
+		{"exact division", BinaryOp(flt("1.00"), token.QUO, num("4")), "-2"},
+		{"exact division above the ideal", BinaryOp(num("600"), token.QUO, flt("2.0")), "1"},
+		{"zero quotient", BinaryOp(flt("0.00"), token.QUO, flt("2.0")), "-1"},
+		{"inexact division", BinaryOp(flt("1.0"), token.QUO, flt("3.0")), none},
+		{"integer division", BinaryOp(num("7"), token.QUO, num("4")), "-2"},
+		{"negation keeps", UnaryOp(token.SUB, flt("1.50"), 0), "-2"},
+		{"absent operand", BinaryOp(flt("1.50"), token.ADD, flt("0x1p-2")), none},
+		{"complex parts have none", Real(BinaryOp(flt("1.50"), token.ADD, MakeFromLiteral("2i", token.IMAG, 0))), none},
+		{"integer to float", ToFloat(num("7")), "0"},
+		{"float64 has none", MakeFloat64(1.5), none},
+	} {
+		got := none
+		if e, ok := Quantum(test.v); ok {
+			got = fmt.Sprint(e)
+		}
+		if got != test.want {
+			t.Errorf("%s: Quantum(%v) = %s, want %s", test.name, test.v, got, test.want)
+		}
+	}
+}
