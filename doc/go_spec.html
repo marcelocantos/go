@@ -677,6 +677,22 @@ and not-a-number values.
 </p>
 
 <p>
+A floating-point constant may also have a <i>quantum</i>: the decimal exponent of its
+last digit, which distinguishes <code>1.50</code> from <code>1.5</code>.
+A decimal floating-point literal with <i>n</i> digits after its decimal point has
+quantum &minus;<i>n</i>, plus the value of its exponent part, if any;
+an integer constant has quantum 0; a hexadecimal floating-point literal has none.
+Arithmetic on constants that all have a quantum propagates it as IEEE 754 decimal
+arithmetic does: the smaller quantum for addition and subtraction, their sum for
+multiplication, and for a quotient with a finite decimal expansion the largest exponent,
+no greater than their difference, at which its digits form an integer.
+Negation preserves the quantum. Any other result, including an operation with an
+operand that has no quantum and a complex constant, has none.
+The quantum does not affect a constant's value, its comparisons, its default type,
+or its conversion to any type other than a decimal floating-point type.
+</p>
+
+<p>
 Constants may be <a href="#Types">typed</a> or <i>untyped</i>.
 Literal constants, <code>true</code>, <code>false</code>, <code>iota</code>,
 and certain <a href="#Constant_expressions">constant expressions</a>
@@ -2101,6 +2117,7 @@ x                   T           x is representable by a value of T because
 2.718281828459045   float32     2.718281828459045 rounds to 2.7182817 which is in the set of float32 values
 -1e-1000            float64     -1e-1000 rounds to IEEE -0.0 which is further simplified to 0.0
 1.23                decimal64   1.23 is in the set of decimal64 values
+1.0/3.0             decimal64   1.0/3.0 rounds to 0.3333333333333333
 0i                  int         0 is an integer value
 (42 + 0i)           float32     42.0 (with zero imaginary part) is in the set of float32 values
 </pre>
@@ -2115,6 +2132,7 @@ x                   T           x is not representable by a value of T because
 1.1                 int         1.1 is not an integer value
 42i                 float32     (0 + 42i) is not in the set of float32 values
 1e1000              float64     1e1000 overflows to IEEE +Inf after rounding
+1e400               decimal64   1e400 overflows decimal64
 </pre>
 
 <h3 id="Method_sets">Method sets</h3>
@@ -5507,6 +5525,13 @@ as for non-constant <code>x</code>.
 <p>
 Converting a constant to a type that is not a <a href="#Type_parameter_declarations">type parameter</a>
 yields a typed constant.
+When the type is a decimal floating-point type, the value is rounded to the type's
+precision, to nearest with ties to even, and the quantum of the result is chosen
+as follows. An exact conversion keeps the constant's quantum if the digits fit the
+type's precision, and otherwise takes the exponent closest to it.
+A constant without a quantum takes exponent 0 if it is an integer that fits,
+and otherwise the smallest coefficient that holds its value.
+An inexact conversion keeps every digit of the rounded result.
 </p>
 
 <pre>
@@ -5514,6 +5539,8 @@ uint(iota)               // iota value of type uint
 float32(2.718281828)     // 2.718281828 of type float32
 float32(0.49999999)      // 0.5 of type float32
 float64(-1e-1000)        // 0.0 of type float64
+decimal64(1.50)          // 1.50 of type decimal64
+decimal64(1.0/3.0)       // 0.3333333333333333 of type decimal64
 complex128(1)            // 1.0 + 0.0i of type complex128
 
 string('x')              // "x" of type string
@@ -5905,6 +5932,20 @@ by any predeclared type in the language. The following are legal declarations:
 <pre>
 const Huge = 1 &lt;&lt; 100         // Huge == 1267650600228229401496703205376  (untyped integer constant)
 const Four int8 = Huge &gt;&gt; 98  // Four == 4                                (type int8)
+</pre>
+
+<p>
+Arithmetic on constants of a decimal floating-point type is the exception:
+each operation rounds as the corresponding IEEE 754 operation does,
+to nearest with ties to even, and its result takes the IEEE 754 preferred
+exponent as its quantum, so a typed decimal constant expression has the
+value it has at run time. A result too large for the type is illegal.
+</p>
+
+<pre>
+const One decimal64 = 1
+const Back = One / 3 * 3          // Back == 0.9999999999999999  (type decimal64)
+const Exact decimal64 = 1.0/3 * 3 // Exact == 1  (untyped arithmetic, then converted)
 </pre>
 
 <p>
