@@ -2270,11 +2270,11 @@ func (r *reader) expr() (res ir.Node) {
 	case exprConst:
 		pos := r.pos()
 		typ := r.typ()
-		val := FixValue(typ, r.Value())
-		origLit := r.String()
+		exact := r.Value()
+		val := FixValue(typ, exact)
 		n := ir.NewBasicLit(pos, typ, val)
-		if origLit != "" {
-			n.(*ir.BasicLit).SetOrigLit(origLit)
+		if typ.IsFloat() && exact.Kind() == constant.Float {
+			n.(*ir.BasicLit).SetExact(exact)
 		}
 		return n
 
@@ -2648,8 +2648,8 @@ func (r *reader) expr() (res ir.Node) {
 		// into a non-constant value of the type parameter."
 		if dstTypeParam && ir.IsConstNode(x) {
 			val := x.Val()
-			if typ.IsDecimal() && x.Type().Kind() == types.TFLOAT64 {
-				val = ir.LiteralFloat64Val(x)
+			if lit, ok := x.(*ir.BasicLit); ok && typ.IsDecimal() && lit.Exact() != nil {
+				val = lit.Exact()
 			}
 			// ConvertVal only handles conversions to constant types.
 			if v := typecheck.ConvertVal(val, typ, false); v.Kind() != constant.Unknown {

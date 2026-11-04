@@ -784,9 +784,7 @@ func (b *batch) rewriteWithLiterals(n ir.Node, fn *ir.Func) {
 				assignTemp(conv.Pos(), conv.X, conv.PtrInit())
 				v := v.(*ir.BasicLit)
 				newLit := ir.NewBasicLit(conv.Pos(), conv.X.Type(), v.Val())
-				if v.OrigLit() != "" {
-					newLit.(*ir.BasicLit).SetOrigLit(v.OrigLit())
-				}
+				newLit.(*ir.BasicLit).SetExact(v.Exact())
 				conv.X = newLit
 				typecheck.Expr(fn, conv)
 			}

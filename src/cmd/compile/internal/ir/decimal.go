@@ -5,11 +5,8 @@
 package ir
 
 import (
-	"go/constant"
-	"go/token"
 	"internal/bid"
 	"internal/constdecimal"
-	"strings"
 
 	"cmd/compile/internal/types"
 )
@@ -31,32 +28,4 @@ func DecimalConst(t *types.Type, c Node) (lo, hi uint64) {
 	}
 	bits, _ := constdecimal.Encode(c.Val(), constdecimal.Decimal64)
 	return bits.Lo ^ bid.Zero64, 0
-}
-
-// LiteralFloat64Val returns the value of the source literal of the float64
-// constant c, with its quantum and the sign of c, if c.Val() is that value
-// rounded to float64, and otherwise c.Val(). It is for the conversion T(0.1)
-// to a type parameter T: by the time the operand has been read it has its
-// default type, float64, and the IR holds its value rounded to that type, but
-// the spec converts the constant. T(float64(0.1)) looks the same in the IR and
-// takes this path too.
-func LiteralFloat64Val(c Node) constant.Value {
-	val := c.Val()
-	b, ok := c.(*BasicLit)
-	if !ok {
-		return val
-	}
-	exact := constant.MakeFromLiteral(strings.ReplaceAll(b.OrigLit(), "_", ""), token.FLOAT, 0)
-	if exact.Kind() != constant.Float {
-		return val
-	}
-	want, _ := constant.Float64Val(val)
-	got, _ := constant.Float64Val(exact)
-	if want != got && want != -got {
-		return val
-	}
-	if constant.Sign(val) < 0 {
-		return constant.UnaryOp(token.SUB, exact, 0)
-	}
-	return exact
 }

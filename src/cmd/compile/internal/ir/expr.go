@@ -129,8 +129,13 @@ func (n *AddrExpr) SetOp(op Op) {
 // A BasicLit is a literal of basic type.
 type BasicLit struct {
 	miniExpr
-	val     constant.Value
-	origLit string // original source literal (e.g. "3.14"), empty if computed
+	val constant.Value
+
+	// exact is the value of the constant before conversion to its type,
+	// if that differs from val. A float64 operand converted to a type
+	// parameter is recorded at float64, but the conversion takes the
+	// constant's exact value.
+	exact constant.Value
 }
 
 // NewBasicLit returns an OLITERAL representing val with the given type.
@@ -147,15 +152,15 @@ func NewBasicLit(pos src.XPos, typ *types.Type, val constant.Value) Node {
 
 func (n *BasicLit) Val() constant.Value       { return n.val }
 func (n *BasicLit) SetVal(val constant.Value) { n.val = val }
-func (n *BasicLit) OrigLit() string           { return n.origLit }
-func (n *BasicLit) SetOrigLit(s string)       { n.origLit = s }
+func (n *BasicLit) Exact() constant.Value     { return n.exact }
+func (n *BasicLit) SetExact(v constant.Value) { n.exact = v }
 
 // NewConstExpr returns an OLITERAL representing val, copying the
 // position and type from orig.
 func NewConstExpr(val constant.Value, orig Node) Node {
 	n := NewBasicLit(orig.Pos(), orig.Type(), val)
 	if lit, ok := orig.(*BasicLit); ok {
-		n.(*BasicLit).origLit = lit.origLit
+		n.(*BasicLit).exact = lit.exact
 	}
 	return n
 }

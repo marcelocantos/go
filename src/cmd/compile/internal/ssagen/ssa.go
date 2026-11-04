@@ -3337,8 +3337,8 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 		// The front end folds every conversion of a constant it can. An operand
 		// that is still a literal here encodes at compile time, with its quantum.
 		if n.Type().IsDecimal() {
-			if lit, ok := n.X.(*ir.BasicLit); ok && lit.OrigLit() != "" {
-				return s.constDecimal(n.Type(), lit)
+			if lit, ok := n.X.(*ir.BasicLit); ok && lit.Exact() != nil {
+				return s.constDecimal(n.Type(), ir.NewBasicLit(lit.Pos(), n.Type(), lit.Exact()))
 			}
 		}
 		x := s.expr(n.X)
