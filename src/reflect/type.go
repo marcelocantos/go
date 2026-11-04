@@ -314,8 +314,6 @@ const (
 	Uintptr
 	Float32
 	Float64
-	Decimal64
-	Decimal128
 	Complex64
 	Complex128
 	Array
@@ -328,6 +326,10 @@ const (
 	String
 	Struct
 	UnsafePointer
+
+	// The decimal kinds are appended, so the values above keep their Go 1 values.
+	Decimal64
+	Decimal128
 )
 
 // Ptr is the old name for the [Pointer] kind.
@@ -1658,7 +1660,7 @@ func haveIdenticalUnderlyingType(T, V *abi.Type, cmpTags bool) bool {
 
 	// Non-composite types of equal kind have same underlying type
 	// (the predefined instance of the type).
-	if Bool <= kind && kind <= Complex128 || kind == String || kind == UnsafePointer {
+	if Bool <= kind && kind <= Complex128 || kind == String || kind == UnsafePointer || kind == Decimal64 || kind == Decimal128 {
 		return true
 	}
 

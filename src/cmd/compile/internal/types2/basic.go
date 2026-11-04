@@ -27,8 +27,6 @@ const (
 	Float64
 	Complex64
 	Complex128
-	Decimal64
-	Decimal128
 	String
 	UnsafePointer
 
@@ -40,6 +38,10 @@ const (
 	UntypedComplex
 	UntypedString
 	UntypedNil
+
+	// decimal types, appended so the values above keep their Go 1 values
+	Decimal64
+	Decimal128
 
 	// aliases
 	Byte = Uint8

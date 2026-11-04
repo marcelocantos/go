@@ -611,7 +611,7 @@ func typesEqual(t, v *_type, seen map[_typePair]struct{}) bool {
 			return false
 		}
 	}
-	if abi.Bool <= kind && kind <= abi.Complex128 {
+	if abi.Bool <= kind && kind <= abi.Complex128 || kind == abi.Decimal64 || kind == abi.Decimal128 {
 		return true
 	}
 	switch kind {

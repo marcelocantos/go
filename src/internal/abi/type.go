@@ -65,8 +65,6 @@ const (
 	Uintptr
 	Float32
 	Float64
-	Decimal64
-	Decimal128
 	Complex64
 	Complex128
 	Array
@@ -79,6 +77,10 @@ const (
 	String
 	Struct
 	UnsafePointer
+
+	// The decimal kinds are appended, so the values above keep their Go 1 values.
+	Decimal64
+	Decimal128
 )
 
 // TFlag is used by a Type to signal what extra type information is

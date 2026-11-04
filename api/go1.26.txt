@@ -184,24 +184,15 @@ pkg debug/dwarf, method (*DecimalFloatType) Size() int64 #0
 pkg debug/dwarf, method (*DecimalFloatType) String() string #0
 pkg debug/dwarf, type DecimalFloatType struct #0
 pkg debug/dwarf, type DecimalFloatType struct, embedded BasicType #0
-pkg go/types, const Decimal128 = 18 #0
+pkg go/types, const Decimal128 = 27 #0
 pkg go/types, const Decimal128 BasicKind #0
-pkg go/types, const Decimal64 = 17 #0
+pkg go/types, const Decimal64 = 26 #0
 pkg go/types, const Decimal64 BasicKind #0
 pkg go/types, const IsConstType = 187 #0
 pkg go/types, const IsDecimal = 128 #0
 pkg go/types, const IsDecimal BasicInfo #0
 pkg go/types, const IsNumeric = 154 #0
 pkg go/types, const IsOrdered = 170 #0
-pkg go/types, const String = 19 #0
-pkg go/types, const UnsafePointer = 20 #0
-pkg go/types, const UntypedBool = 21 #0
-pkg go/types, const UntypedComplex = 25 #0
-pkg go/types, const UntypedFloat = 24 #0
-pkg go/types, const UntypedInt = 22 #0
-pkg go/types, const UntypedNil = 27 #0
-pkg go/types, const UntypedRune = 23 #0
-pkg go/types, const UntypedString = 26 #0
 pkg math, func Decimal128Abs(decimal128) decimal128 #0
 pkg math, func Decimal128bits(decimal128) (uint64, uint64) #0
 pkg math, func Decimal128Ceil(decimal128) decimal128 #0
@@ -242,23 +233,10 @@ pkg math, func IsDecimal128Inf(decimal128, int) bool #0
 pkg math, func IsDecimal128NaN(decimal128) bool #0
 pkg math, func IsDecimal64Inf(decimal64, int) bool #0
 pkg math, func IsDecimal64NaN(decimal64) bool #0
-pkg reflect, const Array = 19 #0
-pkg reflect, const Chan = 20 #0
-pkg reflect, const Complex128 = 18 #0
-pkg reflect, const Complex64 = 17 #0
-pkg reflect, const Decimal128 = 16 #0
+pkg reflect, const Decimal128 = 28 #0
 pkg reflect, const Decimal128 Kind #0
-pkg reflect, const Decimal64 = 15 #0
+pkg reflect, const Decimal64 = 27 #0
 pkg reflect, const Decimal64 Kind #0
-pkg reflect, const Func = 21 #0
-pkg reflect, const Interface = 22 #0
-pkg reflect, const Map = 23 #0
-pkg reflect, const Pointer = 24 #0
-pkg reflect, const Ptr = 24 #0
-pkg reflect, const Slice = 25 #0
-pkg reflect, const String = 26 #0
-pkg reflect, const Struct = 27 #0
-pkg reflect, const UnsafePointer = 28 #0
 pkg reflect, method (Value) CanDecimal() bool #0
 pkg reflect, method (Value) Decimal() decimal128 #0
 pkg reflect, method (Value) SetDecimal(decimal128) #0
