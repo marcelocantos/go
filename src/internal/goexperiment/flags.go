@@ -106,6 +106,10 @@ type Flags struct {
 	// JSONv2 enables the json/v2 package.
 	JSONv2 bool
 
+	// Decimal enables the decimal64 and decimal128 types outside the
+	// standard library.
+	Decimal bool
+
 	// GreenTeaGC enables the Green Tea GC implementation.
 	GreenTeaGC bool
 

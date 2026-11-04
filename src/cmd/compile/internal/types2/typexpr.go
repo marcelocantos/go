@@ -34,6 +34,10 @@ func (check *Checker) ident(x *operand, e *syntax.Name, wantType bool) {
 		if !check.verifyVersionf(e, go1_18, "predeclared %s", e.Value) {
 			return // avoid follow-on errors
 		}
+	case universeDecimal64, universeDecimal128:
+		if !check.verifyVersionf(e, go1_28, "predeclared %s", e.Value) {
+			return // avoid follow-on errors
+		}
 	}
 
 	check.recordUse(e, obj)

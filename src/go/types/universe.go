@@ -30,6 +30,8 @@ var (
 	universeError      Type
 	universeAny        Object
 	universeComparable Object
+	universeDecimal64  Object
+	universeDecimal128 Object
 )
 
 // Typ contains the predeclared *Basic types indexed by their
@@ -255,6 +257,8 @@ func init() {
 	universeError = Universe.Lookup("error").Type()
 	universeAny = Universe.Lookup("any")
 	universeComparable = Universe.Lookup("comparable")
+	universeDecimal64 = Universe.Lookup("decimal64")
+	universeDecimal128 = Universe.Lookup("decimal128")
 }
 
 // Objects with names containing blanks are internal and not entered into

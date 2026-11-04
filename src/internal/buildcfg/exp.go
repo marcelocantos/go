@@ -85,6 +85,7 @@ func ParseGOEXPERIMENT(goos, goarch, goexp string) (*ExperimentFlags, error) {
 		RandomizedHeapBase64:  true,
 		GreenTeaGC:            true,
 		JSONv2:                true,
+		Decimal:               true,
 		MapSplitGroup:         true,
 		GoListExportNewFormat: true,
 	}

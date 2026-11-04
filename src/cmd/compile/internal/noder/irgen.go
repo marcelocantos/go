@@ -103,6 +103,17 @@ recheck:
 		base.FatalfAt(src.NoXPos, "conf.Check error: %v", err)
 	}
 
+	// The decimal types are behind GOEXPERIMENT=decimal outside the
+	// standard library, which uses them unconditionally.
+	if !buildcfg.Experiment.Decimal && !base.Flag.Std {
+		for name, obj := range info.Uses {
+			if tn, ok := obj.(*types2.TypeName); ok && tn.Parent() == types2.Universe && (tn.Name() == "decimal64" || tn.Name() == "decimal128") {
+				base.ErrorfAt(m.makeXPos(name.Pos()), errors.UnsupportedFeature, "%s requires GOEXPERIMENT=decimal", tn.Name())
+			}
+		}
+		base.ExitIfErrors()
+	}
+
 	// Check for anonymous interface cycles (#56103).
 	// TODO(gri) move this code into the type checkers (types2 and go/types)
 	var f cycleFinder
