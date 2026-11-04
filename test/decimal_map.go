@@ -15,6 +15,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"math/decimal"
 )
 
 type key64 struct {
@@ -67,7 +68,7 @@ func testStruct64() {
 	check(len(m) == 1 && m[key64{0, 7}] == 3, "0.00 and 0 are distinct keys")
 
 	// Infinities are keys, and their signs differ.
-	inf, ninf := math.Decimal64Inf(1), math.Decimal64Inf(-1)
+	inf, ninf := decimal.Inf[decimal64](1), decimal.Inf[decimal64](-1)
 	m = map[key64]int{}
 	m[key64{inf, 0}] = 1
 	m[key64{ninf, 0}] = 2
@@ -75,7 +76,7 @@ func testStruct64() {
 
 	// A NaN is never found, and every insert makes a new key. Compare the
 	// behaviour of float64, which is the rule.
-	nan := math.Decimal64NaN()
+	nan := decimal.NaN[decimal64]()
 	m = map[key64]int{}
 	for i := range 100 {
 		m[key64{nan, 0}] = i
@@ -143,7 +144,7 @@ func testArray128() {
 	check(m[[2]decimal128{0, 0}] == 4, "zero lookup: got %d", m[[2]decimal128{0, 0}])
 
 	// A NaN in either element is never found.
-	nan := math.Decimal128NaN()
+	nan := decimal.NaN[decimal128]()
 	m = map[[2]decimal128]int{}
 	for i := range 100 {
 		m[[2]decimal128{nan, 1}] = i
@@ -190,7 +191,7 @@ func testPlain() {
 	check(mi[key64{1.5, 1}] == 5, "map[any]int struct")
 	check(mi[[2]decimal128{0, 1}] == 7, "map[any]int array")
 
-	nan := math.Decimal64NaN()
+	nan := decimal.NaN[decimal64]()
 	mi = map[any]int{}
 	mi[nan] = 1
 	mi[nan] = 2
@@ -202,10 +203,10 @@ func testCompositeEquality() {
 	check(key64{1.5, 1} == key64{1.50, 1}, "struct cohort equality")
 	check(key64{1.5, 1} != key64{1.5, 2}, "struct inequality")
 	check(key64{0, 1} == key64{math.Decimal64frombits(1 << 63), 1}, "struct zero equality")
-	nan := math.Decimal64NaN()
+	nan := decimal.NaN[decimal64]()
 	check(key64{nan, 1} != key64{nan, 1}, "struct NaN equality")
 	check([2]decimal128{1.5, 0} == [2]decimal128{1.50, 0.0}, "array cohort equality")
-	nan128 := math.Decimal128NaN()
+	nan128 := decimal.NaN[decimal128]()
 	check([2]decimal128{nan128, 0} != [2]decimal128{nan128, 0}, "array NaN equality")
 	var x, y any = key64{1.5, 1}, key64{1.50, 1}
 	check(x == y, "interface struct equality")

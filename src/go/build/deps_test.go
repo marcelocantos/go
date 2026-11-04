@@ -177,6 +177,9 @@ var depsRules = `
 	MATH
 	< math/cmplx;
 
+	internal/bid, math, unsafe
+	< math/decimal;
+
 	MATH
 	< math/rand, math/rand/v2;
 

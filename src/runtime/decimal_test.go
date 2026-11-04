@@ -7,6 +7,7 @@ package runtime_test
 import (
 	"internal/bid"
 	"math"
+	"math/decimal"
 	"testing"
 )
 
@@ -247,7 +248,7 @@ func TestDecimalReproducers(t *testing.T) {
 	}
 	big := math.Decimal128frombits(0x5ffe314dc6448d93, 0x38c15b0a00000000) // 1E+6144
 	var ten decimal128 = 10
-	if got := big * ten; !math.IsDecimal128Inf(got, 1) {
+	if got := big * ten; !decimal.IsInf[decimal128](got, 1) {
 		t.Errorf("1e6144 * 10 is not +Inf")
 	}
 	// The exact sum has 41 digits; it rounds to 10^33 × 10^-13.

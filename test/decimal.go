@@ -12,6 +12,7 @@ package main
 import (
 	"math"
 	"math/big"
+	"math/decimal"
 	"strconv"
 )
 
@@ -200,7 +201,7 @@ func testComparisons() {
 // --- NaN behavior ---
 
 func testNaN() {
-	nan := math.Decimal64NaN()
+	nan := decimal.NaN[decimal64]()
 
 	// NaN != NaN
 	if nan == nan {
@@ -230,11 +231,11 @@ func testNaN() {
 
 	// NaN propagation in arithmetic
 	result := nan + one
-	if !math.IsDecimal64NaN(result) {
+	if !decimal.IsNaN[decimal64](result) {
 		fail("decimal64 NaN + 1 should be NaN")
 	}
 	result = nan * one
-	if !math.IsDecimal64NaN(result) {
+	if !decimal.IsNaN[decimal64](result) {
 		fail("decimal64 NaN * 1 should be NaN")
 	}
 }
@@ -407,7 +408,7 @@ func testMapKeys() {
 
 	// NaN keys: each insert creates a new entry (NaN != NaN)
 	m3 := make(map[decimal64]int)
-	nan := math.Decimal64NaN()
+	nan := decimal.NaN[decimal64]()
 	m3[nan] = 1
 	m3[nan] = 2
 	if len(m3) != 2 {
@@ -457,8 +458,8 @@ func testConstants() {
 // --- Infinity ---
 
 func testInfinity() {
-	inf := math.Decimal64Inf(1)
-	ninf := math.Decimal64Inf(-1)
+	inf := decimal.Inf[decimal64](1)
+	ninf := decimal.Inf[decimal64](-1)
 
 	// Inf comparisons
 	if !(inf > decimal64(999999)) {
@@ -478,7 +479,7 @@ func testInfinity() {
 	if inf+decimal64(1) != inf {
 		fail("decimal64 Inf + 1 != Inf")
 	}
-	if !math.IsDecimal64NaN(inf + ninf) {
+	if !decimal.IsNaN[decimal64](inf + ninf) {
 		fail("decimal64 +Inf + -Inf should be NaN")
 	}
 }
@@ -591,14 +592,14 @@ func testOverflowUnderflow() {
 	// Multiplying large values should produce +Inf.
 	big64 := decimal64(9e384)
 	result64 := big64 * decimal64(2)
-	if !math.IsDecimal64Inf(result64, 1) {
+	if !decimal.IsInf[decimal64](result64, 1) {
 		fail("decimal64 overflow: 9e384 * 2 should be +Inf")
 	}
 
 	// decimal64 negative overflow
 	negbig64 := decimal64(-9e384)
 	result64neg := negbig64 * decimal64(2)
-	if !math.IsDecimal64Inf(result64neg, -1) {
+	if !decimal.IsInf[decimal64](result64neg, -1) {
 		fail("decimal64 overflow: -9e384 * 2 should be -Inf")
 	}
 
@@ -613,14 +614,14 @@ func testOverflowUnderflow() {
 	// decimal128 overflow: max exponent is ~6144
 	big128 := decimal128(9e6144)
 	result128 := big128 * decimal128(2)
-	if !math.IsDecimal128Inf(result128, 1) {
+	if !decimal.IsInf[decimal128](result128, 1) {
 		fail("decimal128 overflow: 9e6144 * 2 should be +Inf")
 	}
 
 	// decimal128 negative overflow
 	negbig128 := decimal128(-9e6144)
 	result128neg := negbig128 * decimal128(2)
-	if !math.IsDecimal128Inf(result128neg, -1) {
+	if !decimal.IsInf[decimal128](result128neg, -1) {
 		fail("decimal128 overflow: -9e6144 * 2 should be -Inf")
 	}
 }
@@ -628,17 +629,17 @@ func testOverflowUnderflow() {
 // --- Decimal128 Infinity ---
 
 func testInfinity128() {
-	inf := math.Decimal128Inf(1)
-	ninf := math.Decimal128Inf(-1)
+	inf := decimal.Inf[decimal128](1)
+	ninf := decimal.Inf[decimal128](-1)
 
 	// Construction checks
-	if !math.IsDecimal128Inf(inf, 1) {
+	if !decimal.IsInf[decimal128](inf, 1) {
 		fail("decimal128 Decimal128Inf(1) not detected as +Inf")
 	}
-	if !math.IsDecimal128Inf(ninf, -1) {
+	if !decimal.IsInf[decimal128](ninf, -1) {
 		fail("decimal128 Decimal128Inf(-1) not detected as -Inf")
 	}
-	if !math.IsDecimal128Inf(inf, 0) {
+	if !decimal.IsInf[decimal128](inf, 0) {
 		fail("decimal128 Decimal128Inf(1) not detected as Inf (either sign)")
 	}
 
@@ -663,16 +664,16 @@ func testInfinity128() {
 	if inf*decimal128(2) != inf {
 		fail("decimal128 Inf * 2 != Inf")
 	}
-	if !math.IsDecimal128NaN(inf + ninf) {
+	if !decimal.IsNaN[decimal128](inf + ninf) {
 		fail("decimal128 +Inf + -Inf should be NaN")
 	}
 
 	// NaN propagation with infinity
-	nan128 := math.Decimal128NaN()
-	if !math.IsDecimal128NaN(inf + nan128) {
+	nan128 := decimal.NaN[decimal128]()
+	if !decimal.IsNaN[decimal128](inf + nan128) {
 		fail("decimal128 Inf + NaN should be NaN")
 	}
-	if !math.IsDecimal128NaN(nan128 * inf) {
+	if !decimal.IsNaN[decimal128](nan128 * inf) {
 		fail("decimal128 NaN * Inf should be NaN")
 	}
 }

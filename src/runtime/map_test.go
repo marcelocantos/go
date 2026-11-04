@@ -11,6 +11,7 @@ import (
 	"internal/runtime/maps"
 	"internal/testenv"
 	"math"
+	"math/decimal"
 	"os"
 	"reflect"
 	"runtime"
@@ -137,7 +138,7 @@ func TestDecimal64NegativeZero(t *testing.T) {
 // decimal64 NaN: each assignment creates a new entry.
 func TestDecimal64MapNan(t *testing.T) {
 	m := make(map[decimal64]int, 0)
-	nan := math.Decimal64NaN()
+	nan := decimal.NaN[decimal64]()
 
 	m[nan] = 1
 	m[nan] = 2

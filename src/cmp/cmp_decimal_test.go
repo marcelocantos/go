@@ -8,9 +8,8 @@ package cmp_test
 
 import (
 	"cmp"
-	"math"
+	"math/decimal"
 	"slices"
-	"sort"
 	"testing"
 )
 
@@ -21,15 +20,15 @@ var decimalTests = []struct {
 	{decimal64(1.0), decimal64(1.1), -1},
 	{decimal64(1.1), decimal64(1.1), 0},
 	{decimal64(1.1), decimal64(1.0), +1},
-	{math.Decimal64Inf(1), math.Decimal64Inf(1), 0},
-	{math.Decimal64Inf(-1), math.Decimal64Inf(-1), 0},
-	{math.Decimal64Inf(-1), decimal64(1.0), -1},
-	{decimal64(1.0), math.Decimal64Inf(-1), +1},
-	{math.Decimal64NaN(), math.Decimal64NaN(), 0},
-	{decimal64(0.0), math.Decimal64NaN(), +1},
-	{math.Decimal64NaN(), decimal64(0.0), -1},
-	{math.Decimal64NaN(), math.Decimal64Inf(-1), -1},
-	{math.Decimal64Inf(-1), math.Decimal64NaN(), +1},
+	{decimal.Inf[decimal64](1), decimal.Inf[decimal64](1), 0},
+	{decimal.Inf[decimal64](-1), decimal.Inf[decimal64](-1), 0},
+	{decimal.Inf[decimal64](-1), decimal64(1.0), -1},
+	{decimal64(1.0), decimal.Inf[decimal64](-1), +1},
+	{decimal.NaN[decimal64](), decimal.NaN[decimal64](), 0},
+	{decimal64(0.0), decimal.NaN[decimal64](), +1},
+	{decimal.NaN[decimal64](), decimal64(0.0), -1},
+	{decimal.NaN[decimal64](), decimal.Inf[decimal64](-1), -1},
+	{decimal.Inf[decimal64](-1), decimal.NaN[decimal64](), +1},
 }
 
 func TestDecimalLess(t *testing.T) {
@@ -52,7 +51,7 @@ func TestDecimalCompare(t *testing.T) {
 
 func TestSortDecimal(t *testing.T) {
 	// Test that cmp.Less/Compare are consistent with slices.Sort for decimal64.
-	d64 := []decimal64{1.0, 0.0, math.Decimal64Inf(1), math.Decimal64Inf(-1), math.Decimal64NaN()}
+	d64 := []decimal64{1.0, 0.0, decimal.Inf[decimal64](1), decimal.Inf[decimal64](-1), decimal.NaN[decimal64]()}
 	slices.Sort(d64)
 	for i := 0; i < len(d64)-1; i++ {
 		if cmp.Less(d64[i+1], d64[i]) {
@@ -63,9 +62,9 @@ func TestSortDecimal(t *testing.T) {
 		}
 	}
 
-	// Test consistency with sort.Decimal128s.
-	d128 := []decimal128{1.0, 0.0, decimal128(math.Decimal64Inf(1)), decimal128(math.Decimal64Inf(-1)), decimal128(math.Decimal64NaN())}
-	sort.Decimal128s(d128)
+	// Test consistency with slices.Sort.
+	d128 := []decimal128{1.0, 0.0, decimal128(decimal.Inf[decimal64](1)), decimal128(decimal.Inf[decimal64](-1)), decimal128(decimal.NaN[decimal64]())}
+	slices.Sort(d128)
 	for i := 0; i < len(d128)-1; i++ {
 		if cmp.Less(d128[i+1], d128[i]) {
 			t.Errorf("decimal128: Less sort mismatch at %d in %v", i, d128)

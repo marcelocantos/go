@@ -6,6 +6,7 @@ package runtime_test
 
 import (
 	"math"
+	"math/decimal"
 	"strconv"
 	"strings"
 	"testing"
@@ -133,9 +134,9 @@ func TestMinMaxStringTies(t *testing.T) {
 var (
 	d64zero    = decimal64(0)
 	d64negZero = math.Decimal64frombits(1 << 63) // -0
-	d64inf     = math.Decimal64Inf(1)
-	d64negInf  = math.Decimal64Inf(-1)
-	d64nan     = math.Decimal64NaN()
+	d64inf     = decimal.Inf[decimal64](1)
+	d64negInf  = decimal.Inf[decimal64](-1)
+	d64nan     = decimal.NaN[decimal64]()
 )
 
 var d64tests = []struct{ min, max decimal64 }{
@@ -165,10 +166,10 @@ func TestMinDecimal64(t *testing.T) {
 		}
 	}
 	for _, x := range d64all {
-		if z := min(d64nan, x); !math.IsDecimal64NaN(z) {
+		if z := min(d64nan, x); !decimal.IsNaN[decimal64](z) {
 			t.Errorf("min(%v, %v) = %v, want NaN", d64nan, x, z)
 		}
-		if z := min(x, d64nan); !math.IsDecimal64NaN(z) {
+		if z := min(x, d64nan); !decimal.IsNaN[decimal64](z) {
 			t.Errorf("min(%v, %v) = %v, want NaN", x, d64nan, z)
 		}
 	}
@@ -184,10 +185,10 @@ func TestMaxDecimal64(t *testing.T) {
 		}
 	}
 	for _, x := range d64all {
-		if z := max(d64nan, x); !math.IsDecimal64NaN(z) {
+		if z := max(d64nan, x); !decimal.IsNaN[decimal64](z) {
 			t.Errorf("max(%v, %v) = %v, want NaN", d64nan, x, z)
 		}
-		if z := max(x, d64nan); !math.IsDecimal64NaN(z) {
+		if z := max(x, d64nan); !decimal.IsNaN[decimal64](z) {
 			t.Errorf("max(%v, %v) = %v, want NaN", x, d64nan, z)
 		}
 	}

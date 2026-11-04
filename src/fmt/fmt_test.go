@@ -10,6 +10,7 @@ import (
 	"internal/race"
 	"io"
 	"math"
+	"math/decimal"
 	"reflect"
 	"strings"
 	"testing"
@@ -562,17 +563,17 @@ var fmtTests = []struct {
 	{"%.20f", decimal64(0.3), "0.30000000000000000000"},
 	{"%.20f", decimal64(0.1), "0.10000000000000000000"},
 	// decimal64 infinities and NaNs
-	{"%f", math.Decimal64Inf(1), "+Inf"},
-	{"%.1f", math.Decimal64Inf(-1), "-Inf"},
-	{"% f", math.Decimal64NaN(), " NaN"},
-	{"%20f", math.Decimal64Inf(1), "                +Inf"},
-	{"%20e", math.Decimal64NaN(), "                 NaN"},
-	{"% +20E", math.Decimal64NaN(), "                +NaN"},
-	{"% -20g", math.Decimal64NaN(), " NaN                "},
-	{"%+-20G", math.Decimal64NaN(), "+NaN                "},
-	{"%+020e", math.Decimal64Inf(1), "                +Inf"},
-	{"%-020f", math.Decimal64Inf(-1), "-Inf                "},
-	{"%-020E", math.Decimal64NaN(), "NaN                 "},
+	{"%f", decimal.Inf[decimal64](1), "+Inf"},
+	{"%.1f", decimal.Inf[decimal64](-1), "-Inf"},
+	{"% f", decimal.NaN[decimal64](), " NaN"},
+	{"%20f", decimal.Inf[decimal64](1), "                +Inf"},
+	{"%20e", decimal.NaN[decimal64](), "                 NaN"},
+	{"% +20E", decimal.NaN[decimal64](), "                +NaN"},
+	{"% -20g", decimal.NaN[decimal64](), " NaN                "},
+	{"%+-20G", decimal.NaN[decimal64](), "+NaN                "},
+	{"%+020e", decimal.Inf[decimal64](1), "                +Inf"},
+	{"%-020f", decimal.Inf[decimal64](-1), "-Inf                "},
+	{"%-020E", decimal.NaN[decimal64](), "NaN                 "},
 	// decimal128
 	{"%v", decimal64(1.50), "1.50"},
 	{"%g", decimal64(1.50), "1.50"},

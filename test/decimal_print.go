@@ -9,7 +9,10 @@
 
 package main
 
-import "math"
+import (
+	"math"
+	"math/decimal"
+)
 
 type myDecimal decimal64
 
@@ -27,9 +30,9 @@ func main() {
 	var ten decimal128 = 10
 	println(big, big*ten, -big*ten)
 
-	println(math.Decimal64NaN(), math.Decimal128NaN())
-	println(math.Decimal64Inf(1), math.Decimal64Inf(-1))
-	println(math.Decimal128Inf(1), math.Decimal128Inf(-1))
+	println(decimal.NaN[decimal64](), decimal.NaN[decimal128]())
+	println(decimal.Inf[decimal64](1), decimal.Inf[decimal64](-1))
+	println(decimal.Inf[decimal128](1), decimal.Inf[decimal128](-1))
 	println(math.Decimal64frombits(1<<63), decimal64(0), decimal64(0.00))
 
 	var zeroValue decimal64

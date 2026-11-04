@@ -13,6 +13,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"math/decimal"
 	"reflect"
 	"unsafe"
 )
@@ -136,7 +137,7 @@ func main() {
 
 	// Negation flips the sign alone, including at the zero value.
 	neg := -local64
-	if !math.Decimal64Signbit(neg) || neg != 0 {
+	if !decimal.Signbit[decimal64](neg) || neg != 0 {
 		panic("-0 of the zero value")
 	}
 	if math.Decimal64bits(neg) != zero64Bits|1<<63 {

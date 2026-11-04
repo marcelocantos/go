@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package math_test
+package decimal_test
 
 import (
 	"fmt"
 	"internal/bid"
 	. "math"
 	"math/big"
+	"math/decimal"
 	"testing"
 )
 
@@ -146,19 +147,19 @@ func widthTable() []*dwidth {
 	w64 := &dwidth{
 		name: "64", prec: bid.Precision64, minExp: bid.MinExp64, maxExp: bid.MaxExp64,
 		mod: func(x, y bid.Uint128) bid.Uint128 {
-			return u64(Decimal64bits(Decimal64Mod(Decimal64frombits(x.Lo), Decimal64frombits(y.Lo))))
+			return u64(Decimal64bits(decimal.Mod[decimal64](Decimal64frombits(x.Lo), Decimal64frombits(y.Lo))))
 		},
 		rem: func(x, y bid.Uint128) bid.Uint128 {
-			return u64(Decimal64bits(Decimal64Remainder(Decimal64frombits(x.Lo), Decimal64frombits(y.Lo))))
+			return u64(Decimal64bits(decimal.Remainder[decimal64](Decimal64frombits(x.Lo), Decimal64frombits(y.Lo))))
 		},
 		fma: func(x, y, z bid.Uint128) bid.Uint128 {
-			return u64(Decimal64bits(Decimal64FMA(Decimal64frombits(x.Lo), Decimal64frombits(y.Lo), Decimal64frombits(z.Lo))))
+			return u64(Decimal64bits(decimal.FMA[decimal64](Decimal64frombits(x.Lo), Decimal64frombits(y.Lo), Decimal64frombits(z.Lo))))
 		},
 		quant: func(x, y bid.Uint128) bid.Uint128 {
-			return u64(Decimal64bits(Decimal64Quantize(Decimal64frombits(x.Lo), Decimal64frombits(y.Lo))))
+			return u64(Decimal64bits(decimal.Quantize[decimal64](Decimal64frombits(x.Lo), Decimal64frombits(y.Lo))))
 		},
 		same: func(x, y bid.Uint128) bool {
-			return Decimal64SameQuantum(Decimal64frombits(x.Lo), Decimal64frombits(y.Lo))
+			return decimal.SameQuantum[decimal64](Decimal64frombits(x.Lo), Decimal64frombits(y.Lo))
 		},
 		kmod:   func(x, y bid.Uint128) bid.Uint128 { return u64(bid.Mod64(x.Lo, y.Lo)) },
 		krem:   func(x, y bid.Uint128) bid.Uint128 { return u64(bid.Rem64(x.Lo, y.Lo)) },
@@ -167,12 +168,20 @@ func widthTable() []*dwidth {
 		ksame:  func(x, y bid.Uint128) bool { return bid.SameQuantum64(x.Lo, y.Lo) },
 		krti:   func(x bid.Uint128, m bid.Mode) bid.Uint128 { return u64(bid.RoundToIntegral64(x.Lo, m)) },
 		rti: map[string]func(bid.Uint128) bid.Uint128{
-			"Trunc": func(x bid.Uint128) bid.Uint128 { return u64(Decimal64bits(Decimal64Trunc(Decimal64frombits(x.Lo)))) },
-			"Floor": func(x bid.Uint128) bid.Uint128 { return u64(Decimal64bits(Decimal64Floor(Decimal64frombits(x.Lo)))) },
-			"Ceil":  func(x bid.Uint128) bid.Uint128 { return u64(Decimal64bits(Decimal64Ceil(Decimal64frombits(x.Lo)))) },
-			"Round": func(x bid.Uint128) bid.Uint128 { return u64(Decimal64bits(Decimal64Round(Decimal64frombits(x.Lo)))) },
+			"Trunc": func(x bid.Uint128) bid.Uint128 {
+				return u64(Decimal64bits(decimal.Trunc[decimal64](Decimal64frombits(x.Lo))))
+			},
+			"Floor": func(x bid.Uint128) bid.Uint128 {
+				return u64(Decimal64bits(decimal.Floor[decimal64](Decimal64frombits(x.Lo))))
+			},
+			"Ceil": func(x bid.Uint128) bid.Uint128 {
+				return u64(Decimal64bits(decimal.Ceil[decimal64](Decimal64frombits(x.Lo))))
+			},
+			"Round": func(x bid.Uint128) bid.Uint128 {
+				return u64(Decimal64bits(decimal.Round[decimal64](Decimal64frombits(x.Lo))))
+			},
 			"RoundToEven": func(x bid.Uint128) bid.Uint128 {
-				return u64(Decimal64bits(Decimal64RoundToEven(Decimal64frombits(x.Lo))))
+				return u64(Decimal64bits(decimal.RoundToEven[decimal64](Decimal64frombits(x.Lo))))
 			},
 		},
 		pack: func(v dval) (bid.Uint128, bool) {
@@ -198,11 +207,11 @@ func widthTable() []*dwidth {
 	}
 	w128 := &dwidth{
 		name: "128", prec: bid.Precision128, minExp: bid.MinExp128, maxExp: bid.MaxExp128,
-		mod:    func(x, y bid.Uint128) bid.Uint128 { return b(Decimal128Mod(d(x), d(y))) },
-		rem:    func(x, y bid.Uint128) bid.Uint128 { return b(Decimal128Remainder(d(x), d(y))) },
-		fma:    func(x, y, z bid.Uint128) bid.Uint128 { return b(Decimal128FMA(d(x), d(y), d(z))) },
-		quant:  func(x, y bid.Uint128) bid.Uint128 { return b(Decimal128Quantize(d(x), d(y))) },
-		same:   func(x, y bid.Uint128) bool { return Decimal128SameQuantum(d(x), d(y)) },
+		mod:    func(x, y bid.Uint128) bid.Uint128 { return b(decimal.Mod[decimal128](d(x), d(y))) },
+		rem:    func(x, y bid.Uint128) bid.Uint128 { return b(decimal.Remainder[decimal128](d(x), d(y))) },
+		fma:    func(x, y, z bid.Uint128) bid.Uint128 { return b(decimal.FMA[decimal128](d(x), d(y), d(z))) },
+		quant:  func(x, y bid.Uint128) bid.Uint128 { return b(decimal.Quantize[decimal128](d(x), d(y))) },
+		same:   func(x, y bid.Uint128) bool { return decimal.SameQuantum[decimal128](d(x), d(y)) },
 		kmod:   bid.Mod128,
 		krem:   bid.Rem128,
 		kfma:   func(x, y, z bid.Uint128) bid.Uint128 { return bid.FMA128(x, y, z, bid.ToNearestEven) },
@@ -210,11 +219,11 @@ func widthTable() []*dwidth {
 		ksame:  bid.SameQuantum128,
 		krti:   bid.RoundToIntegral128,
 		rti: map[string]func(bid.Uint128) bid.Uint128{
-			"Trunc":       func(x bid.Uint128) bid.Uint128 { return b(Decimal128Trunc(d(x))) },
-			"Floor":       func(x bid.Uint128) bid.Uint128 { return b(Decimal128Floor(d(x))) },
-			"Ceil":        func(x bid.Uint128) bid.Uint128 { return b(Decimal128Ceil(d(x))) },
-			"Round":       func(x bid.Uint128) bid.Uint128 { return b(Decimal128Round(d(x))) },
-			"RoundToEven": func(x bid.Uint128) bid.Uint128 { return b(Decimal128RoundToEven(d(x))) },
+			"Trunc":       func(x bid.Uint128) bid.Uint128 { return b(decimal.Trunc[decimal128](d(x))) },
+			"Floor":       func(x bid.Uint128) bid.Uint128 { return b(decimal.Floor[decimal128](d(x))) },
+			"Ceil":        func(x bid.Uint128) bid.Uint128 { return b(decimal.Ceil[decimal128](d(x))) },
+			"Round":       func(x bid.Uint128) bid.Uint128 { return b(decimal.Round[decimal128](d(x))) },
+			"RoundToEven": func(x bid.Uint128) bid.Uint128 { return b(decimal.RoundToEven[decimal128](d(x))) },
 		},
 		pack: func(v dval) (bid.Uint128, bool) {
 			if v.kind != bid.KindFinite {

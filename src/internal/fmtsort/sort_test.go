@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"internal/fmtsort"
 	"math"
+	"math/decimal"
 	"reflect"
 	"runtime"
 	"slices"
@@ -40,7 +41,7 @@ var compareTests = [][]reflect.Value{
 	ct(reflect.TypeOf(chans[0]), chans[0], chans[1], chans[2]),
 	ct(reflect.TypeOf(toy{}), toy{0, 1}, toy{0, 2}, toy{1, -1}, toy{1, 1}),
 	ct(reflect.TypeOf([2]int{}), [2]int{1, 1}, [2]int{1, 2}, [2]int{2, 0}),
-	ct(reflect.TypeOf(decimal64(0)), math.Decimal64NaN(), math.Decimal64Inf(-1), decimal64(-1e10), decimal64(0), decimal64(1e10), math.Decimal64Inf(1)),
+	ct(reflect.TypeOf(decimal64(0)), decimal.NaN[decimal64](), decimal.Inf[decimal64](-1), decimal64(-1e10), decimal64(0), decimal64(1e10), decimal.Inf[decimal64](1)),
 	ct(reflect.TypeOf(any(0)), iFace, 1, 2, 3),
 }
 
@@ -105,7 +106,7 @@ var sortTests = []sortTest{
 		"NaN:nan -3:foo 7:bar +Inf:inf",
 	},
 	{
-		map[decimal64]string{7: "bar", -3: "foo", math.Decimal64NaN(): "nan", math.Decimal64Inf(1): "inf"},
+		map[decimal64]string{7: "bar", -3: "foo", decimal.NaN[decimal64](): "nan", decimal.Inf[decimal64](1): "inf"},
 		"NaN:nan -3:foo 7:bar +Inf:inf",
 	},
 	{

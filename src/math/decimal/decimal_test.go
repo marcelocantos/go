@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package math_test
+package decimal_test
 
 import (
 	"fmt"
 	. "math"
+	"math/decimal"
 	"testing"
 	"unsafe"
 )
@@ -32,27 +33,27 @@ func TestDecimal128BitsRoundTrip(t *testing.T) {
 }
 
 func TestIsDecimal64NaN(t *testing.T) {
-	if !IsDecimal64NaN(Decimal64NaN()) {
-		t.Error("IsDecimal64NaN(Decimal64NaN()) = false")
+	if !decimal.IsNaN[decimal64](decimal.NaN[decimal64]()) {
+		t.Error("decimal.IsNaN[decimal64](decimal.NaN[decimal64]()) = false")
 	}
-	if IsDecimal64NaN(decimal64(0)) {
-		t.Error("IsDecimal64NaN(0) = true")
+	if decimal.IsNaN[decimal64](decimal64(0)) {
+		t.Error("decimal.IsNaN[decimal64](0) = true")
 	}
-	if IsDecimal64NaN(decimal64(1)) {
-		t.Error("IsDecimal64NaN(1) = true")
+	if decimal.IsNaN[decimal64](decimal64(1)) {
+		t.Error("decimal.IsNaN[decimal64](1) = true")
 	}
-	if IsDecimal64NaN(Decimal64Inf(1)) {
-		t.Error("IsDecimal64NaN(+Inf) = true")
+	if decimal.IsNaN[decimal64](decimal.Inf[decimal64](1)) {
+		t.Error("decimal.IsNaN[decimal64](+Inf) = true")
 	}
-	if IsDecimal64NaN(Decimal64Inf(-1)) {
-		t.Error("IsDecimal64NaN(-Inf) = true")
+	if decimal.IsNaN[decimal64](decimal.Inf[decimal64](-1)) {
+		t.Error("decimal.IsNaN[decimal64](-Inf) = true")
 	}
 }
 
 func TestIsDecimal64Inf(t *testing.T) {
-	pinf := Decimal64Inf(1)
-	ninf := Decimal64Inf(-1)
-	nan := Decimal64NaN()
+	pinf := decimal.Inf[decimal64](1)
+	ninf := decimal.Inf[decimal64](-1)
+	nan := decimal.NaN[decimal64]()
 	zero := decimal64(0)
 	one := decimal64(1)
 
@@ -73,35 +74,35 @@ func TestIsDecimal64Inf(t *testing.T) {
 		{one, 0, false, "1 sign=0"},
 	}
 	for _, tt := range tests {
-		got := IsDecimal64Inf(tt.d, tt.sign)
+		got := decimal.IsInf[decimal64](tt.d, tt.sign)
 		if got != tt.want {
-			t.Errorf("IsDecimal64Inf(%s) = %v, want %v", tt.name, got, tt.want)
+			t.Errorf("decimal.IsInf[decimal64](%s) = %v, want %v", tt.name, got, tt.want)
 		}
 	}
 }
 
 func TestIsDecimal128NaN(t *testing.T) {
-	if !IsDecimal128NaN(Decimal128NaN()) {
-		t.Error("IsDecimal128NaN(Decimal128NaN()) = false")
+	if !decimal.IsNaN[decimal128](decimal.NaN[decimal128]()) {
+		t.Error("decimal.IsNaN[decimal128](decimal.NaN[decimal128]()) = false")
 	}
-	if IsDecimal128NaN(decimal128(0)) {
-		t.Error("IsDecimal128NaN(0) = true")
+	if decimal.IsNaN[decimal128](decimal128(0)) {
+		t.Error("decimal.IsNaN[decimal128](0) = true")
 	}
-	if IsDecimal128NaN(decimal128(1)) {
-		t.Error("IsDecimal128NaN(1) = true")
+	if decimal.IsNaN[decimal128](decimal128(1)) {
+		t.Error("decimal.IsNaN[decimal128](1) = true")
 	}
-	if IsDecimal128NaN(Decimal128Inf(1)) {
-		t.Error("IsDecimal128NaN(+Inf) = true")
+	if decimal.IsNaN[decimal128](decimal.Inf[decimal128](1)) {
+		t.Error("decimal.IsNaN[decimal128](+Inf) = true")
 	}
-	if IsDecimal128NaN(Decimal128Inf(-1)) {
-		t.Error("IsDecimal128NaN(-Inf) = true")
+	if decimal.IsNaN[decimal128](decimal.Inf[decimal128](-1)) {
+		t.Error("decimal.IsNaN[decimal128](-Inf) = true")
 	}
 }
 
 func TestIsDecimal128Inf(t *testing.T) {
-	pinf := Decimal128Inf(1)
-	ninf := Decimal128Inf(-1)
-	nan := Decimal128NaN()
+	pinf := decimal.Inf[decimal128](1)
+	ninf := decimal.Inf[decimal128](-1)
+	nan := decimal.NaN[decimal128]()
 	zero := decimal128(0)
 	one := decimal128(1)
 
@@ -122,9 +123,9 @@ func TestIsDecimal128Inf(t *testing.T) {
 		{one, 0, false, "1 sign=0"},
 	}
 	for _, tt := range tests {
-		got := IsDecimal128Inf(tt.d, tt.sign)
+		got := decimal.IsInf[decimal128](tt.d, tt.sign)
 		if got != tt.want {
-			t.Errorf("IsDecimal128Inf(%s) = %v, want %v", tt.name, got, tt.want)
+			t.Errorf("decimal.IsInf[decimal128](%s) = %v, want %v", tt.name, got, tt.want)
 		}
 	}
 }
@@ -141,17 +142,17 @@ func TestDecimal64Abs(t *testing.T) {
 		{-1, 1},
 		{3.14, 3.14},
 		{-3.14, 3.14},
-		{Decimal64Inf(1), Decimal64Inf(1)},
-		{Decimal64Inf(-1), Decimal64Inf(1)},
+		{decimal.Inf[decimal64](1), decimal.Inf[decimal64](1)},
+		{decimal.Inf[decimal64](-1), decimal.Inf[decimal64](1)},
 	}
 	for _, tt := range tests {
-		got := Decimal64Abs(tt.in)
+		got := decimal.Abs[decimal64](tt.in)
 		if got != tt.want {
-			t.Errorf("Decimal64Abs(%v) = %v, want %v", tt.in, got, tt.want)
+			t.Errorf("decimal.Abs[decimal64](%v) = %v, want %v", tt.in, got, tt.want)
 		}
 	}
-	if !IsDecimal64NaN(Decimal64Abs(Decimal64NaN())) {
-		t.Error("Decimal64Abs(NaN) should be NaN")
+	if !decimal.IsNaN[decimal64](decimal.Abs[decimal64](decimal.NaN[decimal64]())) {
+		t.Error("decimal.Abs[decimal64](NaN) should be NaN")
 	}
 }
 
@@ -167,9 +168,9 @@ func TestDecimal128Abs(t *testing.T) {
 		{-3.14, 3.14},
 	}
 	for _, tt := range tests {
-		got := Decimal128Abs(tt.in)
+		got := decimal.Abs[decimal128](tt.in)
 		if got != tt.want {
-			t.Errorf("Decimal128Abs(%v) = %v, want %v", tt.in, got, tt.want)
+			t.Errorf("decimal.Abs[decimal128](%v) = %v, want %v", tt.in, got, tt.want)
 		}
 	}
 }
@@ -187,15 +188,15 @@ func TestDecimal64Copysign(t *testing.T) {
 		{-3.14, 1, 3.14},
 	}
 	for _, tt := range tests {
-		got := Decimal64Copysign(tt.f, tt.sign)
+		got := decimal.Copysign[decimal64](tt.f, tt.sign)
 		if got != tt.want {
-			t.Errorf("Decimal64Copysign(%v, %v) = %v, want %v", tt.f, tt.sign, got, tt.want)
+			t.Errorf("decimal.Copysign[decimal64](%v, %v) = %v, want %v", tt.f, tt.sign, got, tt.want)
 		}
 	}
 	// Copysign with negative zero created via Copysign itself
-	negzero := Decimal64Copysign(0, -1)
-	if !Decimal64Signbit(negzero) {
-		t.Error("Decimal64Copysign(0, -1) should produce negative zero")
+	negzero := decimal.Copysign[decimal64](0, -1)
+	if !decimal.Signbit[decimal64](negzero) {
+		t.Error("decimal.Copysign[decimal64](0, -1) should produce negative zero")
 	}
 }
 
@@ -210,9 +211,9 @@ func TestDecimal128Copysign(t *testing.T) {
 		{-1, -1, -1},
 	}
 	for _, tt := range tests {
-		got := Decimal128Copysign(tt.f, tt.sign)
+		got := decimal.Copysign[decimal128](tt.f, tt.sign)
 		if got != tt.want {
-			t.Errorf("Decimal128Copysign(%v, %v) = %v, want %v", tt.f, tt.sign, got, tt.want)
+			t.Errorf("decimal.Copysign[decimal128](%v, %v) = %v, want %v", tt.f, tt.sign, got, tt.want)
 		}
 	}
 }
@@ -225,13 +226,13 @@ func TestDecimal64Signbit(t *testing.T) {
 		{0, false},
 		{1, false},
 		{-1, true},
-		{Decimal64Inf(1), false},
-		{Decimal64Inf(-1), true},
+		{decimal.Inf[decimal64](1), false},
+		{decimal.Inf[decimal64](-1), true},
 	}
 	for _, tt := range tests {
-		got := Decimal64Signbit(tt.in)
+		got := decimal.Signbit[decimal64](tt.in)
 		if got != tt.want {
-			t.Errorf("Decimal64Signbit(%v) = %v, want %v", tt.in, got, tt.want)
+			t.Errorf("decimal.Signbit[decimal64](%v) = %v, want %v", tt.in, got, tt.want)
 		}
 	}
 }
@@ -246,9 +247,9 @@ func TestDecimal128Signbit(t *testing.T) {
 		{-1, true},
 	}
 	for _, tt := range tests {
-		got := Decimal128Signbit(tt.in)
+		got := decimal.Signbit[decimal128](tt.in)
 		if got != tt.want {
-			t.Errorf("Decimal128Signbit(%v) = %v, want %v", tt.in, got, tt.want)
+			t.Errorf("decimal.Signbit[decimal128](%v) = %v, want %v", tt.in, got, tt.want)
 		}
 	}
 }
@@ -265,19 +266,19 @@ func TestDecimal64Dim(t *testing.T) {
 		{-3, -1, 0},
 	}
 	for _, tt := range tests {
-		got := Decimal64Dim(tt.x, tt.y)
+		got := decimal.Dim[decimal64](tt.x, tt.y)
 		if got != tt.want {
-			t.Errorf("Decimal64Dim(%v, %v) = %v, want %v", tt.x, tt.y, got, tt.want)
+			t.Errorf("decimal.Dim[decimal64](%v, %v) = %v, want %v", tt.x, tt.y, got, tt.want)
 		}
 	}
-	if !IsDecimal64NaN(Decimal64Dim(Decimal64NaN(), 1)) {
-		t.Error("Decimal64Dim(NaN, 1) should be NaN")
+	if !decimal.IsNaN[decimal64](decimal.Dim[decimal64](decimal.NaN[decimal64](), 1)) {
+		t.Error("decimal.Dim[decimal64](NaN, 1) should be NaN")
 	}
-	if !IsDecimal64NaN(Decimal64Dim(1, Decimal64NaN())) {
-		t.Error("Decimal64Dim(1, NaN) should be NaN")
+	if !decimal.IsNaN[decimal64](decimal.Dim[decimal64](1, decimal.NaN[decimal64]())) {
+		t.Error("decimal.Dim[decimal64](1, NaN) should be NaN")
 	}
-	if !IsDecimal64NaN(Decimal64Dim(Decimal64Inf(1), Decimal64Inf(1))) {
-		t.Error("Decimal64Dim(+Inf, +Inf) should be NaN")
+	if !decimal.IsNaN[decimal64](decimal.Dim[decimal64](decimal.Inf[decimal64](1), decimal.Inf[decimal64](1))) {
+		t.Error("decimal.Dim[decimal64](+Inf, +Inf) should be NaN")
 	}
 }
 
@@ -291,9 +292,9 @@ func TestDecimal128Dim(t *testing.T) {
 		{0, 0, 0},
 	}
 	for _, tt := range tests {
-		got := Decimal128Dim(tt.x, tt.y)
+		got := decimal.Dim[decimal128](tt.x, tt.y)
 		if got != tt.want {
-			t.Errorf("Decimal128Dim(%v, %v) = %v, want %v", tt.x, tt.y, got, tt.want)
+			t.Errorf("decimal.Dim[decimal128](%v, %v) = %v, want %v", tt.x, tt.y, got, tt.want)
 		}
 	}
 }
@@ -316,17 +317,17 @@ func TestDecimal64Trunc(t *testing.T) {
 		{-0.1, 0},
 		{0.999, 0},
 		{100, 100},
-		{Decimal64Inf(1), Decimal64Inf(1)},
-		{Decimal64Inf(-1), Decimal64Inf(-1)},
+		{decimal.Inf[decimal64](1), decimal.Inf[decimal64](1)},
+		{decimal.Inf[decimal64](-1), decimal.Inf[decimal64](-1)},
 	}
 	for _, tt := range tests {
-		got := Decimal64Trunc(tt.in)
+		got := decimal.Trunc[decimal64](tt.in)
 		if got != tt.want {
-			t.Errorf("Decimal64Trunc(%v) = %v, want %v", tt.in, got, tt.want)
+			t.Errorf("decimal.Trunc[decimal64](%v) = %v, want %v", tt.in, got, tt.want)
 		}
 	}
-	if !IsDecimal64NaN(Decimal64Trunc(Decimal64NaN())) {
-		t.Error("Decimal64Trunc(NaN) should be NaN")
+	if !decimal.IsNaN[decimal64](decimal.Trunc[decimal64](decimal.NaN[decimal64]())) {
+		t.Error("decimal.Trunc[decimal64](NaN) should be NaN")
 	}
 }
 
@@ -345,17 +346,17 @@ func TestDecimal64Floor(t *testing.T) {
 		{0.1, 0},
 		{-0.1, -1},
 		{100, 100},
-		{Decimal64Inf(1), Decimal64Inf(1)},
-		{Decimal64Inf(-1), Decimal64Inf(-1)},
+		{decimal.Inf[decimal64](1), decimal.Inf[decimal64](1)},
+		{decimal.Inf[decimal64](-1), decimal.Inf[decimal64](-1)},
 	}
 	for _, tt := range tests {
-		got := Decimal64Floor(tt.in)
+		got := decimal.Floor[decimal64](tt.in)
 		if got != tt.want {
-			t.Errorf("Decimal64Floor(%v) = %v, want %v", tt.in, got, tt.want)
+			t.Errorf("decimal.Floor[decimal64](%v) = %v, want %v", tt.in, got, tt.want)
 		}
 	}
-	if !IsDecimal64NaN(Decimal64Floor(Decimal64NaN())) {
-		t.Error("Decimal64Floor(NaN) should be NaN")
+	if !decimal.IsNaN[decimal64](decimal.Floor[decimal64](decimal.NaN[decimal64]())) {
+		t.Error("decimal.Floor[decimal64](NaN) should be NaN")
 	}
 }
 
@@ -374,17 +375,17 @@ func TestDecimal64Ceil(t *testing.T) {
 		{0.1, 1},
 		{-0.1, 0},
 		{100, 100},
-		{Decimal64Inf(1), Decimal64Inf(1)},
-		{Decimal64Inf(-1), Decimal64Inf(-1)},
+		{decimal.Inf[decimal64](1), decimal.Inf[decimal64](1)},
+		{decimal.Inf[decimal64](-1), decimal.Inf[decimal64](-1)},
 	}
 	for _, tt := range tests {
-		got := Decimal64Ceil(tt.in)
+		got := decimal.Ceil[decimal64](tt.in)
 		if got != tt.want {
-			t.Errorf("Decimal64Ceil(%v) = %v, want %v", tt.in, got, tt.want)
+			t.Errorf("decimal.Ceil[decimal64](%v) = %v, want %v", tt.in, got, tt.want)
 		}
 	}
-	if !IsDecimal64NaN(Decimal64Ceil(Decimal64NaN())) {
-		t.Error("Decimal64Ceil(NaN) should be NaN")
+	if !decimal.IsNaN[decimal64](decimal.Ceil[decimal64](decimal.NaN[decimal64]())) {
+		t.Error("decimal.Ceil[decimal64](NaN) should be NaN")
 	}
 }
 
@@ -410,13 +411,13 @@ func TestDecimal64Round(t *testing.T) {
 		{100, 100},
 	}
 	for _, tt := range tests {
-		got := Decimal64Round(tt.in)
+		got := decimal.Round[decimal64](tt.in)
 		if got != tt.want {
-			t.Errorf("Decimal64Round(%v) = %v, want %v", tt.in, got, tt.want)
+			t.Errorf("decimal.Round[decimal64](%v) = %v, want %v", tt.in, got, tt.want)
 		}
 	}
-	if !IsDecimal64NaN(Decimal64Round(Decimal64NaN())) {
-		t.Error("Decimal64Round(NaN) should be NaN")
+	if !decimal.IsNaN[decimal64](decimal.Round[decimal64](decimal.NaN[decimal64]())) {
+		t.Error("decimal.Round[decimal64](NaN) should be NaN")
 	}
 }
 
@@ -442,13 +443,13 @@ func TestDecimal64RoundToEven(t *testing.T) {
 		{100, 100},
 	}
 	for _, tt := range tests {
-		got := Decimal64RoundToEven(tt.in)
+		got := decimal.RoundToEven[decimal64](tt.in)
 		if got != tt.want {
-			t.Errorf("Decimal64RoundToEven(%v) = %v, want %v", tt.in, got, tt.want)
+			t.Errorf("decimal.RoundToEven[decimal64](%v) = %v, want %v", tt.in, got, tt.want)
 		}
 	}
-	if !IsDecimal64NaN(Decimal64RoundToEven(Decimal64NaN())) {
-		t.Error("Decimal64RoundToEven(NaN) should be NaN")
+	if !decimal.IsNaN[decimal64](decimal.RoundToEven[decimal64](decimal.NaN[decimal64]())) {
+		t.Error("decimal.RoundToEven[decimal64](NaN) should be NaN")
 	}
 }
 
@@ -471,9 +472,9 @@ func TestDecimal128Trunc(t *testing.T) {
 		{100, 100},
 	}
 	for _, tt := range tests {
-		got := Decimal128Trunc(tt.in)
+		got := decimal.Trunc[decimal128](tt.in)
 		if got != tt.want {
-			t.Errorf("Decimal128Trunc(%v) = %v, want %v", tt.in, got, tt.want)
+			t.Errorf("decimal.Trunc[decimal128](%v) = %v, want %v", tt.in, got, tt.want)
 		}
 	}
 }
@@ -495,9 +496,9 @@ func TestDecimal128Floor(t *testing.T) {
 		{100, 100},
 	}
 	for _, tt := range tests {
-		got := Decimal128Floor(tt.in)
+		got := decimal.Floor[decimal128](tt.in)
 		if got != tt.want {
-			t.Errorf("Decimal128Floor(%v) = %v, want %v", tt.in, got, tt.want)
+			t.Errorf("decimal.Floor[decimal128](%v) = %v, want %v", tt.in, got, tt.want)
 		}
 	}
 }
@@ -517,9 +518,9 @@ func TestDecimal128Ceil(t *testing.T) {
 		{100, 100},
 	}
 	for _, tt := range tests {
-		got := Decimal128Ceil(tt.in)
+		got := decimal.Ceil[decimal128](tt.in)
 		if got != tt.want {
-			t.Errorf("Decimal128Ceil(%v) = %v, want %v", tt.in, got, tt.want)
+			t.Errorf("decimal.Ceil[decimal128](%v) = %v, want %v", tt.in, got, tt.want)
 		}
 	}
 }
@@ -538,9 +539,9 @@ func TestDecimal128Round(t *testing.T) {
 		{0.5, 1},
 	}
 	for _, tt := range tests {
-		got := Decimal128Round(tt.in)
+		got := decimal.Round[decimal128](tt.in)
 		if got != tt.want {
-			t.Errorf("Decimal128Round(%v) = %v, want %v", tt.in, got, tt.want)
+			t.Errorf("decimal.Round[decimal128](%v) = %v, want %v", tt.in, got, tt.want)
 		}
 	}
 }
@@ -560,9 +561,9 @@ func TestDecimal128RoundToEven(t *testing.T) {
 		{-0.5, 0},
 	}
 	for _, tt := range tests {
-		got := Decimal128RoundToEven(tt.in)
+		got := decimal.RoundToEven[decimal128](tt.in)
 		if got != tt.want {
-			t.Errorf("Decimal128RoundToEven(%v) = %v, want %v", tt.in, got, tt.want)
+			t.Errorf("decimal.RoundToEven[decimal128](%v) = %v, want %v", tt.in, got, tt.want)
 		}
 	}
 }
@@ -584,28 +585,28 @@ func TestDecimal64Mod(t *testing.T) {
 		{0, 1, 0},
 	}
 	for _, tt := range tests {
-		got := Decimal64Mod(tt.x, tt.y)
+		got := decimal.Mod[decimal64](tt.x, tt.y)
 		if got != tt.want {
-			t.Errorf("Decimal64Mod(%v, %v) = %v, want %v", tt.x, tt.y, got, tt.want)
+			t.Errorf("decimal.Mod[decimal64](%v, %v) = %v, want %v", tt.x, tt.y, got, tt.want)
 		}
 	}
 	// Special cases
-	if !IsDecimal64NaN(Decimal64Mod(Decimal64Inf(1), 1)) {
-		t.Error("Decimal64Mod(+Inf, 1) should be NaN")
+	if !decimal.IsNaN[decimal64](decimal.Mod[decimal64](decimal.Inf[decimal64](1), 1)) {
+		t.Error("decimal.Mod[decimal64](+Inf, 1) should be NaN")
 	}
-	if !IsDecimal64NaN(Decimal64Mod(1, 0)) {
-		t.Error("Decimal64Mod(1, 0) should be NaN")
+	if !decimal.IsNaN[decimal64](decimal.Mod[decimal64](1, 0)) {
+		t.Error("decimal.Mod[decimal64](1, 0) should be NaN")
 	}
-	if !IsDecimal64NaN(Decimal64Mod(Decimal64NaN(), 1)) {
-		t.Error("Decimal64Mod(NaN, 1) should be NaN")
+	if !decimal.IsNaN[decimal64](decimal.Mod[decimal64](decimal.NaN[decimal64](), 1)) {
+		t.Error("decimal.Mod[decimal64](NaN, 1) should be NaN")
 	}
-	if !IsDecimal64NaN(Decimal64Mod(1, Decimal64NaN())) {
-		t.Error("Decimal64Mod(1, NaN) should be NaN")
+	if !decimal.IsNaN[decimal64](decimal.Mod[decimal64](1, decimal.NaN[decimal64]())) {
+		t.Error("decimal.Mod[decimal64](1, NaN) should be NaN")
 	}
 	// x mod ±Inf = x
-	got := Decimal64Mod(decimal64(3), Decimal64Inf(1))
+	got := decimal.Mod[decimal64](decimal64(3), decimal.Inf[decimal64](1))
 	if got != 3 {
-		t.Errorf("Decimal64Mod(3, +Inf) = %v, want 3", got)
+		t.Errorf("decimal.Mod[decimal64](3, +Inf) = %v, want 3", got)
 	}
 }
 
@@ -621,16 +622,16 @@ func TestDecimal64Remainder(t *testing.T) {
 		{0, 1, 0},
 	}
 	for _, tt := range tests {
-		got := Decimal64Remainder(tt.x, tt.y)
+		got := decimal.Remainder[decimal64](tt.x, tt.y)
 		if got != tt.want {
-			t.Errorf("Decimal64Remainder(%v, %v) = %v, want %v", tt.x, tt.y, got, tt.want)
+			t.Errorf("decimal.Remainder[decimal64](%v, %v) = %v, want %v", tt.x, tt.y, got, tt.want)
 		}
 	}
-	if !IsDecimal64NaN(Decimal64Remainder(Decimal64Inf(1), 1)) {
-		t.Error("Decimal64Remainder(+Inf, 1) should be NaN")
+	if !decimal.IsNaN[decimal64](decimal.Remainder[decimal64](decimal.Inf[decimal64](1), 1)) {
+		t.Error("decimal.Remainder[decimal64](+Inf, 1) should be NaN")
 	}
-	if !IsDecimal64NaN(Decimal64Remainder(1, 0)) {
-		t.Error("Decimal64Remainder(1, 0) should be NaN")
+	if !decimal.IsNaN[decimal64](decimal.Remainder[decimal64](1, 0)) {
+		t.Error("decimal.Remainder[decimal64](1, 0) should be NaN")
 	}
 }
 
@@ -646,9 +647,9 @@ func TestDecimal128Mod(t *testing.T) {
 		{0, 1, 0},
 	}
 	for _, tt := range tests {
-		got := Decimal128Mod(tt.x, tt.y)
+		got := decimal.Mod[decimal128](tt.x, tt.y)
 		if got != tt.want {
-			t.Errorf("Decimal128Mod(%v, %v) = %v, want %v", tt.x, tt.y, got, tt.want)
+			t.Errorf("decimal.Mod[decimal128](%v, %v) = %v, want %v", tt.x, tt.y, got, tt.want)
 		}
 	}
 }
@@ -663,9 +664,9 @@ func TestDecimal128Remainder(t *testing.T) {
 		{0, 1, 0},
 	}
 	for _, tt := range tests {
-		got := Decimal128Remainder(tt.x, tt.y)
+		got := decimal.Remainder[decimal128](tt.x, tt.y)
 		if got != tt.want {
-			t.Errorf("Decimal128Remainder(%v, %v) = %v, want %v", tt.x, tt.y, got, tt.want)
+			t.Errorf("decimal.Remainder[decimal128](%v, %v) = %v, want %v", tt.x, tt.y, got, tt.want)
 		}
 	}
 }
@@ -684,18 +685,18 @@ func TestDecimal64FMA(t *testing.T) {
 		{-2, 3, 10, 4},
 	}
 	for _, tt := range tests {
-		got := Decimal64FMA(tt.x, tt.y, tt.z)
+		got := decimal.FMA[decimal64](tt.x, tt.y, tt.z)
 		if got != tt.want {
-			t.Errorf("Decimal64FMA(%v, %v, %v) = %v, want %v", tt.x, tt.y, tt.z, got, tt.want)
+			t.Errorf("decimal.FMA[decimal64](%v, %v, %v) = %v, want %v", tt.x, tt.y, tt.z, got, tt.want)
 		}
 	}
 	// Special cases: Inf and NaN propagation
-	if !IsDecimal64NaN(Decimal64FMA(Decimal64Inf(1), 0, 1)) {
-		t.Error("Decimal64FMA(+Inf, 0, 1) should be NaN")
+	if !decimal.IsNaN[decimal64](decimal.FMA[decimal64](decimal.Inf[decimal64](1), 0, 1)) {
+		t.Error("decimal.FMA[decimal64](+Inf, 0, 1) should be NaN")
 	}
-	got := Decimal64FMA(Decimal64Inf(1), decimal64(1), decimal64(0))
-	if !IsDecimal64Inf(got, 1) {
-		t.Errorf("Decimal64FMA(+Inf, 1, 0) = %v, want +Inf", got)
+	got := decimal.FMA[decimal64](decimal.Inf[decimal64](1), decimal64(1), decimal64(0))
+	if !decimal.IsInf[decimal64](got, 1) {
+		t.Errorf("decimal.FMA[decimal64](+Inf, 1, 0) = %v, want +Inf", got)
 	}
 }
 
@@ -710,9 +711,9 @@ func TestDecimal128FMA(t *testing.T) {
 		{1, 1, 0, 1},
 	}
 	for _, tt := range tests {
-		got := Decimal128FMA(tt.x, tt.y, tt.z)
+		got := decimal.FMA[decimal128](tt.x, tt.y, tt.z)
 		if got != tt.want {
-			t.Errorf("Decimal128FMA(%v, %v, %v) = %v, want %v", tt.x, tt.y, tt.z, got, tt.want)
+			t.Errorf("decimal.FMA[decimal128](%v, %v, %v) = %v, want %v", tt.x, tt.y, tt.z, got, tt.want)
 		}
 	}
 }
@@ -733,9 +734,9 @@ func TestDecimal64SameQuantum(t *testing.T) {
 		{1, 0.1, false},    // exp=0 vs exp=-1
 	}
 	for _, tt := range tests {
-		got := Decimal64SameQuantum(tt.x, tt.y)
+		got := decimal.SameQuantum[decimal64](tt.x, tt.y)
 		if got != tt.want {
-			t.Errorf("Decimal64SameQuantum(%g, %g) = %v, want %v", tt.x, tt.y, got, tt.want)
+			t.Errorf("decimal.SameQuantum[decimal64](%g, %g) = %v, want %v", tt.x, tt.y, got, tt.want)
 		}
 	}
 }
@@ -753,9 +754,9 @@ func TestDecimal128SameQuantum(t *testing.T) {
 		{3.14, 2.71, true}, // both exp=-2
 	}
 	for _, tt := range tests {
-		got := Decimal128SameQuantum(tt.x, tt.y)
+		got := decimal.SameQuantum[decimal128](tt.x, tt.y)
 		if got != tt.want {
-			t.Errorf("Decimal128SameQuantum(%g, %g) = %v, want %v", tt.x, tt.y, got, tt.want)
+			t.Errorf("decimal.SameQuantum[decimal128](%g, %g) = %v, want %v", tt.x, tt.y, got, tt.want)
 		}
 	}
 }
@@ -774,14 +775,14 @@ func TestDecimal64Quantize(t *testing.T) {
 		{100, 1.0, "100.0"},  // integer with 1 decimal place
 	}
 	for _, tt := range tests {
-		got := Decimal64Quantize(tt.x, tt.y)
+		got := decimal.Quantize[decimal64](tt.x, tt.y)
 		s := fmt.Sprintf("%g", got)
 		if s != tt.want {
 			// Dump raw BID bits for diagnosis.
 			d64bits := Decimal64bits(got)
 			d128 := decimal128(got)
 			p := (*[2]uint64)(unsafe.Pointer(&d128))
-			t.Errorf("Decimal64Quantize(%g, %g) = %s, want %s\n"+
+			t.Errorf("decimal.Quantize[decimal64](%g, %g) = %s, want %s\n"+
 				"  d64 bits: %#016x\n"+
 				"  d128 lo:  %#016x  hi: %#016x",
 				tt.x, tt.y, s, tt.want, d64bits, p[0], p[1])
@@ -801,11 +802,11 @@ func TestDecimal128Quantize(t *testing.T) {
 		{1, 0.01, "1.00"},
 	}
 	for _, tt := range tests {
-		got := Decimal128Quantize(tt.x, tt.y)
+		got := decimal.Quantize[decimal128](tt.x, tt.y)
 		s := fmt.Sprintf("%g", got)
 		if s != tt.want {
 			p := (*[2]uint64)(unsafe.Pointer(&got))
-			t.Errorf("Decimal128Quantize(%g, %g) = %s, want %s\n"+
+			t.Errorf("decimal.Quantize[decimal128](%g, %g) = %s, want %s\n"+
 				"  d128 lo: %#016x  hi: %#016x",
 				tt.x, tt.y, s, tt.want, p[0], p[1])
 		}

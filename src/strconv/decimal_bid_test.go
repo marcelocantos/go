@@ -8,6 +8,7 @@ import (
 	"internal/bid"
 	"math"
 	"math/big"
+	"math/decimal"
 	"math/rand"
 	. "strconv"
 	"testing"
@@ -89,15 +90,15 @@ var dtoaTests = []dtoaTest{
 	{decimal64(0.045), 'f', 2, "0.04"},   // 4 is even, round down
 
 	// Special values
-	{math.Decimal64NaN(), 'g', -1, "NaN"},
-	{math.Decimal64NaN(), 'e', 6, "NaN"},
-	{math.Decimal64NaN(), 'f', 6, "NaN"},
-	{math.Decimal64Inf(1), 'g', -1, "+Inf"},
-	{math.Decimal64Inf(1), 'e', 6, "+Inf"},
-	{math.Decimal64Inf(1), 'f', 6, "+Inf"},
-	{math.Decimal64Inf(-1), 'g', -1, "-Inf"},
-	{math.Decimal64Inf(-1), 'e', 6, "-Inf"},
-	{math.Decimal64Inf(-1), 'f', 6, "-Inf"},
+	{decimal.NaN[decimal64](), 'g', -1, "NaN"},
+	{decimal.NaN[decimal64](), 'e', 6, "NaN"},
+	{decimal.NaN[decimal64](), 'f', 6, "NaN"},
+	{decimal.Inf[decimal64](1), 'g', -1, "+Inf"},
+	{decimal.Inf[decimal64](1), 'e', 6, "+Inf"},
+	{decimal.Inf[decimal64](1), 'f', 6, "+Inf"},
+	{decimal.Inf[decimal64](-1), 'g', -1, "-Inf"},
+	{decimal.Inf[decimal64](-1), 'e', 6, "-Inf"},
+	{decimal.Inf[decimal64](-1), 'f', 6, "-Inf"},
 
 	// Negative zero
 	{math.Decimal64frombits(1 << 63), 'g', -1, "-0e-398"},
@@ -531,8 +532,8 @@ func TestDecimal64Roundtrip(t *testing.T) {
 		decimal64(0), decimal64(1), decimal64(-1),
 		decimal64(3.14), decimal64(0.001), decimal64(0.1),
 		decimal64(100), decimal64(9999999),
-		math.Decimal64NaN(),
-		math.Decimal64Inf(1), math.Decimal64Inf(-1),
+		decimal.NaN[decimal64](),
+		decimal.Inf[decimal64](1), decimal.Inf[decimal64](-1),
 	}
 	for _, d := range values {
 		s := FormatDecimal(decimal128(d), 'g', -1, 64)
@@ -787,8 +788,8 @@ func FuzzDecimal64RoundTrip(f *testing.F) {
 			if err != nil {
 				t.Fatalf("ParseDecimal(FormatDecimal(%#x, 'e', %d) = %q): %v", b, prec, s, err)
 			}
-			if math.IsDecimal64NaN(d) {
-				if !math.IsDecimal64NaN(d2) {
+			if decimal.IsNaN[decimal64](d) {
+				if !decimal.IsNaN[decimal64](d2) {
 					t.Fatalf("%#x: NaN came back as %q (%#x)", b, s, math.Decimal64bits(d2))
 				}
 				continue
@@ -826,8 +827,8 @@ func FuzzDecimal128RoundTrip(f *testing.F) {
 			if err != nil {
 				t.Fatalf("ParseDecimal(FormatDecimal(%#x:%#x, 'e', %d) = %q): %v", hi, lo, prec, s, err)
 			}
-			if math.IsDecimal128NaN(d) {
-				if !math.IsDecimal128NaN(d2) {
+			if decimal.IsNaN[decimal128](d) {
+				if !decimal.IsNaN[decimal128](d2) {
 					t.Fatalf("%#x:%#x: NaN came back as %q", hi, lo, s)
 				}
 				continue

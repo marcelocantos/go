@@ -12,6 +12,7 @@ import (
 	"internal/bid"
 	"internal/testhash"
 	"math"
+	"math/decimal"
 	"reflect"
 	"strings"
 	"testing"
@@ -264,7 +265,7 @@ func TestComparable(t *testing.T) {
 	testComparable(t, decimal64(9))
 	testComparable(t, decimal128(42))
 	testComparable(t, decimal64(0), math.Decimal64frombits(1<<63)) // +0 == -0
-	testComparableNoEqual(t, math.Decimal64NaN(), math.Decimal64NaN())
+	testComparableNoEqual(t, decimal.NaN[decimal64](), decimal.NaN[decimal64]())
 	testComparableNoEqual(t, math.NaN(), math.NaN())
 	testComparableNoEqual(t, [2]string{"a", ""}, [2]string{"", "a"})
 	testComparableNoEqual(t, struct{ a, b string }{"foo", ""}, struct{ a, b string }{"", "foo"})
@@ -356,7 +357,7 @@ func TestWriteComparable(t *testing.T) {
 	testWriteComparable(t, decimal64(9))
 	testWriteComparable(t, decimal128(42))
 	testWriteComparable(t, decimal64(0), math.Decimal64frombits(1<<63)) // +0 == -0
-	testWriteComparableNoEqual(t, math.Decimal64NaN(), math.Decimal64NaN())
+	testWriteComparableNoEqual(t, decimal.NaN[decimal64](), decimal.NaN[decimal64]())
 	testWriteComparableNoEqual(t, math.NaN(), math.NaN())
 	testWriteComparableNoEqual(t, [2]string{"a", ""}, [2]string{"", "a"})
 	testWriteComparableNoEqual(t, struct{ a, b string }{"foo", ""}, struct{ a, b string }{"", "foo"})
@@ -609,8 +610,8 @@ func TestComparableDecimal(t *testing.T) {
 		{pack64(false, 1, 0), pack64(false, 10, -1), pack64(false, 1000000000000000, -15)},
 		{pack64(false, 1, 1), pack64(false, 10, 0), pack64(false, 100, -1)},
 		{pack64(false, 1, 369), pack64(false, 10, 368)},
-		{math.Decimal64Inf(1), math.Decimal64frombits(bid.Inf64 | 1<<50)},
-		{math.Decimal64Inf(-1), math.Decimal64frombits(bid.Inf64 | bid.SignMask64 | 1<<50)},
+		{decimal.Inf[decimal64](1), math.Decimal64frombits(bid.Inf64 | 1<<50)},
+		{decimal.Inf[decimal64](-1), math.Decimal64frombits(bid.Inf64 | bid.SignMask64 | 1<<50)},
 	}
 	classes128 := [][]decimal128{
 		{pack128(false, 0, 0), pack128(true, 0, 0), pack128(false, 0, -6176), pack128(true, 0, 6111),
@@ -620,8 +621,8 @@ func TestComparableDecimal(t *testing.T) {
 		{pack128(false, 1, 0), pack128(false, 10, -1)},
 		{pack128(false, 1, 1), pack128(false, 10, 0)},
 		{pack128(false, 1, 6111), pack128(false, 10, 6110)},
-		{decimal128(math.Decimal64Inf(1)), math.Decimal128frombits(bid.Inf128Hi|1<<40, 5)},
-		{decimal128(math.Decimal64Inf(-1)), math.Decimal128frombits(bid.Inf128Hi|bid.SignMask128Hi|1<<40, 5)},
+		{decimal128(decimal.Inf[decimal64](1)), math.Decimal128frombits(bid.Inf128Hi|1<<40, 5)},
+		{decimal128(decimal.Inf[decimal64](-1)), math.Decimal128frombits(bid.Inf128Hi|bid.SignMask128Hi|1<<40, 5)},
 	}
 
 	type S64 [1]decimal64
