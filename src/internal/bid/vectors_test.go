@@ -90,10 +90,11 @@ package bid_test
 // Each vector is mapped to one kernel call (see decOps). Operands are
 // converted with the reference model's codec, even when the target is the
 // kernel, so that a kernel operation is not judged through a kernel Parse;
-// only apply and toSci exercise the target's Parse and Append. Results are
-// compared bit for bit, except that any NaN expected matches any NaN got
-// (the contract never propagates payloads, signs or signaling); those
-// passes are counted as "NaN modulo payload".
+// only apply and toSci exercise the target's Parse and Append. A NaN
+// operand or result keeps its sign, signaling bit and payload (see
+// vectors_nan_test.go). Results are compared bit for bit, NaN payloads and
+// signs included; the NaN results that diverge from the contract in a
+// documented way are skipped with their reason.
 //
 // Conditions (the flags after the result) are not checked for arithmetic,
 // because arithmetic returns no Status. For apply, which goes through
@@ -105,8 +106,9 @@ package bid_test
 // formats, operations outside the kernel API (non-IEEE operations such as
 // logb, scaleb, shift or power, and IEEE operations the API does not have),
 // operands or results that cannot be represented or are outside the
-// contract (NaN payloads, hex encodings, Division impossible), and rounding
-// modes the contract does not have (half_down, up, 05up).
+// contract (hex encodings, Division impossible, NaN payloads in the
+// character form), and rounding modes the contract does not have
+// (half_down, up, 05up).
 //
 // Intel readtest.in. A line is
 //
@@ -189,8 +191,9 @@ package bid_test
 // 2^31 or more as the negative int32 with the same bits, and the runner
 // reads both.
 //
-// Results are compared bit for bit, except that any NaN expected matches
-// any NaN got (counted as "NaN modulo payload"). Min and Max, and
+// Results are compared bit for bit, NaN payloads and signs included; the
+// NaN divergences of vectors_nan_test.go are skipped with their reason.
+// Min and Max, and
 // TotalOrder on NaNs of one sign, are skipped where they diverge from
 // minNum and maxNum and from clause 5.10 in the documented way and in no
 // other. Each skip has a reason, counted. Not mapped, each with its own
@@ -633,8 +636,7 @@ func vecFormat(c *decContext) (*format, string) {
 }
 
 var (
-	vecNaNPayload = regexp.MustCompile(`(?i)^[+-]?s?nan[0-9]+$`)
-	vecNaNWord    = regexp.MustCompile(`(?i)^[+-]?s?nan[0-9]*$`)
+	vecNaNWord = regexp.MustCompile(`(?i)^[+-]?s?nan[0-9]*$`)
 )
 
 // vecNumeral matches a decimal numeral: sign, digits with an optional point,
@@ -683,8 +685,11 @@ func vecOperand(f *format, s string) (bits, string) {
 	switch {
 	case strings.HasPrefix(s, "#"):
 		return bits{}, "operand: hex encoding"
-	case vecNaNPayload.MatchString(s):
-		return bits{}, "contract: NaN payload operand"
+	case vecNaNWord.MatchString(s):
+		if x, ok := vecNaN(f, s); ok {
+			return x, ""
+		}
+		return bits{}, "operand: not representable in the format"
 	}
 	x, st := f.parse(s, bid.ToNearestEven)
 	switch {
@@ -692,12 +697,6 @@ func vecOperand(f *format, s string) (bits, string) {
 		return bits{}, "operand: outside the contract's numeral grammar"
 	case st != bid.Exact:
 		return bits{}, "operand: not representable in the format"
-	}
-	// Parse gives every NaN the canonical positive encoding; a signed NaN
-	// operand takes its sign through the sign operation, which the sign
-	// operations and TotalOrder read.
-	if strings.HasPrefix(s, "-") && vecRef.isNaN(f, x) {
-		x = vecRef.neg(f, x)
 	}
 	return x, ""
 }
@@ -857,7 +856,14 @@ func evalDec(im impl, v *decVector) vecOutcome {
 	}
 	wantNaN := vecNaNWord.MatchString(v.result)
 	var want bits
-	if !spec.text && !wantNaN {
+	switch {
+	case spec.text:
+	case wantNaN:
+		var ok bool
+		if want, ok = vecNaN(f, v.result); !ok {
+			return vecSkip("result: not representable in the format")
+		}
+	default:
 		var st bid.Status
 		if want, st = f.parse(v.result, bid.ToNearestEven); st != bid.Exact {
 			return vecSkip("result: not representable in the format")
@@ -874,20 +880,34 @@ func evalDec(im impl, v *decVector) vecOutcome {
 	}
 
 	if spec.text {
-		wantText := v.result
-		loose := false
 		if wantNaN {
-			wantText, loose = "NaN", v.result != "NaN"
+			// Only compare and comparesig answer NaN, which the kernel's
+			// Compare reports as unordered without a NaN value.
+			return vecOutcome{pass: got.text == "NaN", got: got.text}.noted(noteUnorderedNaN)
 		}
-		return vecOutcome{pass: got.text == wantText, loose: loose, got: got.text}
+		out := vecOutcome{pass: got.text == v.result, got: got.text}
+		switch {
+		case out.pass:
+		case op == "comparetotal":
+			if why := totalOrderNaNDivergence(f, args[0], args[1], got.text); why != "" {
+				return vecSkip(why)
+			}
+		case op == "comparetotmag":
+			if why := totalOrderNaNDivergence(f, vecRef.abs(f, args[0]), vecRef.abs(f, args[1]), got.text); why != "" {
+				return vecSkip(why)
+			}
+		}
+		return out
 	}
 	gotText := fmt.Sprintf("%s (%016x%016x)", f.format(got.x), got.x.Hi, got.x.Lo)
-	if wantNaN {
-		return vecOutcome{pass: vecRef.isNaN(f, got.x), loose: v.result != "NaN", got: gotText}
-	}
 	out := vecOutcome{pass: got.x == want, got: gotText}
 	if !out.pass && (op == "min" || op == "max") {
 		if why := minMaxDivergence(f, args[0], args[1], want, got.x); why != "" {
+			return vecSkip(why)
+		}
+	}
+	if !out.pass && op == "abs" {
+		if why := gdaAbsDivergence(f, args[0], want, got.x); why != "" {
 			return vecSkip(why)
 		}
 	}
@@ -930,7 +950,7 @@ func minMaxDivergence(f *format, x, y, want, got bits) string {
 		if a.kind == notANumber {
 			number = y
 		}
-		if want == canon(number) && f.decode(got).kind == notANumber {
+		if want == canon(number) && got == f.encode(nanOf(a, b)) {
 			return skipMinMaxNaN
 		}
 	case a.kind == finite && b.kind == finite && a.neg == b.neg && cmpValue(a, b) == 0:
@@ -993,8 +1013,6 @@ func evalDecParse(im impl, f *format, v *decVector, apply bool) vecOutcome {
 	switch {
 	case strings.HasPrefix(s, "#"):
 		return vecSkip("operand: hex encoding")
-	case vecNaNPayload.MatchString(s):
-		return vecSkip("contract: NaN payload operand")
 	case v.hasCond("invalid_operation"):
 		return vecSkip("contract: signaling NaN reports no Invalid")
 	case !ok:
@@ -1015,12 +1033,15 @@ func evalDecParse(im impl, f *format, v *decVector, apply bool) vecOutcome {
 	case err != nil:
 		return vecOutcome{got: err.Error()}
 	}
+	if m := vecNaNText.FindStringSubmatch(s); m != nil && m[3] != "" && st == bid.Syntax && x == f.encode(nan) {
+		return vecSkip(skipNaNPayloadSyntax)
+	}
 	if !apply && st&^bid.Syntax != 0 {
 		return vecSkip("operand: toSci operand not representable")
 	}
-	want, loose := v.result, false
-	if vecNaNWord.MatchString(want) {
-		want, loose = "NaN", want != "NaN"
+	want := v.result
+	if why := textNaNDivergence(want, text); why != "" && st == bid.Exact {
+		return vecSkip(why)
 	}
 	got := text
 	pass := text == want
@@ -1044,7 +1065,7 @@ func evalDecParse(im impl, f *format, v *decVector, apply bool) vecOutcome {
 			got += fmt.Sprintf(" (want %s)", statusString(wantSt))
 		}
 	}
-	return vecOutcome{pass: pass, loose: pass && loose, got: got}
+	return vecOutcome{pass: pass, got: got}
 }
 
 // ------------------------------------------------------------------ Intel
@@ -1601,7 +1622,13 @@ func (c *intelCall) arith(n int, fn func(a []bits) bits) vecOutcome {
 	if o, ok := intelRun(func() { got = fn(a) }); !ok {
 		return o
 	}
-	return intelCompare(c.f, got, want).noted(noteNoStatus)
+	out := intelCompare(c.f, got, want)
+	if !out.pass {
+		if why := nanChoiceDivergence(c.f, a, want, got) + nanScaleDivergence(c.f, nil, bits{}, want, got); why != "" {
+			return vecSkip(why)
+		}
+	}
+	return out.noted(noteNoStatus)
 }
 
 // minMax runs minnum and maxnum, which differ from the contract's Min and
@@ -1631,7 +1658,7 @@ func (c *intelCall) minMax(max bool) vecOutcome {
 	}
 	out := intelCompare(c.f, got, want)
 	if !out.pass {
-		if why := minMaxDivergence(c.f, a[0], a[1], want, got); why != "" {
+		if why := minMaxDivergence(c.f, a[0], a[1], want, got) + nanChoiceDivergence(c.f, a, want, got); why != "" {
 			return vecSkip(why)
 		}
 	}
@@ -1746,7 +1773,13 @@ func (c *intelCall) convertWidth() vecOutcome {
 	}); !ok {
 		return o
 	}
-	return intelCompare(to, got, want).noted(noteNoStatus)
+	out := intelCompare(to, got, want)
+	if !out.pass {
+		if why := nanScaleDivergence(to, c.f, x, want, got); why != "" {
+			return vecSkip(why)
+		}
+	}
+	return out.noted(noteNoStatus)
 }
 
 // toInt runs the conversions to an integer of the given width, signedness
@@ -1904,7 +1937,13 @@ func (c *intelCall) toBinary(width string) vecOutcome {
 	}); !ok {
 		return o
 	}
-	return intelCompareBinary(n, got, want).noted(noteNoStatus)
+	out := intelCompareBinary(n, got, want)
+	if !out.pass {
+		if why := binaryNaNDivergence(n, want, got); why != "" {
+			return vecSkip(why)
+		}
+	}
+	return out.noted(noteNoStatus)
 }
 
 // intelBinaryBits reads a bracketed hex literal of a binary format of n bits.
@@ -1916,19 +1955,9 @@ func intelBinaryBits(s string, n int) (uint64, bool) {
 	return b, err == nil
 }
 
-// intelCompareBinary compares binary bit patterns, any NaN matching any NaN.
+// intelCompareBinary compares binary bit patterns exactly, NaNs included.
 func intelCompareBinary(n int, got, want uint64) vecOutcome {
-	gotText := fmt.Sprintf("%0*x", n/4, got)
-	isNaN := func(b uint64) bool {
-		if n == 32 {
-			return math.IsNaN(float64(math.Float32frombits(uint32(b))))
-		}
-		return math.IsNaN(math.Float64frombits(b))
-	}
-	if isNaN(want) {
-		return vecOutcome{pass: isNaN(got), loose: got != want, got: gotText}
-	}
-	return vecOutcome{pass: got == want, got: gotText}
+	return vecOutcome{pass: got == want, got: fmt.Sprintf("%0*x", n/4, got)}
 }
 
 // evalIntelFromBinary runs binary32_to_bid64 and its relatives. The
@@ -1989,7 +2018,13 @@ func evalIntelFromBinary(im impl, v *intelVector, from, to string) vecOutcome {
 	}); !ok {
 		return o
 	}
-	return intelCompare(f, got, want).noted(noteNoStatus)
+	out := intelCompare(f, got, want)
+	if !out.pass {
+		if why := canonicalNaNDivergence(f, want, got, skipNaNBinary); why != "" {
+			return vecSkip(why)
+		}
+	}
+	return out.noted(noteNoStatus)
 }
 
 // toString runs to_string. Intel writes a sign, the coefficient, E and a
@@ -2052,6 +2087,15 @@ func (c *intelCall) fromString() vecOutcome {
 		return o
 	}
 	out := intelCompare(c.f, got, wantBits)
+	if !out.pass {
+		reason := skipNaNParse
+		if st == bid.Syntax {
+			reason = skipNaNMalformed
+		}
+		if why := canonicalNaNDivergence(c.f, wantBits, got, reason); why != "" && (st == bid.Exact || st == bid.Syntax) {
+			return vecSkip(why)
+		}
+	}
 	if st&bid.Syntax != 0 {
 		return out.noted(noteSyntax)
 	}
@@ -2061,14 +2105,11 @@ func (c *intelCall) fromString() vecOutcome {
 	return out
 }
 
-// intelCompare compares bits, treating any NaN as equal to any NaN.
+// intelCompare compares bits exactly, NaN payloads and signs included.
 func intelCompare(f *format, got, want bits) vecOutcome {
 	gotText := fmt.Sprintf("%016x%016x", got.Hi, got.Lo)
 	if f.width == 64 {
 		gotText = fmt.Sprintf("%016x", got.Lo)
-	}
-	if vecRef.isNaN(f, want) {
-		return vecOutcome{pass: vecRef.isNaN(f, got), loose: got != want, got: gotText}
 	}
 	return vecOutcome{pass: got == want, got: gotText}
 }
@@ -2198,6 +2239,64 @@ t012 add 1 2 -> 3
 			}
 		case want[v.id] != "pass":
 			t.Errorf("%s passed; want skip %q", v.id, want[v.id])
+		}
+	}
+}
+
+// TestDecTestNaNPayloads checks that the decTest runner reads NaN payloads
+// and compares them exactly, on lines worked out by hand from the contract.
+func TestDecTestNaNPayloads(t *testing.T) {
+	const src = `
+precision: 16
+maxExponent: 384
+minexponent: -383
+extended: 1
+clamp: 1
+rounding: half_even
+n001 add NaN5 1 -> NaN5
+n002 add NaN5 1 -> NaN6
+n003 add -sNaN7 1 -> -NaN7 Invalid_operation
+n004 add NaN1 sNaN2 -> NaN2 Invalid_operation
+n005 multiply 1 -NaN3 -> NaN3
+n006 subtract 1 -NaN4 -> -NaN4
+n007 fma NaN1 NaN2 sNaN3 -> NaN3 Invalid_operation
+n008 abs -NaN9 -> -NaN9
+n009 toSci NaN12 -> NaN12
+n010 compare NaN8 1 -> NaN8
+n011 add NaN1234567890123456 1 -> NaN
+n012 add Inf -Inf -> NaN Invalid_operation
+`
+	want := map[string]string{ // id -> outcome: pass, fail or the skip reason
+		"n001": "pass", "n002": "fail", "n003": "pass", "n004": "pass",
+		"n005": "fail", "n006": "pass", "n007": "pass",
+		"n008": skipGDAAbsNaN,
+		"n009": skipNaNPayloadSyntax,
+		"n010": "pass",
+		"n011": "operand: not representable in the format",
+		"n012": "pass",
+	}
+	var got []*decVector
+	if err := parseDecTest(strings.NewReader(src), "nan.decTest", func(v *decVector) { got = append(got, v) }); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("parsed %d vectors, want %d", len(got), len(want))
+	}
+	for _, im := range []impl{reference{}, kernel{}} {
+		for _, v := range got {
+			o := evalDec(im, v)
+			switch {
+			case o.skip != "":
+				if o.skip != want[v.id] {
+					t.Errorf("%T %s skipped: %s; want %s", im, v.id, o.skip, want[v.id])
+				}
+			case !o.pass:
+				if want[v.id] != "fail" {
+					t.Errorf("%T %s failed: got %s", im, v.id, o.got)
+				}
+			case want[v.id] != "pass":
+				t.Errorf("%T %s passed; want %s", im, v.id, want[v.id])
+			}
 		}
 	}
 }
@@ -2376,6 +2475,17 @@ func TestIntelLineParser(t *testing.T) {
 		{"bid64_to_binary64 1 0.1 [3fb9999999999999] 0x20", pass},
 		{"bid64_to_binary64 1 0.1 [3fb999999999999a] 0x20", fail},
 		{"bid64_to_binary64 0 NaN [7ff8000000000000] 00", pass},
+		// NaN payloads and signs are compared exactly (see "NaN results").
+		{"bid64_add 0 [7c00000000000123] 1 [7c00000000000123] 00", pass},
+		{"bid64_add 0 [7c00000000000123] 1 [7c00000000000000] 00", fail},
+		{"bid64_add 0 [7c00000000000123] 1 [fc00000000000123] 00", fail},
+		{"bid64_add 0 [7c00000000000001] [7e00000000000002] [7c00000000000001] 01", "dispute: of several NaN operands"},
+		{"bid64_add 0 [7c00000000000001] [7e00000000000002] [7c00000000000002] 01", pass},
+		{"bid64_to_bid128 0 [7c00000000000001] [7c000000000000000de0b6b3a7640000] 00", "dispute: Intel scales"},
+		{"bid64_to_bid128 0 [7c00000000000001] [7c000000000000000000000000000001] 00", pass},
+		{"bid64_to_bid128 0 [7c00000000000001] [7c000000000000000000000000000002] 00", fail},
+		{"bid64_to_binary64 0 [7c00000000000005] [7ff8000000000005] 00", "contract: conversion between binary"},
+		{"binary64_to_bid64 0 [7ff8000000000005] [7c00000000000005] 00", "contract: conversion between binary"},
 		{"bid128_to_binary32 0 Infinity [7f800000] 00", pass},
 		{"binary64_to_bid64 0 [3ff0000000000000] [31c0000000000001] 00", pass},
 		{"binary32_to_bid64 0 [3f800000] [31c0000000000001] 00", pass},
@@ -2394,7 +2504,7 @@ func TestIntelLineParser(t *testing.T) {
 		{"bid64_from_string 0 12345678901234565 1234567890123457e1 20", fail},
 		{"bid64_from_string 0 1.5 [31a000000000000f] 20", fail},
 		{"bid64_from_string 0 1.1P2 [7c00000000000000] 00", pass},
-		{"bid64_from_string 0 +SNAN [7e00000000000000] 00", pass},
+		{"bid64_from_string 0 +SNAN [7e00000000000000] 00", "contract: Parse reads every NaN"},
 		{"bid64_from_string 0 +INFINITY [7800000000000000] 00", pass},
 		{"bid64_from_string 0 1E-399 [0000000000000000] 30", pass},
 		{"bid64_from_string 0 1E+385 [7800000000000000] 28", pass},
