@@ -222,8 +222,6 @@ var optabBase = []Optab{
 	{as: AFMADD, a1: C_FREG, a2: C_FREG, a3: C_FREG, a6: C_FREG, type_: 34, size: 4},
 	{as: AFMUL, a1: C_FREG, a6: C_FREG, type_: 32, size: 4},
 	{as: AFMUL, a1: C_FREG, a2: C_FREG, a6: C_FREG, type_: 32, size: 4},
-	{as: ADMULQ, a1: C_FREGP, a6: C_FREGP, type_: 32, size: 4},
-	{as: ADMULQ, a1: C_FREGP, a2: C_FREGP, a6: C_FREGP, type_: 32, size: 4},
 
 	{as: AMOVBU, a1: C_REG, a6: C_SOREG, type_: 7, size: 4},
 	{as: AMOVBU, a1: C_REG, a6: C_XOREG, type_: 108, size: 4},
@@ -1883,10 +1881,12 @@ func buildop(ctxt *obj.Link) {
 			opset(AFSUBSCC, r0)
 			opset(ADADD, r0)
 			opset(ADDIV, r0)
+			opset(ADMUL, r0) // X-form like DADD, not A-form like FMUL
 			opset(ADSUB, r0)
 
 		case ADADDQ:
 			opset(ADDIVQ, r0)
+			opset(ADMULQ, r0)
 			opset(ADSUBQ, r0)
 
 		case AFMADD:
@@ -1912,10 +1912,6 @@ func buildop(ctxt *obj.Link) {
 			opset(AFMULS, r0)
 			opset(AFMULCC, r0)
 			opset(AFMULSCC, r0)
-			opset(ADMUL, r0)
-
-		case ADMULQ:
-			opset(ADMULQ, r0)
 
 		case AFCMPO:
 			opset(AFCMPU, r0)

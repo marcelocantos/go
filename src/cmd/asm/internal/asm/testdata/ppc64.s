@@ -708,10 +708,10 @@ TEXT asmtest(SB),DUPOK|NOSPLIT,$0
 	FSUBSCC F1, F2, F3              // ec620829
 	FMUL F1, F2                     // fc420072
 	FMUL F1, F2, F3                 // fc620072
-	DMUL F1, F2                     // ec420044
-	DMUL F1, F2, F3                 // ec620044
-	DMULQ F2, F4                    // fc8400c4
-	DMULQ F2, F4, F6                // fcc400c4
+	DMUL F1, F2                     // ec420844
+	DMUL F1, F2, F3                 // ec620844
+	DMULQ F2, F4                    // fc841044
+	DMULQ F2, F4, F6                // fcc41044
 	FMULCC F1, F2, F3               // fc620073
 	FMULS F1, F2                    // ec420072
 	FMULS F1, F2, F3                // ec620072
