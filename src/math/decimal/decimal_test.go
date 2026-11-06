@@ -812,3 +812,110 @@ func TestDecimal128Quantize(t *testing.T) {
 		}
 	}
 }
+
+func TestQuantum(t *testing.T) {
+	tests64 := []struct {
+		x    decimal64
+		want string // %g of the result, which shows its exponent
+	}{
+		{1.50, "0.01"},
+		{-1.50, "0.01"},
+		{123, "1"},
+		{1.23e5, "1e+03"}, // the literal keeps its quantum, 1E+3
+		{0.00, "0.01"},
+		{-0.0, "0.1"},
+	}
+	for _, tt := range tests64 {
+		if got := fmt.Sprintf("%g", decimal.Quantum(tt.x)); got != tt.want {
+			t.Errorf("decimal.Quantum[decimal64](%g) = %s, want %s", tt.x, got, tt.want)
+		}
+	}
+	tests128 := []struct {
+		x    decimal128
+		want string
+	}{
+		{1.50, "0.01"},
+		{-2.000000000000000000000000000000000, "1e-33"},
+		{100, "1"},
+	}
+	for _, tt := range tests128 {
+		if got := fmt.Sprintf("%g", decimal.Quantum(tt.x)); got != tt.want {
+			t.Errorf("decimal.Quantum[decimal128](%g) = %s, want %s", tt.x, got, tt.want)
+		}
+	}
+	if q := decimal.Quantum(decimal.Inf[decimal64](-1)); !decimal.IsInf(q, 1) {
+		t.Errorf("decimal.Quantum(-Inf) = %g, want +Inf", q)
+	}
+	if q := decimal.Quantum(decimal.NaNWithPayload[decimal128](7)); decimal.Payload(q) != 7 {
+		t.Errorf("decimal.Quantum(NaN with payload 7) has payload %g, want 7", decimal.Payload(q))
+	}
+	// Quantize by a value's quantum is Quantize by the value.
+	for _, y := range []decimal64{0.01, -5e3, 1.000} {
+		x := decimal64(2.71828)
+		if a, b := decimal.Quantize(x, decimal.Quantum(y)), decimal.Quantize(x, y); Decimal64bits(a) != Decimal64bits(b) {
+			t.Errorf("Quantize(%g, Quantum(%g)) = %g, Quantize(%g, %g) = %g", x, y, a, x, y, b)
+		}
+	}
+}
+
+func TestPayload(t *testing.T) {
+	const max64 = 999999999999999                    // 10^15 - 1, the largest decimal64 payload
+	const max128 = 999999999999999999999999999999999 // 10^33 - 1, the largest decimal128 payload
+
+	// Round trips, at both widths, quiet and signaling.
+	for _, p := range []decimal64{0, 1, 42, 42.000, 4.2e1, max64} {
+		for _, n := range []decimal64{decimal.NaNWithPayload(p), decimal.SignalingNaNWithPayload(p)} {
+			if !decimal.IsNaN(n) || decimal.Payload(n) != p || !decimal.SameQuantum(decimal.Payload(n), 1) {
+				t.Errorf("decimal64: Payload(NaNWithPayload(%g)) = %g (NaN: %v)", p, decimal.Payload(n), decimal.IsNaN(n))
+			}
+		}
+	}
+	for _, p := range []decimal128{0, 7, max64 + 1, max128} {
+		for _, n := range []decimal128{decimal.NaNWithPayload(p), decimal.SignalingNaNWithPayload(p)} {
+			if !decimal.IsNaN(n) || decimal.Payload(n) != p {
+				t.Errorf("decimal128: Payload(NaNWithPayload(%g)) = %g", p, decimal.Payload(n))
+			}
+		}
+	}
+
+	// Refused payloads give +0.
+	for _, p := range []decimal64{max64 + 1, 1e15, 4.2, -1, decimal.Inf[decimal64](1), decimal.NaN[decimal64]()} {
+		for _, n := range []decimal64{decimal.NaNWithPayload(p), decimal.SignalingNaNWithPayload(p)} {
+			if decimal.IsNaN(n) || n != 0 || decimal.Signbit(n) {
+				t.Errorf("decimal64: NaNWithPayload(%g) = %g, want 0", p, n)
+			}
+		}
+	}
+	if n := decimal.NaNWithPayload[decimal128](max128 + 1); n != 0 {
+		t.Errorf("decimal128: NaNWithPayload(10^33) = %g, want 0", n)
+	}
+
+	// Payload of a value that is not a NaN is -1.
+	for _, x := range []decimal64{0, 1.5, -7, decimal.Inf[decimal64](-1)} {
+		if p := decimal.Payload(x); p != -1 {
+			t.Errorf("decimal.Payload(%g) = %g, want -1", x, p)
+		}
+	}
+
+	// Arithmetic propagates the payload and quiets a signaling NaN.
+	n := decimal.SignalingNaNWithPayload[decimal64](42)
+	for _, r := range []decimal64{n + 1, 1 * n, n / 3, decimal.Quantize(n, 0.01), min(n, 2)} {
+		if decimal.Payload(r) != 42 {
+			t.Errorf("payload after arithmetic = %g, want 42", decimal.Payload(r))
+		}
+		if b := Decimal64bits(r); b&(1<<57) != 0 { // the signaling bit
+			t.Errorf("arithmetic on a signaling NaN returned a signaling NaN: %#x", b)
+		}
+	}
+
+	// Widening keeps a payload; narrowing keeps it when it fits.
+	if p := decimal.Payload(decimal128(decimal.NaNWithPayload[decimal64](max64))); p != max64 {
+		t.Errorf("Payload(decimal128(NaN with payload 10^15-1)) = %g", p)
+	}
+	if p := decimal.Payload(decimal64(decimal.NaNWithPayload[decimal128](42))); p != 42 {
+		t.Errorf("Payload(decimal64(NaN with payload 42)) = %g, want 42", p)
+	}
+	if p := decimal.Payload(decimal64(decimal.NaNWithPayload[decimal128](max64 + 1))); p != 0 {
+		t.Errorf("Payload(decimal64(NaN with payload 10^15)) = %g, want 0", p)
+	}
+}

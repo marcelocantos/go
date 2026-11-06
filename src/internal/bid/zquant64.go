@@ -111,3 +111,20 @@ func sameQuantum64(x, y coef64) bool {
 	yk, _, _, ye := Unpack64(y)
 	return xk == yk && (xk != KindFinite || xe == ye)
 }
+
+// quantum64 returns the quantum of x: for a finite x the positive value
+// 1 × 10^Q(x), whose exponent is Q(x) and which is therefore always
+// representable; for an infinity of either sign +∞; for a NaN that NaN made
+// quiet. A non-canonical finite encoding reads as a zero with its encoded
+// exponent, so its quantum is that of the zero.
+func quantum64(x coef64) coef64 {
+	kind, _, _, exp := Unpack64(x)
+	switch kind {
+	case KindNaN:
+		return cQuiet64(x)
+	case KindInf:
+		return cInf64(false)
+	}
+	r, _ := round64(false, wide64{Lo: cPow1064(0)}, exp, classZero, ToNearestEven, MinExp64)
+	return r
+}

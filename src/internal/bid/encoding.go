@@ -345,6 +345,53 @@ func Signbit128(x Uint128) bool {
 	return Signbit64(x.Hi)
 }
 
+// Payload64 returns the payload of the NaN x as a decimal64 (IEEE 754-2019
+// clause 9.7, getPayload): the integer in its trailing significand field,
+// with exponent 0 and a positive sign, whatever the sign and signaling bit
+// of x; a non-canonical payload, 10^15 or more, reads as 0. For an x that
+// is not a NaN the result is -1 with exponent 0, which clause 9.7
+// recommends and which no NaN gives (see "NaN results" in the package
+// documentation).
+func Payload64(x uint64) uint64 {
+	return payload64(x)
+}
+
+// Payload128 is Payload64 for decimal128; a payload of 10^33 or more reads
+// as 0.
+func Payload128(x Uint128) Uint128 {
+	return payload128(x)
+}
+
+// NaNWithPayload64 returns the positive quiet NaN whose payload is the value
+// of p (IEEE 754-2019 clause 9.7, setPayload) when that value is an integer
+// in [0, 10^15), at any exponent and either sign of zero: 42, 4.20E+1 and
+// 42.000 all give payload 42. For any other p, including an infinity, a NaN,
+// a fraction, a negative value and 10^15 or more, it returns +0 with
+// exponent 0. Payload64(NaNWithPayload64(p)) is p reduced to exponent 0 for
+// every canonical payload p.
+func NaNWithPayload64(p uint64) uint64 {
+	return nanWithPayload64(p, false)
+}
+
+// NaNWithPayload128 is NaNWithPayload64 for decimal128, whose canonical
+// payloads are the integers in [0, 10^33).
+func NaNWithPayload128(p Uint128) Uint128 {
+	return nanWithPayload128(p, false)
+}
+
+// SignalingNaNWithPayload64 is NaNWithPayload64 with a signaling NaN as its
+// result (IEEE 754-2019 clause 9.7, setPayloadSignaling). It is, with the
+// sign operations, the only function of the package that returns a
+// signaling NaN.
+func SignalingNaNWithPayload64(p uint64) uint64 {
+	return nanWithPayload64(p, true)
+}
+
+// SignalingNaNWithPayload128 is SignalingNaNWithPayload64 for decimal128.
+func SignalingNaNWithPayload128(p Uint128) Uint128 {
+	return nanWithPayload128(p, true)
+}
+
 // Neg64 returns x with its sign bit inverted (IEEE 754-2019 clause 5.5.1,
 // negate). It is a bit operation, as are Abs64 and CopySign64: it does not
 // canonicalize and it does not quiet a NaN (see "Sign operations" in the

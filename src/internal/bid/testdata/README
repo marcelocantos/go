@@ -127,6 +127,13 @@ operation, and the test requires such a cell to have no vectors:
   operand class; its infinite results are in `overflow`.
 - The conversions to integers and to binary have no `clamp` class, since
   their results have no decimal exponent.
+- Quantum and the payload operations of IEEE 754-2019 (`quantum.txt` and
+  `payload.txt`, written from the text of that edition and the contract)
+  are exact and never adjust an exponent, so they have no `inexact`,
+  `tie`, `carry` or `clamp` class. Quantum and Payload cannot overflow.
+  NaNWithPayload and SignalingNaNWithPayload use `overflow`, as Pack
+  does, for the integers they refuse because they are at or above the
+  bound 10^(Precision-1).
 
 ## Vector counts
 
@@ -155,6 +162,8 @@ operation, and the test requires such a cell to have no vectors:
 | Reduce128 | 8 | - | - | - | - | 3 | 5 | 5 | 2 | 6 | 5 | - | 34 |
 | SameQuantum64 | 7 | - | - | - | - | 3 | - | 5 | 5 | 6 | 5 | - | 31 |
 | SameQuantum128 | 3 | - | - | - | - | 2 | - | 3 | 3 | 3 | 4 | - | 18 |
+| Quantum64 | 10 | - | - | - | - | 4 | - | 5 | 4 | 9 | 4 | - | 36 |
+| Quantum128 | 4 | - | - | - | - | 2 | - | 3 | 2 | 4 | 2 | - | 17 |
 | Min64 | 11 | - | - | - | - | 4 | - | 9 | 6 | 9 | 6 | - | 45 |
 | Min128 | 6 | - | - | - | - | 2 | - | 5 | 3 | 5 | 4 | - | 25 |
 | Max64 | 11 | - | - | - | - | 4 | - | 9 | 6 | 9 | 6 | - | 45 |
@@ -221,5 +230,11 @@ operation, and the test requires such a cell to have no vectors:
 | Abs128 | 2 | - | - | - | - | 1 | - | 2 | 2 | 4 | 3 | - | 14 |
 | CopySign64 | 6 | - | - | - | - | 2 | - | 5 | 4 | 7 | 4 | - | 28 |
 | CopySign128 | 3 | - | - | - | - | 1 | - | 3 | 2 | 4 | 3 | - | 16 |
-| Total | 694 | 390 | 417 | 207 | 318 | 435 | 131 | 485 | 316 | 458 | 292 | 85 | 4228 |
+| Payload64 | 4 | - | - | - | - | 1 | - | 3 | 2 | 9 | 2 | - | 21 |
+| Payload128 | 2 | - | - | - | - | 1 | - | 1 | 1 | 7 | 2 | - | 14 |
+| NaNWithPayload64 | 13 | - | - | - | 5 | 3 | - | 5 | 2 | 4 | 3 | - | 35 |
+| NaNWithPayload128 | 8 | - | - | - | 3 | 1 | - | 2 | 1 | 2 | 2 | - | 19 |
+| SignalingNaNWithPayload64 | 5 | - | - | - | 2 | 1 | - | 2 | 2 | 3 | 2 | - | 17 |
+| SignalingNaNWithPayload128 | 3 | - | - | - | 1 | 1 | - | 1 | 1 | 1 | 2 | - | 10 |
+| Total | 743 | 390 | 417 | 207 | 329 | 449 | 131 | 507 | 331 | 497 | 311 | 85 | 4397 |
 <!-- counts:end -->

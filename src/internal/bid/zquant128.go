@@ -111,3 +111,20 @@ func sameQuantum128(x, y coef128) bool {
 	yk, _, _, ye := Unpack128(y)
 	return xk == yk && (xk != KindFinite || xe == ye)
 }
+
+// quantum128 returns the quantum of x: for a finite x the positive value
+// 1 × 10^Q(x), whose exponent is Q(x) and which is therefore always
+// representable; for an infinity of either sign +∞; for a NaN that NaN made
+// quiet. A non-canonical finite encoding reads as a zero with its encoded
+// exponent, so its quantum is that of the zero.
+func quantum128(x coef128) coef128 {
+	kind, _, _, exp := Unpack128(x)
+	switch kind {
+	case KindNaN:
+		return cQuiet128(x)
+	case KindInf:
+		return cInf128(false)
+	}
+	r, _ := round128(false, wide128{Lo: cPow10128(0)}, exp, classZero, ToNearestEven, MinExp128)
+	return r
+}

@@ -168,6 +168,21 @@ func SameQuantum128(x, y Uint128) bool {
 	return sameQuantum128(x, y)
 }
 
+// Quantum64 returns the quantum of x (IEEE 754-2019 clause 5.3.2,
+// quantum): for a finite x the positive value 1 × 10^Q(x), with the
+// exponent of x, so that Quantum64(1.50) is 0.01 and Quantum64(-5E+3) is
+// 1E+3; for an infinity of either sign +Infinity; for a NaN that NaN made
+// quiet ("NaN results" in the package documentation). Quantize64(x,
+// Quantum64(y), mode) is Quantize64(x, y, mode) for every finite y.
+func Quantum64(x uint64) uint64 {
+	return quantum64(x)
+}
+
+// Quantum128 is Quantum64 for decimal128.
+func Quantum128(x Uint128) Uint128 {
+	return quantum128(x)
+}
+
 // Min64 is the minimum operation of IEEE 754-2019 clause 9.6 for
 // decimal64, which is also the Go min built-in: if either operand is a NaN
 // the result is a NaN operand made quiet, chosen as "NaN results" in the

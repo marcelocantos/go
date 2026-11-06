@@ -228,6 +228,10 @@ var ops = []opSpec{
 	}},
 	unaryDec("Reduce", func(im impl, f *format, x bits) outcome { return decOut(f, im.reduce(f, x)) }),
 	predicate("SameQuantum", impl.sameQuantum),
+	unaryDec("Quantum", func(im impl, f *format, x bits) outcome { return decOut(f, im.quantum(f, x)) }),
+	unaryDec("Payload", func(im impl, f *format, x bits) outcome { return decOut(f, im.payload(f, x)) }),
+	{name: "NaNWithPayload", widths: both, draw: func(g *gen) testCase { return g.payloadCase(false) }},
+	{name: "SignalingNaNWithPayload", widths: both, draw: func(g *gen) testCase { return g.payloadCase(true) }},
 	{name: "Min", widths: both, draw: func(g *gen) testCase { return g.minMaxCase(impl.min) }},
 	{name: "Max", widths: both, draw: func(g *gen) testCase { return g.minMaxCase(impl.max) }},
 	predicate("Equal", impl.equal),
@@ -460,6 +464,50 @@ func (g *gen) remCase(fn func(im impl, f *format, x, y bits) bits) testCase {
 	return testCase{
 		args: fmt.Sprintf("%s, %s", display(f, x), display(f, y)),
 		eval: func(im impl) outcome { return decOut(f, fn(im, f, x, y)) },
+	}
+}
+
+// payloadCase draws an operand for NaNWithPayload or, with signaling set,
+// SignalingNaNWithPayload: often an integer at or near the canonical bound
+// 10^(prec-1), written at an exponent other than 0, a fraction, or a
+// negative value, as well as general operands.
+func (g *gen) payloadCase(signaling bool) testCase {
+	f := g.f
+	x := g.dec()
+	if g.r.IntN(4) != 0 {
+		bound := pow10(f.prec - 1)
+		var c *big.Int
+		exp := 0
+		switch g.r.IntN(6) {
+		case 0:
+			// The bound or one either side of it, at exponent 0.
+			c = new(big.Int).Add(bound, big.NewInt(int64(g.r.IntN(3)-1)))
+		case 1:
+			// The bound or one below it scaled by ten, at exponent -1, so
+			// that the value is an integer with a coefficient of prec
+			// digits.
+			c = new(big.Int).Add(bound, big.NewInt(int64(-g.r.IntN(2))))
+			c.Mul(c, bigTen)
+			exp = -1
+		case 2:
+			// A power of ten at an exponent near prec-1: 1E+(prec-2) is the
+			// largest power of ten that is a canonical payload.
+			c = big.NewInt(1)
+			exp = f.prec - 3 + g.r.IntN(3)
+		default:
+			// A random coefficient at a small exponent of either sign:
+			// sometimes an integer, sometimes a fraction.
+			c = g.randDigits(1 + g.r.IntN(f.prec))
+			exp = g.r.IntN(2*f.prec+1) - f.prec
+		}
+		v := value{kind: finite, neg: g.r.IntN(4) == 0, coeff: c, exp: exp}
+		if digits(c) <= f.prec && exp >= f.minExp && exp <= f.maxExp {
+			x = f.encode(v)
+		}
+	}
+	return testCase{
+		args: display(f, x),
+		eval: func(im impl) outcome { return decOut(f, im.nanWithPayload(f, x, signaling)) },
 	}
 }
 

@@ -29,6 +29,9 @@ type impl interface {
 	quantize(f *format, x, y bits, m bid.Mode) bits
 	reduce(f *format, x bits) bits
 	sameQuantum(f *format, x, y bits) bool
+	quantum(f *format, x bits) bits
+	payload(f *format, x bits) bits
+	nanWithPayload(f *format, p bits, signaling bool) bits
 	min(f *format, x, y bits) bits
 	max(f *format, x, y bits) bits
 	equal(f *format, x, y bits) bool
@@ -84,8 +87,13 @@ func (reference) roundToIntegral(f *format, x bits, m bid.Mode) bits {
 func (reference) quantize(f *format, x, y bits, m bid.Mode) bits { return f.quantize(x, y, m) }
 func (reference) reduce(f *format, x bits) bits                  { return f.reduce(x) }
 func (reference) sameQuantum(f *format, x, y bits) bool          { return f.sameQuantum(x, y) }
-func (reference) min(f *format, x, y bits) bits                  { return f.minMax(x, y, false) }
-func (reference) max(f *format, x, y bits) bits                  { return f.minMax(x, y, true) }
+func (reference) quantum(f *format, x bits) bits                 { return f.quantum(x) }
+func (reference) payload(f *format, x bits) bits                 { return f.payload(x) }
+func (reference) nanWithPayload(f *format, p bits, signaling bool) bits {
+	return f.nanWithPayload(p, signaling)
+}
+func (reference) min(f *format, x, y bits) bits { return f.minMax(x, y, false) }
+func (reference) max(f *format, x, y bits) bits { return f.minMax(x, y, true) }
 func (reference) equal(f *format, x, y bits) bool {
 	c, ok := f.compare(x, y)
 	return ok && c == 0
@@ -230,6 +238,29 @@ func (kernel) sameQuantum(f *format, x, y bits) bool {
 		return bid.SameQuantum64(x.Lo, y.Lo)
 	}
 	return bid.SameQuantum128(x, y)
+}
+func (kernel) quantum(f *format, x bits) bits {
+	if w64(f) {
+		return lo(bid.Quantum64(x.Lo))
+	}
+	return bid.Quantum128(x)
+}
+func (kernel) payload(f *format, x bits) bits {
+	if w64(f) {
+		return lo(bid.Payload64(x.Lo))
+	}
+	return bid.Payload128(x)
+}
+func (kernel) nanWithPayload(f *format, p bits, signaling bool) bits {
+	switch {
+	case w64(f) && signaling:
+		return lo(bid.SignalingNaNWithPayload64(p.Lo))
+	case w64(f):
+		return lo(bid.NaNWithPayload64(p.Lo))
+	case signaling:
+		return bid.SignalingNaNWithPayload128(p)
+	}
+	return bid.NaNWithPayload128(p)
 }
 func (kernel) min(f *format, x, y bits) bits {
 	if w64(f) {

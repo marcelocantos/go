@@ -6,8 +6,8 @@
 
 // This file is the template for zquant64.go and zquant128.go: the
 // operations that fix or inspect the exponent of a result rather than
-// compute a new value, namely RoundToIntegral, Quantize, Reduce and
-// SameQuantum. It is written in the vocabulary of "Width parameterisation"
+// compute a new value, namely RoundToIntegral, Quantize, Reduce,
+// SameQuantum and Quantum. It is written in the vocabulary of "Width parameterisation"
 // in the package documentation (see arith_tmpl.go for the rules). Nothing
 // here rounds by itself: the first two hand their exact value to roundW,
 // with its floor parameter set to the fixed exponent of the result, which is
@@ -118,4 +118,21 @@ func sameQuantumW(x, y coefW) bool {
 	xk, _, _, xe := UnpackW(x)
 	yk, _, _, ye := UnpackW(y)
 	return xk == yk && (xk != KindFinite || xe == ye)
+}
+
+// quantumW returns the quantum of x: for a finite x the positive value
+// 1 × 10^Q(x), whose exponent is Q(x) and which is therefore always
+// representable; for an infinity of either sign +∞; for a NaN that NaN made
+// quiet. A non-canonical finite encoding reads as a zero with its encoded
+// exponent, so its quantum is that of the zero.
+func quantumW(x coefW) coefW {
+	kind, _, _, exp := UnpackW(x)
+	switch kind {
+	case KindNaN:
+		return cQuietW(x)
+	case KindInf:
+		return cInfW(false)
+	}
+	r, _ := roundW(false, wideW{Lo: cPow10W(0)}, exp, classZero, ToNearestEven, MinExpW)
+	return r
 }

@@ -1,0 +1,193 @@
+# Copyright 2026 The Go Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# The payload operations of IEEE 754-2019 clause 9.7 ("NaN results" in the
+# package documentation). A payload is the integer in a NaN's trailing
+# significand field, canonical when below 10^(Precision-1): 10^15 for
+# decimal64 and 10^33 for decimal128.
+#
+# Payload is getPayload: the payload of a NaN, quiet or signaling and of
+# either sign, as a positive value with exponent 0 (a non-canonical payload
+# reads as 0), and -1 for every operand that is not a NaN.
+#
+# NaNWithPayload is setPayload and SignalingNaNWithPayload is
+# setPayloadSignaling: the positive quiet or signaling NaN whose payload is
+# the value of the operand, when that value is an integer in [0,
+# 10^(Precision-1)) at any exponent, a zero of either sign being 0; for any
+# other operand +0 with exponent 0, which is the result spelled 0 below.
+# The overflow class holds the integers at or above the bound, which are
+# refused as Pack refuses what does not fit. The results with a payload
+# are written in hex: 0x7c... is a quiet NaN and 0x7e... a signaling one.
+
+# --- Payload64 ---
+
+Payload64 - exact 1.5 -> -1
+Payload64 - exact 42 -> -1
+Payload64 - exact -42 -> -1
+Payload64 - exact 9.999999999999999E+384 -> -1
+
+Payload64 - underflow 1E-398 -> -1
+
+Payload64 - zero 0 -> -1
+Payload64 - zero -0 -> -1
+Payload64 - zero 0E+369 -> -1
+
+Payload64 - inf Infinity -> -1
+Payload64 - inf -Infinity -> -1
+
+Payload64 - nan NaN -> 0
+Payload64 - nan -NaN -> 0
+Payload64 - nan sNaN -> 0
+Payload64 - nan 0x7c0000000000002a -> 42
+Payload64 - nan 0xfe0000000000002a -> 42
+Payload64 - nan 0x7c038d7ea4c67fff -> 999999999999999
+Payload64 - nan 0x7c038d7ea4c68000 -> 0
+Payload64 - nan 0x7c03ffffffffffff -> 0
+# Reserved bits of the combination field are ignored.
+Payload64 - nan 0x7c0400000000002a -> 42
+
+Payload64 - noncanon 0x6c7386f26fc10000 -> -1
+Payload64 - noncanon 0x7800000000000001 -> -1
+
+# --- Payload128 ---
+
+Payload128 - exact 1.5 -> -1
+Payload128 - exact 1E+6111 -> -1
+
+Payload128 - underflow 1E-6176 -> -1
+
+Payload128 - zero -0 -> -1
+
+Payload128 - inf -Infinity -> -1
+
+Payload128 - nan NaN -> 0
+Payload128 - nan 0x7c00000000000000000000000000002a -> 42
+Payload128 - nan 0x7c00314dc6448d9338c15b09ffffffff -> 999999999999999999999999999999999
+Payload128 - nan 0x7c00314dc6448d9338c15b0a00000000 -> 0
+Payload128 - nan 0x7c000000000000056bc75e2d63100000 -> 100000000000000000000
+Payload128 - nan 0xfe000000000000000000000000000007 -> 7
+Payload128 - nan 0x7c003fffffffffffffffffffffffffff -> 0
+
+Payload128 - noncanon 0x3041ed09bead87c0378d8e6400000000 -> -1
+Payload128 - noncanon 0x78000000000000000000000000000001 -> -1
+
+# --- NaNWithPayload64 ---
+
+NaNWithPayload64 - exact 42 -> 0x7c0000000000002a
+NaNWithPayload64 - exact 4.2E+1 -> 0x7c0000000000002a
+NaNWithPayload64 - exact 42.000 -> 0x7c0000000000002a
+NaNWithPayload64 - exact 1 -> 0x7c00000000000001
+NaNWithPayload64 - exact 999999999999999 -> 0x7c038d7ea4c67fff
+NaNWithPayload64 - exact 999999999999999.0 -> 0x7c038d7ea4c67fff
+NaNWithPayload64 - exact 1E+14 -> 0x7c005af3107a4000
+NaNWithPayload64 - exact 4.2 -> 0
+NaNWithPayload64 - exact 0.5 -> 0
+NaNWithPayload64 - exact 42.1 -> 0
+NaNWithPayload64 - exact 1.000000000000001 -> 0
+NaNWithPayload64 - exact -42 -> 0
+NaNWithPayload64 - exact -1 -> 0
+
+NaNWithPayload64 - overflow 1000000000000000 -> 0
+NaNWithPayload64 - overflow 1E+15 -> 0
+NaNWithPayload64 - overflow 9999999999999999 -> 0
+NaNWithPayload64 - overflow 1E+369 -> 0
+NaNWithPayload64 - overflow 9.999999999999999E+384 -> 0
+
+NaNWithPayload64 - underflow 1E-398 -> 0
+NaNWithPayload64 - underflow -1E-398 -> 0
+NaNWithPayload64 - underflow 1.000000000000000E-383 -> 0
+
+NaNWithPayload64 - zero 0 -> NaN
+NaNWithPayload64 - zero -0 -> NaN
+NaNWithPayload64 - zero 0.00 -> NaN
+NaNWithPayload64 - zero 0E+369 -> NaN
+NaNWithPayload64 - zero -0E-398 -> NaN
+
+NaNWithPayload64 - inf Infinity -> 0
+NaNWithPayload64 - inf -Infinity -> 0
+
+NaNWithPayload64 - nan NaN -> 0
+NaNWithPayload64 - nan -NaN -> 0
+NaNWithPayload64 - nan sNaN -> 0
+NaNWithPayload64 - nan 0x7c0000000000002a -> 0
+
+# A non-canonical coefficient reads as zero, which is payload 0; a
+# non-canonical infinity is an infinity.
+NaNWithPayload64 - noncanon 0x6c7386f26fc10000 -> NaN
+NaNWithPayload64 - noncanon 0x77ffffffffffffff -> NaN
+NaNWithPayload64 - noncanon 0x7800000000000001 -> 0
+
+# --- NaNWithPayload128 ---
+
+NaNWithPayload128 - exact 42 -> 0x7c00000000000000000000000000002a
+NaNWithPayload128 - exact 1000000000000000 -> 0x7c0000000000000000038d7ea4c68000
+NaNWithPayload128 - exact 1E+20 -> 0x7c000000000000056bc75e2d63100000
+NaNWithPayload128 - exact 999999999999999999999999999999999 -> 0x7c00314dc6448d9338c15b09ffffffff
+NaNWithPayload128 - exact 999999999999999999999999999999999.0 -> 0x7c00314dc6448d9338c15b09ffffffff
+NaNWithPayload128 - exact 1E+32 -> 0x7c0004ee2d6d415b85acef8100000000
+NaNWithPayload128 - exact 0.5 -> 0
+NaNWithPayload128 - exact -7 -> 0
+
+NaNWithPayload128 - overflow 1000000000000000000000000000000000 -> 0
+NaNWithPayload128 - overflow 1E+33 -> 0
+NaNWithPayload128 - overflow 1E+6111 -> 0
+
+NaNWithPayload128 - underflow 1E-6176 -> 0
+
+NaNWithPayload128 - zero -0E+6111 -> NaN
+NaNWithPayload128 - zero 0E-6176 -> NaN
+
+NaNWithPayload128 - inf Infinity -> 0
+
+NaNWithPayload128 - nan sNaN -> 0
+NaNWithPayload128 - nan 0x7c00000000000000000000000000002a -> 0
+
+NaNWithPayload128 - noncanon 0x3041ed09bead87c0378d8e6400000000 -> NaN
+NaNWithPayload128 - noncanon 0x78000000000000000000000000000001 -> 0
+
+# --- SignalingNaNWithPayload64 ---
+
+SignalingNaNWithPayload64 - exact 42 -> 0x7e0000000000002a
+SignalingNaNWithPayload64 - exact 4.2E+1 -> 0x7e0000000000002a
+SignalingNaNWithPayload64 - exact 999999999999999 -> 0x7e038d7ea4c67fff
+SignalingNaNWithPayload64 - exact 4.2 -> 0
+SignalingNaNWithPayload64 - exact -42 -> 0
+
+SignalingNaNWithPayload64 - overflow 1E+15 -> 0
+SignalingNaNWithPayload64 - overflow 1000000000000000 -> 0
+
+SignalingNaNWithPayload64 - underflow 1E-398 -> 0
+
+# Payload 0 is admissible: the signaling bit is separate from the payload.
+SignalingNaNWithPayload64 - zero 0 -> sNaN
+SignalingNaNWithPayload64 - zero -0E+5 -> sNaN
+
+SignalingNaNWithPayload64 - inf Infinity -> 0
+SignalingNaNWithPayload64 - inf -Infinity -> 0
+
+SignalingNaNWithPayload64 - nan sNaN -> 0
+SignalingNaNWithPayload64 - nan NaN -> 0
+SignalingNaNWithPayload64 - nan 0xfe0000000000002a -> 0
+
+SignalingNaNWithPayload64 - noncanon 0x6c7386f26fc10000 -> sNaN
+SignalingNaNWithPayload64 - noncanon 0x7a00000000000000 -> 0
+
+# --- SignalingNaNWithPayload128 ---
+
+SignalingNaNWithPayload128 - exact 42 -> 0x7e00000000000000000000000000002a
+SignalingNaNWithPayload128 - exact 999999999999999999999999999999999 -> 0x7e00314dc6448d9338c15b09ffffffff
+SignalingNaNWithPayload128 - exact 0.5 -> 0
+
+SignalingNaNWithPayload128 - overflow 1E+33 -> 0
+
+SignalingNaNWithPayload128 - underflow 1E-6176 -> 0
+
+SignalingNaNWithPayload128 - zero -0 -> sNaN
+
+SignalingNaNWithPayload128 - inf -Infinity -> 0
+
+SignalingNaNWithPayload128 - nan NaN -> 0
+
+SignalingNaNWithPayload128 - noncanon 0x6a1c0000000001230000000000000456 -> sNaN
+SignalingNaNWithPayload128 - noncanon 0x78000000000000000000000000000001 -> 0

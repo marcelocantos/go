@@ -213,14 +213,18 @@ pkg math/decimal, func Inf[$0 Decimal](int) $0 #0
 pkg math/decimal, func IsInf[$0 Decimal]($0, int) bool #0
 pkg math/decimal, func IsNaN[$0 Decimal]($0) bool #0
 pkg math/decimal, func Mod[$0 Decimal]($0, $0) $0 #0
+pkg math/decimal, func NaNWithPayload[$0 Decimal]($0) $0 #0
 pkg math/decimal, func NaN[$0 Decimal]() $0 #0
+pkg math/decimal, func Payload[$0 Decimal]($0) $0 #0
 pkg math/decimal, func QuantizeMode[$0 Decimal]($0, $0, RoundingMode) $0 #0
 pkg math/decimal, func Quantize[$0 Decimal]($0, $0) $0 #0
+pkg math/decimal, func Quantum[$0 Decimal]($0) $0 #0
 pkg math/decimal, func Reduce[$0 Decimal]($0) $0 #0
 pkg math/decimal, func Remainder[$0 Decimal]($0, $0) $0 #0
 pkg math/decimal, func RoundToEven[$0 Decimal]($0) $0 #0
 pkg math/decimal, func Round[$0 Decimal]($0) $0 #0
 pkg math/decimal, func SameQuantum[$0 Decimal]($0, $0) bool #0
+pkg math/decimal, func SignalingNaNWithPayload[$0 Decimal]($0) $0 #0
 pkg math/decimal, func Signbit[$0 Decimal]($0) bool #0
 pkg math/decimal, func Trunc[$0 Decimal]($0) $0 #0
 pkg math/decimal, type Decimal interface {} #0

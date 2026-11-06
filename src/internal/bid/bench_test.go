@@ -424,6 +424,7 @@ func benchRowList() benchRows {
 		(func(x, y float64) float64)(nil))
 	reg1(&rs, "Reduce", "mixed", mixed, bid.Reduce64, bid.Reduce128, (func(float64) float64)(nil))
 	reg2(&rs, "SameQuantum", "mixed", mixed, bid.SameQuantum64, bid.SameQuantum128, (func(x, y float64) bool)(nil))
+	reg1(&rs, "Quantum", "mixed", mixed, bid.Quantum64, bid.Quantum128, (func(float64) float64)(nil))
 	reg2(&rs, "Min", "mixed", mixed, bid.Min64, bid.Min128, math.Min)
 	reg2(&rs, "Max", "mixed", mixed, bid.Max64, bid.Max128, math.Max)
 
@@ -481,6 +482,9 @@ func benchRowList() benchRows {
 	reg1(&rs, "IsSubnormal", "mixed", mixed, bid.IsSubnormal64, bid.IsSubnormal128, (func(float64) bool)(nil))
 	reg1(&rs, "IsCanonical", "mixed", mixed, bid.IsCanonical64, bid.IsCanonical128, (func(float64) bool)(nil))
 	reg1(&rs, "Signbit", "mixed", mixed, bid.Signbit64, bid.Signbit128, math.Signbit)
+	reg1(&rs, "Payload", "mixed", mixed, bid.Payload64, bid.Payload128, (func(float64) float64)(nil))
+	reg1(&rs, "NaNWithPayload", "mixed", mixed, bid.NaNWithPayload64, bid.NaNWithPayload128, (func(float64) float64)(nil))
+	reg1(&rs, "SignalingNaNWithPayload", "mixed", mixed, bid.SignalingNaNWithPayload64, bid.SignalingNaNWithPayload128, (func(float64) float64)(nil))
 	reg1(&rs, "Neg", "mixed", mixed, bid.Neg64, bid.Neg128, func(x float64) float64 { return -x })
 	reg1(&rs, "Abs", "mixed", mixed, bid.Abs64, bid.Abs128, math.Abs)
 	reg2(&rs, "CopySign", "mixed", mixed, bid.CopySign64, bid.CopySign128, math.Copysign)

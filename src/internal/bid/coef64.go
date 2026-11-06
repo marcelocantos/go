@@ -238,6 +238,29 @@ func cQuiet64(x coef64) coef64 {
 	return x&SignMask64 | NaN64 | payload
 }
 
+// cPayload64 returns the payload of the NaN x, the integer in its trailing
+// significand field, or zero when that integer is 10^(Precision64-1) or more
+// and so not canonical (see "NaN results" in the package documentation).
+// Precondition: x is a NaN.
+func cPayload64(x coef64) coef64 {
+	payload := x & nanPayloadMask64
+	if payload >= maxNaNPayload64 {
+		payload = 0
+	}
+	return payload
+}
+
+// cNaNPayload64 returns the positive NaN with payload p, signaling when
+// signaling is set and quiet otherwise. Precondition: p is below
+// 10^(Precision64-1).
+func cNaNPayload64(p coef64, signaling bool) coef64 {
+	x := NaN64 | p
+	if signaling {
+		x |= SignalingBit64
+	}
+	return x
+}
+
 // cModFull64 returns p mod m. Precondition: m is not zero; a zero m panics
 // with the math/bits divide error.
 func cModFull64(p wide64, m coef64) coef64 {

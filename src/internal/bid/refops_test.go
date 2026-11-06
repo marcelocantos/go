@@ -254,6 +254,64 @@ func (f *format) sameQuantum(x, y bits) bool {
 	return a.kind != finite || a.exp == b.exp
 }
 
+// quantum is clause 5.3.2's quantum as the contract states it ("Comparisons
+// and ordering"): 1 × 10^Q(x) with a positive sign for finite x, +∞ for an
+// infinity, and a NaN made quiet with its sign and payload.
+func (f *format) quantum(x bits) bits {
+	a := f.decode(x)
+	switch a.kind {
+	case notANumber:
+		return f.encode(a)
+	case infinite:
+		return f.encode(value{kind: infinite})
+	}
+	return f.encode(value{kind: finite, coeff: big.NewInt(1), exp: a.exp})
+}
+
+// payload is clause 9.7's getPayload ("NaN results"): the canonical payload
+// of a NaN as a positive integer with exponent 0, and -1 for anything else.
+func (f *format) payload(x bits) bits {
+	a := f.decode(x)
+	if a.kind != notANumber {
+		return f.encode(value{kind: finite, neg: true, coeff: big.NewInt(1)})
+	}
+	return f.encode(value{kind: finite, coeff: new(big.Int).Set(a.coeff)})
+}
+
+// nanWithPayload is clause 9.7's setPayload, or setPayloadSignaling when
+// signaling is set ("NaN results"): the positive NaN whose payload is the
+// value of p when that value is an integer in [0, 10^(prec-1)), and +0 with
+// exponent 0 otherwise. A zero of either sign is the integer 0.
+func (f *format) nanWithPayload(p bits, signaling bool) bits {
+	refuse := f.encode(value{kind: finite, coeff: new(big.Int)})
+	a := f.decode(p)
+	if a.kind != finite || (a.neg && a.coeff.Sign() != 0) {
+		return refuse
+	}
+	n := new(big.Int).Set(a.coeff)
+	if a.exp >= 0 {
+		n.Mul(n, pow10(a.exp))
+	} else if _, r := new(big.Int).QuoRem(n, pow10(-a.exp), new(big.Int)); r.Sign() != 0 {
+		return refuse
+	} else {
+		n.Quo(n, pow10(-a.exp))
+	}
+	if n.Cmp(pow10(f.prec-1)) >= 0 {
+		return refuse
+	}
+	b := f.encode(value{kind: notANumber, coeff: n})
+	if signaling {
+		// encode produces only quiet NaNs; the signaling bit is the one
+		// below the NaN bit in the top word.
+		if f.width == 64 {
+			b.Lo |= 1 << 57
+		} else {
+			b.Hi |= 1 << 57
+		}
+	}
+	return b
+}
+
 // cmpMag compares |x| and |y| for x and y not NaN.
 func cmpMag(x, y value) int {
 	switch {

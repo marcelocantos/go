@@ -15,7 +15,8 @@ import (
 
 // The decimal helpers of package math are thin wrappers over internal/bid.
 // These tests check two things for Mod, Remainder, FMA, Quantize, the
-// integral roundings and SameQuantum, at both widths:
+// integral roundings, SameQuantum, Quantum and the payload functions, at
+// both widths:
 //
 //   - each helper returns, bit for bit, what the kernel function it should
 //     call returns (TestDecimalHelpersAreKernelCalls), and
@@ -103,24 +104,26 @@ func parseDval(t *testing.T, s string) dval {
 // dwidth describes one decimal format and how to move values in and out of
 // bit patterns. A decimal64 pattern is held in a bid.Uint128's Lo word.
 type dwidth struct {
-	name   string
-	prec   int
-	minExp int
-	maxExp int
-	mod    func(x, y bid.Uint128) bid.Uint128
-	rem    func(x, y bid.Uint128) bid.Uint128
-	fma    func(x, y, z bid.Uint128) bid.Uint128
-	quant  func(x, y bid.Uint128) bid.Uint128
-	same   func(x, y bid.Uint128) bool
-	kmod   func(x, y bid.Uint128) bid.Uint128
-	krem   func(x, y bid.Uint128) bid.Uint128
-	kfma   func(x, y, z bid.Uint128) bid.Uint128
-	kquant func(x, y bid.Uint128) bid.Uint128
-	ksame  func(x, y bid.Uint128) bool
-	rti    map[string]func(x bid.Uint128) bid.Uint128 // by helper name
-	krti   func(x bid.Uint128, m bid.Mode) bid.Uint128
-	pack   func(v dval) (bid.Uint128, bool)
-	unpack func(x bid.Uint128) dval
+	name     string
+	prec     int
+	minExp   int
+	maxExp   int
+	mod      func(x, y bid.Uint128) bid.Uint128
+	rem      func(x, y bid.Uint128) bid.Uint128
+	fma      func(x, y, z bid.Uint128) bid.Uint128
+	quant    func(x, y bid.Uint128) bid.Uint128
+	same     func(x, y bid.Uint128) bool
+	kmod     func(x, y bid.Uint128) bid.Uint128
+	krem     func(x, y bid.Uint128) bid.Uint128
+	kfma     func(x, y, z bid.Uint128) bid.Uint128
+	kquant   func(x, y bid.Uint128) bid.Uint128
+	ksame    func(x, y bid.Uint128) bool
+	unaries  map[string]func(x bid.Uint128) bid.Uint128 // Quantum, Payload, NaNWithPayload, SignalingNaNWithPayload
+	kunaries map[string]func(x bid.Uint128) bid.Uint128 // the kernel functions they call, by helper name
+	rti      map[string]func(x bid.Uint128) bid.Uint128 // by helper name
+	krti     func(x bid.Uint128, m bid.Mode) bid.Uint128
+	pack     func(v dval) (bid.Uint128, bool)
+	unpack   func(x bid.Uint128) dval
 }
 
 func u64(x uint64) bid.Uint128 { return bid.Uint128{Lo: x} }
@@ -167,6 +170,26 @@ func widthTable() []*dwidth {
 		kquant: func(x, y bid.Uint128) bid.Uint128 { return u64(bid.Quantize64(x.Lo, y.Lo, bid.ToNearestEven)) },
 		ksame:  func(x, y bid.Uint128) bool { return bid.SameQuantum64(x.Lo, y.Lo) },
 		krti:   func(x bid.Uint128, m bid.Mode) bid.Uint128 { return u64(bid.RoundToIntegral64(x.Lo, m)) },
+		unaries: map[string]func(bid.Uint128) bid.Uint128{
+			"Quantum": func(x bid.Uint128) bid.Uint128 {
+				return u64(Decimal64bits(decimal.Quantum[decimal64](Decimal64frombits(x.Lo))))
+			},
+			"Payload": func(x bid.Uint128) bid.Uint128 {
+				return u64(Decimal64bits(decimal.Payload[decimal64](Decimal64frombits(x.Lo))))
+			},
+			"NaNWithPayload": func(x bid.Uint128) bid.Uint128 {
+				return u64(Decimal64bits(decimal.NaNWithPayload[decimal64](Decimal64frombits(x.Lo))))
+			},
+			"SignalingNaNWithPayload": func(x bid.Uint128) bid.Uint128 {
+				return u64(Decimal64bits(decimal.SignalingNaNWithPayload[decimal64](Decimal64frombits(x.Lo))))
+			},
+		},
+		kunaries: map[string]func(bid.Uint128) bid.Uint128{
+			"Quantum":                 func(x bid.Uint128) bid.Uint128 { return u64(bid.Quantum64(x.Lo)) },
+			"Payload":                 func(x bid.Uint128) bid.Uint128 { return u64(bid.Payload64(x.Lo)) },
+			"NaNWithPayload":          func(x bid.Uint128) bid.Uint128 { return u64(bid.NaNWithPayload64(x.Lo)) },
+			"SignalingNaNWithPayload": func(x bid.Uint128) bid.Uint128 { return u64(bid.SignalingNaNWithPayload64(x.Lo)) },
+		},
 		rti: map[string]func(bid.Uint128) bid.Uint128{
 			"Trunc": func(x bid.Uint128) bid.Uint128 {
 				return u64(Decimal64bits(decimal.Trunc[decimal64](Decimal64frombits(x.Lo))))
@@ -218,6 +241,18 @@ func widthTable() []*dwidth {
 		kquant: func(x, y bid.Uint128) bid.Uint128 { return bid.Quantize128(x, y, bid.ToNearestEven) },
 		ksame:  bid.SameQuantum128,
 		krti:   bid.RoundToIntegral128,
+		unaries: map[string]func(bid.Uint128) bid.Uint128{
+			"Quantum":                 func(x bid.Uint128) bid.Uint128 { return b(decimal.Quantum[decimal128](d(x))) },
+			"Payload":                 func(x bid.Uint128) bid.Uint128 { return b(decimal.Payload[decimal128](d(x))) },
+			"NaNWithPayload":          func(x bid.Uint128) bid.Uint128 { return b(decimal.NaNWithPayload[decimal128](d(x))) },
+			"SignalingNaNWithPayload": func(x bid.Uint128) bid.Uint128 { return b(decimal.SignalingNaNWithPayload[decimal128](d(x))) },
+		},
+		kunaries: map[string]func(bid.Uint128) bid.Uint128{
+			"Quantum":                 bid.Quantum128,
+			"Payload":                 bid.Payload128,
+			"NaNWithPayload":          bid.NaNWithPayload128,
+			"SignalingNaNWithPayload": bid.SignalingNaNWithPayload128,
+		},
 		rti: map[string]func(bid.Uint128) bid.Uint128{
 			"Trunc":       func(x bid.Uint128) bid.Uint128 { return b(decimal.Trunc[decimal128](d(x))) },
 			"Floor":       func(x bid.Uint128) bid.Uint128 { return b(decimal.Floor[decimal128](d(x))) },
@@ -303,6 +338,12 @@ func TestDecimalHelpersAreKernelCalls(t *testing.T) {
 				}
 				n++
 			}
+			for name, f := range w.unaries {
+				if got, want := f(x), w.kunaries[name](x); got != want {
+					t.Errorf("decimal%s %s(%#x) = %#x, kernel gives %#x", w.name, name, x, got, want)
+				}
+				n++
+			}
 			for _, y := range xs {
 				if got, want := w.mod(x, y), w.kmod(x, y); got != want {
 					t.Errorf("decimal%s Mod(%v, %v) = %v, kernel gives %v", w.name, w.unpack(x), w.unpack(y), w.unpack(got), w.unpack(want))
@@ -369,6 +410,62 @@ func roundQuo(n, d *big.Int, neg bool, mode bid.Mode) *big.Int {
 }
 
 func nanVal() dval { return dval{kind: bid.KindNaN} }
+
+// wantQuantum is quantum of IEEE 754-2019 clause 5.3.2: 1 × 10^e for a
+// finite x with exponent e, a positive infinity for an infinity, and a NaN
+// for a NaN.
+func wantQuantum(x dval) dval {
+	switch x.kind {
+	case bid.KindNaN:
+		return nanVal()
+	case bid.KindInf:
+		return dval{kind: bid.KindInf}
+	}
+	return dval{kind: bid.KindFinite, coeff: big.NewInt(1), exp: x.exp}
+}
+
+// wantPayloadOfNonPayloadNaN is getPayload of clause 9.7 for an operand that
+// is not a NaN (-1) or is a NaN with no payload (0).
+func wantPayloadOfNonPayloadNaN(x dval) dval {
+	if x.kind == bid.KindNaN {
+		return dval{kind: bid.KindFinite, coeff: new(big.Int)}
+	}
+	return dval{kind: bid.KindFinite, neg: true, coeff: big.NewInt(1)}
+}
+
+// wantNaNWithPayload is setPayload of clause 9.7: a NaN, with the payload p
+// at exponent 0, when x is an integer in [0, 10^(prec-1)), a zero of either
+// sign being 0; +0 otherwise.
+func (w *dwidth) wantNaNWithPayload(x dval) (want, p dval) {
+	refuse := dval{kind: bid.KindFinite, coeff: new(big.Int)}
+	if x.kind != bid.KindFinite || (x.neg && x.coeff.Sign() != 0) {
+		return refuse, dval{}
+	}
+	n := new(big.Int).Set(x.coeff)
+	if x.exp >= 0 {
+		n.Mul(n, pow10(x.exp))
+	} else {
+		var r big.Int
+		n.QuoRem(n, pow10(-x.exp), &r)
+		if r.Sign() != 0 {
+			return refuse, dval{}
+		}
+	}
+	if n.Cmp(pow10(w.prec-1)) >= 0 {
+		return refuse, dval{}
+	}
+	return nanVal(), dval{kind: bid.KindFinite, coeff: n}
+}
+
+// isSignaling reports whether the NaN bit pattern x has its signaling bit
+// set: bit 57 of the word that holds the sign (IEEE 754-2019 clause 3.5.2).
+func (w *dwidth) isSignaling(x bid.Uint128) bool {
+	const signalingBit = 1 << 57
+	if w.name == "64" {
+		return x.Lo&signalingBit != 0
+	}
+	return x.Hi&signalingBit != 0
+}
 
 // wantQuantize is the exact quantize of x to the exponent of y in mode.
 func (w *dwidth) wantQuantize(x dval, ey int, mode bid.Mode) dval {
@@ -540,6 +637,23 @@ func TestDecimalHelpersAgreeWithBig(t *testing.T) {
 			for name, f := range w.rti {
 				check(t, w, fmt.Sprintf("%s(%v)", name, a.v), f(a.x), w.wantRoundToIntegral(a.v, rtiModeOf[name]))
 				nrti++
+			}
+			check(t, w, fmt.Sprintf("Quantum(%v)", a.v), w.unaries["Quantum"](a.x), wantQuantum(a.v))
+			// No operand here is a NaN with a payload; TestDecimalPayloads
+			// checks those.
+			check(t, w, fmt.Sprintf("Payload(%v)", a.v), w.unaries["Payload"](a.x), wantPayloadOfNonPayloadNaN(a.v))
+			for _, name := range []string{"NaNWithPayload", "SignalingNaNWithPayload"} {
+				got := w.unaries[name](a.x)
+				want, p := w.wantNaNWithPayload(a.v)
+				check(t, w, fmt.Sprintf("%s(%v)", name, a.v), got, want)
+				if want.kind == bid.KindNaN {
+					if gp := w.unpack(w.unaries["Payload"](got)); !sameDval(gp, p) {
+						t.Errorf("decimal%s Payload(%s(%v)) = %v, want %v", w.name, name, a.v, gp, p)
+					}
+					if sig := w.isSignaling(got); sig != (name == "SignalingNaNWithPayload") {
+						t.Errorf("decimal%s %s(%v) is signaling: %v", w.name, name, a.v, sig)
+					}
+				}
 			}
 			for _, b := range ops {
 				check(t, w, fmt.Sprintf("Mod(%v, %v)", a.v, b.v), w.mod(a.x, b.x), w.wantRem(a.v, b.v, false))

@@ -5,8 +5,9 @@
 // Package decimal provides functions for the decimal floating-point types
 // decimal64 and decimal128, the counterparts of package math's functions for
 // float64, and the operations IEEE 754 defines for decimal arithmetic that
-// the operators don't provide: quantizing, reducing, and rounding with an
-// explicit mode.
+// the operators don't provide: quantizing, reducing, rounding with an
+// explicit mode, the quantum of a value, and reading and writing the payload
+// of a NaN.
 //
 // Each function is generic over [Decimal] and computes in the format of its
 // type argument, so a decimal64 result is rounded once, as a decimal64, not
@@ -125,6 +126,35 @@ func IsInf[D Decimal](x D, sign int) bool {
 	}
 	b := bits128(x)
 	return bid.IsInf128(b) && (sign == 0 || (sign > 0) != bid.Signbit128(b))
+}
+
+// Payload returns the payload of the NaN x (the getPayload operation of
+// IEEE 754-2019 clause 9.7): the non-negative integer it carries, as a value
+// of type D with exponent 0. The sign of x and whether it is signaling do
+// not matter. A NaN's payload survives the arithmetic that propagates the
+// NaN, and widening or narrowing keeps its value when the narrower format
+// can hold it; otherwise it becomes 0.
+//
+// Payload returns -1 if x is not a NaN, which no payload is.
+func Payload[D Decimal](x D) D { return unary(x, bid.Payload64, bid.Payload128) }
+
+// NaNWithPayload returns a quiet NaN of type D whose payload is payload (the
+// setPayload operation of IEEE 754-2019 clause 9.7). The payload must be an
+// integer from 0 to 10^15-1 for decimal64, or to 10^33-1 for decimal128; its
+// exponent does not matter, so 42, 42.0 and 4.2E+1 all give payload 42.
+// Payload(NaNWithPayload(p)) == p for every such p.
+//
+// NaNWithPayload returns +0 if payload is not such an integer: a fraction,
+// a negative number, an integer out of range, an infinity or a NaN.
+func NaNWithPayload[D Decimal](payload D) D {
+	return unary(payload, bid.NaNWithPayload64, bid.NaNWithPayload128)
+}
+
+// SignalingNaNWithPayload is NaNWithPayload, but returns a signaling NaN (the
+// setPayloadSignaling operation of IEEE 754-2019 clause 9.7). Arithmetic on
+// a signaling NaN returns it made quiet, with the same payload.
+func SignalingNaNWithPayload[D Decimal](payload D) D {
+	return unary(payload, bid.SignalingNaNWithPayload64, bid.SignalingNaNWithPayload128)
 }
 
 // Signbit reports whether x is negative or negative zero.
@@ -249,6 +279,18 @@ func SameQuantum[D Decimal](x, y D) bool {
 	}
 	return bid.SameQuantum128(bits128(x), bits128(y))
 }
+
+// Quantum returns the quantum of x, the value of one unit in its last digit
+// (the quantum operation of IEEE 754-2019 clause 5.3.2): 1 × 10^e, where e is
+// the exponent of x, as a positive value of type D with exponent e.
+// Quantum(1.50) is 0.01, Quantum(-5E+3) is 1E+3 and Quantum(0.00) is 0.01.
+// Quantize(x, Quantum(y)) is Quantize(x, y) for every finite y.
+//
+// Special cases are:
+//
+//	Quantum(±Inf) = +Inf
+//	Quantum(NaN) = NaN, with the payload of the NaN operand
+func Quantum[D Decimal](x D) D { return unary(x, bid.Quantum64, bid.Quantum128) }
 
 // Reduce returns x with its trailing zeros removed: the value of x with the
 // largest exponent at which it is representable. Reduce(1.50) is 1.5, and

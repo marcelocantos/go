@@ -138,6 +138,15 @@ func opsFromImpl(im impl) conformanceOps {
 		Abs128:      func(x bid.Uint128) bid.Uint128 { return im.abs(d128, x) },
 		CopySign64:  func(x, s uint64) uint64 { return im.copySign(d64, lo(x), lo(s)).Lo },
 		CopySign128: func(x, s bid.Uint128) bid.Uint128 { return im.copySign(d128, x, s) },
+
+		Quantum64:                  func(x uint64) uint64 { return im.quantum(d64, lo(x)).Lo },
+		Quantum128:                 func(x bid.Uint128) bid.Uint128 { return im.quantum(d128, x) },
+		Payload64:                  func(x uint64) uint64 { return im.payload(d64, lo(x)).Lo },
+		Payload128:                 func(x bid.Uint128) bid.Uint128 { return im.payload(d128, x) },
+		NaNWithPayload64:           func(x uint64) uint64 { return im.nanWithPayload(d64, lo(x), false).Lo },
+		NaNWithPayload128:          func(x bid.Uint128) bid.Uint128 { return im.nanWithPayload(d128, x, false) },
+		SignalingNaNWithPayload64:  func(x uint64) uint64 { return im.nanWithPayload(d64, lo(x), true).Lo },
+		SignalingNaNWithPayload128: func(x bid.Uint128) bid.Uint128 { return im.nanWithPayload(d128, x, true) },
 	}
 }
 

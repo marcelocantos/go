@@ -106,8 +106,9 @@
 //     that are not NaNs (an invalid operation, clause 7.2) is the
 //     canonical positive quiet NaN: [NaN64], or the decimal128 whose high
 //     word is [NaN128Hi] and whose low word is zero. No operation returns
-//     a signaling NaN except the sign operations, which copy bits.
-//     Infinities keep their sign. Divergence: IEEE 754-2019 clause 7.2
+//     a signaling NaN except the sign operations, which copy bits, and
+//     [SignalingNaNWithPayload64] and [SignalingNaNWithPayload128], whose
+//     result is one by definition. Infinities keep their sign. Divergence: IEEE 754-2019 clause 7.2
 //     item a and GDA both signal invalid operation for a signaling NaN
 //     operand; this package makes it quiet and reports nothing (see
 //     "Conditions").
@@ -251,6 +252,10 @@
 //	                           less its fraction digits
 //	Min, Max                   Q of the operand returned       this package, for minimum and maximum of clause 9.6
 //	Round                      the exp argument                this package
+//	Quantum                    Q(x), fixed                     clause 5.3.2
+//	Payload                    0, fixed                        clause 9.7
+//	NaNWithPayload,            0 for the +0 that refuses a     clause 9.7
+//	  SignalingNaNWithPayload  payload
 //
 // Exponent clamping. An exact result whose exponent under the rule above
 // would exceed MaxExp is encoded with exponent MaxExp and a coefficient
@@ -438,6 +443,33 @@
 //   - Created NaNs. The invalid operations of the previous section's table,
 //     whose operands are not NaNs, return the canonical positive quiet
 //     NaN, as does a Quantize whose coefficient would not fit.
+//   - Payload operations. Payload64 and Payload128 are getPayload, and
+//     NaNWithPayload64, SignalingNaNWithPayload64 and their decimal128
+//     forms are setPayload and setPayloadSignaling, of IEEE 754-2019
+//     clause 9.7, which recommends them. The payload they read and write is
+//     the integer value above, so that a payload means the same number in
+//     both widths and Widen and Narrow keep it under the rules already
+//     given. Payload returns the payload of a NaN, quiet or signaling and of
+//     either sign, as the decimal value p × 10^0 with a positive sign; a
+//     non-canonical payload reads as 0. For an operand that is not a NaN it
+//     returns -1 × 10^0, the value clause 9.7 recommends; clause 9.7 lets an
+//     implementation choose another, and this package chooses -1 because no
+//     payload is negative. NaNWithPayload returns the positive quiet NaN,
+//     and SignalingNaNWithPayload the positive signaling NaN, whose payload
+//     is the value of the operand when that value is an integer in [0,
+//     10^(Precision-1)), the canonical payloads; the exponent of the
+//     operand does not matter (5E+1 and 50.0 both give payload 50), and a
+//     zero of either sign gives payload 0. Every other operand (a fraction,
+//     a negative non-zero value, an integer of 10^(Precision-1) or more, an
+//     infinity or a NaN) gives +0 with exponent 0, as clause 9.7 requires.
+//     That -0 is admissible and that 0 is a payload of a signaling NaN are
+//     this package's choices: clause 9.7 leaves the set of admissible
+//     payloads to the implementation, and in the decimal formats the
+//     signaling bit is separate from the payload, so a signaling NaN with
+//     payload 0 is not an infinity as it would be in binary. The results
+//     are canonical, and Payload(NaNWithPayload(p)) is p at exponent 0 for
+//     every admissible p. SignalingNaNWithPayload is, with the sign
+//     operations, the only function that returns a signaling NaN.
 //
 // Not propagated: the conversions between binary and decimal floating
 // point (a NaN of either radix converts to the canonical quiet NaN of the
@@ -473,8 +505,9 @@
 // of IEEE 754-2019 clause 5.5.1. They operate on the sign bit alone and on
 // every encoding alike: they do not canonicalize, they do not quiet a
 // signaling NaN, they do not clear a payload, and they never signal. They
-// are the one exception to "every result is canonical" and "no operation
-// returns a signaling NaN"; a caller that needs a canonical result passes
+// are the one exception to "every result is canonical", and with
+// SignalingNaNWithPayload the exceptions to "no operation returns a
+// signaling NaN"; a caller that needs a canonical result passes
 // the output through an arithmetic operation. Because
 // Append writes every NaN as "NaN", the character form does not show
 // the sign a sign operation gives a NaN; TotalOrder and Signbit do.
@@ -510,6 +543,21 @@
 // SameQuantum64 (clause 5.7.3) is true when both operands are finite with
 // the same exponent, both are infinities, or both are NaNs, and false
 // otherwise. Key64 is the hash key described at [Key].
+//
+// Quantum64 is the quantum operation of clause 5.3.2, which IEEE 754-2019
+// added and recommends for the decimal formats: for a finite x it is
+// 1 × 10^Q(x), the value of one unit in the last place of x, with the
+// exponent of x. Its sign is positive whatever the sign of x, and for an
+// infinity of either sign the result is +∞. For a NaN the result is that
+// NaN made quiet, as "NaN results" says for every operation of the
+// package. The sign of the result and the propagation of a NaN's payload
+// are this package's choices where the summary of the revision states no
+// rule; they agree with Intel's library, whose vectors check the finite
+// and infinite cases. Quantum of a zero is the quantum of its exponent
+// (Quantum64(0.00) = 0.01) and of a non-canonical encoding the quantum of
+// the zero it reads as. The result is always exact and representable,
+// since every exponent in [MinExp, MaxExp] has the coefficient 1, and
+// Quantize64(x, Quantum64(y), m) = Quantize64(x, y, m) for finite y.
 //
 // # Minimum and maximum
 //
@@ -1303,6 +1351,18 @@
 //	SameQuantum64(NaN, sNaN) = true
 //	SameQuantum64(Infinity, NaN) = false
 //	SameQuantum64(1, Infinity) = false
+//	Quantum64(1.50) = 0.01
+//	Quantum64(-5E+3) = 1E+3
+//	Quantum64(123) = 1
+//	Quantum64(0.00) = 0.01
+//	Quantum64(-0E+369) = 1E+369
+//	Quantum64(1E-398) = 1E-398
+//	Quantum64(9.999999999999999E+384) = 1E+369
+//	Quantum64(Infinity) = Infinity
+//	Quantum64(-Infinity) = Infinity
+//	Quantum64(NaN) = NaN
+//	Quantum64(-sNaN7) = -NaN7
+//	Quantum128(1.000000000000000000000000000000000) = 1E-33
 //	Min64(3, 2) = 2
 //	Min64(-10, 3) = -10
 //	Max64(3, 2) = 3
@@ -1331,6 +1391,35 @@
 //	CopySign64(-1.50, 2) = 1.50
 //	CopySign64(Infinity, -NaN) = -Infinity
 //	CopySign64(-sNaN, 1) = sNaN
+//
+// Payload operations (clause 9.7; NaNp is the quiet NaN with payload p,
+// sNaNp the signaling one):
+//
+//	Payload64(NaN42) = 42
+//	Payload64(-sNaN42) = 42
+//	Payload64(NaN) = 0
+//	Payload64(NaN999999999999999) = 999999999999999
+//	Payload64(NaN1000000000000000) = 0
+//	Payload64(1.5) = -1
+//	Payload64(Infinity) = -1
+//	Payload64(0) = -1
+//	Payload128(NaN999999999999999999999999999999999) = 999999999999999999999999999999999
+//	NaNWithPayload64(42) = NaN42
+//	NaNWithPayload64(4.20E+1) = NaN42
+//	NaNWithPayload64(42.000) = NaN42
+//	NaNWithPayload64(0) = NaN
+//	NaNWithPayload64(-0E-5) = NaN
+//	NaNWithPayload64(999999999999999) = NaN999999999999999
+//	NaNWithPayload64(1000000000000000) = 0
+//	NaNWithPayload64(1E+15) = 0
+//	NaNWithPayload64(4.2) = 0
+//	NaNWithPayload64(-1) = 0
+//	NaNWithPayload64(Infinity) = 0
+//	NaNWithPayload64(NaN42) = 0
+//	NaNWithPayload128(1000000000000000) = NaN1000000000000000
+//	SignalingNaNWithPayload64(42) = sNaN42
+//	SignalingNaNWithPayload64(0) = sNaN
+//	SignalingNaNWithPayload64(0.5) = 0
 //
 // Integer conversions:
 //

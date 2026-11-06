@@ -422,12 +422,20 @@ func checkExample(im impl, ex example) error {
 			return err
 		}
 		got = display(f, im.roundToIntegral(f, x, m))
-	case "Reduce", "Neg", "Abs":
+	case "Reduce", "Neg", "Abs", "Quantum", "Payload", "NaNWithPayload", "SignalingNaNWithPayload":
 		if x, err = dec(0); err != nil {
 			return err
 		}
 		var r bits
 		switch base {
+		case "Quantum":
+			r = im.quantum(f, x)
+		case "Payload":
+			r = im.payload(f, x)
+		case "NaNWithPayload":
+			r = im.nanWithPayload(f, x, false)
+		case "SignalingNaNWithPayload":
+			r = im.nanWithPayload(f, x, true)
 		case "Reduce":
 			r = im.reduce(f, x)
 		case "Neg":

@@ -1,0 +1,84 @@
+# Copyright 2026 The Go Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# Quantum (IEEE 754-2019 clause 5.3.2, quantum; "Comparisons and ordering"
+# in the package documentation). For a finite x the result is the positive
+# value 1 × 10^Q(x), with the exponent of x whatever its sign and
+# coefficient; for an infinity of either sign it is +Infinity; for a NaN it
+# is that NaN made quiet, with its sign and canonical payload ("NaN
+# results"). The result is always exact and the exponent is that of x, so
+# there is no inexact, tie, carry, overflow or clamp class. A non-canonical
+# finite encoding reads as a zero with its encoded exponent.
+
+# --- Quantum64 ---
+
+Quantum64 - exact 1.50 -> 0.01
+Quantum64 - exact -1.50 -> 0.01
+Quantum64 - exact 123 -> 1
+Quantum64 - exact 1.23E+5 -> 1E+3
+Quantum64 - exact -5E+3 -> 1E+3
+Quantum64 - exact 1234567890123456 -> 1
+Quantum64 - exact 0.1234567890123456 -> 1E-16
+Quantum64 - exact 9.999999999999999E+384 -> 1E+369
+Quantum64 - exact 1E+369 -> 1E+369
+Quantum64 - exact 0x6c7386f26fc0ffff -> 1
+
+Quantum64 - underflow 1E-398 -> 1E-398
+Quantum64 - underflow -9.99999999999999E-384 -> 1E-398
+Quantum64 - underflow 1.000000000000000E-383 -> 1E-398
+Quantum64 - underflow 1E-383 -> 1E-383
+
+Quantum64 - zero 0 -> 1
+Quantum64 - zero -0 -> 1
+Quantum64 - zero 0.00 -> 0.01
+Quantum64 - zero 0E-398 -> 1E-398
+Quantum64 - zero -0E+369 -> 1E+369
+
+Quantum64 - inf Infinity -> Infinity
+Quantum64 - inf -Infinity -> Infinity
+Quantum64 - inf 0x7800000000000001 -> Infinity
+Quantum64 - inf 0xf9ffffffffffffff -> Infinity
+
+Quantum64 - nan NaN -> NaN
+Quantum64 - nan -NaN -> 0xfc00000000000000
+Quantum64 - nan sNaN -> NaN
+Quantum64 - nan -sNaN -> 0xfc00000000000000
+Quantum64 - nan 0x7c0000000000002a -> 0x7c0000000000002a
+Quantum64 - nan 0xfe0000000000002a -> 0xfc0000000000002a
+Quantum64 - nan 0x7c038d7ea4c67fff -> 0x7c038d7ea4c67fff
+Quantum64 - nan 0x7c038d7ea4c68000 -> NaN
+Quantum64 - nan 0x7d0000000000002a -> 0x7c0000000000002a
+
+# Non-canonical coefficients: each reads as a zero at the encoded exponent.
+Quantum64 - noncanon 0x6c77ffffffffffff -> 1
+Quantum64 - noncanon 0x77ffffffffffffff -> 1E+369
+Quantum64 - noncanon 0x6c7386f26fc10000 -> 1
+Quantum64 - noncanon 0xec9fffffffffffff -> 1E+5
+
+# --- Quantum128 ---
+
+Quantum128 - exact 1.50 -> 0.01
+Quantum128 - exact -1.000000000000000000000000000000000 -> 1E-33
+Quantum128 - exact 9.999999999999999999999999999999999E+6144 -> 1E+6111
+Quantum128 - exact 1.23E+5 -> 1E+3
+
+Quantum128 - underflow 1E-6176 -> 1E-6176
+Quantum128 - underflow -1.000000000000000000000000000000000E-6143 -> 1E-6176
+
+Quantum128 - zero 0 -> 1
+Quantum128 - zero -0E-6176 -> 1E-6176
+Quantum128 - zero 0E+6111 -> 1E+6111
+
+Quantum128 - inf Infinity -> Infinity
+Quantum128 - inf -Infinity -> Infinity
+
+Quantum128 - nan NaN -> NaN
+Quantum128 - nan 0xfe000000000000000000000000000007 -> 0xfc000000000000000000000000000007
+Quantum128 - nan 0x7c00314dc6448d9338c15b09ffffffff -> 0x7c00314dc6448d9338c15b09ffffffff
+Quantum128 - nan 0x7c00314dc6448d9338c15b0a00000000 -> NaN
+
+# A coefficient of 10^34, and a second-form encoding (always non-canonical
+# in decimal128) whose exponent field reads -1000.
+Quantum128 - noncanon 0x3041ed09bead87c0378d8e6400000000 -> 1
+Quantum128 - noncanon 0x6a1c0000000001230000000000000456 -> 1E-1000

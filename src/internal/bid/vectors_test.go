@@ -177,6 +177,10 @@ package bid_test
 //	                                prefixes differ only in flags
 //	sameQuantum, totalOrder,        SameQuantum, TotalOrder (totalOrderMag on
 //	  totalOrderMag                 the absolute values)
+//	quantum                         Quantum
+//	quantexp                        the exponent of Quantum's result, for a
+//	                                finite operand (Intel's INT_MIN for an
+//	                                infinity or a NaN has no counterpart)
 //	isCanonical, isFinite, isInf,   IsCanonical, IsFinite, IsInf, IsNaN,
 //	  isNaN, isNormal, isSignaling, (finite, non-zero, not subnormal),
 //	  isSigned, isSubnormal, isZero IsSignaling, Signbit, IsSubnormal, IsZero
@@ -215,7 +219,7 @@ package bid_test
 // the target differs in the documented way and in no other. Each skip has a reason, counted. Not mapped, each with its own
 // reason: the C99 functions and transcendental functions, sqrt, lrint,
 // lround, scalbn and scalbln, ldexp, fdim, frexp, modf, ilogb, logb, the
-// next functions, minNumMag and maxNumMag, quantum and quantexp, copy,
+// next functions, minNumMag and maxNumMag, llquantexp, copy,
 // the inf and nan constructors, the library's flag and rounding-attribute
 // functions, DPD and strtod; the bid32 and binary80 and binary128 formats;
 // a mixed-width function with a decimal64 result and a decimal128 operand,
@@ -1374,10 +1378,8 @@ var intelSkipOps = map[string]string{
 
 	"minnum_mag": "op: minNumMag, maxNumMag (not in the contract)",
 	"maxnum_mag": "op: minNumMag, maxNumMag (not in the contract)",
-	"quantexp":   "op: quantum, quantexp, radix (inspection of the format, not in the contract)",
-	"llquantexp": "op: quantum, quantexp, radix (inspection of the format, not in the contract)",
-	"quantum":    "op: quantum, quantexp, radix (inspection of the format, not in the contract)",
-	"radix":      "op: quantum, quantexp, radix (inspection of the format, not in the contract)",
+	"llquantexp": "op: llquantexp, radix (inspection of the format, not in the contract)",
+	"radix":      "op: llquantexp, radix (inspection of the format, not in the contract)",
 	"copy":       "op: copy (the identity; the kernel has no function for it)",
 	"inf":        "op: inf and nan constructors (no kernel counterpart)",
 	"nan":        "op: inf and nan constructors (no kernel counterpart)",
@@ -1651,6 +1653,10 @@ func (c *intelCall) eval() vecOutcome {
 		return c.minMax(true)
 	case "sameQuantum":
 		return c.predicate(2, func(a []bits) bool { return im.sameQuantum(f, a[0], a[1]) })
+	case "quantum":
+		return c.arith(1, func(a []bits) bits { return im.quantum(f, a[0]) })
+	case "quantexp":
+		return c.quantexp()
 	case "totalOrder":
 		return c.totalOrder(false)
 	case "totalOrderMag":
@@ -1775,6 +1781,39 @@ func (c *intelCall) predicate(n int, fn func(a []bits) bool) vecOutcome {
 		gotText = "1"
 	}
 	return vecOutcome{pass: gotText == res, got: gotText}.noted(noteNoStatus)
+}
+
+// quantexp runs quantexp, the exponent of a finite operand as an integer,
+// as the exponent of Quantum's result, which is 1 × 10^Q(x) (IEEE 754-2019
+// clause 5.3.2). For an infinity or a NaN Intel returns INT_MIN and raises
+// invalid, where the contract's Quantum returns +Infinity or a NaN and has
+// no integer form, so those vectors are skipped.
+func (c *intelCall) quantexp() vecOutcome {
+	ops, res, _, skip := c.split(1)
+	if skip != "" {
+		return vecSkip(skip)
+	}
+	a, why := c.operands(ops)
+	if why != "" {
+		return vecSkip(why)
+	}
+	want, err := strconv.Atoi(res)
+	if err != nil {
+		return vecSkip("malformed line: quantexp's result is not an integer")
+	}
+	if !c.im.isFinite(c.f, a[0]) {
+		return vecSkip("contract: quantexp of an infinity or NaN (Intel: INT_MIN and invalid; Quantum returns +Infinity or a NaN, not an integer)")
+	}
+	var q bits
+	if o, ok := intelRun(func() { q = c.im.quantum(c.f, a[0]) }); !ok {
+		return o
+	}
+	kind, neg, coeff, exp := c.im.unpack(c.f, q)
+	got := strconv.Itoa(exp)
+	if kind != bid.KindFinite || neg || coeff != (bid.Uint128{Lo: 1}) {
+		got = "Quantum result " + display(c.f, q) + " is not 1E" + got
+	}
+	return vecOutcome{pass: got == strconv.Itoa(want), got: got}.noted(noteNoStatus)
 }
 
 // totalOrder runs totalOrder and totalOrderMag. The contract orders a NaN by
@@ -2988,6 +3027,15 @@ func TestIntelLineParser(t *testing.T) {
 		{"binary32_to_bid128 0 [3fc00000] [3040000000000000,000000000000000f] 00", fail},
 		{"binary32_to_bid64 0 1.5 [31a000000000000f] 00", pass},
 		{"binary64_to_bid128 0 [7ff8000000000000] [7c000000000000000000000000000000] 00", pass},
+		// Quantum, and quantexp through Quantum's exponent.
+		{"bid64_quantum 0 [b1a0000000000096] [31a0000000000001] 00", pass},
+		{"bid64_quantum 0 [b1a0000000000096] [b1a0000000000001] 00", fail},
+		{"bid64_quantum 0 -Infinity [7800000000000000] 00", pass},
+		{"bid128_quantum 0 [30400000000000000000000000000000] [30400000000000000000000000000001] 00", pass},
+		{"bid64_quantexp 0 [31a0000000000096] -1 00", pass},
+		{"bid64_quantexp 0 [31a0000000000096] -2 00", fail},
+		{"bid128_quantexp 0 [30420000000000000000000000000007] 1 00", pass},
+		{"bid64_quantexp 0 [7c00000000000000] -2147483648 01", "contract: quantexp of an infinity or NaN"},
 		// Strings.
 		{"bid64_to_string 0 [31c0000000000037] +55E+0 00", pass},
 		{"bid64_to_string 0 -Infinity -Inf 00", pass},
@@ -3021,7 +3069,7 @@ func TestIntelLineParser(t *testing.T) {
 		{"bid64_lround 0 2.5 3 00 longintsize=64", "op: lround"},
 		{"bid64_scalbn 0 1 2 [31c0000000000064] 00", "op: scalbn"},
 		{"bid64_nextup 0 1 [31c0000000000002] 00", "op: nextUp"},
-		{"bid64_quantexp 0 [0000000000000001] -398 00 -- MinDen", "op: quantum"},
+		{"bid64_llquantexp 0 [31a0000000000001] -2 00", "op: llquantexp"},
 		{"bid64_copy 0 0 [31c0000000000000] 00", "op: copy"},
 		{"bid64_inf 0 0 [7800000000000000] 00", "op: inf and nan"},
 		{"bid_setDecimalRoundingDirection 0 0 0 00", "op: library state"},

@@ -53,6 +53,8 @@ type conformanceOps struct {
 	Reduce128                      func(x bid.Uint128) bid.Uint128
 	SameQuantum64                  func(x, y uint64) bool
 	SameQuantum128                 func(x, y bid.Uint128) bool
+	Quantum64                      func(x uint64) uint64
+	Quantum128                     func(x bid.Uint128) bid.Uint128
 	Min64, Max64                   func(x, y uint64) uint64
 	Min128, Max128                 func(x, y bid.Uint128) bid.Uint128
 
@@ -109,6 +111,9 @@ type conformanceOps struct {
 	Neg128, Abs128 func(x bid.Uint128) bid.Uint128
 	CopySign64     func(x, sign uint64) uint64
 	CopySign128    func(x, sign bid.Uint128) bid.Uint128
+
+	Payload64, NaNWithPayload64, SignalingNaNWithPayload64    func(x uint64) uint64
+	Payload128, NaNWithPayload128, SignalingNaNWithPayload128 func(x bid.Uint128) bid.Uint128
 }
 
 // kernelOps is the package under test.
@@ -121,6 +126,7 @@ var kernelOps = conformanceOps{
 	Quantize64: bid.Quantize64, Quantize128: bid.Quantize128,
 	Reduce64: bid.Reduce64, Reduce128: bid.Reduce128,
 	SameQuantum64: bid.SameQuantum64, SameQuantum128: bid.SameQuantum128,
+	Quantum64: bid.Quantum64, Quantum128: bid.Quantum128,
 	Min64: bid.Min64, Max64: bid.Max64, Min128: bid.Min128, Max128: bid.Max128,
 
 	Round64: bid.Round64, Round128: bid.Round128,
@@ -152,6 +158,8 @@ var kernelOps = conformanceOps{
 	IsZero128: bid.IsZero128, IsSubnormal128: bid.IsSubnormal128, IsCanonical128: bid.IsCanonical128, Signbit128: bid.Signbit128,
 	Neg64: bid.Neg64, Abs64: bid.Abs64, Neg128: bid.Neg128, Abs128: bid.Abs128,
 	CopySign64: bid.CopySign64, CopySign128: bid.CopySign128,
+	Payload64: bid.Payload64, NaNWithPayload64: bid.NaNWithPayload64, SignalingNaNWithPayload64: bid.SignalingNaNWithPayload64,
+	Payload128: bid.Payload128, NaNWithPayload128: bid.NaNWithPayload128, SignalingNaNWithPayload128: bid.SignalingNaNWithPayload128,
 }
 
 // conformanceOpNames lists every operation the suite covers, in the order
@@ -162,7 +170,7 @@ var conformanceOpNames = []string{
 	"Add64", "Add128", "Sub64", "Sub128", "Mul64", "Mul128", "Div64", "Div128", "FMA64", "FMA128",
 	"Rem64", "Rem128", "Mod64", "Mod128",
 	"RoundToIntegral64", "RoundToIntegral128", "Quantize64", "Quantize128", "Reduce64", "Reduce128",
-	"SameQuantum64", "SameQuantum128", "Min64", "Min128", "Max64", "Max128",
+	"SameQuantum64", "SameQuantum128", "Quantum64", "Quantum128", "Min64", "Min128", "Max64", "Max128",
 	"Round64", "Round128",
 	"Equal64", "Equal128", "Less64", "Less128", "LessEqual64", "LessEqual128",
 	"Compare64", "Compare128", "TotalOrder64", "TotalOrder128", "Key64", "Key128",
@@ -176,6 +184,8 @@ var conformanceOpNames = []string{
 	"IsFinite64", "IsFinite128", "IsZero64", "IsZero128", "IsSubnormal64", "IsSubnormal128",
 	"IsCanonical64", "IsCanonical128", "Signbit64", "Signbit128",
 	"Neg64", "Neg128", "Abs64", "Abs128", "CopySign64", "CopySign128",
+	"Payload64", "Payload128", "NaNWithPayload64", "NaNWithPayload128",
+	"SignalingNaNWithPayload64", "SignalingNaNWithPayload128",
 }
 
 // conformanceClasses are the boundary classes of the README, in table
@@ -814,13 +824,19 @@ func (ops *conformanceOps) eval(v *vector) (got, want []string, skipped bool, er
 		x, y := a.dec128(), a.dec128()
 		want = []string{w.wantDec128()}
 		run = func() { g(show128(ops.Quantize128(x, y, m))) }
-	case "Reduce64", "Neg64", "Abs64":
-		fn := map[string]func(x uint64) uint64{"Reduce64": ops.Reduce64, "Neg64": ops.Neg64, "Abs64": ops.Abs64}[v.op]
+	case "Reduce64", "Neg64", "Abs64", "Quantum64", "Payload64", "NaNWithPayload64", "SignalingNaNWithPayload64":
+		fn := map[string]func(x uint64) uint64{
+			"Reduce64": ops.Reduce64, "Neg64": ops.Neg64, "Abs64": ops.Abs64, "Quantum64": ops.Quantum64,
+			"Payload64": ops.Payload64, "NaNWithPayload64": ops.NaNWithPayload64, "SignalingNaNWithPayload64": ops.SignalingNaNWithPayload64,
+		}[v.op]
 		x := a.dec64()
 		want = []string{w.wantDec64()}
 		run = func() { g(show64(fn(x))) }
-	case "Reduce128", "Neg128", "Abs128":
-		fn := map[string]func(x bid.Uint128) bid.Uint128{"Reduce128": ops.Reduce128, "Neg128": ops.Neg128, "Abs128": ops.Abs128}[v.op]
+	case "Reduce128", "Neg128", "Abs128", "Quantum128", "Payload128", "NaNWithPayload128", "SignalingNaNWithPayload128":
+		fn := map[string]func(x bid.Uint128) bid.Uint128{
+			"Reduce128": ops.Reduce128, "Neg128": ops.Neg128, "Abs128": ops.Abs128, "Quantum128": ops.Quantum128,
+			"Payload128": ops.Payload128, "NaNWithPayload128": ops.NaNWithPayload128, "SignalingNaNWithPayload128": ops.SignalingNaNWithPayload128,
+		}[v.op]
 		x := a.dec128()
 		want = []string{w.wantDec128()}
 		run = func() { g(show128(fn(x))) }

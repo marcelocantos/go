@@ -1721,3 +1721,75 @@ BenchmarkKernel/FromNative/128/mixed-16        	159194422	         0.7529 ns/op	
 BenchmarkKernel/FromNative/128/mixed-16        	159330494	         0.7524 ns/op	       0 B/op	       0 allocs/op
 BenchmarkKernel/FromNative/128/mixed-16        	159440577	         0.7571 ns/op	       0 B/op	       0 allocs/op
 BenchmarkKernel/FromNative/128/mixed-16        	159514758	         0.7731 ns/op	       0 B/op	       0 allocs/op
+
+# Appended for the Quantum and payload rows (target T9). NOT a runner measurement:
+# these rows were taken on 2026-11-07 under Docker's linux/amd64 emulation on an
+# Apple M4 Max, with the command above restricted to
+#   -test.bench 'BenchmarkKernel/(Quantum|Payload|NaNWithPayload|SignalingNaNWithPayload)/'
+# (the SameQuantum rows that pattern also matches are not repeated), so that
+# TestBenchBaselineShape has a sample for every row. Retake this file from the
+# bench job before trusting these rows.
+BenchmarkKernel/Quantum/64/mixed-16             	10855496	        10.80 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Quantum/64/mixed-16             	11426426	        10.64 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Quantum/64/mixed-16             	11122852	        10.98 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Quantum/64/mixed-16             	11138986	        10.77 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Quantum/64/mixed-16             	11412388	        12.54 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Quantum/64/mixed-16             	10943023	        11.73 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Quantum/64/mixed-16             	11456881	        12.64 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Quantum/64/mixed-16             	11777248	        10.56 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Quantum/128/mixed-16            	 8590635	        14.12 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Quantum/128/mixed-16            	 9426996	        14.39 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Quantum/128/mixed-16            	 8130936	        18.58 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Quantum/128/mixed-16            	 8858493	        13.95 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Quantum/128/mixed-16            	 8571561	        13.93 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Quantum/128/mixed-16            	 7824940	        16.62 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Quantum/128/mixed-16            	 7830493	        19.81 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Quantum/128/mixed-16            	 8861792	        14.20 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Payload/64/mixed-16             	 9786680	        11.43 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Payload/64/mixed-16             	10643904	        11.43 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Payload/64/mixed-16             	10761954	        11.76 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Payload/64/mixed-16             	 9856066	        13.11 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Payload/64/mixed-16             	 9491857	        12.42 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Payload/64/mixed-16             	10366183	        12.20 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Payload/64/mixed-16             	10749741	        12.21 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Payload/64/mixed-16             	 8438367	        13.51 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Payload/128/mixed-16            	 8126932	        14.75 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Payload/128/mixed-16            	 7071421	        15.33 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Payload/128/mixed-16            	 7812056	        15.71 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Payload/128/mixed-16            	 7716280	        14.34 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Payload/128/mixed-16            	 7915200	        14.50 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Payload/128/mixed-16            	 8851225	        14.77 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Payload/128/mixed-16            	 9056215	        13.99 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Payload/128/mixed-16            	 9390266	        13.83 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/NaNWithPayload/64/mixed-16      	10786581	        11.46 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/NaNWithPayload/64/mixed-16      	 9376386	        12.52 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/NaNWithPayload/64/mixed-16      	10450904	        11.35 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/NaNWithPayload/64/mixed-16      	10585922	        13.09 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/NaNWithPayload/64/mixed-16      	10310073	        12.10 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/NaNWithPayload/64/mixed-16      	10862784	        11.65 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/NaNWithPayload/64/mixed-16      	10087724	        11.63 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/NaNWithPayload/64/mixed-16      	10758697	        12.02 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/NaNWithPayload/128/mixed-16     	 5442754	        21.95 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/NaNWithPayload/128/mixed-16     	 5290365	        22.20 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/NaNWithPayload/128/mixed-16     	 5063202	        21.70 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/NaNWithPayload/128/mixed-16     	 5563532	        21.74 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/NaNWithPayload/128/mixed-16     	 5431362	        21.62 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/NaNWithPayload/128/mixed-16     	 5463363	        22.59 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/NaNWithPayload/128/mixed-16     	 5289538	        23.05 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/NaNWithPayload/128/mixed-16     	 5083014	        21.98 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/SignalingNaNWithPayload/64/mixed-16         	10019325	        11.62 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/SignalingNaNWithPayload/64/mixed-16         	10421926	        11.42 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/SignalingNaNWithPayload/64/mixed-16         	10797096	        12.39 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/SignalingNaNWithPayload/64/mixed-16         	10418761	        13.08 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/SignalingNaNWithPayload/64/mixed-16         	10453551	        11.40 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/SignalingNaNWithPayload/64/mixed-16         	10711202	        11.52 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/SignalingNaNWithPayload/64/mixed-16         	10480065	        11.86 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/SignalingNaNWithPayload/64/mixed-16         	10380643	        11.57 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/SignalingNaNWithPayload/128/mixed-16        	 5414013	        21.87 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/SignalingNaNWithPayload/128/mixed-16        	 5534600	        21.70 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/SignalingNaNWithPayload/128/mixed-16        	 5754894	        21.84 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/SignalingNaNWithPayload/128/mixed-16        	 5607315	        22.71 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/SignalingNaNWithPayload/128/mixed-16        	 5552109	        23.37 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/SignalingNaNWithPayload/128/mixed-16        	 5815578	        21.15 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/SignalingNaNWithPayload/128/mixed-16        	 5393493	        21.44 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/SignalingNaNWithPayload/128/mixed-16        	 4627402	        23.68 ns/op	       0 B/op	       0 allocs/op
