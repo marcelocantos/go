@@ -23,6 +23,13 @@
 // cmd/compile for operators and constants, the runtime for hashing and
 // printing, and math's bits functions for everyone else.
 //
+// On linux/ppc64le, whose decimal floating-point unit works on the densely
+// packed decimal (DPD) encoding, the memory form is the DPD encoding XORed
+// with [DPDZero64] or [DPDZero128Hi] instead, and the compiler lowers the
+// operators to the hardware's instructions. [DPDFromBID64], [BIDFromDPD64]
+// and their decimal128 forms convert at the boundary there: the kernel,
+// the bits functions and every wire format stay BID on every target.
+//
 // Every exported function that works at one width is width-suffixed:
 // Add64 operates on decimal64 bit patterns and Add128 on decimal128 bit
 // patterns. [Widen] and [Narrow], which go between the widths, are the

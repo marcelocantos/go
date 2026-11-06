@@ -29,6 +29,8 @@ const (
 
 // Tables.
 var (
+	Bin2DPD     = bin2dpd
+	DPD2Bin     = dpd2bin
 	Pow10tab128 = pow10tab128
 	Pow10tab256 = pow10tab256
 	Pow10tab64  = pow10tab64

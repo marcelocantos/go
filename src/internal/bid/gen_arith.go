@@ -5,8 +5,9 @@
 //go:build ignore
 
 // Gen_arith writes the generated files of package bid: zNAME64.go and
-// zNAME128.go from each template NAME_tmpl.go, and zpow10.go, the powers of
-// ten that the coefficient vocabulary indexes. It is run by the
+// zNAME128.go from each template NAME_tmpl.go, zpow10.go, the powers of
+// ten that the coefficient vocabulary indexes, and zdpd.go, the declet
+// tables of the DPD conversions. It is run by the
 // go:generate directive in arith.go from the package directory, and by
 // TestGenerated with -out set to a scratch directory to check that the
 // committed files are current.
@@ -81,6 +82,7 @@ func main() {
 		}
 	}
 	write(*out, "zpow10.go", pow10Source())
+	write(*out, "zdpd.go", dpdSource())
 }
 
 // write formats src and writes it to dir/name.
@@ -143,4 +145,101 @@ package bid
 		return fmt.Sprintf("{Hi: Uint128{Hi: %#016x, Lo: %#016x}, Lo: Uint128{Hi: %#016x, Lo: %#016x}}", w[3], w[2], w[1], w[0])
 	})
 	return sb.String()
+}
+
+// dpdSource returns the source of zdpd.go: the tables between three-digit
+// integers and the 10-bit declets of the densely packed decimal encoding.
+// The declets come from the encoding table of IEEE 754-2008 clause 3.5.2
+// (Table 3.4), written below as bit operations on the BCD digits; decoding
+// follows the decoding table (Table 3.3), which maps the 24 redundant
+// declets to the same digits as their canonical twins.
+func dpdSource() string {
+	var sb strings.Builder
+	sb.WriteString(`// Copyright 2026 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+`)
+	fmt.Fprintf(&sb, generatedFmt, "the declet tables in gen_arith.go")
+	sb.WriteString(`
+package bid
+
+// bin2dpd[n] is the canonical declet of the three digits of n, for n in
+// [0, 999], and dpd2bin[d] is the integer the declet d encodes, for every d
+// in [0, 1023]. They are initialised statically, like the powers of ten.
+`)
+	row := func(i int) string { // eight entries to a line
+		if i%8 == 0 {
+			return "\n\t"
+		}
+		return " "
+	}
+	sb.WriteString("var bin2dpd = [1000]uint16{")
+	for n := 0; n < 1000; n++ {
+		fmt.Fprintf(&sb, "%s%#03x,", row(n), encodeDeclet(n))
+	}
+	sb.WriteString("\n}\n\nvar dpd2bin = [1024]uint16{")
+	for d := 0; d < 1024; d++ {
+		fmt.Fprintf(&sb, "%s%d,", row(d), decodeDeclet(d))
+	}
+	sb.WriteString("\n}\n")
+	return sb.String()
+}
+
+// encodeDeclet returns the declet pqrstuvwxy of the BCD digits abcd efgh
+// ijkm of n (Table 3.4, indexed by the indicator bits a, e and i).
+func encodeDeclet(n int) int {
+	d1, d2, d3 := n/100, n/10%10, n%10
+	bit := func(d, k int) int { return d >> k & 1 }
+	a, b, c, d := bit(d1, 3), bit(d1, 2), bit(d1, 1), bit(d1, 0)
+	e, f, g, h := bit(d2, 3), bit(d2, 2), bit(d2, 1), bit(d2, 0)
+	i, j, k, m := bit(d3, 3), bit(d3, 2), bit(d3, 1), bit(d3, 0)
+	var p, q, r, s, t, u, v, w, x, y int
+	switch a<<2 | e<<1 | i {
+	case 0b000:
+		p, q, r, s, t, u, v, w, x, y = b, c, d, f, g, h, 0, j, k, m
+	case 0b001:
+		p, q, r, s, t, u, v, w, x, y = b, c, d, f, g, h, 1, 0, 0, m
+	case 0b010:
+		p, q, r, s, t, u, v, w, x, y = b, c, d, j, k, h, 1, 0, 1, m
+	case 0b011:
+		p, q, r, s, t, u, v, w, x, y = b, c, d, 1, 0, h, 1, 1, 1, m
+	case 0b100:
+		p, q, r, s, t, u, v, w, x, y = j, k, d, f, g, h, 1, 1, 0, m
+	case 0b101:
+		p, q, r, s, t, u, v, w, x, y = f, g, d, 0, 1, h, 1, 1, 1, m
+	case 0b110:
+		p, q, r, s, t, u, v, w, x, y = j, k, d, 0, 0, h, 1, 1, 1, m
+	case 0b111:
+		p, q, r, s, t, u, v, w, x, y = 0, 0, d, 1, 1, h, 1, 1, 1, m
+	}
+	return p<<9 | q<<8 | r<<7 | s<<6 | t<<5 | u<<4 | v<<3 | w<<2 | x<<1 | y
+}
+
+// decodeDeclet returns the integer the declet pqrstuvwxy encodes (Table
+// 3.3, indexed by v, then w and x, then s and t).
+func decodeDeclet(dpd int) int {
+	bit := func(k int) int { return dpd >> k & 1 }
+	p, q, r, s, t, u, v, w, x, y := bit(9), bit(8), bit(7), bit(6), bit(5), bit(4), bit(3), bit(2), bit(1), bit(0)
+	three := func(h, m, l int) int { return h<<2 | m<<1 | l }
+	var d1, d2, d3 int
+	switch {
+	case v == 0:
+		d1, d2, d3 = three(p, q, r), three(s, t, u), three(w, x, y)
+	case w == 0 && x == 0:
+		d1, d2, d3 = three(p, q, r), three(s, t, u), 8+y
+	case w == 0 && x == 1:
+		d1, d2, d3 = three(p, q, r), 8+u, three(s, t, y)
+	case w == 1 && x == 0:
+		d1, d2, d3 = 8+r, three(s, t, u), three(p, q, y)
+	case s == 0 && t == 0:
+		d1, d2, d3 = 8+r, 8+u, three(p, q, y)
+	case s == 0 && t == 1:
+		d1, d2, d3 = 8+r, three(p, q, u), 8+y
+	case s == 1 && t == 0:
+		d1, d2, d3 = three(p, q, r), 8+u, 8+y
+	default:
+		d1, d2, d3 = 8+r, 8+u, 8+y
+	}
+	return d1*100 + d2*10 + d3
 }
