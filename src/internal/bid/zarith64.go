@@ -64,6 +64,21 @@ func finiteCmp64(xneg bool, xc coef64, xe int, yneg bool, yc coef64, ye int) int
 	return magCmp64(xc, xe, yc, ye)
 }
 
+// nan64 returns the NaN result of an operation whose operands x, y and z,
+// in that order, include a NaN: the first signaling NaN among them if there
+// is one, and otherwise the first NaN, made quiet with its sign and payload
+// kept. An operation of one or two operands repeats its last operand. See
+// "NaN results" in the package documentation.
+func nan64(x, y, z coef64) coef64 {
+	switch {
+	case IsSignaling64(x), !IsSignaling64(y) && !IsSignaling64(z) && IsNaN64(x):
+		return cQuiet64(x)
+	case IsSignaling64(y), !IsSignaling64(z) && IsNaN64(y):
+		return cQuiet64(y)
+	}
+	return cQuiet64(z)
+}
+
 // quietCmp64 returns the ordering of x and y as -1, 0 or +1 with ok = true,
 // or 0 and ok = false when either is a NaN.
 func quietCmp64(x, y coef64) (c int, ok bool) {

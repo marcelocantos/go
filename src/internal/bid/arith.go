@@ -29,15 +29,21 @@ func Add128(x, y Uint128, mode Mode) Uint128 {
 
 // Sub64 returns x - y rounded in mode (IEEE 754-2008 clause 5.4.1,
 // subtraction). It is Add64(x, Neg64(y), mode) except that a NaN y is not
-// negated; the distinction is invisible because NaN signs are not
-// propagated.
+// negated: the result for it is y made quiet, with the sign of y (see
+// "NaN results" in the package documentation).
 func Sub64(x, y uint64, mode Mode) uint64 {
-	return add64(x, Neg64(y), mode)
+	if y&(SpecialMask64|NaNBit64) != SpecialMask64|NaNBit64 {
+		y ^= SignMask64
+	}
+	return add64(x, y, mode)
 }
 
 // Sub128 is Sub64 for decimal128.
 func Sub128(x, y Uint128, mode Mode) Uint128 {
-	return add128(x, Neg128(y), mode)
+	if y.Hi&(SpecialMask128Hi|NaNBit128Hi) != SpecialMask128Hi|NaNBit128Hi {
+		y.Hi ^= SignMask128Hi
+	}
+	return add128(x, y, mode)
 }
 
 // Mul64 returns x × y rounded in mode (IEEE 754-2008 clause 5.4.1,
@@ -138,8 +144,9 @@ func Quantize128(x, y Uint128, mode Mode) Uint128 {
 // raised to match, as far as MaxExp64 allows (the reduce operation of the
 // General Decimal Arithmetic specification, which IEEE 754-2008 does not
 // define). The value is unchanged, so Reduce64 takes no mode. A zero
-// reduces to a zero of its sign with exponent 0; infinities and NaN are
-// canonicalized.
+// reduces to a zero of its sign with exponent 0; an infinity is
+// canonicalized and a NaN made quiet ("NaN results" in the package
+// documentation).
 func Reduce64(x uint64) uint64 {
 	return reduce64(x)
 }
@@ -162,10 +169,11 @@ func SameQuantum128(x, y Uint128) bool {
 }
 
 // Min64 implements the Go min built-in for decimal64: if either operand is
-// a NaN the result is NaN; otherwise it is the lesser operand, with -0
-// less than +0, and x when the operands are equal. This is the language's
-// semantics for floating-point min, not IEEE 754-2008 minNum; see
-// "Minimum and maximum" in the package documentation.
+// a NaN the result is a NaN operand made quiet, chosen as "NaN results" in
+// the package documentation says; otherwise it is the lesser operand, with
+// -0 less than +0, and x when the operands are equal. This is the
+// language's semantics for floating-point min, not IEEE 754-2008 minNum;
+// see "Minimum and maximum" in the package documentation.
 func Min64(x, y uint64) uint64 {
 	return min64(x, y)
 }
@@ -176,9 +184,9 @@ func Min128(x, y Uint128) Uint128 {
 }
 
 // Max64 implements the Go max built-in for decimal64: if either operand is
-// a NaN the result is NaN; otherwise it is the greater operand, with +0
-// greater than -0, and x when the operands are equal. See "Minimum and
-// maximum" in the package documentation.
+// a NaN the result is a NaN operand made quiet, as for Min64; otherwise it
+// is the greater operand, with +0 greater than -0, and x when the operands
+// are equal. See "Minimum and maximum" in the package documentation.
 func Max64(x, y uint64) uint64 {
 	return max64(x, y)
 }

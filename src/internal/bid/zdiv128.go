@@ -52,7 +52,7 @@ func div128(x, y coef128, mode Mode) coef128 {
 	neg := xneg != yneg
 	switch {
 	case xk == KindNaN || yk == KindNaN:
-		return cNaN128()
+		return nan128(x, y, y)
 	case xk == KindInf:
 		if yk == KindInf {
 			// ∞ / ∞ is invalid (IEEE 754-2008 clause 7.2 item e).

@@ -170,10 +170,13 @@ Mul64 zero inf -Infinity 1E-398 -> -Infinity
 Mul64 even nan NaN 0 -> NaN
 Mul64 even nan 0 NaN -> NaN
 Mul64 even nan sNaN 1 -> NaN
-Mul64 even nan 1 -NaN -> NaN
+Mul64 even nan 1 -NaN -> -NaN
 Mul64 even nan NaN Infinity -> NaN
-Mul64 even nan 0x7c00000000000001 2 -> NaN
-Mul64 even nan 2 0xfe0000000001e240 -> NaN
+Mul64 even nan 0x7c00000000000001 2 -> 0x7c00000000000001
+Mul64 even nan 2 0xfe0000000001e240 -> 0xfc0000000001e240
+Mul64 even nan 0x7c00000000000001 0xfe00000000000002 -> 0xfc00000000000002
+Mul64 even nan 0 0xfc00000000000003 -> 0xfc00000000000003
+Mul64 even nan Infinity 0x7c00000000000004 -> 0x7c00000000000004
 
 # noncanon
 Mul64 even noncanon 0x6c77ffffffffffff 5 -> 0
@@ -280,8 +283,9 @@ Mul128 even inf Infinity 1E-6176 -> Infinity
 
 Mul128 even nan NaN 0 -> NaN
 Mul128 even nan sNaN 1 -> NaN
-Mul128 even nan 1 -NaN -> NaN
-Mul128 even nan 0x7c000000000000010000000000000000 2 -> NaN
+Mul128 even nan 1 -NaN -> -NaN
+Mul128 even nan 0x7c000000000000010000000000000000 2 -> 0x7c000000000000010000000000000000
+Mul128 even nan 0xfe00000000000000000000000000000a Infinity -> 0xfc00000000000000000000000000000a
 
 Mul128 even noncanon 0x3041ed09bead87c0378d8e6400000000 5 -> 0
 Mul128 even noncanon 0x6c100000000000000000000000000000 Infinity -> NaN

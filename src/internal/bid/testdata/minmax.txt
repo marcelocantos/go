@@ -44,11 +44,13 @@ Min64 - inf -Infinity -9.999999999999999E+384 -> -Infinity
 
 Min64 - nan NaN 1 -> NaN
 Min64 - nan 1 NaN -> NaN
-Min64 - nan -NaN 1 -> NaN
+Min64 - nan -NaN 1 -> -NaN
 Min64 - nan sNaN 1 -> NaN
 Min64 - nan NaN NaN -> NaN
 Min64 - nan -Infinity NaN -> NaN
-Min64 - nan 0x7c00000000000001 1 -> NaN
+Min64 - nan 0x7c00000000000001 1 -> 0x7c00000000000001
+Min64 - nan 0x7c00000000000001 0x7e00000000000002 -> 0x7c00000000000002
+Min64 - nan 0xfc00000000000003 0x7c00000000000004 -> 0xfc00000000000003
 
 Min64 - noncanon 0x6c77ffffffffffff 1 -> 0
 Min64 - noncanon 1 0x6c77ffffffffffff -> 0
@@ -82,7 +84,8 @@ Min128 - inf Infinity -Infinity -> -Infinity
 Min128 - nan NaN 1 -> NaN
 Min128 - nan 1 NaN -> NaN
 Min128 - nan sNaN 1 -> NaN
-Min128 - nan 0x7c000000000000010000000000000000 1 -> NaN
+Min128 - nan 0x7c000000000000010000000000000000 1 -> 0x7c000000000000010000000000000000
+Min128 - nan 1 0xfe000000000000000000000000000005 -> 0xfc000000000000000000000000000005
 
 Min128 - noncanon 0x3041ed09bead87c0378d8e6400000000 1 -> 0
 Min128 - noncanon 1 0x3041ed09bead87c0378d8e6400000000 -> 0
@@ -128,10 +131,12 @@ Max64 - inf Infinity 9.999999999999999E+384 -> Infinity
 Max64 - nan 1 NaN -> NaN
 Max64 - nan NaN 1 -> NaN
 Max64 - nan 1 sNaN -> NaN
-Max64 - nan -NaN 1 -> NaN
+Max64 - nan -NaN 1 -> -NaN
 Max64 - nan NaN NaN -> NaN
 Max64 - nan Infinity NaN -> NaN
-Max64 - nan 1 0xfe0000000001e240 -> NaN
+Max64 - nan 1 0xfe0000000001e240 -> 0xfc0000000001e240
+Max64 - nan 0x7e00000000000001 0x7e00000000000002 -> 0x7c00000000000001
+Max64 - nan Infinity 0xfc00000000000006 -> 0xfc00000000000006
 
 Max64 - noncanon 0x6c77ffffffffffff -1 -> 0
 Max64 - noncanon -1 0x6c77ffffffffffff -> 0
@@ -165,7 +170,8 @@ Max128 - inf -Infinity Infinity -> Infinity
 Max128 - nan 1 NaN -> NaN
 Max128 - nan NaN 1 -> NaN
 Max128 - nan 1 sNaN -> NaN
-Max128 - nan 1 0xfe000000000000000000000000000005 -> NaN
+Max128 - nan 1 0xfe000000000000000000000000000005 -> 0xfc000000000000000000000000000005
+Max128 - nan 0x7c000000000000000000000000000001 0x7e000000000000000000000000000002 -> 0x7c000000000000000000000000000002
 
 Max128 - noncanon 0x3041ed09bead87c0378d8e6400000000 -1 -> 0
 Max128 - noncanon 1 0x3041ed09bead87c0378d8e6400000000 -> 1

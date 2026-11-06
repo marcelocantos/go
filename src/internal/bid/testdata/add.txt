@@ -144,16 +144,25 @@ Add64 down inf 1 Infinity -> Infinity
 Add64 even inf Infinity 0 -> Infinity
 Add64 even inf -0 -Infinity -> -Infinity
 
-# nan: every NaN operand gives the canonical quiet NaN
+# nan: a NaN operand gives that NaN made quiet, with its sign and its
+# payload; of several NaN operands, the first signaling one, else the first.
+# A payload of 10^(Precision-1) or more, and the reserved bits, become zero.
 Add64 even nan 1 NaN -> NaN
 Add64 even nan NaN Infinity -> NaN
 Add64 even nan sNaN 1 -> NaN
-Add64 even nan -NaN 1 -> NaN
-Add64 even nan 1 -sNaN -> NaN
+Add64 even nan -NaN 1 -> -NaN
+Add64 even nan 1 -sNaN -> -NaN
 Add64 even nan NaN NaN -> NaN
-Add64 even nan 0x7c00000000000001 1 -> NaN
-Add64 even nan 1 0xfe0000000001e240 -> NaN
+Add64 even nan 0x7c00000000000001 1 -> 0x7c00000000000001
+Add64 even nan 1 0xfe0000000001e240 -> 0xfc0000000001e240
 Add64 even nan 0x7c038d7ea4c68000 1 -> NaN
+Add64 even nan 0x7c00000000000001 0xfe00000000000002 -> 0xfc00000000000002
+Add64 even nan 0xfe00000000000003 0x7e00000000000004 -> 0xfc00000000000003
+Add64 even nan 0xfc00000000000005 0x7c00000000000006 -> 0xfc00000000000005
+Add64 even nan Infinity 0x7c00000000000007 -> 0x7c00000000000007
+Add64 even nan 0x7c038d7ea4c67fff 1 -> 0x7c038d7ea4c67fff
+Add64 even nan 0x7d00000000000009 1 -> 0x7c00000000000009
+Add64 even nan 0x7e038d7ea4c68000 1 -> NaN
 
 # noncanon: a coefficient field above 10^16-1 reads as zero
 Add64 even noncanon 0x6c77ffffffffffff 1 -> 1
@@ -248,9 +257,13 @@ Add128 even inf 1 -Infinity -> -Infinity
 Add128 even nan 1 NaN -> NaN
 Add128 even nan NaN Infinity -> NaN
 Add128 even nan sNaN 1 -> NaN
-Add128 even nan -NaN 1 -> NaN
-Add128 even nan 0x7c000000000000010000000000000000 1 -> NaN
-Add128 even nan 1 0xfe000000000000000000000000000005 -> NaN
+Add128 even nan -NaN 1 -> -NaN
+Add128 even nan 0x7c000000000000010000000000000000 1 -> 0x7c000000000000010000000000000000
+Add128 even nan 1 0xfe000000000000000000000000000005 -> 0xfc000000000000000000000000000005
+Add128 even nan 0x7c000000000000000000000000000001 0xfe000000000000000000000000000002 -> 0xfc000000000000000000000000000002
+Add128 even nan 0x7c00314dc6448d9338c15b09ffffffff 1 -> 0x7c00314dc6448d9338c15b09ffffffff
+Add128 even nan 0x7c00314dc6448d9338c15b0a00000000 1 -> NaN
+Add128 even nan 0x7d00400000000000000000000000000b 1 -> 0x7c00000000000000000000000000000b
 
 Add128 even noncanon 0x3041ed09bead87c0378d8e6400000000 1 -> 1
 Add128 even noncanon 1 0x3041ffffffffffffffffffffffffffff -> 1
@@ -365,10 +378,13 @@ Sub64 even inf -0 Infinity -> -Infinity
 Sub64 even nan 1 NaN -> NaN
 Sub64 even nan NaN 1 -> NaN
 Sub64 even nan sNaN Infinity -> NaN
-Sub64 even nan 1 -sNaN -> NaN
-Sub64 even nan -NaN -NaN -> NaN
-Sub64 even nan 0x7c00000000000001 1 -> NaN
-Sub64 even nan 1 0xfe0000000001e240 -> NaN
+Sub64 even nan 1 -sNaN -> -NaN
+Sub64 even nan -NaN -NaN -> -NaN
+Sub64 even nan 0x7c00000000000001 1 -> 0x7c00000000000001
+Sub64 even nan 1 0xfe0000000001e240 -> 0xfc0000000001e240
+Sub64 even nan 1 0x7c00000000000005 -> 0x7c00000000000005
+Sub64 even nan 0x7c00000000000001 0xfe00000000000002 -> 0xfc00000000000002
+Sub64 even nan Infinity 0xfc00000000000003 -> 0xfc00000000000003
 
 Sub64 even noncanon 1 0x6c77ffffffffffff -> 1
 Sub64 even noncanon 0x6c77ffffffffffff 1 -> -1
@@ -449,8 +465,10 @@ Sub128 even inf Infinity 9.999999999999999999999999999999999E+6144 -> Infinity
 Sub128 even nan 1 NaN -> NaN
 Sub128 even nan NaN 1 -> NaN
 Sub128 even nan sNaN Infinity -> NaN
-Sub128 even nan 1 -sNaN -> NaN
-Sub128 even nan 0x7c000000000000010000000000000000 1 -> NaN
+Sub128 even nan 1 -sNaN -> -NaN
+Sub128 even nan 0x7c000000000000010000000000000000 1 -> 0x7c000000000000010000000000000000
+Sub128 even nan 1 0xfc000000000000000000000000000004 -> 0xfc000000000000000000000000000004
+Sub128 even nan 0x7e000000000000000000000000000001 0x7e000000000000000000000000000002 -> 0x7c000000000000000000000000000001
 
 Sub128 even noncanon 1 0x3041ed09bead87c0378d8e6400000000 -> 1
 Sub128 even noncanon 0x3041ed09bead87c0378d8e6400000000 1 -> -1

@@ -55,7 +55,7 @@ func fma128(x, y, z coef128, mode Mode) coef128 {
 	if xk != KindFinite || yk != KindFinite || zk != KindFinite {
 		switch {
 		case xk == KindNaN || yk == KindNaN || zk == KindNaN:
-			return cNaN128()
+			return nan128(x, y, z)
 		case xk == KindFinite && yk == KindFinite:
 			return cInf128(zneg) // a finite product and an infinite z
 		case xk == KindFinite && cIsZero128(xc) || yk == KindFinite && cIsZero128(yc):

@@ -75,6 +75,21 @@ func finiteCmpW(xneg bool, xc coefW, xe int, yneg bool, yc coefW, ye int) int {
 	return magCmpW(xc, xe, yc, ye)
 }
 
+// nanW returns the NaN result of an operation whose operands x, y and z,
+// in that order, include a NaN: the first signaling NaN among them if there
+// is one, and otherwise the first NaN, made quiet with its sign and payload
+// kept. An operation of one or two operands repeats its last operand. See
+// "NaN results" in the package documentation.
+func nanW(x, y, z coefW) coefW {
+	switch {
+	case IsSignalingW(x), !IsSignalingW(y) && !IsSignalingW(z) && IsNaNW(x):
+		return cQuietW(x)
+	case IsSignalingW(y), !IsSignalingW(z) && IsNaNW(y):
+		return cQuietW(y)
+	}
+	return cQuietW(z)
+}
+
 // quietCmpW returns the ordering of x and y as -1, 0 or +1 with ok = true,
 // or 0 and ok = false when either is a NaN.
 func quietCmpW(x, y coefW) (c int, ok bool) {

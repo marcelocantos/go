@@ -147,16 +147,28 @@ func (g *gen) special() bits {
 		}
 		return x
 	}
-	// NaN payload and reserved bits, sometimes.
+	// NaN payload and reserved bits, sometimes: random bits of the trailing
+	// field and above it, or one of the payloads either side of the
+	// canonical bound 10^(prec-1), which an operation keeps and clears.
 	x := bits{}
-	if g.r.IntN(2) == 0 {
+	random := false
+	switch g.r.IntN(4) {
+	case 0, 1:
 		t |= g.r.Uint64() & (1<<50 - 1)
+		random = true
+	case 2:
+		// The largest canonical payload, 10^(prec-1) - 1, or one more.
+		// Its low word is not all ones in either width, so adding one
+		// does not carry.
+		x = f.encode(value{kind: notANumber, coeff: new(big.Int).Sub(pow10(f.prec-1), bigOne)})
+		x.Lo += uint64(g.r.IntN(2))
+		t |= f.top(x)
 	}
 	if f.width == 64 {
 		x.Lo = t
 	} else {
 		x.Hi = t
-		if g.r.IntN(2) == 0 {
+		if random && g.r.IntN(2) == 0 {
 			x.Lo = g.r.Uint64()
 		}
 	}

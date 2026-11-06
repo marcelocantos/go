@@ -59,7 +59,10 @@ func modW(x, y coefW) coefW {
 func remainderW(x, y coefW, nearest bool) coefW {
 	xk, neg, xc, xe := UnpackW(x)
 	yk, _, yc, ye := UnpackW(y)
-	if xk != KindFinite || yk == KindNaN || (yk == KindFinite && cIsZeroW(yc)) {
+	if xk == KindNaN || yk == KindNaN {
+		return nanW(x, y, y)
+	}
+	if xk != KindFinite || (yk == KindFinite && cIsZeroW(yc)) {
 		return cNaNW()
 	}
 	if yk == KindInf {

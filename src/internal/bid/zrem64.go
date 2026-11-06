@@ -56,7 +56,10 @@ func mod64(x, y coef64) coef64 {
 func remainder64(x, y coef64, nearest bool) coef64 {
 	xk, neg, xc, xe := Unpack64(x)
 	yk, _, yc, ye := Unpack64(y)
-	if xk != KindFinite || yk == KindNaN || (yk == KindFinite && cIsZero64(yc)) {
+	if xk == KindNaN || yk == KindNaN {
+		return nan64(x, y, y)
+	}
+	if xk != KindFinite || (yk == KindFinite && cIsZero64(yc)) {
 		return cNaN64()
 	}
 	if yk == KindInf {

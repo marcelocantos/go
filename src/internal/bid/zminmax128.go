@@ -11,7 +11,7 @@ func min128(x, y coef128) coef128 {
 	c, ok := quietCmp128(x, y)
 	switch {
 	case !ok:
-		return cNaN128()
+		return nan128(x, y, y)
 	case c > 0, c == 0 && Signbit128(y) && !Signbit128(x):
 		// Operands of equal value and unlike sign can only be zeros, and
 		// -0 is the lesser.
@@ -25,7 +25,7 @@ func max128(x, y coef128) coef128 {
 	c, ok := quietCmp128(x, y)
 	switch {
 	case !ok:
-		return cNaN128()
+		return nan128(x, y, y)
 	case c < 0, c == 0 && Signbit128(x) && !Signbit128(y):
 		return result128(y)
 	}

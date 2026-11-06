@@ -36,7 +36,7 @@ func add64(x, y coef64, mode Mode) coef64 {
 	if xk != KindFinite || yk != KindFinite {
 		switch {
 		case xk == KindNaN || yk == KindNaN:
-			return cNaN64()
+			return nan64(x, y, y)
 		case xk != KindInf:
 			return cInf64(yneg)
 		case yk == KindInf && xneg != yneg:

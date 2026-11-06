@@ -268,9 +268,14 @@ func FuzzRoundTrip(f *testing.F) {
 			}
 			back, st := kernel{}.parse(fm, text, bid.ToNearestEven)
 			want := x
-			if v := fm.decode(x); !fm.canonical(x) || v.kind == notANumber {
+			switch v := fm.decode(x); {
+			case v.kind == notANumber:
+				// A NaN's character form is "NaN", which reads back as
+				// the canonical quiet NaN.
+				want = fm.encode(nan)
+			case !fm.canonical(x):
 				// A non-canonical encoding reads back as the value it
-				// denotes, a NaN as the canonical quiet NaN.
+				// denotes.
 				want = fm.encode(v)
 			}
 			if back != want || st != bid.Exact {

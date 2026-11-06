@@ -56,7 +56,10 @@ func mod128(x, y coef128) coef128 {
 func remainder128(x, y coef128, nearest bool) coef128 {
 	xk, neg, xc, xe := Unpack128(x)
 	yk, _, yc, ye := Unpack128(y)
-	if xk != KindFinite || yk == KindNaN || (yk == KindFinite && cIsZero128(yc)) {
+	if xk == KindNaN || yk == KindNaN {
+		return nan128(x, y, y)
+	}
+	if xk != KindFinite || (yk == KindFinite && cIsZero128(yc)) {
 		return cNaN128()
 	}
 	if yk == KindInf {

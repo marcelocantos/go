@@ -263,6 +263,17 @@ func cNaN128() coef128 {
 	return Uint128{Hi: NaN128Hi}
 }
 
+// cQuiet128 is cQuiet64 for decimal128: the payload is the low 46 bits of
+// the high word and the whole low word, and becomes zero at
+// 10^(Precision128-1) or more.
+func cQuiet128(x coef128) coef128 {
+	payload := Uint128{Hi: x.Hi & nanPayloadMask128Hi, Lo: x.Lo}
+	if !u128Lt(payload, maxNaNPayload128) {
+		payload = Uint128{}
+	}
+	return Uint128{Hi: x.Hi&SignMask128Hi | NaN128Hi | payload.Hi, Lo: payload.Lo}
+}
+
 // cModFull128 returns p mod m. Precondition: m is not zero; a zero m panics
 // with errDivideByZero. A p with p.Hi < m, which is every product of two
 // values below m, takes half the division steps of the general case.

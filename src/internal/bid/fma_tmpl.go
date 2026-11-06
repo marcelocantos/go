@@ -58,7 +58,7 @@ func fmaW(x, y, z coefW, mode Mode) coefW {
 	if xk != KindFinite || yk != KindFinite || zk != KindFinite {
 		switch {
 		case xk == KindNaN || yk == KindNaN || zk == KindNaN:
-			return cNaNW()
+			return nanW(x, y, z)
 		case xk == KindFinite && yk == KindFinite:
 			return cInfW(zneg) // a finite product and an infinite z
 		case xk == KindFinite && cIsZeroW(xc) || yk == KindFinite && cIsZeroW(yc):

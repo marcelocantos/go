@@ -64,6 +64,21 @@ func finiteCmp128(xneg bool, xc coef128, xe int, yneg bool, yc coef128, ye int) 
 	return magCmp128(xc, xe, yc, ye)
 }
 
+// nan128 returns the NaN result of an operation whose operands x, y and z,
+// in that order, include a NaN: the first signaling NaN among them if there
+// is one, and otherwise the first NaN, made quiet with its sign and payload
+// kept. An operation of one or two operands repeats its last operand. See
+// "NaN results" in the package documentation.
+func nan128(x, y, z coef128) coef128 {
+	switch {
+	case IsSignaling128(x), !IsSignaling128(y) && !IsSignaling128(z) && IsNaN128(x):
+		return cQuiet128(x)
+	case IsSignaling128(y), !IsSignaling128(z) && IsNaN128(y):
+		return cQuiet128(y)
+	}
+	return cQuiet128(z)
+}
+
 // quietCmp128 returns the ordering of x and y as -1, 0 or +1 with ok = true,
 // or 0 and ok = false when either is a NaN.
 func quietCmp128(x, y coef128) (c int, ok bool) {

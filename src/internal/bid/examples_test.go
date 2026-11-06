@@ -194,9 +194,10 @@ func parseStatus(s string) (bid.Status, error) {
 	return st, nil
 }
 
-// display writes x in the character form, and writes the NaNs that only
-// the sign operations produce as -NaN, sNaN and -sNaN, as the contract's
-// examples do.
+// display writes x in the character form, and writes the NaNs that Append
+// writes as NaN as the contract's examples do: -NaN, sNaN and -sNaN for the
+// sign and the signaling bit, followed by the payload in decimal when it is
+// not zero (NaN123, -sNaN7).
 func display(f *format, x bits) string {
 	v := f.decode(x)
 	if v.kind != notANumber {
@@ -209,6 +210,9 @@ func display(f *format, x bits) string {
 	if v.neg {
 		s = "-" + s
 	}
+	if v.coeff.Sign() != 0 {
+		s += v.coeff.String()
+	}
 	return s
 }
 
@@ -217,20 +221,35 @@ func display(f *format, x bits) string {
 // exactly; a written exponent out of range reads as its clamped cohort
 // member, as Parse reads it.
 func operand(f *format, s string) (bits, error) {
-	neg := strings.HasPrefix(s, "-")
-	switch strings.TrimPrefix(s, "-") {
-	case "NaN", "sNaN":
-		t := uint64(0x1F) << 58
-		if strings.HasSuffix(s, "sNaN") {
-			t |= 1 << 57
+	if m := exampleNaN.FindStringSubmatch(s); m != nil {
+		// The payload goes into the trailing significand field as written,
+		// so an operand may have a non-canonical payload, 10^(prec-1) or
+		// more, as long as the field holds it.
+		payload, _ := new(big.Int).SetString("0"+m[3], 10)
+		field := 50
+		if f.width == 128 {
+			field = 110
 		}
-		var x bits
+		if payload.BitLen() > field {
+			return bits{}, fmt.Errorf("operand %s: the payload does not fit the trailing field of a %s", s, f.name)
+		}
+		x := f.encode(value{kind: notANumber, neg: m[1] == "-"})
+		lo := new(big.Int).And(payload, new(big.Int).SetUint64(^uint64(0))).Uint64()
+		hi := new(big.Int).Rsh(payload, 64).Uint64()
 		if f.width == 64 {
-			x = bits{Lo: t}
+			x.Lo |= lo
 		} else {
-			x = bits{Hi: t}
+			x.Hi |= hi
+			x.Lo = lo
 		}
-		return f.withSign(x, neg), nil
+		if m[2] != "" {
+			if f.width == 64 {
+				x.Lo |= 1 << 57
+			} else {
+				x.Hi |= 1 << 57
+			}
+		}
+		return x, nil
 	}
 	x, st := f.parse(s, bid.ToNearestEven)
 	if st != bid.Exact {
@@ -238,6 +257,10 @@ func operand(f *format, s string) (bits, error) {
 	}
 	return x, nil
 }
+
+// exampleNaN matches the NaN forms of display: a sign, NaN or sNaN, and a
+// payload of decimal digits with no leading zero.
+var exampleNaN = regexp.MustCompile(`^(-?)(s?)NaN([1-9][0-9]*)?$`)
 
 func floatBits64(s string) (uint64, error) {
 	if s == "NaN" {

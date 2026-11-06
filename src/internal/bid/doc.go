@@ -74,17 +74,19 @@
 //     sign operations [Neg64], [Abs64] and [CopySign64] (and the
 //     decimal128 forms), which copy the bits of their operand; see "Sign
 //     operations".
-//   - Signaling NaNs are NaNs. A signaling NaN operand is treated exactly
-//     like a quiet NaN, and every NaN that an operation produces is the
+//   - NaNs propagate, quietly. A NaN operand gives a NaN result that is
+//     that operand made quiet, with its sign and its payload, as IEEE
+//     754-2008 clause 6.2.3 recommends and as float64 arithmetic does;
+//     "NaN results" says which operand when there are several, and which
+//     operations propagate. A NaN that an operation creates from operands
+//     that are not NaNs (an invalid operation, clause 7.2) is the
 //     canonical positive quiet NaN: [NaN64], or the decimal128 whose high
-//     word is [NaN128Hi] and whose low word is zero. NaN payloads and NaN
-//     signs are not propagated. IEEE 754-2008 clause 6.2.3 only
-//     recommends payload propagation; the language proposal requires that
-//     it not happen. The sign operations, which copy bits, are again the
-//     only exception. Infinities keep their sign. Divergence: IEEE
-//     754-2008 clause 7.2 item a and GDA both signal invalid operation
-//     for a signaling NaN operand; this package treats it as quiet and
-//     reports nothing (see "Conditions").
+//     word is [NaN128Hi] and whose low word is zero. No operation returns
+//     a signaling NaN except the sign operations, which copy bits.
+//     Infinities keep their sign. Divergence: IEEE 754-2008 clause 7.2
+//     item a and GDA both signal invalid operation for a signaling NaN
+//     operand; this package makes it quiet and reports nothing (see
+//     "Conditions").
 //
 // # Rounding modes
 //
@@ -174,9 +176,11 @@
 // is written as the single digit 0. A negative sign is written first.
 // Infinities are "Infinity" and "-Infinity". Every NaN is written "NaN"
 // (divergence from GDA and from the recommendation of clause 5.12.1, which
-// allow a sign, "sNaN" and a payload: this package never produces a NaN
-// with any of those). The form preserves the exponent, so Parse reads it
-// back to the same bit pattern:
+// allow a sign, "sNaN" and a payload: the character form drops the sign,
+// the signaling bit and the payload of a NaN, so a NaN that arithmetic
+// propagates does not survive it; see "NaN results"). The form preserves
+// the exponent, so Parse reads every value but a NaN back to the same bit
+// pattern:
 //
 //	Coefficient  Exponent  Written       Coefficient  Exponent  Written
 //	150          -2        1.50          0            0         0
@@ -255,7 +259,8 @@
 // # Sign of a result
 //
 // IEEE 754-2008 clause 6.3 fixes the sign of every result that is not a
-// NaN; a NaN result has no sign here (it is the canonical positive NaN).
+// NaN; the sign of a NaN result is that of the NaN operand it propagates,
+// or positive for a NaN an invalid operation creates (see "NaN results").
 //
 //   - A non-zero sum or difference has the sign of its value.
 //   - An exact zero sum or difference of operands with opposite signs
@@ -344,9 +349,10 @@
 //
 // Any NaN operand, quiet or signaling, makes the result of an arithmetic
 // operation, a rounding, a quantize, a reduce, a min or max, or a format
-// conversion the canonical quiet NaN (clause 6.2), and makes an integer
-// conversion report Invalid. Comparisons treat a NaN as unordered (see
-// "Comparisons and ordering"). Infinities follow clause 6.1: an operation
+// conversion between the decimal widths a NaN: that operand made quiet,
+// as "NaN results" says (clause 6.2). It makes an integer conversion
+// report Invalid. Comparisons treat a NaN as unordered (see "Comparisons
+// and ordering"). Infinities follow clause 6.1: an operation
 // with an infinite operand whose exact result is an infinity returns that
 // infinity, exactly. The invalid operations, which return the canonical
 // quiet NaN, are those of clause 7.2 (items b to h) that the package's
@@ -371,8 +377,54 @@
 // Widen and Narrow return an infinity unchanged. Mod64 is not an IEEE
 // operation; its special cases are those of Rem64, which agrees with GDA's
 // remainder. Clause 7.2 item c makes it implementation-defined whether
-// FMA64(0, ∞, qNaN) signals invalid; here the result is NaN either way
-// and nothing is signaled.
+// FMA64(0, ∞, qNaN) signals invalid; here the result is the qNaN, as for
+// any NaN operand, and nothing is signaled.
+//
+// # NaN results
+//
+// IEEE 754-2008 clause 6.2.3 recommends that an operation with a NaN
+// operand return a NaN carrying the payload of an input NaN; GDA requires
+// it, and float64 arithmetic does it on the common hardware. This package
+// does it in every operation of the previous section, so that a decimal
+// NaN behaves like a float64 NaN: an operation returns its NaN operand
+// made quiet, with the operand's sign and payload.
+//
+//   - Which operand. When several operands are NaNs the result comes from
+//     the first signaling NaN in operand order (x, y, z) if there is one,
+//     and otherwise from the first NaN. This is GDA's rule, which IBM's
+//     published vectors check, and the rule float64 addition,
+//     multiplication, division and min follow on arm64. Clause 6.2.3
+//     leaves the choice open. Divergence: Intel's library propagates the
+//     first NaN whether or not a later one is signaling, and for FMA
+//     looks at z first; float64 FMA on arm64 looks at z, then y, then x.
+//   - Making it quiet. The result has the operand's sign, the signaling
+//     bit clear, the reserved bits of the combination field clear, and
+//     the operand's payload, the integer in its trailing significand
+//     field (the low 50 bits of a decimal64; the low 46 bits of the high
+//     word and the whole low word of a decimal128). A payload of
+//     10^(Precision-1) or more is non-canonical (clause 3.5.2) and
+//     becomes zero, so the result is canonical.
+//   - Sub. Sub64(x, y) is Add64(x, Neg64(y)) for every y but a NaN: a NaN
+//     y propagates with its own sign, as it does in float64 subtraction
+//     and in GDA.
+//   - Widen and Narrow keep the payload's integer value. Every decimal64
+//     payload fits decimal128; a decimal128 payload of 10^15 or more does
+//     not fit decimal64 and becomes zero. Divergence: Intel's library
+//     scales a payload by 10^18 between the widths instead.
+//   - Created NaNs. The invalid operations of the previous section's table,
+//     whose operands are not NaNs, return the canonical positive quiet
+//     NaN, as does a Quantize whose coefficient would not fit.
+//
+// Not propagated: the conversions between binary and decimal floating
+// point (a NaN of either radix converts to the canonical quiet NaN of the
+// other; see "Binary floating-point conversions"), Parse (the grammar has
+// no payload, and "sNaN" reads as the canonical quiet NaN) and Append
+// (every NaN is "NaN"). TotalOrder and Key read no payload (see
+// "Comparisons and ordering"). The sign operations copy bits and so keep
+// a payload and a signaling bit unchanged. Min and Max propagate as
+// above. Divergence: clause 6.2.3 also recommends propagation across the
+// conversions between radices and to and from character form; this
+// package leaves those NaNs canonical.
 //
 // # Remainder and modulo
 //
@@ -397,9 +449,9 @@
 // of IEEE 754-2008 clause 5.5.1. They operate on the sign bit alone and on
 // every encoding alike: they do not canonicalize, they do not quiet a
 // signaling NaN, they do not clear a payload, and they never signal. They
-// are the one exception to "every result is canonical" and "every NaN
-// result is the canonical quiet NaN"; a caller that needs a canonical
-// result passes the output through an arithmetic operation. Because
+// are the one exception to "every result is canonical" and "no operation
+// returns a signaling NaN"; a caller that needs a canonical result passes
+// the output through an arithmetic operation. Because
 // Append writes every NaN as "NaN", the character form does not show
 // the sign a sign operation gives a NaN; TotalOrder and Signbit do.
 //
@@ -427,8 +479,7 @@
 // order, so TotalOrder64(x, y) and TotalOrder64(y, x) are both true for
 // two NaNs of the same sign. Divergence: clause 5.10 orders a signaling
 // NaN before a quiet one and NaNs of the same kind by payload; this
-// package ignores the signaling bit and the payload in TotalOrder, as it
-// does everywhere else.
+// package ignores the signaling bit and the payload in TotalOrder.
 //
 // SameQuantum64 (clause 5.7.3) is true when both operands are finite with
 // the same exponent, both are infinities, or both are NaNs, and false
@@ -439,26 +490,28 @@
 // Min64 and Max64 implement the Go built-ins min and max for decimal
 // values, not the minNum and maxNum of IEEE 754-2008 clause 5.3.1 nor
 // GDA's min and max. Divergence: if either operand is a NaN the result is
-// NaN (minNum, maxNum and GDA return the number). Otherwise the result is
-// the lesser (greater) operand by value with -0 less than +0, and when the
-// operands are equal in value and sign, including two members of one
-// cohort with different exponents, the result is x, canonicalized (GDA
-// chooses by exponent, so Max64(1.0, 1) is 1.0 here and 1 in GDA). The
-// preferred exponent of the result is that of the operand returned, so
-// the exponent is preserved.
+// a NaN, the operand "NaN results" chooses made quiet (minNum, maxNum and
+// GDA return the number when only one operand is a NaN). Otherwise the
+// result is the lesser (greater) operand by value with -0 less than +0,
+// and when the operands are equal in value and sign, including two
+// members of one cohort with different exponents, the result is x,
+// canonicalized (GDA chooses by exponent, so Max64(1.0, 1) is 1.0 here
+// and 1 in GDA). The preferred exponent of the result is that of the
+// operand returned, so the exponent is preserved.
 //
 // # Format conversions
 //
 // Widen is convertFormat of clause 5.4.2 from decimal64 to decimal128. It
 // is exact for every decimal64 value and preserves the exponent, so it
-// takes no Mode; a NaN of either kind becomes the canonical NaN128.
+// takes no Mode; a NaN keeps its sign and payload and is made quiet.
 // Narrow is convertFormat from decimal128 to decimal64 with the preferred
 // exponent Q(x): a value representable in decimal64 keeps its exponent
 // when that exponent is in [MinExp64, MaxExp64] and is otherwise encoded
 // at the nearer bound with a padded or shortened coefficient (an exact
 // zero at exponent 1000 becomes 0E+369); a value that is not
 // representable is rounded once in the mode, with overflow and underflow
-// as above.
+// as above. A NaN keeps its sign and is made quiet; its payload is kept
+// when it is below 10^15 and is otherwise zero (see "NaN results").
 //
 // # Integer conversions
 //
@@ -502,8 +555,9 @@
 // binary x, and GDA has no such operation); this package chooses 0, as
 // for convertFromInt, so an exact result has the exponent closest to 0:
 // float64 0.5 is 0.5, 2.0 is 2, -0 is -0 with exponent 0, and 1e20 is
-// 100000000000000000000 in decimal128. Infinities and NaNs convert to the
-// corresponding decimal special values.
+// 100000000000000000000 in decimal128. Infinities convert to the infinity
+// of their sign, and a NaN of any sign and payload to the canonical quiet
+// NaN (see "NaN results").
 //
 // Float64From64, Float32From64 and the decimal128 forms round once in
 // the given mode from the exact decimal value to the binary format, with
@@ -1024,13 +1078,55 @@
 //	Add64(NaN, Infinity, ToNearestEven) = NaN
 //	Sub64(1, NaN, ToNearestEven) = NaN
 //	Add64(sNaN, 1, ToNearestEven) = NaN
-//	Add64(-NaN, 1, ToNearestEven) = NaN
+//	Add64(-NaN, 1, ToNearestEven) = -NaN
 //	Mul64(NaN, 0, ToNearestEven) = NaN
 //	Div64(NaN, 0, ToNearestEven) = NaN
 //	Rem64(1, NaN) = NaN
 //	Min64(NaN, 1) = NaN
 //	Max64(1, NaN) = NaN
 //	Max64(1, sNaN) = NaN
+//
+// NaN results ("NaN results"): an operand or result written NaN, -NaN,
+// sNaN or -sNaN followed by digits has that payload in its trailing
+// significand field, which for an operand may be non-canonical:
+//
+//	Add64(NaN123, 1, ToNearestEven) = NaN123
+//	Add64(1, -sNaN7, ToNearestEven) = -NaN7
+//	Sub64(1, NaN5, ToNearestEven) = NaN5
+//	Sub64(1, -NaN5, ToNearestEven) = -NaN5
+//	Sub64(-NaN5, NaN6, ToNearestEven) = -NaN5
+//	Add64(NaN1, NaN2, ToNearestEven) = NaN1
+//	Add64(NaN1, sNaN2, ToNearestEven) = NaN2
+//	Add64(sNaN1, sNaN2, ToNearestEven) = NaN1
+//	Add64(Infinity, -NaN3, ToNearestEven) = -NaN3
+//	Add64(NaN999999999999999, 1, ToNearestEven) = NaN999999999999999
+//	Add64(NaN1000000000000000, 1, ToNearestEven) = NaN
+//	Add64(-sNaN1000000000000000, 1, ToNearestEven) = -NaN
+//	Mul64(-NaN8, Infinity, ToNearestEven) = -NaN8
+//	Mul64(0, NaN8, ToNearestEven) = NaN8
+//	Div64(0, NaN9, ToNearestEven) = NaN9
+//	Div64(sNaN9, -NaN10, ToNearestEven) = NaN9
+//	FMA64(NaN1, NaN2, NaN3, ToNearestEven) = NaN1
+//	FMA64(NaN1, NaN2, sNaN3, ToNearestEven) = NaN3
+//	FMA64(1, sNaN2, sNaN3, ToNearestEven) = NaN2
+//	FMA64(0, Infinity, NaN4, ToNearestEven) = NaN4
+//	FMA64(Infinity, 0, 1, ToNearestEven) = NaN
+//	Rem64(NaN6, 0) = NaN6
+//	Rem64(Infinity, -sNaN6) = -NaN6
+//	Mod64(1, -NaN6) = -NaN6
+//	RoundToIntegral64(-sNaN12, TowardZero) = -NaN12
+//	Quantize64(NaN3, Infinity, ToNearestEven) = NaN3
+//	Quantize64(Infinity, sNaN4, ToNearestEven) = NaN4
+//	Reduce64(-sNaN999999999999999) = -NaN999999999999999
+//	Min64(1, -NaN4) = -NaN4
+//	Min64(NaN4, sNaN5) = NaN5
+//	Max64(-sNaN4, NaN5) = -NaN4
+//	Add128(NaN999999999999999999999999999999999, 1, ToNearestEven) = NaN999999999999999999999999999999999
+//	Add128(NaN1000000000000000000000000000000000, 1, ToNearestEven) = NaN
+//	Widen(-sNaN999999999999999) = -NaN999999999999999
+//	Narrow(NaN999999999999999, ToNearestEven) = NaN999999999999999
+//	Narrow(-NaN1000000000000000, ToNearestEven) = -NaN
+//	Narrow(sNaN99999999999999999999, ToNearestEven) = NaN
 //
 // Remainder and modulo, including quotients GDA refuses:
 //
@@ -1516,8 +1612,9 @@
 //     routine's cLoW(p wideW) coefW, cIncW, cMaxW() and cInfW(neg), the
 //     division's cMulPow10FullW(c, k) wideW (a coefficient scaled into the
 //     double width), cDivFullW(n wideW, d coefW) (q, r coefW) (the 128-by-64
-//     or 256-by-128 division whose quotient fits a coefficient) and cNaNW()
-//     (the canonical quiet NaN), the remainder's cModFullW, the character
+//     or 256-by-128 division whose quotient fits a coefficient), cNaNW()
+//     (the canonical quiet NaN) and cQuietW(x) (the NaN x made quiet, as
+//     "NaN results" says), the remainder's cModFullW, the character
 //     conversions' cSplitW(c) (hi, lo uint64) and cWideW(m Uint128) wideW,
 //     and FMA's cAddFullW, cSubFullW and cIncFullW, extended as the other
 //     operations need. Every coef64.go helper must inline;

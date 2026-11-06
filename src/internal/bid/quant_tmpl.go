@@ -22,13 +22,13 @@ package bid
 // digits below it are dropped and rounded; for Q(x) >= 0 nothing is
 // dropped and the exact value is re-encoded at its own exponent, which also
 // canonicalizes a non-canonical finite encoding. A zero keeps its sign and
-// takes exponent max(Q(x), 0). A NaN gives the canonical NaN and an
+// takes exponent max(Q(x), 0). A NaN gives that NaN made quiet and an
 // infinity is returned unchanged.
 func roundToIntegralW(x coefW, mode Mode) coefW {
 	kind, neg, c, exp := UnpackW(x)
 	switch kind {
 	case KindNaN:
-		return cNaNW()
+		return cQuietW(x)
 	case KindInf:
 		return cInfW(neg)
 	}
@@ -55,7 +55,7 @@ func quantizeW(x, y coefW, mode Mode) coefW {
 	yk, _, _, ye := UnpackW(y)
 	switch {
 	case xk == KindNaN || yk == KindNaN:
-		return cNaNW()
+		return nanW(x, y, y)
 	case xk == KindInf && yk == KindInf:
 		return cInfW(xneg)
 	case xk == KindInf || yk == KindInf:
@@ -76,13 +76,13 @@ func quantizeW(x, y coefW, mode Mode) coefW {
 // reduceW returns the member of the cohort of x with the fewest coefficient
 // digits: the trailing zeros of the coefficient are removed and the exponent
 // raised to match, as far as MaxExpW allows. A zero becomes a zero of its
-// sign with exponent 0. A NaN gives the canonical NaN and an infinity is
+// sign with exponent 0. A NaN gives that NaN made quiet and an infinity is
 // returned unchanged.
 func reduceW(x coefW) coefW {
 	kind, neg, c, exp := UnpackW(x)
 	switch kind {
 	case KindNaN:
-		return cNaNW()
+		return cQuietW(x)
 	case KindInf:
 		return cInfW(neg)
 	}

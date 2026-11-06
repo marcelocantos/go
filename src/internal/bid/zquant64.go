@@ -14,13 +14,13 @@ package bid
 // digits below it are dropped and rounded; for Q(x) >= 0 nothing is
 // dropped and the exact value is re-encoded at its own exponent, which also
 // canonicalizes a non-canonical finite encoding. A zero keeps its sign and
-// takes exponent max(Q(x), 0). A NaN gives the canonical NaN and an
+// takes exponent max(Q(x), 0). A NaN gives that NaN made quiet and an
 // infinity is returned unchanged.
 func roundToIntegral64(x coef64, mode Mode) coef64 {
 	kind, neg, c, exp := Unpack64(x)
 	switch kind {
 	case KindNaN:
-		return cNaN64()
+		return cQuiet64(x)
 	case KindInf:
 		return cInf64(neg)
 	}
@@ -47,7 +47,7 @@ func quantize64(x, y coef64, mode Mode) coef64 {
 	yk, _, _, ye := Unpack64(y)
 	switch {
 	case xk == KindNaN || yk == KindNaN:
-		return cNaN64()
+		return nan64(x, y, y)
 	case xk == KindInf && yk == KindInf:
 		return cInf64(xneg)
 	case xk == KindInf || yk == KindInf:
@@ -68,13 +68,13 @@ func quantize64(x, y coef64, mode Mode) coef64 {
 // reduce64 returns the member of the cohort of x with the fewest coefficient
 // digits: the trailing zeros of the coefficient are removed and the exponent
 // raised to match, as far as MaxExp64 allows. A zero becomes a zero of its
-// sign with exponent 0. A NaN gives the canonical NaN and an infinity is
+// sign with exponent 0. A NaN gives that NaN made quiet and an infinity is
 // returned unchanged.
 func reduce64(x coef64) coef64 {
 	kind, neg, c, exp := Unpack64(x)
 	switch kind {
 	case KindNaN:
-		return cNaN64()
+		return cQuiet64(x)
 	case KindInf:
 		return cInf64(neg)
 	}

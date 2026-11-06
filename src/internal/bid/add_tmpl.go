@@ -40,7 +40,7 @@ func addW(x, y coefW, mode Mode) coefW {
 	if xk != KindFinite || yk != KindFinite {
 		switch {
 		case xk == KindNaN || yk == KindNaN:
-			return cNaNW()
+			return nanW(x, y, y)
 		case xk != KindInf:
 			return cInfW(yneg)
 		case yk == KindInf && xneg != yneg:

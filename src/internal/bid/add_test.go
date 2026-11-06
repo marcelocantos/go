@@ -142,18 +142,24 @@ func TestAddDirected(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			x, y := addOperand(t, tt.f, tt.x), addOperand(t, tt.f, tt.y)
 			want := addOperand(t, tt.f, tt.want)
-			check := func(op string, got, ref bits) {
+			check := func(op string, got, ref, want bits) {
 				t.Helper()
 				if got != want {
-					t.Errorf("%s(%s, %s, %s) = %s, want %s", op, tt.x, tt.y, modeName(tt.mode), display(tt.f, got), tt.want)
+					t.Errorf("%s(%s, %s, %s) = %s, want %s", op, tt.x, tt.y, modeName(tt.mode), display(tt.f, got), display(tt.f, want))
 				}
 				if ref != want {
-					t.Errorf("reference %s(%s, %s, %s) = %s, want %s", op, tt.x, tt.y, modeName(tt.mode), display(tt.f, ref), tt.want)
+					t.Errorf("reference %s(%s, %s, %s) = %s, want %s", op, tt.x, tt.y, modeName(tt.mode), display(tt.f, ref), display(tt.f, want))
 				}
 			}
-			check("Add", kernel{}.add(tt.f, x, y, tt.mode), reference{}.add(tt.f, x, y, tt.mode))
+			check("Add", kernel{}.add(tt.f, x, y, tt.mode), reference{}.add(tt.f, x, y, tt.mode), want)
+			// x - (-y) is x + y, except that a NaN y is not negated by Sub
+			// ("NaN results"): the result is then -y made quiet.
 			neg := tt.f.withSign(y, !tt.f.signbit(y))
-			check("Sub", kernel{}.sub(tt.f, x, neg, tt.mode), reference{}.sub(tt.f, x, neg, tt.mode))
+			wantSub := want
+			if tt.f.decode(x).kind != notANumber && tt.f.decode(y).kind == notANumber {
+				wantSub = tt.f.withSign(want, !tt.f.signbit(want))
+			}
+			check("Sub", kernel{}.sub(tt.f, x, neg, tt.mode), reference{}.sub(tt.f, x, neg, tt.mode), wantSub)
 		})
 	}
 }

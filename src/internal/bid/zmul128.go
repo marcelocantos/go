@@ -19,11 +19,14 @@ func mul128(x, y coef128, mode Mode) coef128 {
 	yk, yneg, yc, ye := Unpack128(y)
 	neg := xneg != yneg
 	if xk != KindFinite || yk != KindFinite {
-		// A NaN operand gives NaN, and so does an infinity times a zero of
-		// any exponent (a non-canonical operand reads as a zero); an
-		// infinity times anything else is the infinity of the product's sign.
-		if xk == KindNaN || yk == KindNaN ||
-			xk == KindFinite && cIsZero128(xc) || yk == KindFinite && cIsZero128(yc) {
+		// A NaN operand gives that NaN, an infinity times a zero of any
+		// exponent (a non-canonical operand reads as a zero) the canonical
+		// NaN, and an infinity times anything else the infinity of the
+		// product's sign.
+		if xk == KindNaN || yk == KindNaN {
+			return nan128(x, y, y)
+		}
+		if xk == KindFinite && cIsZero128(xc) || yk == KindFinite && cIsZero128(yc) {
 			return cNaN128()
 		}
 		return cInf128(neg)

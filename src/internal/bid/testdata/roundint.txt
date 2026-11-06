@@ -115,9 +115,11 @@ RoundToIntegral64 up inf -Infinity -> -Infinity
 
 RoundToIntegral64 even nan NaN -> NaN
 RoundToIntegral64 even nan sNaN -> NaN
-RoundToIntegral64 even nan -NaN -> NaN
-RoundToIntegral64 zero nan 0x7c00000000000001 -> NaN
-RoundToIntegral64 even nan 0xfe0000000001e240 -> NaN
+RoundToIntegral64 even nan -NaN -> -NaN
+RoundToIntegral64 zero nan 0x7c00000000000001 -> 0x7c00000000000001
+RoundToIntegral64 even nan 0xfe0000000001e240 -> 0xfc0000000001e240
+RoundToIntegral64 down nan 0x7d00000000000009 -> 0x7c00000000000009
+RoundToIntegral64 even nan 0x7e038d7ea4c68000 -> NaN
 
 RoundToIntegral64 even noncanon 0x6c77ffffffffffff -> 0
 RoundToIntegral64 even noncanon 0xec9fffffffffffff -> -0E+5
@@ -188,8 +190,9 @@ RoundToIntegral128 zero inf -Infinity -> -Infinity
 
 RoundToIntegral128 even nan NaN -> NaN
 RoundToIntegral128 even nan sNaN -> NaN
-RoundToIntegral128 even nan -NaN -> NaN
-RoundToIntegral128 even nan 0x7c000000000000010000000000000000 -> NaN
+RoundToIntegral128 even nan -NaN -> -NaN
+RoundToIntegral128 even nan 0x7c000000000000010000000000000000 -> 0x7c000000000000010000000000000000
+RoundToIntegral128 up nan 0xfe00000000000000000000000000000c -> 0xfc00000000000000000000000000000c
 
 RoundToIntegral128 even noncanon 0x3041ed09bead87c0378d8e6400000000 -> 0
 RoundToIntegral128 even noncanon 0xb047ed09bead87c0378d8e6400000000 -> -0E+3

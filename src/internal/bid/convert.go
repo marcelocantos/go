@@ -20,7 +20,10 @@ func Widen(x uint64) Uint128 {
 	kind, neg, coeff, exp := Unpack64(x)
 	switch kind {
 	case KindNaN:
-		return Uint128{Hi: NaN128Hi}
+		// The decimal64 payload field lies within the decimal128 one, and
+		// a canonical decimal64 payload is a canonical decimal128 one.
+		q := cQuiet64(x)
+		return Uint128{Hi: q&SignMask64 | NaN128Hi, Lo: q & nanPayloadMask64}
 	case KindInf:
 		return cInf128(neg)
 	}
@@ -40,7 +43,14 @@ func Narrow(x Uint128, mode Mode) uint64 {
 	kind, neg, coeff, exp := Unpack128(x)
 	switch kind {
 	case KindNaN:
-		return NaN64
+		// A payload that decimal64 cannot hold canonically, 10^15 or
+		// more, becomes zero.
+		q := cQuiet128(x)
+		sign := q.Hi & SignMask128Hi
+		if q.Hi&nanPayloadMask128Hi != 0 || q.Lo >= maxNaNPayload64 {
+			return sign | NaN64
+		}
+		return sign | NaN64 | q.Lo
 	case KindInf:
 		return cInf64(neg)
 	}

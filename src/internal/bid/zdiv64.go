@@ -52,7 +52,7 @@ func div64(x, y coef64, mode Mode) coef64 {
 	neg := xneg != yneg
 	switch {
 	case xk == KindNaN || yk == KindNaN:
-		return cNaN64()
+		return nan64(x, y, y)
 	case xk == KindInf:
 		if yk == KindInf {
 			// ∞ / ∞ is invalid (IEEE 754-2008 clause 7.2 item e).

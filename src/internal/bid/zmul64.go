@@ -19,11 +19,14 @@ func mul64(x, y coef64, mode Mode) coef64 {
 	yk, yneg, yc, ye := Unpack64(y)
 	neg := xneg != yneg
 	if xk != KindFinite || yk != KindFinite {
-		// A NaN operand gives NaN, and so does an infinity times a zero of
-		// any exponent (a non-canonical operand reads as a zero); an
-		// infinity times anything else is the infinity of the product's sign.
-		if xk == KindNaN || yk == KindNaN ||
-			xk == KindFinite && cIsZero64(xc) || yk == KindFinite && cIsZero64(yc) {
+		// A NaN operand gives that NaN, an infinity times a zero of any
+		// exponent (a non-canonical operand reads as a zero) the canonical
+		// NaN, and an infinity times anything else the infinity of the
+		// product's sign.
+		if xk == KindNaN || yk == KindNaN {
+			return nan64(x, y, y)
+		}
+		if xk == KindFinite && cIsZero64(xc) || yk == KindFinite && cIsZero64(yc) {
 			return cNaN64()
 		}
 		return cInf64(neg)

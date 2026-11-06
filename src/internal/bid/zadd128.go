@@ -36,7 +36,7 @@ func add128(x, y coef128, mode Mode) coef128 {
 	if xk != KindFinite || yk != KindFinite {
 		switch {
 		case xk == KindNaN || yk == KindNaN:
-			return cNaN128()
+			return nan128(x, y, y)
 		case xk != KindInf:
 			return cInf128(yneg)
 		case yk == KindInf && xneg != yneg:

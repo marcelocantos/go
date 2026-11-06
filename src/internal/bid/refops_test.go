@@ -16,7 +16,37 @@ import (
 	"strings"
 )
 
+// nan is the canonical NaN: the result of an invalid operation whose
+// operands are not NaNs.
 var nan = value{kind: notANumber}
+
+// isNaN reports whether any of vs is a NaN.
+func isNaN(vs ...value) bool {
+	for _, v := range vs {
+		if v.kind == notANumber {
+			return true
+		}
+	}
+	return false
+}
+
+// nanOf is the result of an operation whose operands vs, in order, include
+// a NaN ("NaN results"): the first signaling NaN if there is one, and
+// otherwise the first NaN. It keeps the sign and payload; encode makes it
+// quiet.
+func nanOf(vs ...value) value {
+	for _, v := range vs {
+		if v.kind == notANumber && v.signaling {
+			return v
+		}
+	}
+	for _, v := range vs {
+		if v.kind == notANumber {
+			return v
+		}
+	}
+	panic("nanOf: no NaN operand: model bug")
+}
 
 // signed returns (-1)^neg × c × 10^(exp-at) as an integer, for at <= exp.
 func signed(neg bool, c *big.Int, exp, at int) *big.Int {
@@ -52,14 +82,16 @@ func (f *format) add(x, y bits, mode bid.Mode) bits {
 
 func (f *format) sub(x, y bits, mode bid.Mode) bits {
 	a, b := f.decode(x), f.decode(y)
-	b.neg = !b.neg
+	if b.kind != notANumber {
+		b.neg = !b.neg // a NaN y is propagated with its own sign
+	}
 	return f.encode(f.addValues(a, b, mode))
 }
 
 func (f *format) addValues(a, b value, mode bid.Mode) value {
 	switch {
-	case a.kind == notANumber || b.kind == notANumber:
-		return nan
+	case isNaN(a, b):
+		return nanOf(a, b)
 	case a.kind == infinite && b.kind == infinite:
 		if a.neg != b.neg {
 			return nan
@@ -77,8 +109,8 @@ func (f *format) mul(x, y bits, mode bid.Mode) bits {
 	a, b := f.decode(x), f.decode(y)
 	neg := a.neg != b.neg
 	switch {
-	case a.kind == notANumber || b.kind == notANumber:
-		return f.encode(nan)
+	case isNaN(a, b):
+		return f.encode(nanOf(a, b))
 	case a.kind == infinite || b.kind == infinite:
 		if a.kind == finite && a.coeff.Sign() == 0 || b.kind == finite && b.coeff.Sign() == 0 {
 			return f.encode(nan)
@@ -93,8 +125,8 @@ func (f *format) div(x, y bits, mode bid.Mode) bits {
 	a, b := f.decode(x), f.decode(y)
 	neg := a.neg != b.neg
 	switch {
-	case a.kind == notANumber || b.kind == notANumber:
-		return f.encode(nan)
+	case isNaN(a, b):
+		return f.encode(nanOf(a, b))
 	case a.kind == infinite && b.kind == infinite:
 		return f.encode(nan)
 	case a.kind == infinite:
@@ -114,8 +146,8 @@ func (f *format) div(x, y bits, mode bid.Mode) bits {
 
 func (f *format) fma(x, y, z bits, mode bid.Mode) bits {
 	a, b, c := f.decode(x), f.decode(y), f.decode(z)
-	if a.kind == notANumber || b.kind == notANumber || c.kind == notANumber {
-		return f.encode(nan)
+	if isNaN(a, b, c) {
+		return f.encode(nanOf(a, b, c))
 	}
 	neg := a.neg != b.neg
 	if a.kind == infinite || b.kind == infinite {
@@ -136,7 +168,9 @@ func (f *format) fma(x, y, z bits, mode bid.Mode) bits {
 func (f *format) remainder(x, y bits, truncate bool) bits {
 	a, b := f.decode(x), f.decode(y)
 	switch {
-	case a.kind != finite || b.kind == notANumber:
+	case isNaN(a, b):
+		return f.encode(nanOf(a, b))
+	case a.kind != finite:
 		return f.encode(nan)
 	case b.kind == infinite:
 		return f.encode(a)
@@ -178,8 +212,8 @@ func (f *format) roundToIntegral(x bits, mode bid.Mode) bits {
 func (f *format) quantize(x, y bits, mode bid.Mode) bits {
 	a, b := f.decode(x), f.decode(y)
 	switch {
-	case a.kind == notANumber || b.kind == notANumber:
-		return f.encode(nan)
+	case isNaN(a, b):
+		return f.encode(nanOf(a, b))
 	case a.kind == infinite && b.kind == infinite:
 		return f.encode(a)
 	case a.kind == infinite || b.kind == infinite:
@@ -291,8 +325,8 @@ func (f *format) compare(x, y bits) (int, bool) {
 // minMax is Min (wantMax false) or Max; see "Minimum and maximum".
 func (f *format) minMax(x, y bits, wantMax bool) bits {
 	a, b := f.decode(x), f.decode(y)
-	if a.kind == notANumber || b.kind == notANumber {
-		return f.encode(nan)
+	if isNaN(a, b) {
+		return f.encode(nanOf(a, b))
 	}
 	c := cmpValue(a, b)
 	if c == 0 && a.neg != b.neg {

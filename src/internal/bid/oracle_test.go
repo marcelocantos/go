@@ -557,7 +557,14 @@ func TestReferenceModel(t *testing.T) {
 						if !o.f.canonical(*o.dec) {
 							t.Errorf("%s(%s): result %s is not canonical (%016x%016x)", st.name, c.args, o.text, o.dec.Hi, o.dec.Lo)
 						}
-						if back, s := o.f.parse(o.f.format(*o.dec), bid.ToNearestEven); back != *o.dec || s != bid.Exact {
+						// The character form of every NaN is "NaN", which
+						// reads back as the canonical NaN: a NaN result's
+						// sign and payload do not survive it.
+						want := *o.dec
+						if o.f.decode(want).kind == notANumber {
+							want = o.f.encode(nan)
+						}
+						if back, s := o.f.parse(o.f.format(*o.dec), bid.ToNearestEven); back != want || s != bid.Exact {
 							t.Errorf("%s(%s) = %s does not survive the character form", st.name, c.args, o.text)
 						}
 					}

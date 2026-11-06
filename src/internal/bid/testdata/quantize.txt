@@ -123,9 +123,9 @@ Quantize64 even inf -Infinity 0 -> NaN
 Quantize64 even nan NaN 1 -> NaN
 Quantize64 even nan 1 NaN -> NaN
 Quantize64 even nan sNaN 1 -> NaN
-Quantize64 even nan 1 -sNaN -> NaN
+Quantize64 even nan 1 -sNaN -> -NaN
 Quantize64 even nan NaN Infinity -> NaN
-Quantize64 even nan 0x7c00000000000001 1 -> NaN
+Quantize64 even nan 0x7c00000000000001 1 -> 0x7c00000000000001
 Quantize64 even nan 1E+16 1 -> NaN
 Quantize64 even nan 1234567890123456 0.1 -> NaN
 Quantize64 even nan -123456789012345.6 0.01 -> NaN
@@ -133,6 +133,9 @@ Quantize64 even nan 1 1E-398 -> NaN
 Quantize64 even nan 9.999999999999999E+384 1E+368 -> NaN
 Quantize64 even nan 1E+16 0 -> NaN
 Quantize64 zero nan 1E+16 1 -> NaN
+Quantize64 even nan 0x7c00000000000001 0x7e00000000000002 -> 0x7c00000000000002
+Quantize64 even nan Infinity 0xfc00000000000003 -> 0xfc00000000000003
+Quantize64 even nan 0xfe00000000000004 Infinity -> 0xfc00000000000004
 
 Quantize64 even noncanon 0x6c77ffffffffffff 1E+2 -> 0E+2
 Quantize64 even noncanon 2.17 0x6c77ffffffffffff -> 2
@@ -209,7 +212,8 @@ Quantize128 even nan sNaN 1 -> NaN
 Quantize128 even nan 1E+34 1 -> NaN
 Quantize128 even nan 1 1E-6176 -> NaN
 Quantize128 even nan 9.999999999999999999999999999999999E+6144 1E+6110 -> NaN
-Quantize128 even nan 0x7c000000000000010000000000000000 1 -> NaN
+Quantize128 even nan 0x7c000000000000010000000000000000 1 -> 0x7c000000000000010000000000000000
+Quantize128 even nan 1 0xfe000000000000000000000000000008 -> 0xfc000000000000000000000000000008
 
 Quantize128 even noncanon 0x3041ed09bead87c0378d8e6400000000 1E+2 -> 0E+2
 Quantize128 even noncanon 2.17 0x3041ed09bead87c0378d8e6400000000 -> 2

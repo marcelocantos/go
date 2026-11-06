@@ -50,11 +50,13 @@ Reduce64 - inf Infinity -> Infinity
 Reduce64 - inf -Infinity -> -Infinity
 
 Reduce64 - nan NaN -> NaN
-Reduce64 - nan -NaN -> NaN
+Reduce64 - nan -NaN -> -NaN
 Reduce64 - nan sNaN -> NaN
-Reduce64 - nan -sNaN -> NaN
-Reduce64 - nan 0x7c00000000000001 -> NaN
-Reduce64 - nan 0xfe0000000001e240 -> NaN
+Reduce64 - nan -sNaN -> -NaN
+Reduce64 - nan 0x7c00000000000001 -> 0x7c00000000000001
+Reduce64 - nan 0xfe0000000001e240 -> 0xfc0000000001e240
+Reduce64 - nan 0x7d00000000000009 -> 0x7c00000000000009
+Reduce64 - nan 0xfe038d7ea4c68000 -> -NaN
 
 Reduce64 - noncanon 0x6c77ffffffffffff -> 0
 Reduce64 - noncanon 0xec9fffffffffffff -> -0
@@ -93,10 +95,11 @@ Reduce128 - inf Infinity -> Infinity
 Reduce128 - inf -Infinity -> -Infinity
 
 Reduce128 - nan NaN -> NaN
-Reduce128 - nan -NaN -> NaN
+Reduce128 - nan -NaN -> -NaN
 Reduce128 - nan sNaN -> NaN
-Reduce128 - nan 0x7c000000000000010000000000000000 -> NaN
-Reduce128 - nan 0xfe000000000000000000000000000005 -> NaN
+Reduce128 - nan 0x7c000000000000010000000000000000 -> 0x7c000000000000010000000000000000
+Reduce128 - nan 0xfe000000000000000000000000000005 -> 0xfc000000000000000000000000000005
+Reduce128 - nan 0x7c00314dc6448d9338c15b0a00000000 -> NaN
 
 Reduce128 - noncanon 0x3041ed09bead87c0378d8e6400000000 -> 0
 Reduce128 - noncanon 0xb047ed09bead87c0378d8e6400000000 -> -0

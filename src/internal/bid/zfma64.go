@@ -55,7 +55,7 @@ func fma64(x, y, z coef64, mode Mode) coef64 {
 	if xk != KindFinite || yk != KindFinite || zk != KindFinite {
 		switch {
 		case xk == KindNaN || yk == KindNaN || zk == KindNaN:
-			return cNaN64()
+			return nan64(x, y, z)
 		case xk == KindFinite && yk == KindFinite:
 			return cInf64(zneg) // a finite product and an infinite z
 		case xk == KindFinite && cIsZero64(xc) || yk == KindFinite && cIsZero64(yc):

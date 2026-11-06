@@ -63,7 +63,7 @@ func divW(x, y coefW, mode Mode) coefW {
 	neg := xneg != yneg
 	switch {
 	case xk == KindNaN || yk == KindNaN:
-		return cNaNW()
+		return nanW(x, y, y)
 	case xk == KindInf:
 		if yk == KindInf {
 			// ∞ / ∞ is invalid (IEEE 754-2008 clause 7.2 item e).

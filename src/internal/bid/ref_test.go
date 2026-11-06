@@ -115,9 +115,10 @@ const (
 )
 
 // value is a decoded decimal: (-1)^neg × coeff × 10^exp when finite. For an
-// infinity only neg is meaningful. For a NaN, neg is the sign bit, which
-// only the sign operations and TotalOrder read; signaling records the
-// signaling bit, which only the predicates read.
+// infinity only neg is meaningful. For a NaN, neg is the sign bit and coeff
+// the payload (nil for zero), which a NaN result carries ("NaN results");
+// signaling records the signaling bit, which decides which NaN operand an
+// operation propagates and which the predicates read.
 type value struct {
 	kind      kind
 	neg       bool
@@ -141,7 +142,10 @@ func (f *format) top(b bits) uint64 {
 // decode reads b as the contract says (IEEE 754-2008 clause 3.5.2): the
 // second encoding form has an implicit 100 above its stored coefficient
 // bits, and a finite encoding whose coefficient exceeds 10^prec - 1 is a
-// zero with the encoded sign and exponent.
+// zero with the encoded sign and exponent. The payload of a NaN is its
+// trailing significand field, the low 50 bits of a decimal64 and the low
+// 110 bits of a decimal128; a payload of 10^(prec-1) or more is
+// non-canonical and reads as zero.
 func (f *format) decode(b bits) value {
 	t := f.top(b)
 	neg := t>>63 != 0
@@ -149,7 +153,18 @@ func (f *format) decode(b bits) value {
 		if t>>58&1 == 0 {
 			return value{kind: infinite, neg: neg}
 		}
-		return value{kind: notANumber, neg: neg, signaling: t>>57&1 != 0}
+		var payload *big.Int
+		if f.width == 64 {
+			payload = new(big.Int).SetUint64(t & (1<<50 - 1))
+		} else {
+			payload = new(big.Int).SetUint64(t & (1<<46 - 1))
+			payload.Lsh(payload, 64)
+			payload.Or(payload, new(big.Int).SetUint64(b.Lo))
+		}
+		if payload.Cmp(pow10(f.prec-1)) >= 0 {
+			payload.SetInt64(0)
+		}
+		return value{kind: notANumber, neg: neg, signaling: t>>57&1 != 0, coeff: payload}
 	}
 	coeff := new(big.Int)
 	var biased uint64
@@ -179,9 +194,11 @@ func (f *format) decode(b bits) value {
 	return value{kind: finite, neg: neg, coeff: coeff, exp: int(biased) - f.bias}
 }
 
-// encode returns the canonical encoding of v. Every NaN encodes as the
-// canonical positive quiet NaN, whatever v.neg says, because the model
-// produces no other NaN.
+// encode returns the canonical encoding of v. A NaN encodes as the quiet
+// NaN with the sign v.neg and the payload v.coeff, whatever v.signaling
+// says, because the model produces no signaling NaN; a payload that the
+// format cannot hold canonically, 10^(prec-1) or more, encodes as zero
+// (which Narrow relies on).
 func (f *format) encode(v value) bits {
 	var t, lo uint64
 	sign := uint64(0)
@@ -190,7 +207,14 @@ func (f *format) encode(v value) bits {
 	}
 	switch v.kind {
 	case notANumber:
-		t = 0x1F << 58
+		t = sign | 0x1F<<58
+		if p := v.coeff; p != nil && p.Sign() > 0 && p.Cmp(pow10(f.prec-1)) < 0 {
+			lo = new(big.Int).And(p, new(big.Int).SetUint64(^uint64(0))).Uint64()
+			t |= new(big.Int).Rsh(p, 64).Uint64()
+		}
+		if f.width == 64 {
+			t |= lo
+		}
 	case infinite:
 		t = sign | 0x1E<<58
 	default:

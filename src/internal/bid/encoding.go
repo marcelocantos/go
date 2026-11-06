@@ -305,7 +305,7 @@ func IsCanonical64(x uint64) bool {
 		if x>>50&(1<<7-1) != 0 {
 			return false
 		}
-		return x&(1<<50-1) < maxNaNPayload64
+		return x&nanPayloadMask64 < maxNaNPayload64
 	}
 	if x>>61&3 == 3 {
 		return 1<<53|x&(1<<Form2CoeffBits64-1) <= MaxCoeff64
@@ -323,7 +323,7 @@ func IsCanonical128(x Uint128) bool {
 		if t>>46&(1<<11-1) != 0 {
 			return false
 		}
-		payload := Uint128{Hi: t & (1<<46 - 1), Lo: x.Lo}
+		payload := Uint128{Hi: t & nanPayloadMask128Hi, Lo: x.Lo}
 		return u128Lt(payload, maxNaNPayload128)
 	}
 	if t>>61&3 == 3 {
@@ -381,6 +381,14 @@ func CopySign128(x, sign Uint128) Uint128 {
 }
 
 const maxNaNPayload64 = 1_000_000_000_000_000 // 10^15
+
+// The trailing significand field of a NaN, which holds its payload: the
+// low 50 bits of a decimal64, and the low 46 bits of the high word of a
+// decimal128 with all of its low word (IEEE 754-2008 clause 3.5.2).
+const (
+	nanPayloadMask64    uint64 = 1<<50 - 1
+	nanPayloadMask128Hi uint64 = 1<<46 - 1
+)
 
 var maxNaNPayload128 = Uint128{Hi: 0x0000314DC6448D93, Lo: 0x38C15B0A00000000} // 10^33
 

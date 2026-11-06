@@ -11,7 +11,7 @@ func min64(x, y coef64) coef64 {
 	c, ok := quietCmp64(x, y)
 	switch {
 	case !ok:
-		return cNaN64()
+		return nan64(x, y, y)
 	case c > 0, c == 0 && Signbit64(y) && !Signbit64(x):
 		// Operands of equal value and unlike sign can only be zeros, and
 		// -0 is the lesser.
@@ -25,7 +25,7 @@ func max64(x, y coef64) coef64 {
 	c, ok := quietCmp64(x, y)
 	switch {
 	case !ok:
-		return cNaN64()
+		return nan64(x, y, y)
 	case c < 0, c == 0 && Signbit64(x) && !Signbit64(y):
 		return result64(y)
 	}

@@ -14,7 +14,7 @@ func minW(x, y coefW) coefW {
 	c, ok := quietCmpW(x, y)
 	switch {
 	case !ok:
-		return cNaNW()
+		return nanW(x, y, y)
 	case c > 0, c == 0 && SignbitW(y) && !SignbitW(x):
 		// Operands of equal value and unlike sign can only be zeros, and
 		// -0 is the lesser.
@@ -28,7 +28,7 @@ func maxW(x, y coefW) coefW {
 	c, ok := quietCmpW(x, y)
 	switch {
 	case !ok:
-		return cNaNW()
+		return nanW(x, y, y)
 	case c < 0, c == 0 && SignbitW(x) && !SignbitW(y):
 		return resultW(y)
 	}
