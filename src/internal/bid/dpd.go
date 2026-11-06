@@ -7,7 +7,7 @@ package bid
 import "math/bits"
 
 // The densely packed decimal (DPD) encodings of decimal64 and decimal128
-// (IEEE 754-2008 clause 3.5.2, the "decimal" encoding of the trailing
+// (IEEE 754-2019 clause 3.5.2, the "decimal" encoding of the trailing
 // significand field), which the decimal floating-point units of POWER and
 // IBM Z operate on. On those targets a decimal value in memory is its DPD
 // encoding XORed with DPDZero64 or DPDZero128Hi, as it is its BID encoding

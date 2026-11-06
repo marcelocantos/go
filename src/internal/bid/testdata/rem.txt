@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-# Remainder (IEEE 754-2008 clause 5.3.1) and truncated modulo (GDA
+# Remainder (IEEE 754-2019 clause 5.3.1) and truncated modulo (GDA
 # remainder). Both are exact for every finite pair, so they have no
 # inexact, carry, overflow or clamp class; the result has exponent
 # min(Q(x), Q(y)) and a zero result has the sign of x. "tie" for Rem is a

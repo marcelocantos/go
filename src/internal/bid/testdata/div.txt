@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-# Division (IEEE 754-2008 clause 5.4.1 and 7.3). The preferred exponent is
+# Division (IEEE 754-2019 clause 5.4.1 and 7.3). The preferred exponent is
 # Q(x) - Q(y); a finite x divided by an infinity is a zero at MinExp. A
 # quotient of two Precision-digit coefficients is never within one unit
 # of the last place below a power of ten unless it is exact, so division

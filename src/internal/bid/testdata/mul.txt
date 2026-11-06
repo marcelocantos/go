@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-# Multiplication (IEEE 754-2008 clause 5.4.1). The preferred exponent is
+# Multiplication (IEEE 754-2019 clause 5.4.1). The preferred exponent is
 # Q(x) + Q(y). Division has no carry class: see README.
 
 # --- Mul64 ---

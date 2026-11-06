@@ -16,7 +16,7 @@ package bid_test
 //
 // The reader and writer of decimal values below are deliberately
 // independent of the package: they map the character form of the vectors
-// to bit patterns through the IEEE 754-2008 clause 3.5.2 layout with no
+// to bit patterns through the IEEE 754-2019 clause 3.5.2 layout with no
 // call into the kernel, so the suite still means something when the
 // kernel is wrong.
 
@@ -225,7 +225,7 @@ type decimal struct {
 	exp   int
 }
 
-// IEEE 754-2008 clause 3.5.2 layout of the BID encodings, written out here
+// IEEE 754-2019 clause 3.5.2 layout of the BID encodings, written out here
 // rather than taken from the package so that the suite reads encodings on
 // its own authority.
 const (
@@ -1244,7 +1244,7 @@ func TestConformance(t *testing.T) {
 }
 
 // TestConformanceModel checks the suite's own reader and writer against
-// the layout facts of IEEE 754-2008 clause 3.5.2 and against the character
+// the layout facts of IEEE 754-2019 clause 3.5.2 and against the character
 // forms tabulated in the package documentation, so that a failure of the
 // suite is a disagreement with the kernel and not a bug in the harness.
 func TestConformanceModel(t *testing.T) {

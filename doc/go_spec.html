@@ -880,8 +880,8 @@ int64       the set of all signed 64-bit integers (-9223372036854775808 to 92233
 float32     the set of all IEEE 754 32-bit floating-point numbers
 float64     the set of all IEEE 754 64-bit floating-point numbers
 
-decimal64   the set of all IEEE 754-2008 64-bit decimal floating-point numbers
-decimal128  the set of all IEEE 754-2008 128-bit decimal floating-point numbers
+decimal64   the set of all IEEE 754-2019 64-bit decimal floating-point numbers
+decimal128  the set of all IEEE 754-2019 128-bit decimal floating-point numbers
 
 complex64   the set of all complex numbers with float32 real and imaginary parts
 complex128  the set of all complex numbers with float64 real and imaginary parts
@@ -900,7 +900,7 @@ The types <code>float32</code> and <code>float64</code> are binary floating-poin
 that use a base-2 representation.
 The types <code>decimal64</code> and <code>decimal128</code> are decimal floating-point types
 that use a base-10 representation as defined by
-<a href="https://en.wikipedia.org/wiki/IEEE_754-2008">IEEE 754-2008</a>.
+<a href="https://en.wikipedia.org/wiki/IEEE_754">IEEE 754-2019</a>.
 Decimal floating-point types can represent decimal fractions exactly, unlike binary
 floating-point types where values such as 0.1 have no exact representation.
 Both binary and decimal floating-point types support the same arithmetic and comparison operators.
@@ -5256,7 +5256,7 @@ These terms and the result of the comparisons are defined as follows:
 
 	<li>
 	Decimal floating-point types are comparable and ordered.
-	Two decimal floating-point values are compared as defined by the IEEE 754-2008 standard.
+	Two decimal floating-point values are compared as defined by the IEEE 754-2019 standard.
 	</li>
 
 	<li>
@@ -9011,7 +9011,7 @@ The ability to convert any integer value to a string type has been removed.
 The set of <a href="#Predeclared_identifiers">predeclared</a>
 <a href="#Numeric_types">numeric types</a> includes the new types
 <code>decimal64</code> and <code>decimal128</code> for
-IEEE 754-2008 decimal floating-point arithmetic.
+IEEE 754-2019 decimal floating-point arithmetic.
 </li>
 </ul>
 

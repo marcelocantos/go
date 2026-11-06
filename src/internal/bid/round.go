@@ -4,7 +4,7 @@
 
 package bid
 
-// Mode is a rounding-direction attribute (IEEE 754-2008 clause 4.3). The
+// Mode is a rounding-direction attribute (IEEE 754-2019 clause 4.3). The
 // five values are the five attributes of the standard; a Mode outside them
 // behaves as ToNearestEven. The language operators use ToNearestEven only.
 // See "Rounding modes" in the package documentation.
@@ -99,7 +99,7 @@ func Round128(neg bool, coeff Uint128, exp int, sticky bool, mode Mode) (Uint128
 // roundUp reports whether a truncated magnitude is to be incremented by one
 // unit in its last place: class is the class of the discarded part (never
 // classZero; an exact value is not rounded), odd the parity of the
-// truncated coefficient and neg the sign of the value (IEEE 754-2008
+// truncated coefficient and neg the sign of the value (IEEE 754-2019
 // clause 4.3). A Mode outside the five behaves as ToNearestEven, as the
 // contract says, which is why that mode is the default case and not a
 // named one.
@@ -119,7 +119,7 @@ func roundUp(class digitClass, mode Mode, neg, odd bool) bool {
 
 // overflowsToInf reports whether an overflow of sign neg delivers the
 // infinity of that sign in mode; otherwise it delivers the largest finite
-// value of that sign (IEEE 754-2008 clause 7.4; the table under "Overflow"
+// value of that sign (IEEE 754-2019 clause 7.4; the table under "Overflow"
 // in the package documentation).
 func overflowsToInf(mode Mode, neg bool) bool {
 	switch mode {

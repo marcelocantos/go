@@ -20,7 +20,7 @@ import (
 //   - each helper returns, bit for bit, what the kernel function it should
 //     call returns (TestDecimalHelpersAreKernelCalls), and
 //   - that result is the exact answer, computed here with math/big from
-//     the definitions in IEEE 754-2008 clauses 5.2, 5.3 and 5.4.1 and the
+//     the definitions in IEEE 754-2019 clauses 5.2, 5.3 and 5.4.1 and the
 //     exponent rules of internal/bid's package documentation
 //     (TestDecimalHelpersAgreeWithBig).
 //

@@ -28,7 +28,7 @@ import (
 )
 
 // format holds the parameters of one decimal interchange format, written
-// down here from IEEE 754-2008 clause 3.3 and Table 3.6 rather than taken
+// down here from IEEE 754-2019 clause 3.3 and Table 3.6 rather than taken
 // from the kernel, so that a wrong constant in the kernel shows up as a
 // mismatch. TestFormatConstants compares the two.
 type format struct {
@@ -139,7 +139,7 @@ func (f *format) top(b bits) uint64 {
 	return b.Hi
 }
 
-// decode reads b as the contract says (IEEE 754-2008 clause 3.5.2): the
+// decode reads b as the contract says (IEEE 754-2019 clause 3.5.2): the
 // second encoding form has an implicit 100 above its stored coefficient
 // bits, and a finite encoding whose coefficient exceeds 10^prec - 1 is a
 // zero with the encoded sign and exponent. The payload of a NaN is its
@@ -332,7 +332,7 @@ func roundQuo(num, den *big.Int, neg bool, mode bid.Mode) (*big.Int, bool) {
 }
 
 // overflowed returns the default result of an overflow of sign neg in mode
-// (IEEE 754-2008 clause 7.4): an infinity under the nearest modes and in
+// (IEEE 754-2019 clause 7.4): an infinity under the nearest modes and in
 // the direction of the overflow, the largest finite value otherwise.
 func (f *format) overflowed(neg bool, mode bid.Mode) value {
 	switch normMode(mode) {

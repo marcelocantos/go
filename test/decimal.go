@@ -678,10 +678,10 @@ func testInfinity128() {
 	}
 }
 
-// --- IEEE 754-2008 results, checked by bit pattern ---
+// --- IEEE 754-2019 results, checked by bit pattern ---
 //
 // The tables below hold, for each operation, the encoding of the result that
-// IEEE 754-2008 requires: the exactly rounded value (ties to even) at the
+// IEEE 754-2019 requires: the exactly rounded value (ties to even) at the
 // exponent of clauses 5.2 and 7. Each expectation is written as a sign, a
 // coefficient and an exponent, derived by hand from the exact value of the
 // operation, and cross-checked with Python's decimal module (the General

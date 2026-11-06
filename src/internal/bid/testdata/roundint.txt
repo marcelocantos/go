@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-# RoundToIntegral (IEEE 754-2008 clause 5.3.1, 5.9). The result has the
+# RoundToIntegral (IEEE 754-2019 clause 5.3.1, 5.9). The result has the
 # fixed exponent max(Q(x), 0) and the sign of x, including a zero result.
 # It can neither overflow nor need clamping.
 

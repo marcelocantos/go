@@ -5,7 +5,7 @@
 package bid
 
 // Conversion between decimal values and character sequences
-// (IEEE 754-2008 clause 5.4.2 and 5.12, convertFromDecimalCharacter and
+// (IEEE 754-2019 clause 5.4.2 and 5.12, convertFromDecimalCharacter and
 // convertToDecimalCharacter). The character form is the to-scientific-string
 // form of the General Decimal Arithmetic specification, which the standard
 // adopts; it is defined in "Values, cohorts and the character form" in the
@@ -26,7 +26,7 @@ const (
 )
 
 // Append64 appends the character form of x to dst and returns the extended
-// buffer (IEEE 754-2008 clause 5.12, convertToDecimalCharacter). It does
+// buffer (IEEE 754-2019 clause 5.12, convertToDecimalCharacter). It does
 // not allocate when dst has MaxLen64 bytes of spare capacity. The output
 // is exactly what Parse64 reads back to the canonical encoding of x.
 func Append64(dst []byte, x uint64) []byte {
@@ -40,7 +40,7 @@ func Append128(dst []byte, x Uint128) []byte {
 }
 
 // Parse64 converts the character sequence s to decimal64, rounded once in
-// mode from the exact value s denotes (IEEE 754-2008 clause 5.4.2 and
+// mode from the exact value s denotes (IEEE 754-2019 clause 5.4.2 and
 // 5.12, convertFromDecimalCharacter).
 //
 // The accepted grammar is that of clause 5.12: an optional sign, then

@@ -29,7 +29,7 @@ type Decimal interface {
 // is rounded. The operators always round to nearest, ties to even.
 type RoundingMode byte
 
-// The rounding modes of IEEE 754-2008.
+// The rounding modes of IEEE 754-2019.
 const (
 	ToNearestEven RoundingMode = iota // to nearest, ties to even
 	ToNearestAway                     // to nearest, ties away from zero

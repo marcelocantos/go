@@ -12,7 +12,7 @@ import (
 )
 
 // Conversions between the decimal formats and the binary formats float32
-// and float64 (IEEE 754-2008 clause 5.4.2, convertFormat between radices).
+// and float64 (IEEE 754-2019 clause 5.4.2, convertFormat between radices).
 // Each is correctly rounded from the exact value of its operand (language
 // proposal design decision 5); the exponent and special-value rules are in
 // "Binary floating-point conversions" in the package documentation.
@@ -107,7 +107,7 @@ func Float32To128(f float32, mode Mode) Uint128 {
 	return fromFloat128(kind, neg, m, e, mode)
 }
 
-// The layout of the binary formats (IEEE 754-2008 clause 3.4) and the bits
+// The layout of the binary formats (IEEE 754-2019 clause 3.4) and the bits
 // of their specials. This package may not import math, which the runtime
 // cannot; strconv's own NaN has a non-zero payload.
 const (

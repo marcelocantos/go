@@ -8,7 +8,7 @@ package bid
 // and -0 are equal, and every member of a cohort compares the same. See
 // "Comparisons and ordering" in the package documentation.
 
-// Equal64 reports whether x == y (IEEE 754-2008 clause 5.6.1 and 5.11,
+// Equal64 reports whether x == y (IEEE 754-2019 clause 5.6.1 and 5.11,
 // compareQuietEqual). It is false if either operand is a NaN. It is the
 // == operator of the language and the equality the runtime uses for map
 // keys.
@@ -21,7 +21,7 @@ func Equal128(x, y Uint128) bool {
 	return equal128(x, y)
 }
 
-// Less64 reports whether x < y (IEEE 754-2008 clause 5.6.1 and 5.11,
+// Less64 reports whether x < y (IEEE 754-2019 clause 5.6.1 and 5.11,
 // compareQuietLess). It is false if either operand is a NaN.
 func Less64(x, y uint64) bool {
 	return less64(x, y)
@@ -32,7 +32,7 @@ func Less128(x, y Uint128) bool {
 	return less128(x, y)
 }
 
-// LessEqual64 reports whether x <= y (IEEE 754-2008 clause 5.6.1 and
+// LessEqual64 reports whether x <= y (IEEE 754-2019 clause 5.6.1 and
 // 5.11, compareQuietLessEqual). It is false if either operand is a NaN.
 func LessEqual64(x, y uint64) bool {
 	return lessEqual64(x, y)
@@ -45,7 +45,7 @@ func LessEqual128(x, y Uint128) bool {
 
 // Compare64 returns the ordering of x and y as -1, 0 or +1 with ok = true,
 // or 0 with ok = false when they are unordered because at least one is a
-// NaN (IEEE 754-2008 clause 5.11). Compare64 is the quiet comparison; the
+// NaN (IEEE 754-2019 clause 5.11). Compare64 is the quiet comparison; the
 // signaling variants of the standard differ only in the exception they
 // raise, which this package does not expose.
 func Compare64(x, y uint64) (c int, ok bool) {
@@ -58,14 +58,15 @@ func Compare128(x, y Uint128) (c int, ok bool) {
 }
 
 // TotalOrder64 reports whether x precedes or equals y in the total order of
-// IEEE 754-2008 clause 5.10 (totalOrder): -NaN < -∞ < negative finite
+// IEEE 754-2019 clause 5.10 (totalOrder): -NaN < -∞ < negative finite
 // values < -0 < +0 < positive finite values < +∞ < +NaN, with members of a
 // cohort ordered by exponent (the smaller exponent first for positive
 // values and last for negative ones). A NaN is ordered by its sign bit
 // alone: its payload and whether it is signaling are ignored, so all NaNs
-// of one sign are equal in the order (a divergence from clause 5.10,
-// which orders them by payload; see "Comparisons and ordering" in the
-// package documentation). Unlike the other comparisons it is defined on
+// of one sign are equal in the order (IEEE 754-2008's clause 5.10 ordered
+// them by signaling bit and payload; 754-2019 relaxed the ordering of
+// NaNs; see "Comparisons and ordering" in the package documentation).
+// Unlike the other comparisons it is defined on
 // every pair of operands, so it can sort a slice of bit patterns.
 func TotalOrder64(x, y uint64) bool {
 	return totalOrder64(x, y)

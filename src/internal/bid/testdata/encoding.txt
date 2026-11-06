@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-# Encoding (IEEE 754-2008 clause 3.5.2), the predicates of clause 5.7.2 and
+# Encoding (IEEE 754-2019 clause 3.5.2), the predicates of clause 5.7.2 and
 # the sign operations of clause 5.5.1 ("Sign operations"). Unpack results
 # are kind neg coeff exp; Pack operands are neg coeff exp and its results
 # the encoding and ok. The sign operations copy bits: they keep a

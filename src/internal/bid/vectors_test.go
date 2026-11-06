@@ -210,9 +210,9 @@ package bid_test
 // Results are compared bit for bit, NaN payloads and signs included; the
 // NaN divergences of vectors_nan_test.go are skipped with their reason.
 // Min and Max, and
-// TotalOrder on NaNs of one sign, are skipped where they diverge from
-// minNum and maxNum and from clause 5.10 in the documented way and in no
-// other. Each skip has a reason, counted. Not mapped, each with its own
+// TotalOrder on NaNs of one sign, are skipped where the vectors expect
+// IEEE 754-2008's minNum and maxNum or its clause 5.10 order of NaNs and
+// the target differs in the documented way and in no other. Each skip has a reason, counted. Not mapped, each with its own
 // reason: the C99 functions and transcendental functions, sqrt, lrint,
 // lround, scalbn and scalbln, ldexp, fdim, frexp, modf, ilogb, logb, the
 // next functions, minNumMag and maxNumMag, quantum and quantexp, copy,
@@ -265,7 +265,7 @@ package bid_test
 // representable); Q and S are the positive quiet and signaling NaNs with a
 // zero payload, and an expected Q passes on any quiet NaN (counted as "NaN
 // modulo payload" when the bits differ). The contract has no traps (it
-// delivers the default result of IEEE 754-2008 clause 7), so a vector that
+// delivers the default result of IEEE 754-2019 clause 7), so a vector that
 // takes an overflow, underflow or invalid trap (one whose flags include an
 // enabled trap) is skipped: those traps deliver the result scaled into the
 // exponent range, or none. An enabled trap that the operation does not take
@@ -1000,12 +1000,13 @@ func evalDec(im impl, v *decVector) vecOutcome {
 	return out
 }
 
-// The divergences of Min and Max from GDA and from IEEE 754-2008 minNum and
-// maxNum, named in the package documentation under "Minimum and maximum".
+// The differences of Min and Max from GDA and from IEEE 754-2008's minNum
+// and maxNum, which the vectors test, named in the package documentation
+// under "Minimum and maximum".
 const (
 	skipMinMaxNaN    = "contract: Min/Max return NaN if either operand is NaN (GDA returns the number)"
 	skipMinMaxCohort = "contract: Min/Max return x for operands equal in value and sign (GDA chooses by exponent)"
-	skipMinMaxZero   = "contract: Min/Max order -0 before +0 (IEEE minNum and maxNum leave the zero's sign open)"
+	skipMinMaxZero   = "contract: Min/Max order -0 before +0, as IEEE 754-2019 minimum and maximum do (754-2008 minNum and maxNum leave the zero's sign open)"
 )
 
 // minMaxDivergence reports, for a Min or Max vector that failed, whether
@@ -1022,7 +1023,8 @@ const (
 //     (the contract returns x).
 //   - Zero: the operands are zeros of opposite signs and the vector expects
 //     one of them where the target returned the other (the contract puts -0
-//     before +0; IEEE 754-2008 clause 5.3.1 allows either result).
+//     before +0, as IEEE 754-2019 clause 9.6 does; IEEE 754-2008 clause
+//     5.3.1, minNum and maxNum, allows either result).
 //
 // The operand returned is canonicalized (see "Minimum and maximum"), so the
 // expected value is compared with the canonical form of the operand. want
@@ -1167,7 +1169,7 @@ const (
 )
 
 // The class codes of the Intel library's class function, which are the
-// classes of IEEE 754-2008 clause 5.7.2 numbered from the signaling NaN.
+// classes of IEEE 754-2019 clause 5.7.2 numbered from the signaling NaN.
 const (
 	intelClassSNaN = iota
 	intelClassQNaN
@@ -1776,9 +1778,10 @@ func (c *intelCall) predicate(n int, fn func(a []bits) bool) vecOutcome {
 }
 
 // totalOrder runs totalOrder and totalOrderMag. The contract orders a NaN by
-// its sign alone, so two NaNs of one sign are ordered both ways; the
-// standard also orders by signaling bit and payload. A vector that expects
-// that order is the documented divergence.
+// its sign alone, so two NaNs of one sign are ordered both ways; IEEE
+// 754-2008's clause 5.10, which the vectors follow, also orders by
+// signaling bit and payload (754-2019 relaxed the ordering of NaNs). A
+// vector that expects that order is the documented divergence.
 func (c *intelCall) totalOrder(mag bool) vecOutcome {
 	ops, res, _, skip := c.split(2)
 	if skip != "" {

@@ -5,10 +5,13 @@
 // Package bid is the decimal floating-point kernel shared by the runtime,
 // the compiler and the standard library.
 //
-// It implements the IEEE 754-2008 decimal64 and decimal128 interchange
-// formats in their binary integer decimal (BID) encoding (IEEE 754-2008
-// clause 3.5.2) and the operations of clause 5 that the language and its
-// libraries need. The package operates on bit patterns only: a decimal64
+// It follows the decimal arithmetic of IEEE 754-2019, with the divergences
+// stated below: the decimal64 and decimal128 interchange formats in their
+// binary integer decimal (BID) encoding (clause 3.5.2) and the operations
+// of clauses 5 and 9 that the language and its libraries need. It does not
+// claim conformance to the standard, which also requires operations this
+// package omits, such as the is754version2019 predicate of clause 5.7.1,
+// just as Go's float64 arithmetic does not. The package operates on bit patterns only: a decimal64
 // value is a uint64 and a decimal128 value is a [Uint128], exactly as
 // runtime/softfloat64.go operates on the bit patterns of float64 and
 // float32. No decimal-typed value appears in any signature, so the package
@@ -38,7 +41,7 @@
 //
 // This documentation is the contract of the package. It fixes, for every
 // operation, the result on every input, including the exceptional cases of
-// IEEE 754-2008 clause 7, before any operation is implemented; the test
+// IEEE 754-2019 clause 7, before any operation is implemented; the test
 // oracle and the implementation are both written against it. Where the
 // standard fixes an answer the clause is cited. Where the standard leaves
 // latitude or is silent the choice is stated and, when it follows the
@@ -48,6 +51,20 @@
 // from either document is marked "Divergence". Per-function comments
 // describe what a function computes and point here; a rule lives in one
 // place only.
+//
+// Citations are to IEEE 754-2019, a minor revision of IEEE 754-2008. A
+// clause cited here that exists in both editions has the same number in
+// both, and the cited content is the same in both except in three places.
+// Minimum and maximum: 754-2019 deleted minNum and maxNum from clause
+// 5.3.1 and recommends the minimum and maximum of clause 9.6 instead, with
+// a different NaN and signed-zero rule (see "Minimum and maximum"). The
+// ordering of NaNs in totalOrder: 754-2019 relaxed it (see "Comparisons and
+// ordering"). roundTiesToEven: 754-2019 extended clause 4.3.1 to the case
+// where both nearest values are odd, which cannot arise in decimal64 or
+// decimal128, where of two adjacent values one always has an even
+// coefficient. The contract and its conformance suite were first written
+// from the text of 754-2008, and the published vectors were written
+// against 754-2008.
 //
 // # Invariants
 //
@@ -75,7 +92,7 @@
 //     whose coefficient field exceeds [MaxCoeff64] or 10^34 - 1
 //     ([MaxCoeff128Hi], [MaxCoeff128Lo]) is read as a zero with the
 //     encoded sign and exponent; an infinity or NaN with non-zero reserved
-//     bits is read as that infinity or NaN (IEEE 754-2008 clause 3.5.2).
+//     bits is read as that infinity or NaN (IEEE 754-2019 clause 3.5.2).
 //     Every operation that computes a value returns a canonical encoding.
 //     The only functions that return a non-canonical encoding are the
 //     sign operations [Neg64], [Abs64] and [CopySign64] (and the
@@ -83,14 +100,14 @@
 //     operations".
 //   - NaNs propagate, quietly. A NaN operand gives a NaN result that is
 //     that operand made quiet, with its sign and its payload, as IEEE
-//     754-2008 clause 6.2.3 recommends and as float64 arithmetic does;
+//     754-2019 clause 6.2.3 recommends and as float64 arithmetic does;
 //     "NaN results" says which operand when there are several, and which
 //     operations propagate. A NaN that an operation creates from operands
 //     that are not NaNs (an invalid operation, clause 7.2) is the
 //     canonical positive quiet NaN: [NaN64], or the decimal128 whose high
 //     word is [NaN128Hi] and whose low word is zero. No operation returns
 //     a signaling NaN except the sign operations, which copy bits.
-//     Infinities keep their sign. Divergence: IEEE 754-2008 clause 7.2
+//     Infinities keep their sign. Divergence: IEEE 754-2019 clause 7.2
 //     item a and GDA both signal invalid operation for a signaling NaN
 //     operand; this package makes it quiet and reports nothing (see
 //     "Conditions").
@@ -98,9 +115,9 @@
 // # Rounding modes
 //
 // Every operation that can be inexact takes a [Mode] parameter, one of the
-// five rounding-direction attributes of IEEE 754-2008 clause 4.3:
+// five rounding-direction attributes of IEEE 754-2019 clause 4.3:
 //
-//	Mode            IEEE 754-2008 attribute   Clause   Rounds to
+//	Mode            IEEE 754-2019 attribute   Clause   Rounds to
 //	ToNearestEven   roundTiesToEven           4.3.1    nearest; ties to the even coefficient
 //	ToNearestAway   roundTiesToAway           4.3.1    nearest; ties away from zero
 //	TowardZero      roundTowardZero           4.3.2    the representable value nearest to and no greater in magnitude
@@ -121,7 +138,7 @@
 //
 // # Conditions
 //
-// IEEE 754-2008 clause 7 defines five exceptions. This package delivers
+// IEEE 754-2019 clause 7 defines five exceptions. This package delivers
 // the clause 7 default result for each. Divergence: clause 7.1 requires
 // that each exception also raise a status flag the program can test and
 // clear; this package has no flags, as Go's binary floating point has
@@ -133,7 +150,7 @@
 // its relatives, and the rounding routine Round64 and Round128, return a
 // [Status] alongside the result. Status is a bit set over these flags:
 //
-//	Status     IEEE 754-2008 exception   Clause   Default result delivered
+//	Status     IEEE 754-2019 exception   Clause   Default result delivered
 //	Invalid    invalid operation         7.2      the canonical quiet NaN; for an integer result, see "Integer conversions"
 //	(none)     division by zero          7.3      the infinity with the exclusive-or of the operand signs
 //	Overflow   overflow                  7.4      an infinity or the largest finite magnitude, by mode; see "Overflow"
@@ -159,7 +176,7 @@
 //
 // A finite decimal value is (-1)^sign × coefficient × 10^exponent with the
 // coefficient an integer of at most Precision digits and the exponent in
-// [MinExp, MaxExp] (IEEE 754-2008 clause 3.3, parameters in Table 3.6;
+// [MinExp, MaxExp] (IEEE 754-2019 clause 3.3, parameters in Table 3.6;
 // the constants are in encoding.go). Q(x) denotes the exponent of a finite
 // x. The members of a cohort (clause 2.1) are the encodings of one
 // non-zero value with different exponents, such as 1.5, 1.50 and 1.500;
@@ -169,7 +186,7 @@
 //
 // The character form used throughout this documentation and produced by
 // Append64 and Append128 is the to-scientific-string form of GDA. IEEE
-// 754-2008 clause 5.12 requires a conversion to character form that is
+// 754-2019 clause 5.12 requires a conversion to character form that is
 // exact and preserves the quantum, and GDA's form meets it; the standard
 // fixes no particular notation. For a finite value, the coefficient is
 // written with all its digits and the adjusted exponent a = Q(x) +
@@ -199,7 +216,7 @@
 //
 // # Exponent of a result
 //
-// IEEE 754-2008 clause 5.2 fixes the exponent of a decimal result through
+// IEEE 754-2019 clause 5.2 fixes the exponent of a decimal result through
 // the preferred exponent of each operation. If the result is exact and
 // the cohort of the exact value contains a member with the preferred
 // exponent, that member is the result; if it does not, the member whose
@@ -232,14 +249,14 @@
 //	Parse                      the exponent the numeral        clause 5.12.2 with clause 5.2
 //	                           denotes: its exponent part
 //	                           less its fraction digits
-//	Min, Max                   Q of the operand returned       clause 5.2, minNum and maxNum
+//	Min, Max                   Q of the operand returned       this package, for minimum and maximum of clause 9.6
 //	Round                      the exp argument                this package
 //
 // Exponent clamping. An exact result whose exponent under the rule above
 // would exceed MaxExp is encoded with exponent MaxExp and a coefficient
 // padded with trailing zeros whenever the padded coefficient fits in
 // Precision digits; it is exact, it does not overflow and it reports
-// nothing (GDA calls this fold-down and signals Clamped; IEEE 754-2008
+// nothing (GDA calls this fold-down and signals Clamped; IEEE 754-2019
 // clause 7.4 defines overflow by magnitude, so a value no larger than the
 // largest finite value never overflows). An exact result whose exponent
 // would be below MinExp is likewise encoded at MinExp with the coefficient
@@ -265,7 +282,7 @@
 //
 // # Sign of a result
 //
-// IEEE 754-2008 clause 6.3 fixes the sign of every result that is not a
+// IEEE 754-2019 clause 6.3 fixes the sign of every result that is not a
 // NaN; the sign of a NaN result is that of the NaN operand it propagates,
 // or positive for a NaN an invalid operation creates (see "NaN results").
 //
@@ -303,7 +320,7 @@
 // A result overflows when the value it would round to under the mode
 // with an unbounded exponent range exceeds the largest finite magnitude
 // of the format, 9.999999999999999E+384 for decimal64 and
-// 9.999999999999999999999999999999999E+6144 for decimal128 (IEEE 754-2008
+// 9.999999999999999999999999999999999E+6144 for decimal128 (IEEE 754-2019
 // clause 7.4). Overflow is thus decided after rounding: under TowardZero,
 // 99999999999999995E+368 rounds to 9999999999999999E+369 and does not
 // overflow, while under ToNearestEven it rounds to 1E+385 and does. A
@@ -329,7 +346,7 @@
 // A non-zero finite value whose magnitude is below 10^Emin (1E-383 for
 // decimal64, 1E-6143 for decimal128) is subnormal; its coefficient has
 // fewer than Precision digits at exponent MinExp, and like any value it
-// may be encoded at any exponent of its cohort (IEEE 754-2008 clause 3.3):
+// may be encoded at any exponent of its cohort (IEEE 754-2019 clause 3.3):
 // 1E-390 is a subnormal decimal64 with coefficient 1 and exponent -390.
 // An inexact subnormal result is encoded at MinExp, as the inexact-result
 // rule gives. A result is tiny when its exact value, before any rounding, is
@@ -389,7 +406,7 @@
 //
 // # NaN results
 //
-// IEEE 754-2008 clause 6.2.3 recommends that an operation with a NaN
+// IEEE 754-2019 clause 6.2.3 recommends that an operation with a NaN
 // operand return a NaN carrying the payload of an input NaN; GDA requires
 // it, and float64 arithmetic does it on the common hardware. This package
 // does it in every operation of the previous section, so that a decimal
@@ -453,7 +470,7 @@
 // # Sign operations
 //
 // Neg64, Abs64 and CopySign64 are the negate, abs and copySign operations
-// of IEEE 754-2008 clause 5.5.1. They operate on the sign bit alone and on
+// of IEEE 754-2019 clause 5.5.1. They operate on the sign bit alone and on
 // every encoding alike: they do not canonicalize, they do not quiet a
 // signaling NaN, they do not clear a payload, and they never signal. They
 // are the one exception to "every result is canonical" and "no operation
@@ -465,7 +482,7 @@
 // # Comparisons and ordering
 //
 // Equal64, Less64, LessEqual64 and Compare64 are the quiet comparison
-// predicates of IEEE 754-2008 clauses 5.6.1 and 5.11. They compare values,
+// predicates of IEEE 754-2019 clauses 5.6.1 and 5.11. They compare values,
 // not encodings: every member of a cohort is equal to every other, +0
 // equals -0, and a non-canonical encoding compares as the value it reads
 // as. A NaN operand, quiet or signaling, is unordered: Equal, Less and
@@ -484,9 +501,11 @@
 // operand is ordered by its sign bit alone (TotalOrder reads a sign; it
 // does not produce a NaN) and all NaNs of one sign are equal in the
 // order, so TotalOrder64(x, y) and TotalOrder64(y, x) are both true for
-// two NaNs of the same sign. Divergence: clause 5.10 orders a signaling
-// NaN before a quiet one and NaNs of the same kind by payload; this
-// package ignores the signaling bit and the payload in TotalOrder.
+// two NaNs of the same sign. IEEE 754-2008's clause 5.10 required that a
+// signaling NaN be ordered before a quiet one of the same sign, and NaNs
+// of the same kind by payload; IEEE 754-2019 relaxed the ordering of NaNs.
+// This package orders NaNs by sign alone and ignores the signaling bit and
+// the payload in TotalOrder.
 //
 // SameQuantum64 (clause 5.7.3) is true when both operands are finite with
 // the same exponent, both are infinities, or both are NaNs, and false
@@ -494,17 +513,22 @@
 //
 // # Minimum and maximum
 //
-// Min64 and Max64 implement the Go built-ins min and max for decimal
-// values, not the minNum and maxNum of IEEE 754-2008 clause 5.3.1 nor
-// GDA's min and max. Divergence: if either operand is a NaN the result is
-// a NaN, the operand "NaN results" chooses made quiet (minNum, maxNum and
-// GDA return the number when only one operand is a NaN). Otherwise the
-// result is the lesser (greater) operand by value with -0 less than +0,
-// and when the operands are equal in value and sign, including two
-// members of one cohort with different exponents, the result is x,
-// canonicalized (GDA chooses by exponent, so Max64(1.0, 1) is 1.0 here
-// and 1 in GDA). The preferred exponent of the result is that of the
-// operand returned, so the exponent is preserved.
+// Min64 and Max64 are the minimum and maximum operations of IEEE 754-2019
+// clause 9.6, which are also the Go built-ins min and max for decimal
+// values. If either operand is a NaN the result is a quiet NaN; otherwise
+// the result is the lesser (greater) operand by value, with -0 less than
+// +0. These are the NaN and signed-zero rules of clause 9.6, which differ
+// from those of IEEE 754-2008's minNum and maxNum (clause 5.3.1 of that
+// edition, deleted in 754-2019), and from GDA's min and max, which return
+// the number when only one operand is a NaN.
+//
+// The rest is this package's choice. The NaN returned is the operand
+// "NaN results" chooses, made quiet. When the operands are equal in value
+// and sign, including two members of one cohort with different
+// exponents, the result is x, canonicalized. Divergence from GDA: GDA
+// chooses by exponent, so Max64(1.0, 1) is 1.0 here and 1 in GDA. The
+// preferred exponent of the result is that of the operand returned, so
+// the exponent is preserved.
 //
 // # Format conversions
 //

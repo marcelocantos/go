@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-# Quantize (IEEE 754-2008 clause 5.3.2). The result has the fixed exponent
+# Quantize (IEEE 754-2019 clause 5.3.2). The result has the fixed exponent
 # Q(y) and the sign of x; the sign and coefficient of y are ignored. When
 # the result coefficient would exceed Precision digits, or exactly one
 # operand is an infinity, the result is NaN. The exponent is never

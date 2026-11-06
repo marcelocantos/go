@@ -1472,7 +1472,7 @@ const maxQuantum = 1 << 40
 // exponent part has quantum -n; an exponent part is added to that. An [Int]
 // value has quantum 0. A [Float] value has a quantum if it came from a decimal
 // literal or from exact arithmetic on values that have one, following the
-// preferred exponents of IEEE 754-2008 decimal arithmetic: the smaller quantum
+// preferred exponents of IEEE 754-2019 decimal arithmetic: the smaller quantum
 // for addition and subtraction, the sum for multiplication, and for division
 // the largest exponent no greater than the difference at which the quotient
 // is exact. Other values, including complex values and the results of

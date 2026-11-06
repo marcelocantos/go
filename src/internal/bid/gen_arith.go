@@ -149,7 +149,7 @@ package bid
 
 // dpdSource returns the source of zdpd.go: the tables between three-digit
 // integers and the 10-bit declets of the densely packed decimal encoding.
-// The declets come from the encoding table of IEEE 754-2008 clause 3.5.2
+// The declets come from the encoding table of IEEE 754-2019 clause 3.5.2
 // (Table 3.4), written below as bit operations on the BCD digits; decoding
 // follows the decoding table (Table 3.3), which maps the 24 redundant
 // declets to the same digits as their canonical twins.

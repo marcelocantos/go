@@ -130,7 +130,7 @@ func lessEqual128(x, y coef128) bool {
 }
 
 // totalOrder128 reports whether x precedes or equals y in the total order of
-// IEEE 754-2008 clause 5.10 as the package defines it: by sign first
+// IEEE 754-2019 clause 5.10 as the package defines it: by sign first
 // (negative operands, NaNs included, precede positive ones), then, within
 // one sign, finite values by value, then infinities, then NaNs; two finite
 // values of equal value, zeros included, by exponent. For negative operands
@@ -367,7 +367,7 @@ func round128(neg bool, p wide128, exp int, class digitClass, mode Mode, floor i
 }
 
 // overflow128 returns the default result of an overflow of sign neg in mode
-// and its Status (IEEE 754-2008 clause 7.4; "Overflow" in the package
+// and its Status (IEEE 754-2019 clause 7.4; "Overflow" in the package
 // documentation).
 func overflow128(neg bool, mode Mode) (coef128, Status) {
 	if overflowsToInf(mode, neg) {

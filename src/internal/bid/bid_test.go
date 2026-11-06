@@ -79,7 +79,7 @@ func TestExponentRange(t *testing.T) {
 			t.Errorf("%s: Bias = %d, want %d", c.name, c.bias, -c.minExp)
 		}
 		// The biased exponent field holds 3 << (expBits-2) values
-		// (IEEE 754-2008 clause 3.5.2); the largest is MaxExp + Bias.
+		// (IEEE 754-2019 clause 3.5.2); the largest is MaxExp + Bias.
 		if got, want := c.maxExp+c.bias, 3<<(c.expBits-2)-1; got != want {
 			t.Errorf("%s: largest biased exponent = %d, want %d", c.name, got, want)
 		}

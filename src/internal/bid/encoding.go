@@ -20,7 +20,7 @@ type Uint128 struct {
 	Hi, Lo uint64
 }
 
-// Format parameters of the two interchange formats (IEEE 754-2008 clause
+// Format parameters of the two interchange formats (IEEE 754-2019 clause
 // 3.3). A finite value is (-1)^s × c × 10^q with the coefficient
 // c an integer of at most Precision digits and the quantum exponent q in
 // [MinExp, MaxExp]. Emax and Emin bound the adjusted exponent of a normal
@@ -57,7 +57,7 @@ const (
 	MaxCoeff128Lo uint64 = 0x378D8E63FFFFFFFF
 )
 
-// Field layout of the BID encodings (IEEE 754-2008 clause 3.5.2). The
+// Field layout of the BID encodings (IEEE 754-2019 clause 3.5.2). The
 // first form holds a coefficient below 2^CoeffBits with the exponent field
 // starting at bit CoeffBits. The second form, marked by the two bits below
 // the sign being 11, holds a coefficient with an implicit leading 100 in
@@ -122,7 +122,7 @@ const (
 	KindNaN
 )
 
-// Unpack64 decodes the fields of x (IEEE 754-2008 clause 3.5.2) into its
+// Unpack64 decodes the fields of x (IEEE 754-2019 clause 3.5.2) into its
 // kind, sign, coefficient and exponent. For a finite value
 // x = (-1)^neg × coeff × 10^exp with coeff ≤ MaxCoeff64 and exp in
 // [MinExp64, MaxExp64]; a non-canonical coefficient reads as zero. For an
@@ -175,7 +175,7 @@ func Unpack128(x Uint128) (kind Kind, neg bool, coeff Uint128, exp int) {
 }
 
 // Pack64 encodes the finite value (-1)^neg × coeff × 10^exp exactly in
-// the canonical first or second form (IEEE 754-2008 clause 3.5.2). It
+// the canonical first or second form (IEEE 754-2019 clause 3.5.2). It
 // reports ok = false and returns NaN64 when coeff exceeds MaxCoeff64 or exp
 // lies outside [MinExp64, MaxExp64]; it never rounds. To encode a value
 // that may need rounding or exponent adjustment, use Round64. Pack64 is
@@ -212,7 +212,7 @@ func Pack128(neg bool, coeff Uint128, exp int) (x Uint128, ok bool) {
 	}, true
 }
 
-// IsNaN64 reports whether x is a NaN, quiet or signaling (IEEE 754-2008
+// IsNaN64 reports whether x is a NaN, quiet or signaling (IEEE 754-2019
 // clause 5.7.2, isNaN).
 func IsNaN64(x uint64) bool {
 	return x&SpecialMask64 == SpecialMask64 && x&NaNBit64 != 0
@@ -223,7 +223,7 @@ func IsNaN128(x Uint128) bool {
 	return IsNaN64(x.Hi)
 }
 
-// IsSignaling64 reports whether x is a signaling NaN (IEEE 754-2008 clause
+// IsSignaling64 reports whether x is a signaling NaN (IEEE 754-2019 clause
 // 5.7.2, isSignaling).
 func IsSignaling64(x uint64) bool {
 	return IsNaN64(x) && x&SignalingBit64 != 0
@@ -234,7 +234,7 @@ func IsSignaling128(x Uint128) bool {
 	return IsSignaling64(x.Hi)
 }
 
-// IsInf64 reports whether x is an infinity of either sign (IEEE 754-2008
+// IsInf64 reports whether x is an infinity of either sign (IEEE 754-2019
 // clause 5.7.2, isInfinite).
 func IsInf64(x uint64) bool {
 	return x&SpecialMask64 == SpecialMask64 && x&NaNBit64 == 0
@@ -246,7 +246,7 @@ func IsInf128(x Uint128) bool {
 }
 
 // IsFinite64 reports whether x is neither an infinity nor a NaN
-// (IEEE 754-2008 clause 5.7.2, isFinite).
+// (IEEE 754-2019 clause 5.7.2, isFinite).
 func IsFinite64(x uint64) bool {
 	return x&SpecialMask64 != SpecialMask64
 }
@@ -257,7 +257,7 @@ func IsFinite128(x Uint128) bool {
 }
 
 // IsZero64 reports whether x is a zero of either sign, including a
-// non-canonical encoding that reads as zero (IEEE 754-2008 clause 5.7.2,
+// non-canonical encoding that reads as zero (IEEE 754-2019 clause 5.7.2,
 // isZero).
 func IsZero64(x uint64) bool {
 	k, _, c, _ := Unpack64(x)
@@ -271,7 +271,7 @@ func IsZero128(x Uint128) bool {
 }
 
 // IsSubnormal64 reports whether x is finite, non-zero and below the
-// smallest normal magnitude 10^Emin64 (IEEE 754-2008 clause 5.7.2,
+// smallest normal magnitude 10^Emin64 (IEEE 754-2019 clause 5.7.2,
 // isSubnormal).
 func IsSubnormal64(x uint64) bool {
 	k, _, c, exp := Unpack64(x)
@@ -290,7 +290,7 @@ func IsSubnormal128(x Uint128) bool {
 	return digits128(c)-1+exp < Emin128
 }
 
-// IsCanonical64 reports whether x is a canonical encoding (IEEE 754-2008
+// IsCanonical64 reports whether x is a canonical encoding (IEEE 754-2019
 // clause 5.7.2, isCanonical): a finite value whose coefficient field is at
 // most MaxCoeff64, an infinity with zero reserved and coefficient bits, or
 // a NaN with zero reserved bits and a payload below 10^(Precision64-1).
@@ -333,7 +333,7 @@ func IsCanonical128(x Uint128) bool {
 	return !u128GtMaxCoeff(c)
 }
 
-// Signbit64 reports whether the sign bit of x is set (IEEE 754-2008 clause
+// Signbit64 reports whether the sign bit of x is set (IEEE 754-2019 clause
 // 5.7.2, isSignMinus). It is true for -0 and for a NaN whose sign bit is
 // set.
 func Signbit64(x uint64) bool {
@@ -345,7 +345,7 @@ func Signbit128(x Uint128) bool {
 	return Signbit64(x.Hi)
 }
 
-// Neg64 returns x with its sign bit inverted (IEEE 754-2008 clause 5.5.1,
+// Neg64 returns x with its sign bit inverted (IEEE 754-2019 clause 5.5.1,
 // negate). It is a bit operation, as are Abs64 and CopySign64: it does not
 // canonicalize and it does not quiet a NaN (see "Sign operations" in the
 // package documentation).
@@ -358,7 +358,7 @@ func Neg128(x Uint128) Uint128 {
 	return Uint128{Hi: x.Hi ^ SignMask128Hi, Lo: x.Lo}
 }
 
-// Abs64 returns x with its sign bit cleared (IEEE 754-2008 clause 5.5.1,
+// Abs64 returns x with its sign bit cleared (IEEE 754-2019 clause 5.5.1,
 // abs). It is a bit operation.
 func Abs64(x uint64) uint64 {
 	return x &^ SignMask64
@@ -369,7 +369,7 @@ func Abs128(x Uint128) Uint128 {
 	return Uint128{Hi: x.Hi &^ SignMask128Hi, Lo: x.Lo}
 }
 
-// CopySign64 returns x with the sign bit of sign (IEEE 754-2008 clause
+// CopySign64 returns x with the sign bit of sign (IEEE 754-2019 clause
 // 5.5.1, copySign). It is a bit operation.
 func CopySign64(x, sign uint64) uint64 {
 	return x&^SignMask64 | sign&SignMask64
@@ -384,7 +384,7 @@ const maxNaNPayload64 = 1_000_000_000_000_000 // 10^15
 
 // The trailing significand field of a NaN, which holds its payload: the
 // low 50 bits of a decimal64, and the low 46 bits of the high word of a
-// decimal128 with all of its low word (IEEE 754-2008 clause 3.5.2).
+// decimal128 with all of its low word (IEEE 754-2019 clause 3.5.2).
 const (
 	nanPayloadMask64    uint64 = 1<<50 - 1
 	nanPayloadMask128Hi uint64 = 1<<46 - 1

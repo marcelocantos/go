@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-# Addition and subtraction (IEEE 754-2008 clause 5.4.1). Derived from
+# Addition and subtraction (IEEE 754-2019 clause 5.4.1). Derived from
 # "Exponent of a result", "Sign of a result", "Overflow", "Underflow and
 # subnormal results" and "NaN and infinity operands" in the package
 # documentation. The preferred exponent is min(Q(x), Q(y)).

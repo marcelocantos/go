@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-# Reduce (GDA reduce) and SameQuantum (IEEE 754-2008 clause 5.7.3). Reduce
+# Reduce (GDA reduce) and SameQuantum (IEEE 754-2019 clause 5.7.3). Reduce
 # removes trailing zeros as far as MaxExp allows; a zero reduces to the
 # zero of its sign at exponent 0; specials are canonicalized. Both are
 # exact and take no mode.

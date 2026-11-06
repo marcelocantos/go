@@ -6,7 +6,7 @@ package bid_test
 
 // Tests of the BID codec and the encoding predicates of encoding.go.
 //
-// They are written from the layout of IEEE 754-2008 clause 3.5.2 alone. The
+// They are written from the layout of IEEE 754-2019 clause 3.5.2 alone. The
 // decoders and encoders below split an encoding into the sign S, the
 // combination field G (13 bits for decimal64, 17 for decimal128) and the
 // trailing significand field T (50 and 110 bits), and read the standard's
@@ -43,7 +43,7 @@ const (
 	ieeeNaNLimit128L = 0x38C15B0A00000000
 )
 
-// ieeeDecode64 decodes a decimal64 per IEEE 754-2008 clause 3.5.2.
+// ieeeDecode64 decodes a decimal64 per IEEE 754-2019 clause 3.5.2.
 func ieeeDecode64(x uint64) ieee {
 	s := x >> 63
 	g := x >> 50 & 0x1FFF // G0 is bit 12 of g, G12 is bit 0
@@ -76,7 +76,7 @@ func ieeeDecode64(x uint64) ieee {
 	return v
 }
 
-// ieeeDecode128 decodes a decimal128 per IEEE 754-2008 clause 3.5.2.
+// ieeeDecode128 decodes a decimal128 per IEEE 754-2019 clause 3.5.2.
 func ieeeDecode128(x bid.Uint128) ieee {
 	s := x.Hi >> 63
 	g := x.Hi >> 46 & 0x1FFFF // G0 is bit 16 of g, G16 is bit 0

@@ -765,7 +765,7 @@ func TestFormatConstants(t *testing.T) {
 			t.Errorf("%s = %#016x, want %#016x", c.name, c.got.Hi, w.Hi)
 		}
 	}
-	// Encodings computed by hand from the field layout of IEEE 754-2008
+	// Encodings computed by hand from the field layout of IEEE 754-2019
 	// clause 3.5.2, so that the model's codec is checked against something
 	// other than itself. The largest finite decimal64, 9999999999999999 at
 	// exponent 369, needs the second form: 11, the biased exponent 767 at

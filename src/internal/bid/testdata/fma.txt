@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-# Fused multiply-add (IEEE 754-2008 clause 5.4.1). The product is exact;
+# Fused multiply-add (IEEE 754-2019 clause 5.4.1). The product is exact;
 # the preferred exponent is min(Q(x) + Q(y), Q(z)).
 
 # --- FMA64 ---
