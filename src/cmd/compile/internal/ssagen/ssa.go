@@ -5952,7 +5952,7 @@ func (s *state) storeType(t *types.Type, left, right *ssa.Value, skip skipMask, 
 // do *left = right for all scalar (non-pointer) parts of t.
 func (s *state) storeTypeScalars(t *types.Type, left, right *ssa.Value, skip skipMask) {
 	switch {
-	case t.IsBoolean() || t.IsInteger() || t.IsFloat() || t.IsComplex() || t.IsSIMD():
+	case t.IsBoolean() || t.IsInteger() || t.IsFloat() || t.IsComplex() || t.IsDecimal() || t.IsSIMD():
 		s.store(t, left, right)
 	case t.IsPtrShaped():
 		if t.IsPtr() && t.Elem().NotInHeap() {
