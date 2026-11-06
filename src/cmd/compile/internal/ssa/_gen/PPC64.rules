@@ -330,6 +330,26 @@
 (Leq(32|64) x y) => (LessEqual ((CMPW|CMP) x y))
 (Leq(32|64)F x y) => (FLessEqual (FCMPU x y))
 
+// Decimal floating point on the DPD encoding (see the DPD ops in
+// genericOps.go). Decimal64 values move between GPRs and FPRs; the moves
+// between two decimal64 operations cancel (see MTVSRD (MFVSRD x) below).
+// Comparisons set CR0 as FCMPU does, so the float condition ops apply,
+// with NaN unordered.
+(DPD(Add|Sub|Mul|Div)64 x y) => (MFVSRD (D(ADD|SUB|MUL|DIV) (MTVSRD x) (MTVSRD y)))
+(DPDEq64 x y) => (Equal (DCMPU (MTVSRD x) (MTVSRD y)))
+(DPDLess64 x y) => (FLessThan (DCMPU (MTVSRD x) (MTVSRD y)))
+(DPDLeq64 x y) => (FLessEqual (DCMPU (MTVSRD x) (MTVSRD y)))
+(DPD(Add|Sub|Mul|Div)128 ...) => (LoweredD(ADD|SUB|MUL|DIV)Q ...)
+(DPDEq128 xh xl yh yl) => (Equal (LoweredDCMPUQ xh xl yh yl))
+(DPDLess128 xh xl yh yl) => (FLessThan (LoweredDCMPUQ xh xl yh yl))
+(DPDLeq128 xh xl yh yl) => (FLessEqual (LoweredDCMPUQ xh xl yh yl))
+(DPDWiden ...) => (LoweredDCTQPQ ...)
+(DPDNarrow ...) => (LoweredDRDPQ ...)
+(DPDFromInt64 x) => (MFVSRD (DCFFIX (MTVSRD x)))
+(DPDFromInt64To128 ...) => (LoweredDCFFIXQ ...)
+(DPDToInt64 x) => (MFVSRD (DCTFIX (DTRUNC (MTVSRD x))))
+(DPDToInt64From128 ...) => (LoweredDCTFIXQ ...)
+
 (Leq(8|16)U x y)  => (LessEqual (CMPWU (ZeroExt(8|16)to32 x) (ZeroExt(8|16)to32 y)))
 (Leq(32|64)U x y) => (LessEqual (CMP(WU|U) x y))
 
@@ -748,6 +768,8 @@
 (MFVSRD (FMOVDconst [c])) => (MOVDconst [int64(math.Float64bits(c))])
 
 (MTVSRD x:(MOVDload [off] {sym} ptr mem)) && x.Uses == 1 && ssa.Clobber(x) => @x.Block (FMOVDload [off] {sym} ptr mem)
+(MTVSRD (MFVSRD x)) => x
+(MFVSRD (MTVSRD x)) => x
 (MFVSRD x:(FMOVDload [off] {sym} ptr mem)) && x.Uses == 1 && ssa.Clobber(x) => @x.Block (MOVDload [off] {sym} ptr mem)
 
 // Rules for MOV* or FMOV* ops determine when indexed (MOV*loadidx or MOV*storeidx)

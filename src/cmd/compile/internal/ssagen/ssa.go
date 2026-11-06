@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"go/constant"
 	"html"
-	"internal/bid"
 	"internal/buildcfg"
 	"internal/goexperiment"
 	"internal/runtime/gc"
@@ -3017,6 +3016,14 @@ func (s *state) conv(n ir.Node, v *ssa.Value, ft, tt *types.Type) *ssa.Value {
 			}
 			rt = types.Types[tk]
 		}
+		if ir.DecimalDPD() {
+			if r := s.dpdConv(v, fk, tk, ft.IsInteger() && !ft.IsSigned() && ft.Size() < 8, rt); r != nil {
+				if tt.IsInteger() && tt.Size() < 8 {
+					r = s.newValue1(decTrunc[tt.Size()], tt, r)
+				}
+				return r
+			}
+		}
 		fn, ok := softDecimalConvs[twoTypes{fk, tk}]
 		if !ok {
 			s.Fatalf("unhandled decimal conversion %v -> %v", ft, tt)
@@ -3388,7 +3395,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			return s.newValueOrSfCall2(s.ssaOp(op, n.X.Type()), types.Types[types.TBOOL], a, b)
 		}
 		if n.X.Type().IsDecimal() {
-			return s.softDecimalOp(op, types.Types[types.TBOOL], a, b)
+			return s.decimalOp(op, types.Types[types.TBOOL], a, b)
 		}
 		// integer comparison
 		return s.newValue2(s.ssaOp(op, n.X.Type()), types.Types[types.TBOOL], a, b)
@@ -3430,7 +3437,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			return s.newValueOrSfCall2(s.ssaOp(n.Op(), n.Type()), a.Type, a, b)
 		}
 		if n.Type().IsDecimal() {
-			return s.softDecimalOp(n.Op(), n.Type(), a, b)
+			return s.decimalOp(n.Op(), n.Type(), a, b)
 		}
 
 		return s.newValue2(s.ssaOp(n.Op(), n.Type()), a.Type, a, b)
@@ -3483,7 +3490,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			return s.newValueOrSfCall2(s.ssaOp(n.Op(), n.Type()), a.Type, a, b)
 		}
 		if n.Type().IsDecimal() {
-			return s.softDecimalOp(n.Op(), n.Type(), a, b)
+			return s.decimalOp(n.Op(), n.Type(), a, b)
 		}
 		return s.intDivide(n, a, b)
 	case ir.OMOD:
@@ -3506,7 +3513,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			return s.newValueOrSfCall2(s.ssaOp(n.Op(), n.Type()), a.Type, a, b)
 		}
 		if n.Type().IsDecimal() {
-			return s.softDecimalOp(n.Op(), n.Type(), a, b)
+			return s.decimalOp(n.Op(), n.Type(), a, b)
 		}
 		return s.newValue2(s.ssaOp(n.Op(), n.Type()), a.Type, a, b)
 	case ir.OAND, ir.OOR, ir.OXOR:
@@ -4396,10 +4403,10 @@ func (s *state) minMax(n *ir.CallExpr) *ssa.Value {
 	typ := n.Type()
 
 	if typ.IsDecimal() {
-		// Decimal min/max has the same NaN/-0 concerns as float.
-		// The compiler doesn't use decimal instructions yet, so always call runtime.
+		// Decimal min/max has the same NaN/-0 concerns as float. A
+		// runtime call, except on a DPD target (see dpdMinMax).
 		return fold(func(x, a *ssa.Value) *ssa.Value {
-			return s.softDecimalOp(n.Op(), typ, x, a)
+			return s.decimalOp(n.Op(), typ, x, a)
 		})
 	}
 
@@ -4995,13 +5002,14 @@ func (s *state) softDecimalOp(op ir.Op, rt *types.Type, args ...*ssa.Value) *ssa
 
 // softDecimalCall calls the runtime function fn, passing decimal arguments
 // and returning a decimal result as BID bit patterns. A decimal value in SSA
-// and in memory is its BID encoding XORed with the encoding of 0E+0, so that
-// all bits clear is the zero value. XORing again here converts between the
-// two. The mask leaves the sign bit alone, so negation needs no conversion.
+// and in memory is its native encoding XORed with the native encoding of
+// 0E+0, so that all bits clear is the zero value (ir.DecimalDPD says which
+// encoding is native). XORing again here converts between the two, and the
+// runtime converts a native DPD encoding to BID for the kernel. The mask leaves the sign bit alone, so negation needs no conversion.
 func (s *state) softDecimalCall(fn *obj.LSym, rt *types.Type, args ...*ssa.Value) *ssa.Value {
 	u64 := types.Types[types.TUINT64]
-	zero64 := s.constInt64(u64, int64(bid.Zero64))
-	zero128Hi := s.constInt64(u64, int64(bid.Zero128Hi))
+	zero64 := s.constInt64(u64, int64(ir.DecimalZero64()))
+	zero128Hi := s.constInt64(u64, int64(ir.DecimalZero128Hi()))
 	callArgs := make([]*ssa.Value, 0, 2*len(args))
 	for _, a := range args {
 		switch a.Type.Kind() {

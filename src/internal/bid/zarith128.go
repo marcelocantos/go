@@ -283,12 +283,19 @@ func key128(x coef128) (kind Kind, neg bool, c coef128, exp int) {
 // refuses what does not fit. No function other than round128 may call it,
 // unless it re-encodes a coefficient and exponent already known to be
 // representable because Unpack128 returned them, possibly with another
-// sign or for a narrower width, and is named both here and in the allowlist
-// of TestRoundIsTheOnlyPacker, which parses the package source. At present
-// there is one: Widen, which re-encodes the decimal64 coefficient and
-// exponent that Unpack64 returned as a decimal128 with Pack128, because
-// every decimal64 value is a decimal128 value. It measured two to three
-// times faster than the rounding routine on a 256-bit wide value.
+// sign or for a narrower width, or decoded them from an encoding that cannot
+// hold anything else, and is named both here and in the allowlist of
+// TestRoundIsTheOnlyPacker, which parses the package source. At present
+// there are two. Widen re-encodes the decimal64 coefficient and exponent
+// that Unpack64 returned as a decimal128 with Pack128, because every
+// decimal64 value is a decimal128 value. It measured two to three times
+// faster than the rounding routine on a 256-bit wide value. BIDFromDPD64
+// and BIDFromDPD128 encode the coefficient and exponent of a DPD encoding,
+// which has at most Precision digits (one in the combination field and
+// three to each declet) and a biased exponent below 3 × 2^(ExpBits-2) (the
+// combination field's two leading exponent bits are never 11), so that
+// every DPD finite value is representable exactly; they are conversions
+// between encodings, not operations, and round nothing.
 func round128(neg bool, p wide128, exp int, class digitClass, mode Mode, floor int) (coef128, Status) {
 	if p == (wide128{}) && class == classZero {
 		var zero coef128

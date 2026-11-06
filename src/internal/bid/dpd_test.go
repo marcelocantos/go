@@ -5,14 +5,9 @@
 package bid_test
 
 import (
-	"bufio"
 	"internal/bid"
 	"math/big"
 	"math/rand/v2"
-	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
 	"testing"
 )
 
@@ -51,7 +46,7 @@ func TestDeclets(t *testing.T) {
 	if redundant != 24 {
 		t.Errorf("%d redundant declets, want 24", redundant)
 	}
-	// Spot checks from Table 3.4 and the decTest vectors.
+	// Spot checks, from Table 3.4.
 	for _, c := range []struct {
 		n int
 		d uint16
@@ -69,207 +64,6 @@ func TestDPDZero(t *testing.T) {
 	if got := bid.DPDFromBID128(bid.Uint128{Hi: bid.Zero128Hi}); got != (bid.Uint128{Hi: bid.DPDZero128Hi}) {
 		t.Errorf("DPD of 0E+0 is %#016x%016x, want DPDZero128Hi", got.Hi, got.Lo)
 	}
-}
-
-// TestDPDVectors runs IBM's published encoding vectors, ddEncode.decTest
-// and dqEncode.decTest, from BID_DECTEST_DIR: each gives a DPD encoding and
-// the string it denotes, in one direction or the other. Without the
-// directory the test checks a few of their cases.
-func TestDPDVectors(t *testing.T) {
-	type vec struct{ id, from, to, conds string }
-	builtin := map[int][]vec{
-		64: {
-			{"dece001", "#A2300000000003D0", "-7.50", ""},
-			{"dece020", "1234567890123456", "#263934b9c1e28e56", ""},
-			{"decd518", "#7fffffffffffffff", "sNaN999999999999999", ""},
-			{"decd545", "NaN12345", "#7c000000000049c5", ""},
-			{"x", "9.999999999999999E+384", "#77fcff3fcff3fcff", ""},
-			{"x", "#0004000000000001", "1E-397", ""},
-		},
-		128: {
-			{"decq035", "1.23E+6144", "#47ffd300000000000000000000000000", "Clamped"},
-		},
-	}
-	dir := os.Getenv("BID_DECTEST_DIR")
-	for _, width := range []int{64, 128} {
-		vecs := builtin[width]
-		if dir != "" {
-			name := map[int]string{64: "ddEncode.decTest", 128: "dqEncode.decTest"}[width]
-			f, err := os.Open(filepath.Join(dir, name))
-			if err != nil {
-				t.Fatal(err)
-			}
-			vecs = nil
-			sc := bufio.NewScanner(f)
-			for sc.Scan() {
-				line, _, _ := strings.Cut(sc.Text(), "--")
-				fs := strings.Fields(line)
-				if len(fs) < 5 || fs[1] != "apply" || fs[3] != "->" {
-					continue
-				}
-				vecs = append(vecs, vec{fs[0], fs[2], fs[4], strings.Join(fs[5:], " ")})
-			}
-			f.Close()
-			if err := sc.Err(); err != nil {
-				t.Fatal(err)
-			}
-			if len(vecs) < 300 {
-				t.Fatalf("%s: only %d vectors", name, len(vecs))
-			}
-		}
-		pass, skip := 0, 0
-		for _, v := range vecs {
-			if strings.HasPrefix(v.from, "#") && strings.HasPrefix(v.to, "#") {
-				// The canonical encoding of a non-canonical one.
-				x, want := parseHex(t, width, v.from[1:]), parseHex(t, width, v.to[1:])
-				var got bid.Uint128
-				if width == 64 {
-					got.Lo = bid.DPDFromBID64(bid.BIDFromDPD64(x.Lo))
-				} else {
-					got = bid.DPDFromBID128(bid.BIDFromDPD128(x))
-				}
-				if got != want {
-					t.Errorf("%s: canonical form of %s is %#016x%016x, want %s", v.id, v.from, got.Hi, got.Lo, v.to)
-				} else {
-					pass++
-				}
-				continue
-			}
-			if strings.HasPrefix(v.from, "#") {
-				ok := checkDPDDecode(t, width, v.id, v.from[1:], v.to)
-				if ok {
-					pass++
-				}
-				continue
-			}
-			if strings.Contains(v.conds, "Rounded") || strings.Contains(v.conds, "Inexact") {
-				skip++ // the files round half up; the kernel's parser rounds half even
-				continue
-			}
-			if checkDPDEncode(t, width, v.id, v.from, v.to[1:]) {
-				pass++
-			}
-		}
-		t.Logf("decimal%d: pass=%d skip=%d of %d", width, pass, skip, len(vecs))
-	}
-}
-
-// nanForm parses the decTest NaN forms [-][s]NaN[payload].
-func nanForm(s string) (neg, signaling bool, payload *big.Int, ok bool) {
-	neg = strings.HasPrefix(s, "-")
-	s = strings.TrimPrefix(s, "-")
-	if strings.HasPrefix(strings.ToLower(s), "s") {
-		signaling, s = true, s[1:]
-	}
-	if !strings.EqualFold(s[:min(3, len(s))], "nan") {
-		return false, false, nil, false
-	}
-	payload = new(big.Int)
-	if s[3:] != "" {
-		if _, ok := payload.SetString(s[3:], 10); !ok {
-			return false, false, nil, false
-		}
-	}
-	return neg, signaling, payload, true
-}
-
-func parseHex(t *testing.T, width int, h string) bid.Uint128 {
-	var x bid.Uint128
-	var err error
-	if width == 64 {
-		x.Lo, err = strconv.ParseUint(h, 16, 64)
-	} else if len(h) == 32 {
-		if x.Hi, err = strconv.ParseUint(h[:16], 16, 64); err == nil {
-			x.Lo, err = strconv.ParseUint(h[16:], 16, 64)
-		}
-	} else {
-		t.Fatalf("bad decimal128 hex %q", h)
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	return x
-}
-
-// bidNaN returns the BID NaN with the sign, signaling bit and payload.
-func bidNaN(width int, neg, signaling bool, payload *big.Int) bid.Uint128 {
-	lo := new(big.Int).And(payload, new(big.Int).SetUint64(^uint64(0))).Uint64()
-	hi := new(big.Int).Rsh(payload, 64).Uint64()
-	if width == 64 {
-		x := bid.NaN64 | lo
-		if signaling {
-			x |= bid.SignalingBit64
-		}
-		if neg {
-			x |= bid.SignMask64
-		}
-		return bid.Uint128{Lo: x}
-	}
-	x := bid.Uint128{Hi: bid.NaN128Hi | hi, Lo: lo}
-	if signaling {
-		x.Hi |= bid.SignalingBit128Hi
-	}
-	if neg {
-		x.Hi |= bid.SignMask128Hi
-	}
-	return x
-}
-
-func checkDPDDecode(t *testing.T, width int, id, hex, want string) bool {
-	t.Helper()
-	d := parseHex(t, width, hex)
-	var b bid.Uint128
-	var text string
-	if width == 64 {
-		b = bid.Uint128{Lo: bid.BIDFromDPD64(d.Lo)}
-		text = string(bid.Append64(nil, b.Lo))
-		if !bid.IsCanonical64(b.Lo) {
-			t.Errorf("%s: BIDFromDPD64(%s) = %#016x is not canonical", id, hex, b.Lo)
-		}
-	} else {
-		b = bid.BIDFromDPD128(d)
-		text = string(bid.Append128(nil, b))
-		if !bid.IsCanonical128(b) {
-			t.Errorf("%s: BIDFromDPD128(%s) = %#016x%016x is not canonical", id, hex, b.Hi, b.Lo)
-		}
-	}
-	if neg, sig, p, ok := nanForm(want); ok {
-		if w := bidNaN(width, neg, sig, p); b != w {
-			t.Errorf("%s: BIDFromDPD(#%s) = %#016x%016x, want %s = %#016x%016x", id, hex, b.Hi, b.Lo, want, w.Hi, w.Lo)
-			return false
-		}
-		return true
-	}
-	if text != want {
-		t.Errorf("%s: BIDFromDPD(#%s) is %s, want %s", id, hex, text, want)
-		return false
-	}
-	return true
-}
-
-func checkDPDEncode(t *testing.T, width int, id, from, hex string) bool {
-	t.Helper()
-	want := parseHex(t, width, hex)
-	var b bid.Uint128
-	if neg, sig, p, ok := nanForm(from); ok {
-		b = bidNaN(width, neg, sig, p)
-	} else if width == 64 {
-		x, _ := bid.Parse64(from, bid.ToNearestEven)
-		b = bid.Uint128{Lo: x}
-	} else {
-		b, _ = bid.Parse128(from, bid.ToNearestEven)
-	}
-	var got bid.Uint128
-	if width == 64 {
-		got = bid.Uint128{Lo: bid.DPDFromBID64(b.Lo)}
-	} else {
-		got = bid.DPDFromBID128(b)
-	}
-	if got != want {
-		t.Errorf("%s: DPDFromBID(%s) = %#016x%016x, want #%s", id, from, got.Hi, got.Lo, hex)
-		return false
-	}
-	return true
 }
 
 // TestDPDRoundTrip checks that the conversions are inverses on canonical

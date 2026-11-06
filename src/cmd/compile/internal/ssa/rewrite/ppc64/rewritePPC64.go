@@ -204,6 +204,54 @@ func RewriteValue(v *ssa.Value) bool {
 	case ssaop.OpCvtBoolToUint8:
 		v.Op = ssaop.OpCopy
 		return true
+	case ssaop.OpDPDAdd128:
+		v.Op = ssaop.OpPPC64LoweredDADDQ
+		return true
+	case ssaop.OpDPDAdd64:
+		return rewriteValue_OpDPDAdd64(v)
+	case ssaop.OpDPDDiv128:
+		v.Op = ssaop.OpPPC64LoweredDDIVQ
+		return true
+	case ssaop.OpDPDDiv64:
+		return rewriteValue_OpDPDDiv64(v)
+	case ssaop.OpDPDEq128:
+		return rewriteValue_OpDPDEq128(v)
+	case ssaop.OpDPDEq64:
+		return rewriteValue_OpDPDEq64(v)
+	case ssaop.OpDPDFromInt64:
+		return rewriteValue_OpDPDFromInt64(v)
+	case ssaop.OpDPDFromInt64To128:
+		v.Op = ssaop.OpPPC64LoweredDCFFIXQ
+		return true
+	case ssaop.OpDPDLeq128:
+		return rewriteValue_OpDPDLeq128(v)
+	case ssaop.OpDPDLeq64:
+		return rewriteValue_OpDPDLeq64(v)
+	case ssaop.OpDPDLess128:
+		return rewriteValue_OpDPDLess128(v)
+	case ssaop.OpDPDLess64:
+		return rewriteValue_OpDPDLess64(v)
+	case ssaop.OpDPDMul128:
+		v.Op = ssaop.OpPPC64LoweredDMULQ
+		return true
+	case ssaop.OpDPDMul64:
+		return rewriteValue_OpDPDMul64(v)
+	case ssaop.OpDPDNarrow:
+		v.Op = ssaop.OpPPC64LoweredDRDPQ
+		return true
+	case ssaop.OpDPDSub128:
+		v.Op = ssaop.OpPPC64LoweredDSUBQ
+		return true
+	case ssaop.OpDPDSub64:
+		return rewriteValue_OpDPDSub64(v)
+	case ssaop.OpDPDToInt64:
+		return rewriteValue_OpDPDToInt64(v)
+	case ssaop.OpDPDToInt64From128:
+		v.Op = ssaop.OpPPC64LoweredDCTFIXQ
+		return true
+	case ssaop.OpDPDWiden:
+		v.Op = ssaop.OpPPC64LoweredDCTQPQ
+		return true
 	case ssaop.OpDiv16:
 		return rewriteValue_OpDiv16(v)
 	case ssaop.OpDiv16u:
@@ -1824,6 +1872,249 @@ func rewriteValue_OpCvt64to64F(v *ssa.Value) bool {
 		v.Reset(ssaop.OpPPC64FCFID)
 		v0 := b.NewValue0(v.Pos, ssaop.OpPPC64MTVSRD, typ.Float64)
 		v0.AddArg(x)
+		v.AddArg(v0)
+		return true
+	}
+}
+func rewriteValue_OpDPDAdd64(v *ssa.Value) bool {
+	v_1 := v.Args[1]
+	v_0 := v.Args[0]
+	b := v.Block
+	typ := &b.Func.Config.Types
+	// match: (DPDAdd64 x y)
+	// result: (MFVSRD (DADD (MTVSRD x) (MTVSRD y)))
+	for {
+		x := v_0
+		y := v_1
+		v.Reset(ssaop.OpPPC64MFVSRD)
+		v0 := b.NewValue0(v.Pos, ssaop.OpPPC64DADD, typ.Float64)
+		v1 := b.NewValue0(v.Pos, ssaop.OpPPC64MTVSRD, typ.Float64)
+		v1.AddArg(x)
+		v2 := b.NewValue0(v.Pos, ssaop.OpPPC64MTVSRD, typ.Float64)
+		v2.AddArg(y)
+		v0.AddArg2(v1, v2)
+		v.AddArg(v0)
+		return true
+	}
+}
+func rewriteValue_OpDPDDiv64(v *ssa.Value) bool {
+	v_1 := v.Args[1]
+	v_0 := v.Args[0]
+	b := v.Block
+	typ := &b.Func.Config.Types
+	// match: (DPDDiv64 x y)
+	// result: (MFVSRD (DDIV (MTVSRD x) (MTVSRD y)))
+	for {
+		x := v_0
+		y := v_1
+		v.Reset(ssaop.OpPPC64MFVSRD)
+		v0 := b.NewValue0(v.Pos, ssaop.OpPPC64DDIV, typ.Float64)
+		v1 := b.NewValue0(v.Pos, ssaop.OpPPC64MTVSRD, typ.Float64)
+		v1.AddArg(x)
+		v2 := b.NewValue0(v.Pos, ssaop.OpPPC64MTVSRD, typ.Float64)
+		v2.AddArg(y)
+		v0.AddArg2(v1, v2)
+		v.AddArg(v0)
+		return true
+	}
+}
+func rewriteValue_OpDPDEq128(v *ssa.Value) bool {
+	v_3 := v.Args[3]
+	v_2 := v.Args[2]
+	v_1 := v.Args[1]
+	v_0 := v.Args[0]
+	b := v.Block
+	// match: (DPDEq128 xh xl yh yl)
+	// result: (Equal (LoweredDCMPUQ xh xl yh yl))
+	for {
+		xh := v_0
+		xl := v_1
+		yh := v_2
+		yl := v_3
+		v.Reset(ssaop.OpPPC64Equal)
+		v0 := b.NewValue0(v.Pos, ssaop.OpPPC64LoweredDCMPUQ, types.TypeFlags)
+		v0.AddArg4(xh, xl, yh, yl)
+		v.AddArg(v0)
+		return true
+	}
+}
+func rewriteValue_OpDPDEq64(v *ssa.Value) bool {
+	v_1 := v.Args[1]
+	v_0 := v.Args[0]
+	b := v.Block
+	typ := &b.Func.Config.Types
+	// match: (DPDEq64 x y)
+	// result: (Equal (DCMPU (MTVSRD x) (MTVSRD y)))
+	for {
+		x := v_0
+		y := v_1
+		v.Reset(ssaop.OpPPC64Equal)
+		v0 := b.NewValue0(v.Pos, ssaop.OpPPC64DCMPU, types.TypeFlags)
+		v1 := b.NewValue0(v.Pos, ssaop.OpPPC64MTVSRD, typ.Float64)
+		v1.AddArg(x)
+		v2 := b.NewValue0(v.Pos, ssaop.OpPPC64MTVSRD, typ.Float64)
+		v2.AddArg(y)
+		v0.AddArg2(v1, v2)
+		v.AddArg(v0)
+		return true
+	}
+}
+func rewriteValue_OpDPDFromInt64(v *ssa.Value) bool {
+	v_0 := v.Args[0]
+	b := v.Block
+	typ := &b.Func.Config.Types
+	// match: (DPDFromInt64 x)
+	// result: (MFVSRD (DCFFIX (MTVSRD x)))
+	for {
+		x := v_0
+		v.Reset(ssaop.OpPPC64MFVSRD)
+		v0 := b.NewValue0(v.Pos, ssaop.OpPPC64DCFFIX, typ.Float64)
+		v1 := b.NewValue0(v.Pos, ssaop.OpPPC64MTVSRD, typ.Float64)
+		v1.AddArg(x)
+		v0.AddArg(v1)
+		v.AddArg(v0)
+		return true
+	}
+}
+func rewriteValue_OpDPDLeq128(v *ssa.Value) bool {
+	v_3 := v.Args[3]
+	v_2 := v.Args[2]
+	v_1 := v.Args[1]
+	v_0 := v.Args[0]
+	b := v.Block
+	// match: (DPDLeq128 xh xl yh yl)
+	// result: (FLessEqual (LoweredDCMPUQ xh xl yh yl))
+	for {
+		xh := v_0
+		xl := v_1
+		yh := v_2
+		yl := v_3
+		v.Reset(ssaop.OpPPC64FLessEqual)
+		v0 := b.NewValue0(v.Pos, ssaop.OpPPC64LoweredDCMPUQ, types.TypeFlags)
+		v0.AddArg4(xh, xl, yh, yl)
+		v.AddArg(v0)
+		return true
+	}
+}
+func rewriteValue_OpDPDLeq64(v *ssa.Value) bool {
+	v_1 := v.Args[1]
+	v_0 := v.Args[0]
+	b := v.Block
+	typ := &b.Func.Config.Types
+	// match: (DPDLeq64 x y)
+	// result: (FLessEqual (DCMPU (MTVSRD x) (MTVSRD y)))
+	for {
+		x := v_0
+		y := v_1
+		v.Reset(ssaop.OpPPC64FLessEqual)
+		v0 := b.NewValue0(v.Pos, ssaop.OpPPC64DCMPU, types.TypeFlags)
+		v1 := b.NewValue0(v.Pos, ssaop.OpPPC64MTVSRD, typ.Float64)
+		v1.AddArg(x)
+		v2 := b.NewValue0(v.Pos, ssaop.OpPPC64MTVSRD, typ.Float64)
+		v2.AddArg(y)
+		v0.AddArg2(v1, v2)
+		v.AddArg(v0)
+		return true
+	}
+}
+func rewriteValue_OpDPDLess128(v *ssa.Value) bool {
+	v_3 := v.Args[3]
+	v_2 := v.Args[2]
+	v_1 := v.Args[1]
+	v_0 := v.Args[0]
+	b := v.Block
+	// match: (DPDLess128 xh xl yh yl)
+	// result: (FLessThan (LoweredDCMPUQ xh xl yh yl))
+	for {
+		xh := v_0
+		xl := v_1
+		yh := v_2
+		yl := v_3
+		v.Reset(ssaop.OpPPC64FLessThan)
+		v0 := b.NewValue0(v.Pos, ssaop.OpPPC64LoweredDCMPUQ, types.TypeFlags)
+		v0.AddArg4(xh, xl, yh, yl)
+		v.AddArg(v0)
+		return true
+	}
+}
+func rewriteValue_OpDPDLess64(v *ssa.Value) bool {
+	v_1 := v.Args[1]
+	v_0 := v.Args[0]
+	b := v.Block
+	typ := &b.Func.Config.Types
+	// match: (DPDLess64 x y)
+	// result: (FLessThan (DCMPU (MTVSRD x) (MTVSRD y)))
+	for {
+		x := v_0
+		y := v_1
+		v.Reset(ssaop.OpPPC64FLessThan)
+		v0 := b.NewValue0(v.Pos, ssaop.OpPPC64DCMPU, types.TypeFlags)
+		v1 := b.NewValue0(v.Pos, ssaop.OpPPC64MTVSRD, typ.Float64)
+		v1.AddArg(x)
+		v2 := b.NewValue0(v.Pos, ssaop.OpPPC64MTVSRD, typ.Float64)
+		v2.AddArg(y)
+		v0.AddArg2(v1, v2)
+		v.AddArg(v0)
+		return true
+	}
+}
+func rewriteValue_OpDPDMul64(v *ssa.Value) bool {
+	v_1 := v.Args[1]
+	v_0 := v.Args[0]
+	b := v.Block
+	typ := &b.Func.Config.Types
+	// match: (DPDMul64 x y)
+	// result: (MFVSRD (DMUL (MTVSRD x) (MTVSRD y)))
+	for {
+		x := v_0
+		y := v_1
+		v.Reset(ssaop.OpPPC64MFVSRD)
+		v0 := b.NewValue0(v.Pos, ssaop.OpPPC64DMUL, typ.Float64)
+		v1 := b.NewValue0(v.Pos, ssaop.OpPPC64MTVSRD, typ.Float64)
+		v1.AddArg(x)
+		v2 := b.NewValue0(v.Pos, ssaop.OpPPC64MTVSRD, typ.Float64)
+		v2.AddArg(y)
+		v0.AddArg2(v1, v2)
+		v.AddArg(v0)
+		return true
+	}
+}
+func rewriteValue_OpDPDSub64(v *ssa.Value) bool {
+	v_1 := v.Args[1]
+	v_0 := v.Args[0]
+	b := v.Block
+	typ := &b.Func.Config.Types
+	// match: (DPDSub64 x y)
+	// result: (MFVSRD (DSUB (MTVSRD x) (MTVSRD y)))
+	for {
+		x := v_0
+		y := v_1
+		v.Reset(ssaop.OpPPC64MFVSRD)
+		v0 := b.NewValue0(v.Pos, ssaop.OpPPC64DSUB, typ.Float64)
+		v1 := b.NewValue0(v.Pos, ssaop.OpPPC64MTVSRD, typ.Float64)
+		v1.AddArg(x)
+		v2 := b.NewValue0(v.Pos, ssaop.OpPPC64MTVSRD, typ.Float64)
+		v2.AddArg(y)
+		v0.AddArg2(v1, v2)
+		v.AddArg(v0)
+		return true
+	}
+}
+func rewriteValue_OpDPDToInt64(v *ssa.Value) bool {
+	v_0 := v.Args[0]
+	b := v.Block
+	typ := &b.Func.Config.Types
+	// match: (DPDToInt64 x)
+	// result: (MFVSRD (DCTFIX (DTRUNC (MTVSRD x))))
+	for {
+		x := v_0
+		v.Reset(ssaop.OpPPC64MFVSRD)
+		v0 := b.NewValue0(v.Pos, ssaop.OpPPC64DCTFIX, typ.Float64)
+		v1 := b.NewValue0(v.Pos, ssaop.OpPPC64DTRUNC, typ.Float64)
+		v2 := b.NewValue0(v.Pos, ssaop.OpPPC64MTVSRD, typ.Float64)
+		v2.AddArg(x)
+		v1.AddArg(v2)
+		v0.AddArg(v1)
 		v.AddArg(v0)
 		return true
 	}
@@ -7047,6 +7338,16 @@ func rewriteValue_OpPPC64MFVSRD(v *ssa.Value) bool {
 		v.AuxInt = ssa.Int64ToAuxInt(int64(math.Float64bits(c)))
 		return true
 	}
+	// match: (MFVSRD (MTVSRD x))
+	// result: x
+	for {
+		if v_0.Op != ssaop.OpPPC64MTVSRD {
+			break
+		}
+		x := v_0.Args[0]
+		v.CopyOf(x)
+		return true
+	}
 	// match: (MFVSRD x:(FMOVDload [off] {sym} ptr mem))
 	// cond: x.Uses == 1 && ssa.Clobber(x)
 	// result: @x.Block (MOVDload [off] {sym} ptr mem)
@@ -11591,6 +11892,16 @@ func rewriteValue_OpPPC64MTVSRD(v *ssa.Value) bool {
 		v0.AuxInt = ssa.Int32ToAuxInt(off)
 		v0.Aux = ssa.SymToAux(sym)
 		v0.AddArg2(ptr, mem)
+		return true
+	}
+	// match: (MTVSRD (MFVSRD x))
+	// result: x
+	for {
+		if v_0.Op != ssaop.OpPPC64MFVSRD {
+			break
+		}
+		x := v_0.Args[0]
+		v.CopyOf(x)
 		return true
 	}
 	return false

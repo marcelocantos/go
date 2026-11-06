@@ -553,6 +553,33 @@ var genericOps = []opData{
 	{name: "Decimal128Lo", argLength: 1},   // return lo half of arg0
 	{name: "Decimal128Hi", argLength: 1},   // return hi half of arg0
 
+	// Decimal operations on the DPD encoding, for targets whose decimal
+	// floating-point unit works on DPD (cmd/compile/internal/ir.DecimalDPD)
+	// and only there. Operands and results are native encodings, the memory
+	// form with its zero mask removed: a decimal64 is a UInt64 and a
+	// decimal128 is two, high word first. Arithmetic rounds to nearest, ties
+	// to even, and follows internal/bid's contract (see ssagen's dpdOp).
+	{name: "DPDAdd64", argLength: 2, typ: "UInt64"},
+	{name: "DPDSub64", argLength: 2, typ: "UInt64"},
+	{name: "DPDMul64", argLength: 2, typ: "UInt64"},
+	{name: "DPDDiv64", argLength: 2, typ: "UInt64"},
+	{name: "DPDEq64", argLength: 2, typ: "Bool"},   // arg0 == arg1; false if either is a NaN
+	{name: "DPDLess64", argLength: 2, typ: "Bool"}, // arg0 < arg1; false if either is a NaN
+	{name: "DPDLeq64", argLength: 2, typ: "Bool"},  // arg0 <= arg1; false if either is a NaN
+	{name: "DPDAdd128", argLength: 4, typ: "(UInt64,UInt64)"}, // (arg0, arg1) + (arg2, arg3), result (hi, lo)
+	{name: "DPDSub128", argLength: 4, typ: "(UInt64,UInt64)"},
+	{name: "DPDMul128", argLength: 4, typ: "(UInt64,UInt64)"},
+	{name: "DPDDiv128", argLength: 4, typ: "(UInt64,UInt64)"},
+	{name: "DPDEq128", argLength: 4, typ: "Bool"},
+	{name: "DPDLess128", argLength: 4, typ: "Bool"},
+	{name: "DPDLeq128", argLength: 4, typ: "Bool"},
+	{name: "DPDWiden", argLength: 1, typ: "(UInt64,UInt64)"},     // decimal64 arg0 to decimal128 (hi, lo), exactly
+	{name: "DPDNarrow", argLength: 2, typ: "UInt64"},             // decimal128 (arg0, arg1) to decimal64
+	{name: "DPDFromInt64", argLength: 1, typ: "UInt64"},          // int64 arg0 to decimal64
+	{name: "DPDFromInt64To128", argLength: 1, typ: "(UInt64,UInt64)"}, // int64 arg0 to decimal128 (hi, lo), exactly
+	{name: "DPDToInt64", argLength: 1, typ: "Int64"},             // decimal64 arg0 to int64, toward zero; saturating; NaN gives MinInt64
+	{name: "DPDToInt64From128", argLength: 2, typ: "Int64"},      // decimal128 (arg0, arg1) to int64, as DPDToInt64
+
 	// Strings
 	{name: "StringMake", argLength: 2},                // arg0=ptr, arg1=len
 	{name: "StringPtr", argLength: 1, typ: "BytePtr"}, // ptr(arg0)

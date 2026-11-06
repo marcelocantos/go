@@ -258,8 +258,10 @@ func FuzzRound128(f *testing.F) {
 // here; a new one is added to both or the test fails.
 func TestRoundIsTheOnlyPacker(t *testing.T) {
 	// Callers of the raw encoder.
-	// Widen is the one exact fast path: see the end of roundW's comment.
-	rawPackers := map[string]bool{"packW": true, "pack64": true, "pack128": true, "Widen": true}
+	// Widen and the DPD decoders are the exact fast paths: see the end of
+	// roundW's comment.
+	rawPackers := map[string]bool{"packW": true, "pack64": true, "pack128": true, "Widen": true,
+		"BIDFromDPD64": true, "BIDFromDPD128": true}
 	// Callers of packW, the checked encoder: the rounding routine, its
 	// overflow result (no exact fast path uses the checked encoder).
 	checkedPackers := map[string]bool{

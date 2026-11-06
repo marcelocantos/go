@@ -212,6 +212,11 @@ func init() {
 		fpstore     = regInfo{inputs: []regMask{gp.union(sp).union(sb), fp}}
 		fpstoreidx  = regInfo{inputs: []regMask{gp.union(sp).union(sb), gp.union(sp).union(sb), fp}}
 		callerSave  = regMask(gp.union(fp).union(vmxReg).union(gr).union(xer))
+		dfpPairs    = buildReg("F0 F1 F2 F3")
+		dfp128op    = regInfo{inputs: []regMask{gp, gp, gp, gp}, outputs: []regMask{gp, gp}, clobbers: dfpPairs}
+		dfp128cmp   = regInfo{inputs: []regMask{gp, gp, gp, gp}, clobbers: dfpPairs}
+		dfp128from  = regInfo{inputs: []regMask{gp}, outputs: []regMask{gp, gp}, clobbers: dfpPairs}
+		dfp128to    = regInfo{inputs: []regMask{gp, gp}, outputs: []regMask{gp}, clobbers: dfpPairs}
 		first7      = buildReg("R3 R4 R5 R6 R7 R8 R9")
 	)
 	ops := []opData{
@@ -455,6 +460,31 @@ func init() {
 		{name: "FMOVDconst", argLength: 0, reg: fp01, aux: "Float64", asm: "FMOVD", rematerializeable: true, earlyOk: true},           //
 		{name: "FMOVSconst", argLength: 0, reg: fp01, aux: "Float32", asm: "FMOVS", rematerializeable: true, earlyOk: true},           //
 		{name: "FCMPU", argLength: 2, reg: fp2cr, asm: "FCMPU", typ: "Flags"},
+
+		// Decimal floating point (DFP, Power ISA chapter 5). Decimal64 values
+		// live in FPRs like float64. The register allocator has no FPR
+		// pairs, so a decimal128 operation is one op that takes its operands
+		// in GPRs, moves them into fixed FPR pairs and moves the result
+		// back: F0:F1 holds the first operand and the result, F2:F3 the
+		// second. None of them is commutative: when both operands are NaNs
+		// the result depends on their order.
+		{name: "DADD", argLength: 2, reg: fp21, asm: "DADD", typ: "Float64"},
+		{name: "DSUB", argLength: 2, reg: fp21, asm: "DSUB", typ: "Float64"},
+		{name: "DMUL", argLength: 2, reg: fp21, asm: "DMUL", typ: "Float64"},
+		{name: "DDIV", argLength: 2, reg: fp21, asm: "DDIV", typ: "Float64"},
+		{name: "DCMPU", argLength: 2, reg: fp2cr, asm: "DCMPU", typ: "Flags"},
+		{name: "DCFFIX", argLength: 1, reg: fp11, asm: "DCFFIX", typ: "Float64"},        // int64 in arg0 to decimal64, rounding by FPSCR[DRN]
+		{name: "DCTFIX", argLength: 1, reg: fp11, asm: "DCTFIX", typ: "Float64"},        // decimal64 arg0 to int64, rounding by FPSCR[DRN]
+		{name: "DTRUNC", argLength: 1, reg: fp11, asm: "DRINTN", typ: "Float64"},        // decimal64 arg0 rounded to an integral value toward zero
+		{name: "LoweredDADDQ", argLength: 4, reg: dfp128op, typ: "(UInt64,UInt64)"}, // decimal128 (arg0, arg1) + (arg2, arg3); result (hi, lo)
+		{name: "LoweredDSUBQ", argLength: 4, reg: dfp128op, typ: "(UInt64,UInt64)"},
+		{name: "LoweredDMULQ", argLength: 4, reg: dfp128op, typ: "(UInt64,UInt64)"},
+		{name: "LoweredDDIVQ", argLength: 4, reg: dfp128op, typ: "(UInt64,UInt64)"},
+		{name: "LoweredDCMPUQ", argLength: 4, reg: dfp128cmp, typ: "Flags"},
+		{name: "LoweredDCTQPQ", argLength: 1, reg: dfp128from, typ: "(UInt64,UInt64)"},  // decimal64 arg0 to decimal128
+		{name: "LoweredDCFFIXQ", argLength: 1, reg: dfp128from, typ: "(UInt64,UInt64)"}, // int64 arg0 to decimal128
+		{name: "LoweredDRDPQ", argLength: 2, reg: dfp128to, typ: "UInt64"},             // decimal128 (arg0, arg1) to decimal64, rounding by FPSCR[DRN]
+		{name: "LoweredDCTFIXQ", argLength: 2, reg: dfp128to, typ: "Int64"},            // decimal128 (arg0, arg1) to int64, toward zero
 
 		{name: "CMP", argLength: 2, reg: gp2cr, asm: "CMP", typ: "Flags"},     // arg0 compare to arg1
 		{name: "CMPU", argLength: 2, reg: gp2cr, asm: "CMPU", typ: "Flags"},   // arg0 compare to arg1

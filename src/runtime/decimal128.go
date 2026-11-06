@@ -13,45 +13,45 @@ import (
 )
 
 func dadd128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
-	z := bid.Add128(bid.Uint128{Hi: xhi, Lo: xlo}, bid.Uint128{Hi: yhi, Lo: ylo}, bid.ToNearestEven)
-	return z.Hi, z.Lo
+	z := bid.Add128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven)
+	return to128(z)
 }
 
 func dsub128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
-	z := bid.Sub128(bid.Uint128{Hi: xhi, Lo: xlo}, bid.Uint128{Hi: yhi, Lo: ylo}, bid.ToNearestEven)
-	return z.Hi, z.Lo
+	z := bid.Sub128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven)
+	return to128(z)
 }
 
 func dmul128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
-	z := bid.Mul128(bid.Uint128{Hi: xhi, Lo: xlo}, bid.Uint128{Hi: yhi, Lo: ylo}, bid.ToNearestEven)
-	return z.Hi, z.Lo
+	z := bid.Mul128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven)
+	return to128(z)
 }
 
 func ddiv128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
-	z := bid.Div128(bid.Uint128{Hi: xhi, Lo: xlo}, bid.Uint128{Hi: yhi, Lo: ylo}, bid.ToNearestEven)
-	return z.Hi, z.Lo
+	z := bid.Div128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven)
+	return to128(z)
 }
 
 func deq128(xhi, xlo, yhi, ylo uint64) bool {
-	return bid.Equal128(bid.Uint128{Hi: xhi, Lo: xlo}, bid.Uint128{Hi: yhi, Lo: ylo})
+	return bid.Equal128(from128(xhi, xlo), from128(yhi, ylo))
 }
 
 func dlt128(xhi, xlo, yhi, ylo uint64) bool {
-	return bid.Less128(bid.Uint128{Hi: xhi, Lo: xlo}, bid.Uint128{Hi: yhi, Lo: ylo})
+	return bid.Less128(from128(xhi, xlo), from128(yhi, ylo))
 }
 
 func dle128(xhi, xlo, yhi, ylo uint64) bool {
-	return bid.LessEqual128(bid.Uint128{Hi: xhi, Lo: xlo}, bid.Uint128{Hi: yhi, Lo: ylo})
+	return bid.LessEqual128(from128(xhi, xlo), from128(yhi, ylo))
 }
 
 func dmin128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
-	z := bid.Min128(bid.Uint128{Hi: xhi, Lo: xlo}, bid.Uint128{Hi: yhi, Lo: ylo})
-	return z.Hi, z.Lo
+	z := bid.Min128(from128(xhi, xlo), from128(yhi, ylo))
+	return to128(z)
 }
 
 func dmax128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
-	z := bid.Max128(bid.Uint128{Hi: xhi, Lo: xlo}, bid.Uint128{Hi: yhi, Lo: ylo})
-	return z.Hi, z.Lo
+	z := bid.Max128(from128(xhi, xlo), from128(yhi, ylo))
+	return to128(z)
 }
 
 // d128load returns the BID bit pattern of the decimal128 at p. A decimal128 is
@@ -61,7 +61,16 @@ func dmax128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
 // value.
 func d128load(p unsafe.Pointer) bid.Uint128 {
 	x := (*[2]uint64)(p)
-	return bid.Uint128{Hi: x[1] ^ bid.Zero128Hi, Lo: x[0]}
+	return from128(x[1]^bid.NativeZero128Hi, x[0])
+}
+
+// from128 and to128 convert between the native encoding, as its halves, and
+// the BID encoding.
+func from128(hi, lo uint64) bid.Uint128 { return bid.FromNative128(bid.Uint128{Hi: hi, Lo: lo}) }
+
+func to128(x bid.Uint128) (hi, lo uint64) {
+	x = bid.ToNative128(x)
+	return x.Hi, x.Lo
 }
 
 // printdecimal128 prints x for the builtin print and println, in the

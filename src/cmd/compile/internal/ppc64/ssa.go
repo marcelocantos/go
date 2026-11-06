@@ -635,7 +635,8 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		ssaop.OpPPC64MULHD, ssaop.OpPPC64MULHW, ssaop.OpPPC64MULHDU, ssaop.OpPPC64MULHWU,
 		ssaop.OpPPC64FMUL, ssaop.OpPPC64FMULS, ssaop.OpPPC64FDIV, ssaop.OpPPC64FDIVS, ssaop.OpPPC64FCPSGN,
 		ssaop.OpPPC64AND, ssaop.OpPPC64OR, ssaop.OpPPC64ANDN, ssaop.OpPPC64ORN, ssaop.OpPPC64NOR, ssaop.OpPPC64XOR, ssaop.OpPPC64EQV,
-		ssaop.OpPPC64MODUD, ssaop.OpPPC64MODSD, ssaop.OpPPC64MODUW, ssaop.OpPPC64MODSW, ssaop.OpPPC64XSMINJDP, ssaop.OpPPC64XSMAXJDP:
+		ssaop.OpPPC64MODUD, ssaop.OpPPC64MODSD, ssaop.OpPPC64MODUW, ssaop.OpPPC64MODSW, ssaop.OpPPC64XSMINJDP, ssaop.OpPPC64XSMAXJDP,
+		ssaop.OpPPC64DADD, ssaop.OpPPC64DSUB, ssaop.OpPPC64DMUL, ssaop.OpPPC64DDIV:
 		r := v.Reg()
 		r1 := v.Args[0].Reg()
 		r2 := v.Args[1].Reg()
@@ -734,7 +735,8 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 	case ssaop.OpPPC64NEG, ssaop.OpPPC64FNEG, ssaop.OpPPC64FSQRT, ssaop.OpPPC64FSQRTS, ssaop.OpPPC64FFLOOR, ssaop.OpPPC64FTRUNC, ssaop.OpPPC64FCEIL,
 		ssaop.OpPPC64FCTIDZ, ssaop.OpPPC64FCTIWZ, ssaop.OpPPC64FCFID, ssaop.OpPPC64FCFIDS, ssaop.OpPPC64FRSP, ssaop.OpPPC64CNTLZD, ssaop.OpPPC64CNTLZW,
 		ssaop.OpPPC64POPCNTD, ssaop.OpPPC64POPCNTW, ssaop.OpPPC64POPCNTB, ssaop.OpPPC64MFVSRD, ssaop.OpPPC64MTVSRD, ssaop.OpPPC64FABS, ssaop.OpPPC64FNABS,
-		ssaop.OpPPC64FROUND, ssaop.OpPPC64CNTTZW, ssaop.OpPPC64CNTTZD, ssaop.OpPPC64BRH, ssaop.OpPPC64BRW, ssaop.OpPPC64BRD:
+		ssaop.OpPPC64FROUND, ssaop.OpPPC64CNTTZW, ssaop.OpPPC64CNTTZD, ssaop.OpPPC64BRH, ssaop.OpPPC64BRW, ssaop.OpPPC64BRD,
+		ssaop.OpPPC64DCFFIX, ssaop.OpPPC64DCTFIX:
 		r := v.Reg()
 		p := s.Prog(v.Op.Asm())
 		p.To.Type = obj.TYPE_REG
@@ -853,7 +855,22 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()
 
-	case ssaop.OpPPC64FCMPU, ssaop.OpPPC64CMP, ssaop.OpPPC64CMPW, ssaop.OpPPC64CMPU, ssaop.OpPPC64CMPWU:
+	case ssaop.OpPPC64DTRUNC:
+		// DRINTN with R=0, RMC=01: round to an integral value toward zero,
+		// whatever FPSCR[DRN] holds (Power ISA Table 5.x, rounding mode
+		// control).
+		p := s.Prog(ppc64.ADRINTN)
+		p.From = obj.Addr{Type: obj.TYPE_CONST, Offset: 0}
+		p.Reg = v.Args[0].Reg()
+		p.AddRestSourceConst(1)
+		p.To = obj.Addr{Type: obj.TYPE_REG, Reg: v.Reg()}
+
+	case ssaop.OpPPC64LoweredDADDQ, ssaop.OpPPC64LoweredDSUBQ, ssaop.OpPPC64LoweredDMULQ, ssaop.OpPPC64LoweredDDIVQ,
+		ssaop.OpPPC64LoweredDCMPUQ, ssaop.OpPPC64LoweredDCTQPQ, ssaop.OpPPC64LoweredDCFFIXQ,
+		ssaop.OpPPC64LoweredDRDPQ, ssaop.OpPPC64LoweredDCTFIXQ:
+		dfp128(s, v)
+
+	case ssaop.OpPPC64FCMPU, ssaop.OpPPC64DCMPU, ssaop.OpPPC64CMP, ssaop.OpPPC64CMPW, ssaop.OpPPC64CMPU, ssaop.OpPPC64CMPWU:
 		p := s.Prog(v.Op.Asm())
 		p.From.Type = obj.TYPE_REG
 		p.From.Reg = v.Args[0].Reg()
@@ -2175,4 +2192,85 @@ func spillArgReg(pp *objw.Progs, p *obj.Prog, f *ssa.Func, t *types.Type, reg in
 	p.To.Sym = n.Linksym()
 	p.Pos = p.Pos.WithNotStmt()
 	return p
+}
+
+// dfp128 generates a decimal128 operation on POWER's decimal floating-point
+// unit. Its operands arrive in GPRs, high word first, because the register
+// allocator cannot allocate FPR pairs; they move into the fixed pairs F0:F1
+// and F2:F3, which the op clobbers, and the result moves back. A pair holds
+// the high word in the even register.
+func dfp128(s *ssagen.State, v *ssa.Value) {
+	mtvsrd := func(r, f int16) {
+		p := s.Prog(ppc64.AMTVSRD)
+		p.From = obj.Addr{Type: obj.TYPE_REG, Reg: r}
+		p.To = obj.Addr{Type: obj.TYPE_REG, Reg: f}
+	}
+	mfvsrd := func(f, r int16) {
+		p := s.Prog(ppc64.AMFVSRD)
+		p.From = obj.Addr{Type: obj.TYPE_REG, Reg: f}
+		p.To = obj.Addr{Type: obj.TYPE_REG, Reg: r}
+	}
+	op := func(as obj.As, from, reg, to int16) {
+		p := s.Prog(as)
+		p.From = obj.Addr{Type: obj.TYPE_REG, Reg: from}
+		p.Reg = reg
+		p.To = obj.Addr{Type: obj.TYPE_REG, Reg: to}
+	}
+	const f0, f1, f2, f3 = ppc64.REG_F0, ppc64.REG_F1, ppc64.REG_F2, ppc64.REG_F3
+	switch v.Op {
+	case ssaop.OpPPC64LoweredDADDQ, ssaop.OpPPC64LoweredDSUBQ, ssaop.OpPPC64LoweredDMULQ, ssaop.OpPPC64LoweredDDIVQ:
+		for i, f := range []int16{f0, f1, f2, f3} {
+			mtvsrd(v.Args[i].Reg(), f)
+		}
+		as := map[ssaop.Op]obj.As{
+			ssaop.OpPPC64LoweredDADDQ: ppc64.ADADDQ,
+			ssaop.OpPPC64LoweredDSUBQ: ppc64.ADSUBQ,
+			ssaop.OpPPC64LoweredDMULQ: ppc64.ADMULQ,
+			ssaop.OpPPC64LoweredDDIVQ: ppc64.ADDIVQ,
+		}[v.Op]
+		op(as, f2, f0, f0) // F0:F1 = F0:F1 op F2:F3
+		mfvsrd(f0, v.Reg0())
+		mfvsrd(f1, v.Reg1())
+	case ssaop.OpPPC64LoweredDCMPUQ:
+		for i, f := range []int16{f0, f1, f2, f3} {
+			mtvsrd(v.Args[i].Reg(), f)
+		}
+		p := s.Prog(ppc64.ADCMPUQ) // CR0 = compare F0:F1, F2:F3
+		p.From = obj.Addr{Type: obj.TYPE_REG, Reg: f0}
+		p.To = obj.Addr{Type: obj.TYPE_REG, Reg: f2}
+	case ssaop.OpPPC64LoweredDCTQPQ, ssaop.OpPPC64LoweredDCFFIXQ:
+		mtvsrd(v.Args[0].Reg(), f2)
+		as := ppc64.ADCTQPQ
+		if v.Op == ssaop.OpPPC64LoweredDCFFIXQ {
+			as = ppc64.ADCFFIXQ
+		}
+		op(as, f2, 0, f0)
+		mfvsrd(f0, v.Reg0())
+		mfvsrd(f1, v.Reg1())
+	case ssaop.OpPPC64LoweredDRDPQ:
+		// DRDPQ rounds to decimal64 but leaves the result in a pair. The
+		// ISA's own emulation history disagrees on which half holds it:
+		// GCC (trunctddd2 reads the even register) and QEMU before 2019
+		// put it in the even register and zero the odd one, and QEMU
+		// since then does the reverse. The other half is zero either way,
+		// so the OR of the two halves is the result under both.
+		mtvsrd(v.Args[0].Reg(), f0)
+		mtvsrd(v.Args[1].Reg(), f1)
+		op(ppc64.ADRDPQ, f0, 0, f2)
+		mfvsrd(f2, v.Reg())
+		mfvsrd(f3, ppc64.REGTMP)
+		op(ppc64.AOR, ppc64.REGTMP, v.Reg(), v.Reg())
+	case ssaop.OpPPC64LoweredDCTFIXQ:
+		mtvsrd(v.Args[0].Reg(), f0)
+		mtvsrd(v.Args[1].Reg(), f1)
+		p := s.Prog(ppc64.ADRINTNQ) // toward zero, as DTRUNC
+		p.From = obj.Addr{Type: obj.TYPE_CONST, Offset: 0}
+		p.Reg = f0
+		p.AddRestSourceConst(1)
+		p.To = obj.Addr{Type: obj.TYPE_REG, Reg: f0}
+		op(ppc64.ADCTFIXQ, f0, 0, f2)
+		mfvsrd(f2, v.Reg())
+	default:
+		v.Fatalf("dfp128: unexpected op %v", v.Op)
+	}
 }

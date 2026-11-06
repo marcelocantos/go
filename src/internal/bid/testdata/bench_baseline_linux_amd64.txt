@@ -1650,3 +1650,74 @@ BenchmarkKernel/Append/float64/mixed-4             	 2606371	        46.56 ns/op
 BenchmarkKernel/Append/float64/mixed-4             	 2621491	        46.34 ns/op	       0 B/op	       0 allocs/op
 BenchmarkKernel/Append/float64/mixed-4             	 2631260	        46.06 ns/op	       0 B/op	       0 allocs/op
 PASS
+
+# Appended for the DPD conversion rows (target T7.1). NOT a runner measurement:
+# these rows were taken on 2026-11-06 under Docker's linux/amd64 emulation on an
+# Apple M4 Max, with the command above restricted to
+#   -test.bench 'BenchmarkKernel/(DPDFromBID|BIDFromDPD|ToNative|FromNative)/'
+# so that TestBenchBaselineShape has a sample for every row. Retake this file
+# from the bench job before trusting these rows.
+BenchmarkKernel/DPDFromBID/64/mixed-16         	13056232	         9.079 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/DPDFromBID/64/mixed-16         	13026704	         8.729 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/DPDFromBID/64/mixed-16         	13937401	         8.663 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/DPDFromBID/64/mixed-16         	13925407	         8.624 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/DPDFromBID/64/mixed-16         	13923453	         8.628 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/DPDFromBID/64/mixed-16         	13996876	         8.633 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/DPDFromBID/64/mixed-16         	13975752	         8.645 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/DPDFromBID/64/mixed-16         	13949755	         8.603 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/DPDFromBID/128/mixed-16        	 2334164	        51.31 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/DPDFromBID/128/mixed-16        	 2333944	        51.37 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/DPDFromBID/128/mixed-16        	 2329740	        52.10 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/DPDFromBID/128/mixed-16        	 2330101	        51.49 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/DPDFromBID/128/mixed-16        	 2332262	        51.21 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/DPDFromBID/128/mixed-16        	 2351032	        51.04 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/DPDFromBID/128/mixed-16        	 2344977	        51.36 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/DPDFromBID/128/mixed-16        	 2315505	        51.49 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/BIDFromDPD/64/mixed-16         	24401462	         4.932 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/BIDFromDPD/64/mixed-16         	24076099	         4.918 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/BIDFromDPD/64/mixed-16         	23768314	         4.918 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/BIDFromDPD/64/mixed-16         	24331580	         4.910 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/BIDFromDPD/64/mixed-16         	24394230	         4.909 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/BIDFromDPD/64/mixed-16         	24264339	         5.019 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/BIDFromDPD/64/mixed-16         	23368516	         5.223 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/BIDFromDPD/64/mixed-16         	21261075	         5.241 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/BIDFromDPD/128/mixed-16        	 6111927	        19.98 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/BIDFromDPD/128/mixed-16        	 6025144	        20.18 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/BIDFromDPD/128/mixed-16        	 5969977	        20.14 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/BIDFromDPD/128/mixed-16        	 6037890	        19.91 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/BIDFromDPD/128/mixed-16        	 6159982	        19.60 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/BIDFromDPD/128/mixed-16        	 6481470	        18.73 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/BIDFromDPD/128/mixed-16        	 6506612	        18.47 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/BIDFromDPD/128/mixed-16        	 6326101	        19.01 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/ToNative/64/mixed-16           	158548083	         0.7698 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/ToNative/64/mixed-16           	156066954	         0.7707 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/ToNative/64/mixed-16           	156289531	         0.7755 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/ToNative/64/mixed-16           	155981583	         0.7662 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/ToNative/64/mixed-16           	155898667	         0.7724 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/ToNative/64/mixed-16           	154145968	         0.7638 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/ToNative/64/mixed-16           	158683138	         0.7555 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/ToNative/64/mixed-16           	156073470	         0.7573 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/ToNative/128/mixed-16          	159030039	         0.7517 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/ToNative/128/mixed-16          	158908335	         0.7621 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/ToNative/128/mixed-16          	159604752	         0.7584 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/ToNative/128/mixed-16          	156537751	         0.7709 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/ToNative/128/mixed-16          	156958000	         0.7998 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/ToNative/128/mixed-16          	151932942	         0.7973 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/ToNative/128/mixed-16          	151753294	         0.8260 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/ToNative/128/mixed-16          	137385946	         0.8376 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FromNative/64/mixed-16         	149146964	         0.7999 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FromNative/64/mixed-16         	154171302	         0.7658 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FromNative/64/mixed-16         	154363756	         0.7670 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FromNative/64/mixed-16         	156717826	         0.7767 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FromNative/64/mixed-16         	153312265	         0.7732 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FromNative/64/mixed-16         	157151992	         0.7601 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FromNative/64/mixed-16         	159032235	         0.7547 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FromNative/64/mixed-16         	159118432	         0.7550 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FromNative/128/mixed-16        	158712783	         0.7663 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FromNative/128/mixed-16        	159066139	         0.7713 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FromNative/128/mixed-16        	155782045	         0.7570 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FromNative/128/mixed-16        	158970348	         0.7537 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FromNative/128/mixed-16        	159194422	         0.7529 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FromNative/128/mixed-16        	159330494	         0.7524 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FromNative/128/mixed-16        	159440577	         0.7571 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FromNative/128/mixed-16        	159514758	         0.7731 ns/op	       0 B/op	       0 allocs/op

@@ -520,6 +520,14 @@ func benchRowList() benchRows {
 	}
 
 	// Conversions between the decimal widths.
+	rs.add("DPDFromBID", "64", "mixed", "DPDFromBID64", func(b *testing.B) { loop1(b, mixed.x64, bid.DPDFromBID64) })
+	rs.add("DPDFromBID", "128", "mixed", "DPDFromBID128", func(b *testing.B) { loop1(b, mixed.x128, bid.DPDFromBID128) })
+	rs.add("BIDFromDPD", "64", "mixed", "BIDFromDPD64", func(b *testing.B) { loop1(b, mixed.x64, bid.BIDFromDPD64) })
+	rs.add("BIDFromDPD", "128", "mixed", "BIDFromDPD128", func(b *testing.B) { loop1(b, mixed.x128, bid.BIDFromDPD128) })
+	rs.add("ToNative", "64", "mixed", "ToNative64", func(b *testing.B) { loop1(b, mixed.x64, bid.ToNative64) })
+	rs.add("ToNative", "128", "mixed", "ToNative128", func(b *testing.B) { loop1(b, mixed.x128, bid.ToNative128) })
+	rs.add("FromNative", "64", "mixed", "FromNative64", func(b *testing.B) { loop1(b, mixed.x64, bid.FromNative64) })
+	rs.add("FromNative", "128", "mixed", "FromNative128", func(b *testing.B) { loop1(b, mixed.x128, bid.FromNative128) })
 	rs.add("Widen", "64", "mixed", "Widen", func(b *testing.B) { loop1(b, mixed.x64, bid.Widen) })
 	rs.add("Widen", "float64", "mixed", "", func(b *testing.B) {
 		fs := make([]float32, len(mixed.xf))

@@ -449,6 +449,16 @@ func allocCases() map[string]func() {
 			}
 		},
 
+		// dpd.go and native.go (native_ppc64le.go on linux/ppc64le).
+		"DPDFromBID64":  each(all64, func(x uint64) { asU64 = bid.DPDFromBID64(x) }),
+		"BIDFromDPD64":  each(all64, func(x uint64) { asU64 = bid.BIDFromDPD64(x) }),
+		"DPDFromBID128": each(all128, func(x bid.Uint128) { asU128 = bid.DPDFromBID128(x) }),
+		"BIDFromDPD128": each(all128, func(x bid.Uint128) { asU128 = bid.BIDFromDPD128(x) }),
+		"ToNative64":    each(all64, func(x uint64) { asU64 = bid.ToNative64(x) }),
+		"FromNative64":  each(all64, func(x uint64) { asU64 = bid.FromNative64(x) }),
+		"ToNative128":   each(all128, func(x bid.Uint128) { asU128 = bid.ToNative128(x) }),
+		"FromNative128": each(all128, func(x bid.Uint128) { asU128 = bid.FromNative128(x) }),
+
 		// encoding.go.
 		"Unpack64": each(all64, func(x uint64) {
 			k, neg, c, e := bid.Unpack64(x)
