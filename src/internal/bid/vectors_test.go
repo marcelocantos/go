@@ -5,9 +5,10 @@
 package bid_test
 
 // This file is a local, throwaway smoke check of the kernel and of the
-// reference model against two published sets of decimal test vectors: the
-// IBM decTest files (General Decimal Arithmetic test cases) and the Intel
-// Decimal Floating-Point Math Library's readtest.in. It is not part of the
+// reference model against three published sets of decimal test vectors: the
+// IBM decTest files (General Decimal Arithmetic test cases), the Intel
+// Decimal Floating-Point Math Library's readtest.in, and the decimal files
+// of IBM Haifa's FPgen test suite for IEEE 754R. It is not part of the
 // package's tests and nothing else depends on it: it is one self-contained
 // file, run by the developer, and it is deleted before the CL series is cut
 // (the ratchet that enforces this is target T1.6.2).
@@ -21,6 +22,7 @@ package bid_test
 //
 //	BID_DECTEST_DIR     directory holding the *.decTest files
 //	BID_INTEL_READTEST  directory holding readtest.in, or the file itself
+//	BID_FPGEN_DIR       directory holding the *.fptest files
 //
 // With a variable unset the corresponding part of TestPublishedVectors
 // skips, so this file does nothing in all.bash or in CI.
@@ -66,9 +68,23 @@ package bid_test
 // file, and readtest.in is 127,118 lines (9.6 MB) of generated data, which
 // is not wanted in the Go repository.
 //
-// So both sets stay out of tree: decTest because nothing licenses its
-// redistribution, Intel readtest.in because its notice would have to travel
-// with a very large generated file. The runner reads them in place.
+// IBM FPgen. The files are those of version 1.02 of the "Floating-Point
+// Test Suite for IEEE 754R Standard" of IBM's Haifa Research Lab, in the
+// archive test_suite.zip (sha256
+// 381636a90a7ea0973a39e4d93fd63e510db09304a64311a75698a722fe41876f), which
+// IBM offered for download after a registration form; the copy used is the
+// one at publications/fptest in
+// https://github.com/migueldecimal128/decimal128-resources, whose README.txt
+// gives the Wayback Machine snapshots it was taken from. The second line of
+// each decimal file is "Copyright of IBM Corp. 2007" (2005 for the binary
+// files), and neither the files, the archive nor the download page grants a
+// licence, so the files cannot be committed here, for the reason that
+// applies to decTest.
+//
+// So the three sets stay out of tree: decTest and FPgen because nothing
+// licenses their redistribution, Intel readtest.in because its notice would
+// have to travel with a very large generated file. The runner reads them in
+// place.
 //
 // # What runs
 //
@@ -208,6 +224,66 @@ package bid_test
 // erroneous in the file (the count is in the run's output, with the line
 // number and the justification).
 //
+// FPgen. The syntax is the one in "Syntax of the Test Cases" (syntax.txt,
+// linked from the suite's page ieeets.html; Wayback Machine snapshot of
+// http://www.haifa.il.ibm.com/projects/verification/fpgen/syntax.txt from
+// 2008, sha256
+// 932ca564fe9e1cbf329c7e66399ddf8e29f90289249545ec4c54e03f06210cb7), which
+// neither the archive nor the two papers next to it in that repository
+// describe. Each *.fptest file begins with a title line and a copyright
+// line, and every other non-blank line is a vector
+//
+//	operation rounding [traps] operand... -> result [flags]
+//
+// separated by white space. The operation is a format, b32 (binary32) or
+// d64 and d128 (decimal64, decimal128), followed by the operation's symbol;
+// the decimal files use + - * / only. The rounding code is =0 nearest even,
+// =^ nearest away, 0 toward zero, > toward positive, < toward negative.
+// traps is the set of enabled traps, written as letters: x inexact, u
+// underflow, o overflow, z division by zero, i invalid; absent, every trap
+// is disabled. An operand or result is <sign><coefficient>e<exponent>, the
+// exponent being that of the coefficient's last digit (syntax.txt writes E,
+// the files e), so that the spelling fixes the quantum; +inf and -inf (Inf
+// in syntax.txt); Q, the quiet NaN, and S, the signaling NaN, with neither
+// sign nor payload. A result of # means that no result was written, which
+// happens when the invalid trap is enabled and taken. The flags are the
+// exceptions the operation raises, in the trap letters, except that
+// underflow has three, u, v and w, for the three definitions of underflow
+// that IEEE 754-1985 allows (u tininess and extraordinary error, v
+// tininess after rounding and inexact, w tininess before rounding and
+// inexact). The decimal files of version 1.02 use u only, and the suite's
+// page says that version generated tests "only for tininess detection
+// before rounding and for loss of accuracy detection as an inexact result",
+// the contract's definition.
+//
+// Each vector is the kernel's Add, Sub, Mul or Div at the line's mode (the
+// vectors of the binary files are skipped by format). A numeral is encoded
+// exactly with the reference model's codec, at the exponent it is written
+// with, and the result is compared bit for bit, so a wrong quantum fails (a
+// numeral the format cannot hold, a coefficient of more than Precision
+// digits or an exponent outside [MinExp, MaxExp], is skipped as not
+// representable); Q and S are the positive quiet and signaling NaNs with a
+// zero payload, and an expected Q passes on any quiet NaN (counted as "NaN
+// modulo payload" when the bits differ). The contract has no traps (it
+// delivers the default result of IEEE 754-2008 clause 7), so a vector that
+// takes an overflow, underflow or invalid trap (one whose flags include an
+// enabled trap) is skipped: those traps deliver the result scaled into the
+// exponent range, or none. An enabled trap that the operation does not take
+// changes nothing, and the vector runs. A vector that takes the inexact trap
+// runs too, because IEEE 754-1985 clause 7.5 delivers the default rounded
+// result to that trap handler, and its flags are compared; its pass is
+// counted under a note.
+//
+// Flags. Arithmetic returns no Status, so the flags are checked through the
+// kernel's rounding routine: for finite operands and a non-zero divisor the
+// runner computes the exact value of the operation (math/big), hands it
+// to Round64 or Round128 in parts, at the operation's preferred exponent,
+// and requires that the result be the one the operation returned (unless it
+// is an exact zero, whose sign Round does not decide) and that the Status
+// be the vector's x, o and u flags. A vector with a NaN or infinite operand
+// or a zero divisor raises only invalid or division by zero, which no
+// Status reports, so it passes on the result alone, under a note.
+//
 // # Running it
 //
 //	BID_DECTEST_DIR=.../decimaltestdata go test -v -run PublishedVectors \
@@ -218,7 +294,9 @@ package bid_test
 // published vectors). A kernel function that is not implemented counts as a
 // skip, never as a failure. -bid.vecshow and -bid.vecall control how many
 // failing vectors are printed per file and -bid.vecfiles selects decTest
-// files by regular expression.
+// and FPgen files by regular expression. BID_FPGEN_DIR may name the
+// directory the whole archive was unpacked into; its binary files then
+// contribute only skips.
 
 import (
 	"bufio"
@@ -228,9 +306,11 @@ import (
 	"internal/bid"
 	"io"
 	"math"
+	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -240,13 +320,14 @@ import (
 const (
 	envDecTestDir = "BID_DECTEST_DIR"
 	envIntel      = "BID_INTEL_READTEST"
+	envFPgen      = "BID_FPGEN_DIR"
 )
 
 var (
 	vecTarget = flag.String("bid.vectors", "kernel", "implementation the published vectors run against: kernel or reference")
 	vecShow   = flag.Int("bid.vecshow", 20, "print at most this many failing vectors per file")
 	vecAll    = flag.Bool("bid.vecall", false, "print every failing vector")
-	vecFiles  = flag.String("bid.vecfiles", "", "run only the decTest files whose names match this regular expression")
+	vecFiles  = flag.String("bid.vecfiles", "", "run only the decTest and FPgen files whose names match this regular expression")
 )
 
 // vecRef is the reference model's codec, used to convert operands and
@@ -366,11 +447,11 @@ func vecTargetImpl(t *testing.T) impl {
 }
 
 // TestPublishedVectors runs the published vectors named by the environment
-// variables against -bid.vectors. It skips when neither variable is set.
+// variables against -bid.vectors. It skips when no variable is set.
 func TestPublishedVectors(t *testing.T) {
-	dir, intel := os.Getenv(envDecTestDir), os.Getenv(envIntel)
-	if dir == "" && intel == "" {
-		t.Skipf("published vectors not run: neither %s nor %s is set", envDecTestDir, envIntel)
+	dir, intel, fpgen := os.Getenv(envDecTestDir), os.Getenv(envIntel), os.Getenv(envFPgen)
+	if dir == "" && intel == "" && fpgen == "" {
+		t.Skipf("published vectors not run: none of %s, %s and %s is set", envDecTestDir, envIntel, envFPgen)
 	}
 	im := vecTargetImpl(t)
 	t.Logf("running published vectors against the %s", *vecTarget)
@@ -384,6 +465,11 @@ func TestPublishedVectors(t *testing.T) {
 		t.Logf("Intel vectors not run: %s is unset", envIntel)
 	} else {
 		total.merge(runIntelFile(t, im, intel))
+	}
+	if fpgen == "" {
+		t.Logf("FPgen vectors not run: %s is unset", envFPgen)
+	} else {
+		total.merge(runFPgenDir(t, im, fpgen))
 	}
 	t.Logf("TOTAL (%s)\n%s", *vecTarget, total.summary("all files"))
 	if len(total.failByOp) != 0 {
@@ -2156,6 +2242,413 @@ func runIntelFile(t *testing.T, im impl, path string) *vecTally {
 	return tally
 }
 
+// ------------------------------------------------------------------ FPgen
+
+// fpgenVector is one test line of an FPgen file: the operation (format and
+// operator), the rounding code, the enabled traps ("" for none), the
+// operands, the expected result and the expected flags ("" for none).
+type fpgenVector struct {
+	line   int
+	text   string
+	op     string
+	round  string
+	traps  string
+	args   []string
+	result string
+	flags  string
+	bad    string // non-empty: the line is not a well-formed vector, for this reason
+}
+
+var (
+	// fpgenOp matches the operation field: a format prefix (b for binary,
+	// d for decimal, with the width) and the operation's symbol.
+	fpgenOp = regexp.MustCompile(`^([bd])(32|64|128)(\S+)$`)
+	// fpgenTraps matches the field of enabled traps; fpgenFlags the field
+	// of exceptions raised, which has three letters for underflow.
+	fpgenTraps = regexp.MustCompile(`^[xuozi]+$`)
+	fpgenFlags = regexp.MustCompile(`^[xuvwozi]+$`)
+	// fpgenNumeral matches a decimal operand or result: sign, coefficient
+	// digits, E and the exponent of the coefficient's last digit.
+	fpgenNumeral = regexp.MustCompile(`(?i)^([+-])([0-9]+)e([+-]?[0-9]+)$`)
+)
+
+// parseFPgenLine parses one line of an FPgen file. ok is false for the
+// lines that are not vectors: blank lines and the header (a title and a
+// copyright line), recognized as lines whose first field is not an
+// operation. A line that starts with an operation but is not well formed is
+// returned with bad set, so that it is counted.
+func parseFPgenLine(text string, n int) (v *fpgenVector, ok bool) {
+	f := strings.Fields(text)
+	if len(f) == 0 || !fpgenOp.MatchString(f[0]) {
+		return nil, false
+	}
+	v = &fpgenVector{line: n, text: strings.Join(f, " "), op: f[0]}
+	arrow := slices.Index(f, "->")
+	switch {
+	case arrow < 0:
+		v.bad = "malformed line: no ->"
+		return v, true
+	case arrow < 2 || arrow+1 >= len(f):
+		v.bad = "malformed line: no rounding code, operand or result"
+		return v, true
+	case arrow+3 < len(f):
+		v.bad = "malformed line: fields after the flags"
+		return v, true
+	}
+	v.round = f[1]
+	ins := f[2:arrow]
+	if len(ins) > 0 && fpgenTraps.MatchString(ins[0]) {
+		v.traps, ins = ins[0], ins[1:]
+	}
+	v.args = ins
+	v.result = f[arrow+1]
+	if arrow+2 < len(f) {
+		v.flags = f[arrow+2]
+		if !fpgenFlags.MatchString(v.flags) {
+			v.bad = "malformed line: the flags field"
+		}
+	}
+	return v, true
+}
+
+// fpgenMode maps an FPgen rounding code to the kernel's modes.
+func fpgenMode(code string) (bid.Mode, bool) {
+	switch code {
+	case "=0":
+		return bid.ToNearestEven, true
+	case "=^":
+		return bid.ToNearestAway, true
+	case "0":
+		return bid.TowardZero, true
+	case ">":
+		return bid.TowardPositive, true
+	case "<":
+		return bid.TowardNegative, true
+	}
+	return 0, false
+}
+
+// fpgenDecimal reads a decimal operand or expected result of format f. A
+// numeral is encoded exactly, at the exponent it is written with, so that
+// the comparison includes the quantum; one that the format cannot hold
+// (a coefficient of more than Precision digits or an exponent outside
+// [MinExp, MaxExp]) is not representable. Q is the quiet NaN and S the
+// signaling NaN, both positive with a zero payload, the files giving
+// neither sign nor payload. The reason for a token it cannot read is
+// either a malformed line or one that the caller prefixes with the token's
+// role.
+func fpgenDecimal(f *format, tok string) (bits, string) {
+	switch strings.ToLower(tok) {
+	case "q":
+		return f.encode(nan), ""
+	case "s":
+		return intelSignalingNaN(f), ""
+	case "+inf":
+		return f.encode(value{kind: infinite}), ""
+	case "-inf":
+		return f.encode(value{kind: infinite, neg: true}), ""
+	case "#":
+		return bits{}, "none written (#)"
+	}
+	if strings.HasPrefix(tok, "DPD_") {
+		return bits{}, "DPD encoding"
+	}
+	m := fpgenNumeral.FindStringSubmatch(tok)
+	if m == nil {
+		return bits{}, "malformed line: a decimal operand or result"
+	}
+	coeff, _ := new(big.Int).SetString(m[2], 10)
+	exp, err := strconv.Atoi(m[3])
+	if err != nil || coeff.Cmp(f.maxCoeff) > 0 || exp < f.minExp || exp > f.maxExp {
+		return bits{}, "not representable in the format"
+	}
+	return f.encode(value{kind: finite, neg: m[1] == "-", coeff: coeff, exp: exp}), ""
+}
+
+// fpgenTrapTaken returns the exceptions that are both enabled and raised:
+// the traps the vector takes. The three underflow flags are one exception.
+func fpgenTrapTaken(traps, flags string) string {
+	flags = strings.NewReplacer("v", "u", "w", "u").Replace(flags)
+	var taken []byte
+	for _, c := range []byte("xuozi") {
+		if strings.IndexByte(traps, c) >= 0 && strings.IndexByte(flags, c) >= 0 {
+			taken = append(taken, c)
+		}
+	}
+	return string(taken)
+}
+
+// fpgenArith maps the FPgen operators of the decimal files to the kernel.
+var fpgenArith = map[string]func(im impl, f *format, x, y bits, m bid.Mode) bits{
+	"+": impl.add,
+	"-": impl.sub,
+	"*": impl.mul,
+	"/": impl.div,
+}
+
+// Notes on passes particular to FPgen.
+const (
+	noteFPgenFlags       = "result matches; flags x, o, u match the Status of Round64 or Round128 on the exact value"
+	noteFPgenInexactTrap = "result and flags match as above; the inexact trap is taken (IEEE 754-1985 clause 7.5: it gets the default result)"
+	noteFPgenSpecial     = "result matches; a NaN or infinite operand or a zero divisor: flags i and z not compared (no Status reports them)"
+)
+
+// fpgenSkipTrap gives the skip reason for each trap that changes the
+// result: the overflow and underflow traps deliver the result with its
+// exponent scaled into range, the invalid trap writes none.
+var fpgenSkipTrap = map[byte]string{
+	'o': "trap: overflow trap taken (scaled result)",
+	'u': "trap: underflow trap taken (scaled result)",
+	'i': "trap: invalid trap taken (no result written)",
+	'z': "trap: division-by-zero trap taken",
+}
+
+// fpgenExact returns the exact value of x op y, for finite x and y and a
+// non-zero divisor, in the parts that Round64 and Round128 take: the sign,
+// a coefficient that fits in the coefficient argument (19 digits for
+// decimal64, 38 for decimal128), its exponent, and whether a non-zero
+// fraction was folded into sticky. An exact value is given at the operation's
+// preferred exponent (the smaller operand exponent for addition, their sum
+// for multiplication, their difference for division) or, when that needs
+// more digits than fit, with only trailing zeros removed, so that Round
+// chooses the result's exponent as the operation does. An inexact value
+// keeps at least Precision+2 digits. zero reports an exact zero, whose sign
+// is the operation's own rule and is not computed here.
+func fpgenExact(f *format, op string, x, y value) (neg bool, c *big.Int, exp int, sticky, zero bool) {
+	fit := 19
+	if f.width == 128 {
+		fit = 38
+	}
+	n, d := new(big.Int), big.NewInt(1)
+	switch op {
+	case "+", "-":
+		exp = min(x.exp, y.exp)
+		a := new(big.Int).Mul(x.coeff, pow10(x.exp-exp))
+		b := new(big.Int).Mul(y.coeff, pow10(y.exp-exp))
+		if x.neg {
+			a.Neg(a)
+		}
+		if y.neg != (op == "-") {
+			b.Neg(b)
+		}
+		n.Add(a, b)
+		neg = n.Sign() < 0
+		n.Abs(n)
+	case "*":
+		n.Mul(x.coeff, y.coeff)
+		exp, neg = x.exp+y.exp, x.neg != y.neg
+	case "/":
+		n.Set(x.coeff)
+		d.Set(y.coeff)
+		exp, neg = x.exp-y.exp, x.neg != y.neg
+	}
+	if n.Sign() == 0 {
+		return neg, n, exp, false, true
+	}
+	pref := exp
+	q, r := new(big.Int).QuoRem(n, d, new(big.Int))
+	if r.Sign() != 0 {
+		// Scale so that the quotient has Precision+2 or +3 digits.
+		k := max(1, f.prec+2-(digits(n)-digits(d)))
+		q.QuoRem(n.Mul(n, pow10(k)), d, r)
+		exp -= k
+		if r.Sign() == 0 {
+			for exp < pref && new(big.Int).Rem(q, big.NewInt(10)).Sign() == 0 {
+				q.Quo(q, big.NewInt(10))
+				exp++
+			}
+		}
+	}
+	sticky = r.Sign() != 0
+	if t := min(trailingZeros(q), digits(q)-fit); t > 0 {
+		q.Quo(q, pow10(t))
+		exp += t
+	}
+	if t := digits(q) - fit; t > 0 {
+		var rest big.Int
+		q.QuoRem(q, pow10(t), &rest)
+		exp += t
+		sticky = sticky || rest.Sign() != 0
+	}
+	return neg, q, exp, sticky, false
+}
+
+// fpgenStatus is the Status that an FPgen flags field names: x Inexact, o
+// Overflow, and any of u, v and w Underflow. ok is false when the field
+// names invalid or division by zero, which no Status of a finite rounding
+// reports.
+func fpgenStatus(flags string) (st bid.Status, ok bool) {
+	for _, c := range flags {
+		switch c {
+		case 'x':
+			st |= bid.Inexact
+		case 'o':
+			st |= bid.Overflow
+		case 'u', 'v', 'w':
+			st |= bid.Underflow
+		default:
+			return st, false
+		}
+	}
+	return st, true
+}
+
+// fpgenReason prefixes a reason of fpgenDecimal with the role of the token,
+// except a malformed line, which is its own reason.
+func fpgenReason(role, why string) string {
+	if strings.HasPrefix(why, "malformed line") {
+		return why
+	}
+	return role + why
+}
+
+// evalFPgen runs one FPgen vector against im.
+func evalFPgen(im impl, v *fpgenVector) vecOutcome {
+	if v.bad != "" {
+		return vecSkip(v.bad)
+	}
+	m := fpgenOp.FindStringSubmatch(v.op)
+	var f *format
+	switch {
+	case m[1] == "b":
+		return vecSkip("format: binary" + m[2])
+	case m[2] == "64":
+		f = dec64
+	case m[2] == "128":
+		f = dec128
+	default:
+		return vecSkip("format: decimal" + m[2])
+	}
+	run, ok := fpgenArith[m[3]]
+	if !ok {
+		return vecSkip("op: not mapped to the kernel API")
+	}
+	mode, ok := fpgenMode(v.round)
+	if !ok {
+		return vecSkip("context: rounding code unknown")
+	}
+	if len(v.args) != 2 {
+		return vecSkip("malformed line: not two operands")
+	}
+	taken := fpgenTrapTaken(v.traps, v.flags)
+	for i := range len(taken) {
+		if why, ok := fpgenSkipTrap[taken[i]]; ok {
+			return vecSkip(why)
+		}
+	}
+	var a [2]bits
+	for i, s := range v.args {
+		x, why := fpgenDecimal(f, s)
+		if why != "" {
+			return vecSkip(fpgenReason("operand: ", why))
+		}
+		a[i] = x
+	}
+	want, why := fpgenDecimal(f, v.result)
+	if why != "" {
+		return vecSkip(fpgenReason("result: ", why))
+	}
+	var got bits
+	if o, ok := intelRun(func() { got = run(im, f, a[0], a[1], mode) }); !ok {
+		return o
+	}
+	o := intelCompare(f, got, want)
+	if vecRef.isNaN(f, want) && vecRef.isSignaling(f, got) {
+		o.pass = false // Q is a quiet NaN
+	}
+	if !o.pass {
+		return o
+	}
+
+	// The flags. Arithmetic returns no Status, so the exact value is
+	// rounded again by Round64 or Round128, which do: they must give the
+	// result the operation gave, and their Status must be the flags.
+	x, y := f.decode(a[0]), f.decode(a[1])
+	if x.kind != finite || y.kind != finite || m[3] == "/" && y.coeff.Sign() == 0 {
+		return o.noted(noteFPgenSpecial)
+	}
+	wantSt, ok := fpgenStatus(v.flags)
+	if !ok {
+		o.pass, o.got = false, o.got+"; flags "+v.flags+" for finite operands"
+		return o
+	}
+	neg, c, exp, sticky, zero := fpgenExact(f, m[3], x, y)
+	var rx bits
+	var st bid.Status
+	if ro, ok := intelRun(func() { rx, st = im.round(f, neg, toUint128(c), exp, sticky, mode) }); !ok {
+		return ro
+	}
+	if !zero && rx != got {
+		o.pass, o.got = false, o.got+"; Round gives "+vecRef.appendTo(f, rx)
+		return o
+	}
+	if st != wantSt {
+		o.pass, o.got = false, o.got+"; Round Status "+showStatus(st)
+		return o
+	}
+	if taken != "" {
+		return o.noted(noteFPgenInexactTrap)
+	}
+	return o.noted(noteFPgenFlags)
+}
+
+func runFPgenDir(t *testing.T, im impl, dir string) *vecTally {
+	files, err := filepath.Glob(filepath.Join(dir, "*.fptest"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("%s=%s: no *.fptest files", envFPgen, dir)
+	}
+	sort.Strings(files)
+	var only *regexp.Regexp
+	if *vecFiles != "" {
+		only = regexp.MustCompile(*vecFiles)
+	}
+	total := newVecTally()
+	for _, path := range files {
+		name := filepath.Base(path)
+		if only != nil && !only.MatchString(name) {
+			continue
+		}
+		fh, err := os.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tally := newVecTally()
+		shown, lines, vectors := 0, 0, 0
+		sc := bufio.NewScanner(fh)
+		sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
+		for n := 1; sc.Scan(); n++ {
+			lines++
+			v, ok := parseFPgenLine(sc.Text(), n)
+			if !ok {
+				continue
+			}
+			vectors++
+			o := evalFPgen(im, v)
+			tally.add(v.op, o)
+			if o.skip == "" && !o.pass && (*vecAll || shown < *vecShow) {
+				shown++
+				t.Logf("FAIL %s:%d %s: got %s", name, n, v.text, o.got)
+			}
+		}
+		err = sc.Err()
+		fh.Close()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got := tally.pass + tally.fail + tally.skipped(); got != vectors {
+			t.Errorf("%s: %d vectors but %d accounted for", name, vectors, got)
+		}
+		t.Logf("%s: %d lines, %d vectors, %d blank or header", name, lines, vectors, lines-vectors)
+		t.Log(tally.summary(name))
+		if tally.fail > shown {
+			t.Logf("    %s: %d failing vectors not shown (-bid.vecshow, -bid.vecall)", name, tally.fail-shown)
+		}
+		total.merge(tally)
+	}
+	t.Logf("FPgen total (%s)\n%s", *vecTarget, total.summary("FPgen"))
+	return total
+}
+
 // ----------------------------------------------------- parser self-checks
 
 // TestDecTestLineParser checks the decTest parser and the mapping on
@@ -2574,6 +3067,123 @@ func TestIntelLineParser(t *testing.T) {
 				continue
 			}
 			o := evalIntel(im.im, v)
+			switch {
+			case o.skip == "kernel: not implemented":
+			case c.want == pass:
+				if o.skip != "" || !o.pass {
+					t.Errorf("%s: %q: want pass, got skip %q pass %v got %s", im.name, c.line, o.skip, o.pass, o.got)
+				}
+			case c.want == fail:
+				if o.skip != "" || o.pass {
+					t.Errorf("%s: %q: want fail, got skip %q pass %v", im.name, c.line, o.skip, o.pass)
+				}
+			case !strings.HasPrefix(o.skip, c.want):
+				t.Errorf("%s: %q: want skip %q, got skip %q pass %v got %s", im.name, c.line, c.want, o.skip, o.pass, o.got)
+			}
+		}
+	}
+}
+
+// TestFPgenLineParser checks the FPgen parser and the mapping on
+// hand-written lines, against the reference model and the kernel. It needs
+// no vectors.
+func TestFPgenLineParser(t *testing.T) {
+	const (
+		pass = "pass"
+		fail = "fail" // a wrong expectation must fail, not skip
+	)
+	cases := []struct {
+		line string
+		want string // pass, fail, or the prefix of the skip reason
+	}{
+		// Results, compared with their quantum.
+		{"d64+ =0 +1e0 +2e0 -> +3e0", pass},
+		{"d64+ =0 +1e0 +2e0 -> +30e-1", fail},
+		{"d64+ =0 +10e-1 +2e0 -> +30e-1", pass},
+		{"d64+ =0 +1E0 +2E0 -> +3E0", pass},
+		{"d64- =0 +1e0 +1e0 -> +0e0", pass},
+		{"d64- < +1e0 +1e0 -> -0e0", pass},
+		{"d64- =0 +1e0 +1e0 -> -0e0", fail},
+		{"d64* =0 +1e369 +1e1 -> +10e369", pass},
+		{"d64/ =0 +1e0 +4e0 -> +25e-2", pass},
+		{"d128+ =0 +1e0 +2e0 -> +3e0", pass},
+		// Rounding codes, and the flags through Round.
+		{"d64/ =0 +1e0 +3e0 -> +3333333333333333e-16 x", pass},
+		{"d64/ =0 +1e0 +3e0 -> +3333333333333333e-16", fail},
+		{"d64/ > +1e0 +3e0 -> +3333333333333334e-16 x", pass},
+		{"d64/ 0 +2e0 +3e0 -> +6666666666666666e-16 x", pass},
+		{"d64+ =^ +1000000000000000e0 +5e-1 -> +1000000000000001e0 x", pass},
+		{"d64+ =0 +1000000000000000e0 +5e-1 -> +1000000000000000e0 x", pass},
+		{"d64+ =0 +1000000000000000e0 +5e-1 -> +1000000000000001e0 x", fail},
+		{"d64+ < -1000000000000000e0 -5e-1 -> -1000000000000001e0 x", pass},
+		{"d128/ =0 +2e0 +3e0 -> +6666666666666666666666666666666667e-34 x", pass},
+		{"d64* =0 +9999999999999999e369 +10e0 -> +inf xo", pass},
+		{"d64* 0 +9999999999999999e369 +10e0 -> +9999999999999999e369 xo", pass},
+		{"d64* 0 +9999999999999999e369 +10e0 -> +9999999999999999e369 x", fail},
+		{"d128* =0 +9999999999999999999999999999999999e6111 +2e0 -> +inf xo", pass},
+		{"d64* =0 +1e-398 +1e-1 -> +0e-398 xu", pass},
+		{"d64* =0 +1e-398 +1e-1 -> +0e-398 xw", pass},
+		{"d64* =0 +1e-398 +1e-1 -> +0e-398 x", fail},
+		{"d64+ =0 +1e-398 +0e0 -> +1e-398", pass},
+		{"d64+ =0 +1e-398 +0e0 -> +1e-398 u", fail},
+		{"d64+ =0 +1e0 +2e0 -> +3e0 i", fail},
+		// Special values, whose flags are not compared.
+		{"d64+ =0 S +1e0 -> Q i", pass},
+		{"d64+ =0 Q +1e0 -> Q", pass},
+		{"d64+ =0 +inf -inf -> Q i", pass},
+		{"d64+ =0 +inf +1e0 -> +inf", pass},
+		{"d64+ =0 +inf +1e0 -> -inf", fail},
+		{"d64/ =0 +1e0 +0e0 -> +inf z", pass},
+		{"d64/ =0 -1e0 +0e0 -> +inf z", fail},
+		{"d64* =0 +0e0 +inf -> Q i", pass},
+		// Traps: one not taken changes nothing; the inexact trap runs.
+		{"d64+ =0 i Q +1e0 -> Q", pass},
+		{"d64+ =0 i +1e0 +2e0 -> +3e0", pass},
+		{"d64+ < x +1e0 +1e-20 -> +1000000000000000e-15 x", pass},
+		{"d64+ < x +1e0 +1e-20 -> +1000000000000001e-15 x", fail},
+		{"d64+ =0 i S +1e0 -> # i", "trap: invalid trap taken"},
+		{"d64+ =0 xo +9999999999999999e369 +9999999999999999e369 -> +1999999999999999e-206 o", "trap: overflow trap taken"},
+		{"d64+ =0 xu +1e-398 +0e0 -> +1e178 u", "trap: underflow trap taken"},
+		// Skipped: formats, operations and fields outside the mapping.
+		{"b32* 0 +1.0P0 +1.0P1 -> +1.0P1", "format: binary32"},
+		{"d32+ =0 +1e0 +2e0 -> +3e0", "format: decimal32"},
+		{"d64V =0 +4e0 -> +2e0", "op: not mapped"},
+		{"d64+ =? +1e0 +2e0 -> +3e0", "context: rounding code unknown"},
+		{"d64+ =0 +10000000000000000e0 +0e0 -> +1000000000000000e1", "operand: not representable"},
+		{"d64+ =0 +1e370 +0e0 -> +10e369", "operand: not representable"},
+		{"d64+ =0 +1e0 +2e0 -> +3e-399", "result: not representable"},
+		{"d64+ =0 DPD_2238000000000001 +1e0 -> +2e0", "operand: DPD encoding"},
+		{"d64+ =0 +1e0 +2e0 -> #", "result: none written"},
+		// Skipped: lines the runner cannot read.
+		{"d64+ =0 +1e0 +2e0 +3e0", "malformed line: no ->"},
+		{"d64+ -> +3e0", "malformed line: no rounding code"},
+		{"d64+ =0 +1e0 -> +1e0", "malformed line: not two operands"},
+		{"d64+ =0 +1e0 +2e0 -> +3e0 x junk", "malformed line: fields after"},
+		{"d64+ =0 +1e0 +2e0 -> +3e0 q", "malformed line: the flags field"},
+		{"d64+ =0 1e0 +2e0 -> +3e0", "malformed line: a decimal"},
+	}
+	for _, text := range []string{"", "   ", "Decimal floating point tests: a title", "Copyright of IBM Corp. 2007"} {
+		if v, ok := parseFPgenLine(text, 1); ok {
+			t.Errorf("parseFPgenLine(%q) = %+v, want no vector", text, v)
+		}
+	}
+	v, ok := parseFPgenLine("d128/  >\txu +1e0  +3e0 -> +3e0 xu", 9)
+	if !ok || v.line != 9 || v.op != "d128/" || v.round != ">" || v.traps != "xu" ||
+		len(v.args) != 2 || v.args[1] != "+3e0" || v.result != "+3e0" || v.flags != "xu" || v.bad != "" {
+		t.Errorf("parseFPgenLine with traps = %+v, %v", v, ok)
+	}
+
+	for _, im := range []struct {
+		name string
+		im   impl
+	}{{"reference", reference{}}, {"kernel", kernel{}}} {
+		for i, c := range cases {
+			v, ok := parseFPgenLine(c.line, i+1)
+			if !ok {
+				t.Errorf("%s: %q: no vector", im.name, c.line)
+				continue
+			}
+			o := evalFPgen(im.im, v)
 			switch {
 			case o.skip == "kernel: not implemented":
 			case c.want == pass:

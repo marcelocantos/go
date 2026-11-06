@@ -576,7 +576,7 @@ func TestRatchetMatchers(t *testing.T) {
 // Ratchet 2: no published test vectors in the tree (T1.6.2, third criterion).
 // ---------------------------------------------------------------------------
 
-// vectorsRunner is the one file allowed to name the two published sets or to
+// vectorsRunner is the one file allowed to name the three published sets or to
 // carry a vector: the throwaway runner that reads the published vector sets
 // from the developer's own disk.
 //
@@ -591,6 +591,7 @@ const vectorsRunner = "src/internal/bid/vectors_test.go"
 const (
 	vectorIBM   = "dec" + "Test"
 	vectorIntel = "read" + "test"
+	vectorFPgen = "fp" + "test" // the suffix of the FPgen files
 )
 
 var vectorsDirs = []string{"src", "test", "misc", "lib", "doc", "api"}
@@ -599,16 +600,20 @@ var vectorsDirs = []string{"src", "test", "misc", "lib", "doc", "api"}
 // matches any of:
 //
 //   - names a set: the IBM set's name as a whole word (so a file name ending
-//     in it matches, a plural or a longer identifier does not), or the
-//     Intel set's file name as a whole word, case-sensitively. Both are
-//     assembled in vectorIBM and vectorIntel below, because this file is
-//     not the runner and must not spell them;
+//     in it matches, a plural or a longer identifier does not), the Intel
+//     set's file name or the FPgen files' suffix as a whole word,
+//     case-sensitively. All are assembled in vectorIBM, vectorIntel and
+//     vectorFPgen above, because this file is not the runner and must not
+//     spell them;
 //   - an IBM vector line: an id, an operation of the IBM set
 //     (case-insensitive: the files mix cases), operands, "->" and a result;
 //   - an Intel vector line: a function bid32_, bid64_ or bid128_ (or the
-//     dpd equivalent), a rounding code 0 to 4, and a hex word in brackets.
+//     dpd equivalent), a rounding code 0 to 4, and a hex word in brackets;
+//   - an FPgen vector line: an operation that starts with a format, b32,
+//     d64, d128 and the like, an FPgen rounding code (=0, =^, 0, < or >),
+//     operands, "->" and a result.
 var (
-	vectorNameRE = regexp.MustCompile(`\b(` + vectorIBM + `|` + vectorIntel + `)\b`)
+	vectorNameRE = regexp.MustCompile(`\b(` + vectorIBM + `|` + vectorIntel + `|` + vectorFPgen + `)\b`)
 
 	// The operations of the IBM set (GDA test-case file format) as far
 	// as the General and decQuad/decDouble files use them.
@@ -621,6 +626,8 @@ var (
 		`)\s+.*->\s*\S`)
 
 	vectorIntelRE = regexp.MustCompile(`^\s*(bid|dpd)(32|64|128)_[a-z0-9_]+\s+[0-4]\s+.*\[[0-9a-fA-F]{2,32}\]`)
+
+	vectorFPgenRE = regexp.MustCompile(`^\s*[bd](32|64|128)\S*\s+(=0|=\^|[<>0])\s+.*->\s*\S`)
 )
 
 // vectorHits returns the 1-based numbers of the lines of data that name a
@@ -629,7 +636,8 @@ func vectorHits(data []byte) (lines []int, why []string) {
 	if bytes.IndexByte(data[:min(len(data), 8192)], 0) >= 0 {
 		return nil, nil // binary
 	}
-	names := bytes.Contains(data, []byte(vectorIBM)) || bytes.Contains(data, []byte(vectorIntel))
+	names := bytes.Contains(data, []byte(vectorIBM)) || bytes.Contains(data, []byte(vectorIntel)) ||
+		bytes.Contains(data, []byte(vectorFPgen))
 	arrow := bytes.Contains(data, []byte("->"))
 	intel := bytes.Contains(data, []byte("bid")) || bytes.Contains(data, []byte("dpd"))
 	if !names && !arrow && !intel {
@@ -645,6 +653,8 @@ func vectorHits(data []byte) (lines []int, why []string) {
 			lines, why = append(lines, n), append(why, "names a published vector set")
 		case arrow && bytes.Contains(line, []byte("->")) && vectorDecRE.Match(line):
 			lines, why = append(lines, n), append(why, "IBM vector line")
+		case arrow && bytes.Contains(line, []byte("->")) && vectorFPgenRE.Match(line):
+			lines, why = append(lines, n), append(why, "FPgen vector line")
 		case intel && vectorIntelRE.Match(line):
 			lines, why = append(lines, n), append(why, "Intel vector line")
 		}
@@ -758,6 +768,13 @@ func TestRatchetVectorMatchers(t *testing.T) {
 		{"INTEL points at " + vectorIntel + ".in", true},
 		{"bid64_add 0 [31c0000000000001] [31c0000000000002] [31c0000000000003] 00", true},
 		{"bid128_to_bid64 2 [30400000000000000000000000000003] [31c0000000000003] 00", true},
+		{"d64+ =0 +1e0 +2e0 -> +3e0", true},
+		{"d128/ =^ x +1e0 +3e0 -> +3333333333333333333333333333333333e-34 x", true},
+		{"d64* < i S +1e0 -> # i", true},
+		{"b32* 0 +1.0P0 +1.0P1 -> +1.0P1", true},
+		{"see Decimal-Rounding." + vectorFPgen, true},
+		{"d64+ adds -> two", false},
+		{"Mul64 up exact 2 3 -> 6", false},
 		{vectorIBM + "s := []int{1}", false},
 		{"type encDecTest struct{}", false},
 		{"go readTest(t)", false},
