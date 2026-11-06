@@ -15,6 +15,7 @@ import (
 	"math"
 	"math/decimal"
 	"reflect"
+	"runtime"
 	"unsafe"
 )
 
@@ -148,13 +149,32 @@ func main() {
 		panic(fmt.Sprintf("-zero bits %#x", negHi))
 	}
 
-	// Round trips through the bits functions, at both widths.
-	for _, b := range []uint64{0, 1, zero64Bits, zero64Bits | 1<<63, 0x7800000000000000, 0x7c00000000000000, ^uint64(0)} {
-		if got := math.Decimal64bits(math.Decimal64frombits(b)); got != b {
-			panic(fmt.Sprintf("decimal64 round trip %#x got %#x", b, got))
+	// Round trips through the bits functions, at both widths. A canonical
+	// encoding survives on every target. A non-canonical one survives where
+	// the memory form is BID; where it is DPD (linux/ppc64le), a value
+	// holds the value the encoding reads as, and the bits functions return
+	// its canonical encoding (see math.Decimal64bits).
+	dpd := runtime.GOARCH == "ppc64le"
+	for _, c := range []struct {
+		b, canon64, canonHi, canonLo uint64
+	}{
+		{0, 0, 0, 0},
+		{1, 1, 1, 1},
+		{zero64Bits, zero64Bits, zero64Bits, zero64Bits},
+		{zero64Bits | 1<<63, zero64Bits | 1<<63, zero64Bits | 1<<63, zero64Bits | 1<<63},
+		{0x7800000000000000, 0x7800000000000000, 0x7800000000000000, 0}, // decimal128: an infinity with trailing bits
+		{0x7c00000000000000, 0x7c00000000000000, 0x7c00000000000000, 0x7c00000000000000},
+		{^uint64(0), 0xfe00000000000000, 0xfe00000000000000, 0}, // sNaN with reserved bits and a payload too large
+	} {
+		want64, wantHi, wantLo := c.b, c.b, c.b
+		if dpd {
+			want64, wantHi, wantLo = c.canon64, c.canonHi, c.canonLo
 		}
-		if hi, lo := math.Decimal128bits(math.Decimal128frombits(b, b)); hi != b || lo != b {
-			panic(fmt.Sprintf("decimal128 round trip %#x got %#x %#x", b, hi, lo))
+		if got := math.Decimal64bits(math.Decimal64frombits(c.b)); got != want64 {
+			panic(fmt.Sprintf("decimal64 round trip %#x got %#x, want %#x", c.b, got, want64))
+		}
+		if hi, lo := math.Decimal128bits(math.Decimal128frombits(c.b, c.b)); hi != wantHi || lo != wantLo {
+			panic(fmt.Sprintf("decimal128 round trip %#x got %#x %#x, want %#x %#x", c.b, hi, lo, wantHi, wantLo))
 		}
 	}
 	// Every zero hashes and compares the same in a map.
