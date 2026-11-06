@@ -799,6 +799,33 @@ TEXT asmtest(SB),DUPOK|NOSPLIT,$0
 	DCMPU F1, F2, CR0               // DCMPU F1,CR0,F2  // ec011504
 	DCMPUQ F2, F4                   // fc022504
 	DCMPUQ F2,F4, CR0               // DCMPUQ F2,CR0,F4 // fc022504
+	DCTDP F1, F2                    // ec400a04
+	DCTQPQ F1, F2                   // fc400a04
+	DRSP F1, F2                     // ec400e04
+	DRDPQ F4, F2                    // fc402604
+	DCFFIX F1, F2                   // ec400e44
+	DCFFIXQ F1, F2                  // fc400e44
+	DCTFIX F1, F2                   // ec400a44
+	DCTFIXQ F2, F1                  // fc201244
+	DXEX F1, F2                     // ec400ac4
+	DXEXQ F2, F1                    // fc2012c4
+	DIEX F1, F2, F3                 // ec620ec4
+	DIEXQ F2, F1, F4                // fc8116c4
+	DDEDPD $3, F1, F2               // ec580a84
+	DDEDPDQ $2, F6, F4              // fc903284
+	DENBCD $1, F1, F2               // ec500e84
+	DENBCDQ $1, F6, F4              // fc903684
+	DQUA F2, F1, $1, F3             // ec620a06
+	DQUAQ F4, F2, $3, F6            // fcc41606
+	DQUAI $-16, F1, $0, F2          // ec500886
+	DQUAI $15, F1, $3, F2           // ec4f0e86
+	DQUAIQ $5, F2, $2, F4           // fc851486
+	DRRND F2, F1, $0, F3            // ec620846
+	DRRNDQ F1, F2, $1, F6           // fcc11246
+	DRINTX $1, F1, $3, F2           // ec410ec6
+	DRINTXQ $0, F2, $1, F4          // fc8012c6
+	DRINTN $0, F1, $1, F2           // ec400bc6
+	DRINTNQ $1, F2, $0, F4          // fc8111c6
 	LVX (R3)(R4), V1                // 7c2418ce
 	LVX (R3)(R0), V1                // 7c2018ce
 	LVX (R3), V1                    // 7c2018ce

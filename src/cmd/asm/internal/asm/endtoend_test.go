@@ -506,6 +506,10 @@ func TestPPC64EndToEnd(t *testing.T) {
 	}
 }
 
+func TestPPC64Errors(t *testing.T) {
+	testErrors(t, "ppc64", "ppc64error")
+}
+
 func testRISCV64AllProfiles(t *testing.T, testFn func(t *testing.T)) {
 	t.Helper()
 

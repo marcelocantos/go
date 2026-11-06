@@ -201,6 +201,22 @@ var optabBase = []Optab{
 	{as: AFADD, a1: C_FREG, a2: C_FREG, a6: C_FREG, type_: 2, size: 4},
 	{as: ADADDQ, a1: C_FREGP, a6: C_FREGP, type_: 2, size: 4},
 	{as: ADADDQ, a1: C_FREGP, a2: C_FREGP, a6: C_FREGP, type_: 2, size: 4},
+	{as: ADCTDP, a1: C_FREG, a6: C_FREG, type_: 33, size: 4},
+	{as: ADCTQPQ, a1: C_FREG, a6: C_FREGP, type_: 33, size: 4},
+	{as: ADRDPQ, a1: C_FREGP, a6: C_FREGP, type_: 33, size: 4},
+	{as: ADCTFIXQ, a1: C_FREGP, a6: C_FREG, type_: 33, size: 4},
+	{as: ADIEX, a1: C_FREG, a2: C_FREG, a6: C_FREG, type_: 2, size: 4},
+	{as: ADIEXQ, a1: C_FREGP, a2: C_FREG, a6: C_FREGP, type_: 2, size: 4},
+	{as: ADDEDPD, a1: C_U15CON, a2: C_FREG, a6: C_FREG, type_: 111, size: 4},
+	{as: ADDEDPDQ, a1: C_U15CON, a2: C_FREGP, a6: C_FREGP, type_: 111, size: 4},
+	{as: ADQUA, a1: C_FREG, a2: C_FREG, a3: C_U15CON, a6: C_FREG, type_: 112, size: 4},
+	{as: ADQUAQ, a1: C_FREGP, a2: C_FREGP, a3: C_U15CON, a6: C_FREGP, type_: 112, size: 4},
+	{as: ADRRND, a1: C_FREG, a2: C_FREG, a3: C_U15CON, a6: C_FREG, type_: 112, size: 4},
+	{as: ADRRNDQ, a1: C_FREG, a2: C_FREGP, a3: C_U15CON, a6: C_FREGP, type_: 112, size: 4},
+	{as: ADQUAI, a1: C_S16CON, a2: C_FREG, a3: C_U15CON, a6: C_FREG, type_: 112, size: 4},
+	{as: ADQUAIQ, a1: C_S16CON, a2: C_FREGP, a3: C_U15CON, a6: C_FREGP, type_: 112, size: 4},
+	{as: ADRINTN, a1: C_U15CON, a2: C_FREG, a3: C_U15CON, a6: C_FREG, type_: 112, size: 4},
+	{as: ADRINTNQ, a1: C_U15CON, a2: C_FREGP, a3: C_U15CON, a6: C_FREGP, type_: 112, size: 4},
 	{as: AFABS, a1: C_FREG, a6: C_FREG, type_: 33, size: 4},
 	{as: AFABS, a6: C_FREG, type_: 33, size: 4},
 	{as: AFMADD, a1: C_FREG, a2: C_FREG, a3: C_FREG, a6: C_FREG, type_: 34, size: 4},
@@ -1909,6 +1925,32 @@ func buildop(ctxt *obj.Link) {
 		case ADCMPOQ:
 			opset(ADCMPUQ, r0)
 
+		case ADCTDP: /* DFP op frb,frt on single registers */
+			opset(ADRSP, r0)
+			opset(ADCFFIX, r0)
+			opset(ADCTFIX, r0)
+			opset(ADXEX, r0)
+
+		case ADCTQPQ: /* DFP op frb,frtp */
+			opset(ADCFFIXQ, r0)
+
+		case ADCTFIXQ: /* DFP op frbp,frt */
+			opset(ADXEXQ, r0)
+
+		case ADDEDPD: /* DFP op $imm,frb,frt with an immediate in bits 11-12 */
+			opset(ADENBCD, r0)
+
+		case ADDEDPDQ:
+			opset(ADENBCDQ, r0)
+
+		case ADRINTN: /* Z23-form DFP op $r,frb,$rmc,frt */
+			opset(ADRINTX, r0)
+
+		case ADRINTNQ:
+			opset(ADRINTXQ, r0)
+
+		case ADRDPQ, ADIEX, ADIEXQ, ADQUA, ADQUAQ, ADRRND, ADRRNDQ, ADQUAI, ADQUAIQ:
+
 		case AMTFSB0:
 			opset(AMTFSB0CC, r0)
 			opset(AMTFSB1, r0)
@@ -3516,6 +3558,43 @@ func asmout(c *ctxt9, p *obj.Prog, o *Optab, out *[5]uint32) {
 			o1 = AOP_RRR(c.oprrr(p.As), r, uint32(p.From.Reg), uint32(p.To.Reg))
 		}
 
+	case 111: /* ddedpd $sp,frb,frt; denbcd $s,frb,frt */
+		v := c.regoff(&p.From)
+		switch p.As {
+		case ADDEDPD, ADDEDPDQ:
+			if v < 0 || v > 3 {
+				c.ctxt.Diag("SP field %d out of range [0, 3]: %v", v, p)
+			}
+			v <<= 3 // SP is bits 11-12, the high two of the RA field
+		default:
+			if v < 0 || v > 1 {
+				c.ctxt.Diag("S field %d out of range [0, 1]: %v", v, p)
+			}
+			v <<= 4 // S is bit 11, the high bit of the RA field
+		}
+		o1 = AOP_RRR(c.oprrr(p.As), uint32(p.To.Reg), uint32(v), uint32(p.Reg))
+
+	case 112: /* Z23-form: dqua fra,frb,$rmc,frt; dquai $te,frb,$rmc,frt; drintn $r,frb,$rmc,frt */
+		var a uint32
+		if p.From.Type == obj.TYPE_REG {
+			a = uint32(p.From.Reg)
+		} else {
+			v := c.regoff(&p.From)
+			if p.As == ADQUAI || p.As == ADQUAIQ {
+				if v < -16 || v > 15 {
+					c.ctxt.Diag("TE field %d out of range [-16, 15]: %v", v, p)
+				}
+			} else if v < 0 || v > 1 {
+				c.ctxt.Diag("R field %d out of range [0, 1]: %v", v, p)
+			}
+			a = uint32(v) & 31
+		}
+		rmc := c.regoff(p.GetFrom3())
+		if rmc < 0 || rmc > 3 {
+			c.ctxt.Diag("RMC field %d out of range [0, 3]: %v", rmc, p)
+		}
+		o1 = AOP_RRR(c.oprrr(p.As), uint32(p.To.Reg), a, uint32(p.Reg)) | uint32(rmc)<<9
+
 	case 72: /* slbmte (Rb+Rs -> slb[Rb]) -> Rs, Rb */
 		o1 = AOP_RRR(c.oprrr(p.As), uint32(p.From.Reg), 0, uint32(p.To.Reg))
 
@@ -4025,6 +4104,59 @@ func (c *ctxt9) oprrr(a obj.As) uint32 {
 		return OPVCC(59, 130, 0, 0)
 	case ADCMPOQ:
 		return OPVCC(63, 130, 0, 0)
+	case ADCTDP:
+		return OPVCC(59, 258, 0, 0)
+	case ADCTQPQ:
+		return OPVCC(63, 258, 0, 0)
+	case ADRSP:
+		return OPVCC(59, 770, 0, 0)
+	case ADRDPQ:
+		return OPVCC(63, 770, 0, 0)
+	case ADCFFIX:
+		return OPVCC(59, 802, 0, 0)
+	case ADCFFIXQ:
+		return OPVCC(63, 802, 0, 0)
+	case ADCTFIX:
+		return OPVCC(59, 290, 0, 0)
+	case ADCTFIXQ:
+		return OPVCC(63, 290, 0, 0)
+	case ADXEX:
+		return OPVCC(59, 354, 0, 0)
+	case ADXEXQ:
+		return OPVCC(63, 354, 0, 0)
+	case ADIEX:
+		return OPVCC(59, 866, 0, 0)
+	case ADIEXQ:
+		return OPVCC(63, 866, 0, 0)
+	case ADDEDPD:
+		return OPVCC(59, 322, 0, 0)
+	case ADDEDPDQ:
+		return OPVCC(63, 322, 0, 0)
+	case ADENBCD:
+		return OPVCC(59, 834, 0, 0)
+	case ADENBCDQ:
+		return OPVCC(63, 834, 0, 0)
+	// Z23-form: an 8-bit extended opcode in bits 23-30, RMC in bits 21-22.
+	case ADQUA:
+		return OPVCC(59, 3, 0, 0)
+	case ADQUAQ:
+		return OPVCC(63, 3, 0, 0)
+	case ADQUAI:
+		return OPVCC(59, 67, 0, 0)
+	case ADQUAIQ:
+		return OPVCC(63, 67, 0, 0)
+	case ADRRND:
+		return OPVCC(59, 35, 0, 0)
+	case ADRRNDQ:
+		return OPVCC(63, 35, 0, 0)
+	case ADRINTX:
+		return OPVCC(59, 99, 0, 0)
+	case ADRINTXQ:
+		return OPVCC(63, 99, 0, 0)
+	case ADRINTN:
+		return OPVCC(59, 227, 0, 0)
+	case ADRINTNQ:
+		return OPVCC(63, 227, 0, 0)
 
 	case ADCBF:
 		return OPVCC(31, 86, 0, 0)
