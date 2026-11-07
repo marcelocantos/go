@@ -463,6 +463,184 @@ def ifacematcher(val):
 goobjfile.pretty_printers.append(ifacematcher)
 
 #
+#  Decimal floating point
+#
+# A decimal64 or decimal128 in memory is its IEEE 754 encoding XORed with
+# the encoding of 0E+0, so that all bits clear is 0E+0, and the high word of
+# a decimal128 is the one XORed (see d64load and d128load in the runtime).
+# The encoding is BID except on linux/ppc64le, where it is DPD. The DWARF
+# type is DW_ATE_decimal_float, which gdb would decode without undoing the
+# XOR, and in the libdecnumber format gdb was built with rather than the
+# target's, so DecimalPrinter decodes the bits itself. It applies wherever
+# gdb prints a value of the type: a variable in a register or in memory, a
+# struct field, an array, slice or map element, or a value reached through
+# a pointer. The runtime records the encoding of 0E+0 in the constants read
+# here; a binary without them gets no decimal printer.
+
+DECIMAL_ZERO64 = read_runtime_const("'runtime._DecimalZero64'", 0)
+DECIMAL_ZERO128_HI = read_runtime_const("'runtime._DecimalZero128Hi'", 0)
+
+# The encodings of 0E+0, which tell the two formats apart.
+BID_ZERO64 = 0x31c0000000000000
+BID_ZERO128_HI = 0x3040000000000000
+DPD_ZERO64 = 0x2238000000000000
+DPD_ZERO128_HI = 0x2208000000000000
+
+
+def decimal_encoding(zero64, zero128hi):
+	"Return 'bid' or 'dpd' for the given encodings of 0E+0, or None."
+	if (zero64, zero128hi) == (BID_ZERO64, BID_ZERO128_HI):
+		return 'bid'
+	if (zero64, zero128hi) == (DPD_ZERO64, DPD_ZERO128_HI):
+		return 'dpd'
+	return None
+
+
+DECIMAL_ENCODING = decimal_encoding(DECIMAL_ZERO64, DECIMAL_ZERO128_HI)
+
+# width: (coefficient bits of BID's first form, exponent bits, bias,
+# largest coefficient, DPD declets)
+DECIMAL_FORMATS = {
+	64: (53, 10, 398, 10**16 - 1, 5),
+	128: (113, 14, 6176, 10**34 - 1, 11),
+}
+
+
+def dpd_declet(d):
+	"Return the integer in [0, 999] that the 10-bit DPD declet d encodes."
+	p, q, r = d >> 9 & 1, d >> 8 & 1, d >> 7 & 1
+	s, t, u = d >> 6 & 1, d >> 5 & 1, d >> 4 & 1
+	v, w, x, y = d >> 3 & 1, d >> 2 & 1, d >> 1 & 1, d & 1
+	pqr, stu, wxy = 4*p + 2*q + r, 4*s + 2*t + u, 4*w + 2*x + y
+	if not v:
+		a, b, c = pqr, stu, wxy
+	elif (w, x) == (0, 0):
+		a, b, c = pqr, stu, 8 + y
+	elif (w, x) == (0, 1):
+		a, b, c = pqr, 8 + u, 4*s + 2*t + y
+	elif (w, x) == (1, 0):
+		a, b, c = 8 + r, stu, 4*p + 2*q + y
+	elif (s, t) == (0, 0):
+		a, b, c = 8 + r, 8 + u, 4*p + 2*q + y
+	elif (s, t) == (0, 1):
+		a, b, c = 8 + r, 4*p + 2*q + u, 8 + y
+	elif (s, t) == (1, 0):
+		a, b, c = pqr, 8 + u, 8 + y
+	else:
+		a, b, c = 8 + r, 8 + u, 8 + y
+	return 100*a + 10*b + c
+
+
+def decimal_string(x, width, encoding):
+	"""Return the character form of the decimal encoding x, as Go's fmt prints it.
+
+	x is the encoding as an integer of width bits, 64 or 128, and encoding
+	is 'bid' or 'dpd'. The form is IEEE 754 to-scientific-string, which
+	keeps the quantum: 1.50 and 1.5 differ. Every NaN prints as NaN."""
+	cbits, ebits, bias, maxcoeff, ndeclets = DECIMAL_FORMATS[width]
+	neg = x >> (width - 1) & 1
+	if x >> (width - 5) & 0xF == 0xF:
+		if x >> (width - 6) & 1:
+			return 'NaN'
+		return '-Infinity' if neg else 'Infinity'
+	if encoding == 'bid':
+		if x >> (width - 3) & 3 == 3:
+			# Second form: an implicit 100 above the stored bits.
+			biased = x >> (cbits - 2) & ((1 << ebits) - 1)
+			coeff = 1 << cbits | x & ((1 << (cbits - 2)) - 1)
+		else:
+			biased = x >> cbits & ((1 << ebits) - 1)
+			coeff = x & ((1 << cbits) - 1)
+		if coeff > maxcoeff:
+			coeff = 0  # non-canonical: reads as zero
+	else:
+		# The combination field holds the two leading exponent bits and the
+		# leading digit; the exponent continuation field the rest of the
+		# exponent; the trailing significand field three digits per declet.
+		comb = x >> (width - 6) & 0x1F
+		if comb >> 3 == 3:
+			lead, top = 8 + (comb & 1), comb >> 1 & 3
+		else:
+			lead, top = comb & 7, comb >> 3
+		tbits = 10 * ndeclets
+		cont = ebits - 2
+		biased = top << cont | x >> tbits & ((1 << cont) - 1)
+		coeff = lead
+		for i in reversed(range(ndeclets)):
+			coeff = coeff*1000 + dpd_declet(x >> (10*i) & 0x3FF)
+	exp = biased - bias
+
+	digs = str(coeff)
+	n = len(digs)
+	adj = exp + n - 1  # the power of ten of the leading digit
+	sign = '-' if neg else ''
+	if exp <= 0 and adj >= -6:
+		if exp == 0:
+			return sign + digs
+		if n > -exp:
+			return sign + digs[:n+exp] + '.' + digs[n+exp:]
+		return sign + '0.' + '0'*(-exp - n) + digs
+	if n > 1:
+		digs = digs[0] + '.' + digs[1:]
+	return '{0}{1}E{2}{3}'.format(sign, digs, '-' if adj < 0 else '+', abs(adj))
+
+
+def decimal_memory_string(words, encoding, zero64, zero128hi):
+	"""Return the character form of a decimal in its memory form.
+
+	words is (x,) for a decimal64 and (lo, hi) for a decimal128, the
+	words in memory order: a decimal128 is its low word followed by its
+	high word on every target."""
+	if len(words) == 1:
+		return decimal_string(words[0] ^ zero64, 64, encoding)
+	lo, hi = words
+	return decimal_string((hi ^ zero128hi) << 64 | lo, 128, encoding)
+
+
+DECIMAL_BYTE_ORDER = []
+
+
+def decimal_byte_order():
+	if not DECIMAL_BYTE_ORDER:
+		big = 'big endian' in gdb.execute('show endian', to_string=True)
+		DECIMAL_BYTE_ORDER.append('big' if big else 'little')
+	return DECIMAL_BYTE_ORDER[0]
+
+
+class DecimalPrinter:
+	"Pretty print decimal64 and decimal128 values."
+
+	def __init__(self, val):
+		self.val = val
+
+	def to_string(self):
+		size = self.val.type.strip_typedefs().sizeof
+		try:
+			data = self.val.bytes  # gdb 14 and later
+		except AttributeError:
+			addr = self.val.address
+			if addr is None:
+				return '<decimal in a register: needs gdb 14 or later>'
+			data = gdb.selected_inferior().read_memory(int(addr), size).tobytes()
+		order = decimal_byte_order()
+		words = tuple(int.from_bytes(data[i:i+8], order) for i in range(0, size, 8))
+		return decimal_memory_string(words, DECIMAL_ENCODING, DECIMAL_ZERO64, DECIMAL_ZERO128_HI)
+
+
+def decimalmatcher(val):
+	if DECIMAL_ENCODING is None:
+		return None
+	t = val.type.strip_typedefs()
+	if t.code != gdb.TYPE_CODE_DECFLOAT or t.sizeof not in (8, 16):
+		return None
+	# A C _Decimal64 or _Decimal128, from cgo, holds the plain encoding.
+	if t.name is None or t.name.startswith('_Decimal'):
+		return None
+	return DecimalPrinter(val)
+
+goobjfile.pretty_printers.append(decimalmatcher)
+
+#
 #  Convenience Functions
 #
 

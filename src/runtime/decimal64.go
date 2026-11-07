@@ -36,6 +36,15 @@ func dmax64(x, y uint64) uint64 { return to64(bid.Max64(from64(x), from64(y))) }
 func from64(x uint64) uint64 { return bid.FromNative64(x) }
 func to64(x uint64) uint64   { return bid.ToNative64(x) }
 
+// The native encodings of 0E+0, which the memory form of a decimal is XORed
+// with. They are not used here: they are for debuggers, which read them
+// from the binary's DWARF (see the decimal printer in runtime-gdb.py) both
+// to undo the XOR and to tell the BID encoding from the DPD one.
+const (
+	_DecimalZero64    uint64 = bid.NativeZero64
+	_DecimalZero128Hi uint64 = bid.NativeZero128Hi
+)
+
 // d64load returns the BID bit pattern of the decimal64 at p. In memory a
 // decimal64 is its native encoding XORed with the native encoding of 0E+0,
 // so that all bits clear is the zero value.
