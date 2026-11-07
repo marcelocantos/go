@@ -19,6 +19,7 @@ import (
 	"internal/abi"
 	"internal/bytealg"
 	"internal/goarch"
+	"internal/goexperiment"
 	"iter"
 	"runtime"
 	"strconv"
@@ -494,7 +495,16 @@ func (m Method) IsExported() bool {
 }
 
 // String returns the name of k.
+//
+// While GOEXPERIMENT=decimal is off, Decimal64 and Decimal128 are not yet
+// part of the language, and String gives them the name of an unknown kind,
+// "kind27" and "kind28", as an earlier release would. A program that checks
+// for kinds it doesn't know (as some encoders do at start-up, to detect a
+// newly added kind) is then unaffected until the experiment is on.
 func (k Kind) String() string {
+	if !goexperiment.Decimal && (k == Decimal64 || k == Decimal128) {
+		return "kind" + strconv.Itoa(int(k))
+	}
 	if uint(k) < uint(len(kindNames)) {
 		return kindNames[uint(k)]
 	}
