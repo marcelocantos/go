@@ -5,9 +5,11 @@
 package test
 
 import (
+	"internal/buildcfg"
 	"internal/testenv"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -35,13 +37,24 @@ func TestDecimalGates(t *testing.T) {
 		return string(out), err
 	}
 
-	if out, err := build("1.28", ""); err != nil {
-		t.Errorf("go 1.28 with the default experiments: %v\n%s", err, out)
+	// The default is the GOEXPERIMENT the toolchain was built with, which
+	// turns the experiment on unless it said nodecimal.
+	def, err := buildcfg.ParseGOEXPERIMENT(runtime.GOOS, runtime.GOARCH, buildcfg.DefaultGOEXPERIMENT)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := build("1.28", ""); def.Decimal && err != nil {
+		t.Errorf("go 1.28 with the default experiments (decimal on): %v\n%s", err, out)
+	} else if !def.Decimal && (err == nil || !strings.Contains(out, "decimal64 requires GOEXPERIMENT=decimal")) {
+		t.Errorf("go 1.28 with the default experiments (decimal off): err = %v, want the experiment error\n%s", err, out)
+	}
+	if out, err := build("1.28", "decimal"); err != nil {
+		t.Errorf("GOEXPERIMENT=decimal: %v\n%s", err, out)
 	}
 	if out, err := build("1.28", "nodecimal"); err == nil || !strings.Contains(out, "decimal64 requires GOEXPERIMENT=decimal") {
 		t.Errorf("GOEXPERIMENT=nodecimal: err = %v, want the experiment error\n%s", err, out)
 	}
-	if out, err := build("1.27", ""); err == nil || !strings.Contains(out, "predeclared decimal64 requires go1.28 or later") {
+	if out, err := build("1.27", "decimal"); err == nil || !strings.Contains(out, "predeclared decimal64 requires go1.28 or later") {
 		t.Errorf("go 1.27: err = %v, want the version error\n%s", err, out)
 	}
 }
