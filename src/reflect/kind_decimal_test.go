@@ -5,6 +5,7 @@
 package reflect_test
 
 import (
+	"fmt"
 	"internal/goexperiment"
 	"reflect"
 	"testing"
@@ -27,5 +28,18 @@ func TestDecimalKindNames(t *testing.T) {
 	}
 	if got := reflect.Kind(reflect.Decimal128 + 1).String(); got != "kind29" {
 		t.Errorf("Kind(Decimal128+1).String() = %q, want %q", got, "kind29")
+	}
+
+	// fmt prints a Kind, and a reflect.Value holding one, by its String.
+	for _, tt := range []struct {
+		k    reflect.Kind
+		want string
+	}{{reflect.Decimal64, want64}, {reflect.Decimal128, want128}} {
+		if got := fmt.Sprint(tt.k); got != tt.want {
+			t.Errorf("Sprint(Kind(%d)) = %q, want %q", int(tt.k), got, tt.want)
+		}
+		if got := fmt.Sprintf("%v", reflect.ValueOf(tt.k)); got != tt.want {
+			t.Errorf("Sprintf(%%v, ValueOf(Kind(%d))) = %q, want %q", int(tt.k), got, tt.want)
+		}
 	}
 }

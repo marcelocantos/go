@@ -1,4 +1,5 @@
 // run
+//go:build goexperiment.decimal
 
 // Copyright 2025 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
