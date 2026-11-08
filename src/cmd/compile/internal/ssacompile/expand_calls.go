@@ -775,6 +775,15 @@ func (x *expandState) rewriteWideSelectToStores(pos src.XPos, b *ssa.Block, cont
 		m0 = x.rewriteWideSelectToStores(pos, b, container, m0, x.typs.Float64, rc.next(x.typs.Float64))
 		return m0
 
+	case types.TDECIMAL128:
+		// A wide aggregate's decimal field still occupies two integer
+		// registers, just as it does in rewriteSelectOrArg. Never leave a
+		// decimal128 selector pretending to be a single register value.
+		m0 = x.rewriteWideSelectToStores(pos, b, container, m0, x.typs.UInt64, rc.next(x.typs.UInt64))
+		pos = pos.WithNotStmt()
+		m0 = x.rewriteWideSelectToStores(pos, b, container, m0, x.typs.UInt64, rc.next(x.typs.UInt64))
+		return m0
+
 	case types.TINT64:
 		if at.Size() > x.regSize {
 			m0 = x.rewriteWideSelectToStores(pos, b, container, m0, x.firstType, rc.next(x.firstType))
