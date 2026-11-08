@@ -56,21 +56,29 @@ func (s *state) bidIsZero(x *ssa.Value) *ssa.Value {
 
 var bidAddVar = ssaMarker("bidadd")
 
-// bidAdd128 adds same-sign, same-quantum word-sized coefficients directly.
+// bidAddSub128 adds or subtracts word-sized coefficients directly.
+// First handle effective same-sign, same-quantum addition:
 // The equal stored high words establish both sign and quantum equality. A
 // zero high coefficient and first-form encoding establish canonical finite
 // operands. The coefficient sum is at most 2^65-2, below 10^34, at an already
-// representable exponent. This is an exact packing exception: neither rounding
+// representable exponent. For subtraction, flip y's sign only in the fast
+// path; the fallback receives the original y, including its NaN sign.
+// This is an exact packing exception: neither rounding
 // nor exponent clamping is needed, and even negative zero keeps its sign.
 //
 // Both operands were evaluated before this method. Only the slow branch calls
 // the runtime, with the original operands. The normal variable/memory phis at
 // bAfter join that call's memory with the unchanged fast-branch memory.
-func (s *state) bidAdd128(rt *types.Type, x, y *ssa.Value) *ssa.Value {
+func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value {
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
 	zero := s.constInt64(u64, 0)
 	xh := s.newValue1(ssaop.OpDecimal128Hi, u64, x)
 	yh := s.newValue1(ssaop.OpDecimal128Hi, u64, y)
+	signMask := bid.SignMask128Hi
+	signBit := s.constInt64(u64, int64(signMask))
+	if op == ir.OSUB {
+		yh = s.newValue2(ssaop.OpXor64, u64, yh, signBit)
+	}
 	xl := s.newValue1(ssaop.OpDecimal128Lo, u64, x)
 	yl := s.newValue1(ssaop.OpDecimal128Lo, u64, y)
 	same := s.newValue2(ssaop.OpEq64, boolT, xh, yh)
@@ -84,16 +92,22 @@ func (s *state) bidAdd128(rt *types.Type, x, y *ssa.Value) *ssa.Value {
 
 	bSlow := s.f.NewBlock(block.BlockPlain)
 	bAfter := s.f.NewBlock(block.BlockPlain)
+	bAlign := s.f.NewBlock(block.BlockPlain)
 	// Short-circuit the guards, particularly the common mismatch in quantum
 	// or sign. Branches also let the backend use condition codes directly
 	// instead of materializing and combining three boolean values.
-	for _, guard := range []*ssa.Value{same, word, finite} {
+	for i, guard := range []*ssa.Value{same, word, finite} {
 		b := s.endBlock()
 		b.Kind = block.BlockIf
 		b.SetControl(guard)
 		next := s.f.NewBlock(block.BlockPlain)
 		b.AddEdgeTo(next)
-		b.AddEdgeTo(bSlow)
+		if i == 0 {
+			// A sign or quantum mismatch may still have an exact result.
+			b.AddEdgeTo(bAlign)
+		} else {
+			b.AddEdgeTo(bSlow)
+		}
 		s.startBlock(next)
 	}
 
@@ -104,8 +118,101 @@ func (s *state) bidAdd128(rt *types.Type, x, y *ssa.Value) *ssa.Value {
 	s.vars[bidAddVar] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, hi)
 	s.endBlock().AddEdgeTo(bAfter)
 
+	s.startBlock(bAlign)
+	// For two uint64 coefficients and a quantum gap at most 14, the largest
+	// aligned sum is (2^64-1)*(10^14+1) < 10^34. A difference is no larger.
+	// Both are exact at the smaller input exponent, including subnormals.
+	const maxGap = 14
+	coeffs := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpOr64, u64, xh, yh), s.constInt64(u64, int64(bid.CoeffMask128Hi)))
+	words := s.newValue2(ssaop.OpEq64, boolT, coeffs, zero)
+	yfinite := s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, yh, mask), second)
+	for _, guard := range []*ssa.Value{words, finite, yfinite} {
+		b := s.endBlock()
+		b.Kind = block.BlockIf
+		b.SetControl(guard)
+		next := s.f.NewBlock(block.BlockPlain)
+		b.AddEdgeTo(next)
+		b.AddEdgeTo(bSlow)
+		s.startBlock(next)
+	}
+	xnative := s.newValue2(ssaop.OpXor64, u64, xh, s.constInt64(u64, int64(bid.Zero128Hi)))
+	ynative := s.newValue2(ssaop.OpXor64, u64, yh, s.constInt64(u64, int64(bid.Zero128Hi)))
+	shift := s.constInt64(u64, bid.ExpShift128)
+	expMask := s.constInt64(u64, int64(bid.ExpMask128))
+	xe := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpRsh64Ux64, u64, xnative, shift), expMask)
+	ye := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpRsh64Ux64, u64, ynative, shift), expMask)
+	swap := s.newValue2(ssaop.OpLess64U, boolT, xe, ye)
+	gap := s.newValue3(ssaop.OpCondSelect, u64,
+		s.newValue2(ssaop.OpSub64, u64, ye, xe), s.newValue2(ssaop.OpSub64, u64, xe, ye), swap)
+	bounded := s.newValue2(ssaop.OpLeq64U, boolT, gap, s.constInt64(u64, maxGap))
+	b := s.endBlock()
+	b.Kind = block.BlockIf
+	b.SetControl(bounded)
+	bScale := s.f.NewBlock(block.BlockPlain)
+	b.AddEdgeTo(bScale)
+	b.AddEdgeTo(bSlow)
+	s.startBlock(bScale)
+
+	higher := s.newValue3(ssaop.OpCondSelect, u64, yl, xl, swap)
+	lower := s.newValue3(ssaop.OpCondSelect, u64, xl, yl, swap)
+	highHeader := s.newValue3(ssaop.OpCondSelect, u64, yh, xh, swap)
+	lowHeader := s.newValue3(ssaop.OpCondSelect, u64, xh, yh, swap)
+	// Use the compiler's immutable content-addressed literal data, not a
+	// mutable runtime table. The guarded gap proves the load is in bounds.
+	// The selected ARM64/AMD64 backends support unaligned uint64 loads.
+	const wordBytes = 8
+	var powers [(maxGap + 1) * wordBytes]byte
+	pow := uint64(1)
+	for i := 0; i <= maxGap; i++ {
+		Arch.LinkArch.ByteOrder.PutUint64(powers[i*wordBytes:], pow)
+		pow *= 10
+	}
+	ptrT := types.NewPtr(u64)
+	table := s.newValue1A(ssaop.OpAddr, ptrT, s.f.Frontend().StringData(string(powers[:])), s.sb)
+	index := s.newValue2(ssaop.OpMul64, u64, gap, s.constInt64(u64, wordBytes))
+	power := s.rawLoad(u64, s.newValue2(ssaop.OpAddPtr, ptrT, table, index))
+	product := s.newValue2(ssaop.OpMul64uhilo, types.NewTuple(u64, u64), higher, power)
+	phi := s.newValue1(ssaop.OpSelect0, u64, product)
+	plo := s.newValue1(ssaop.OpSelect1, u64, product)
+	signs := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpXor64, u64, xh, yh), signBit)
+	sameSign := s.newValue2(ssaop.OpEq64, boolT, signs, zero)
+	b = s.endBlock()
+	b.Kind = block.BlockIf
+	b.SetControl(sameSign)
+	bSum := s.f.NewBlock(block.BlockPlain)
+	bDiff := s.f.NewBlock(block.BlockPlain)
+	b.AddEdgeTo(bSum)
+	b.AddEdgeTo(bDiff)
+	s.startBlock(bSum)
+	sum = s.newValue3(ssaop.OpAdd64carry, types.NewTuple(u64, u64), plo, lower, zero)
+	lo = s.newValue1(ssaop.OpSelect0, u64, sum)
+	carry = s.newValue1(ssaop.OpSelect1, u64, sum)
+	hi = s.newValue2(ssaop.OpAdd64, u64, phi, carry)
+	s.vars[bidAddVar] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, s.newValue2(ssaop.OpOr64, u64, lowHeader, hi))
+	s.endBlock().AddEdgeTo(bAfter)
+
+	s.startBlock(bDiff)
+	// The lower-quantum operand has a word coefficient. It can exceed the
+	// aligned operand only when that operand's high product word is zero.
+	less := s.newValue2(ssaop.OpAndB, boolT,
+		s.newValue2(ssaop.OpEq64, boolT, phi, zero), s.newValue2(ssaop.OpLess64U, boolT, plo, lower))
+	diff := s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), plo, lower, zero)
+	lo = s.newValue1(ssaop.OpSelect0, u64, diff)
+	borrow := s.newValue1(ssaop.OpSelect1, u64, diff)
+	hi = s.newValue2(ssaop.OpSub64, u64, phi, borrow)
+	lo = s.newValue3(ssaop.OpCondSelect, u64, s.newValue2(ssaop.OpSub64, u64, lower, plo), lo, less)
+	hi = s.newValue3(ssaop.OpCondSelect, u64, zero, hi, less)
+	negative := s.newValue2(ssaop.OpAnd64, u64, s.newValue3(ssaop.OpCondSelect, u64, lowHeader, highHeader, less), signBit)
+	isZero := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpOr64, u64, hi, lo), zero)
+	// Cancellation under round-half-even gives +0 at the preferred quantum.
+	negative = s.newValue3(ssaop.OpCondSelect, u64, zero, negative, isZero)
+	header := s.newValue2(ssaop.OpAnd64, u64, lowHeader, s.constInt64(u64, int64(^signMask)))
+	header = s.newValue2(ssaop.OpOr64, u64, header, negative)
+	s.vars[bidAddVar] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, s.newValue2(ssaop.OpOr64, u64, header, hi))
+	s.endBlock().AddEdgeTo(bAfter)
+
 	s.startBlock(bSlow)
-	s.vars[bidAddVar] = s.softDecimalOp(ir.OADD, rt, x, y)
+	s.vars[bidAddVar] = s.softDecimalOp(op, rt, x, y)
 	s.endBlock().AddEdgeTo(bAfter)
 
 	s.startBlock(bAfter)

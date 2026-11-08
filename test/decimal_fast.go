@@ -35,6 +35,9 @@ func chain(x, y, z decimal128, n int) result {
 	return result{x + y, x + z, (x + y) + z, n + 1}
 }
 
+//go:noinline
+func difference(x, y decimal128) decimal128 { return x - y }
+
 type named decimal128
 
 // Keep decimal values and pointers alive across calls, including a call in
@@ -45,7 +48,7 @@ type named decimal128
 func pressure(a, b [5]named, live *[5]int) ([5]named, *[5]int) {
 	x0, x1, x2 := a[0]+b[0], a[1]*b[1], a[2]*b[2]
 	runtime.GC()
-	x3, x4 := a[3]*b[3], a[4]+b[4]
+	x3, x4 := a[3]-b[3], a[4]+b[4]
 	live[0]++
 	return [5]named{x0, x1, x2, x3, x4}, live
 }
@@ -73,6 +76,10 @@ func main() {
 	if calls != 6 {
 		panic("decimal multiply evaluation")
 	}
+	check(operand(1.25, 6)-operand(0.001, 7), 1.249)
+	if calls != 8 {
+		panic("decimal subtract evaluation")
+	}
 	for _, v := range []struct{ x, y, z decimal128 }{
 		{1.25, 2.50, 0.001},
 		{-1.25, -2.50, 0.001},
@@ -91,11 +98,17 @@ func main() {
 		sum += 0.01
 	}
 	check(sum, 10.00)
+	for range 1000 {
+		sum = difference(sum, 0.001)
+	}
+	check(sum, 9.000)
+	check(difference(1.0, 1.00), 0.00)
+	check(difference(-1.0, -1.00), 0.00)
 	a := [5]named{1.25, 2.50, 18446744073709551615, -1.25, 2.50}
 	b := [5]named{2.50, 0.001, 18446744073709551615, -2.50, -2.50}
 	// The third coefficient product exceeds 34 digits and must round through
-	// the runtime; the others are exact at the sum of their input exponents.
-	want := [5]named{3.75, 0.00250, 3402823669209384634264811192843491e5, 3.1250, 0.00}
+	// the runtime; the other results are exact at their preferred exponents.
+	want := [5]named{3.75, 0.00250, 3402823669209384634264811192843491e5, 1.25, 0.00}
 	live := new([5]int)
 	for range 3 {
 		got, p := pressure(a, b, live)

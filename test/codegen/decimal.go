@@ -46,6 +46,13 @@ func Add128(x, y decimal128) decimal128 {
 	return x + y
 }
 
+func Sub128(x, y decimal128) decimal128 {
+	// ppc64le:"DSUBQ" -"CALL"
+	// arm64:"CALL runtime.dsub128" "SUBS"
+	// amd64:"CALL runtime.dsub128"
+	return x - y
+}
+
 func Mul128(x, y decimal128) decimal128 {
 	// ppc64le:"DMULQ" -"CALL"
 	// arm64:"CALL runtime.dmul128" "MUL" "UMULH"

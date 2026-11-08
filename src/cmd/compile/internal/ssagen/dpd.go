@@ -134,8 +134,8 @@ func (s *state) decimalOp(op ir.Op, rt *types.Type, args ...*ssa.Value) *ssa.Val
 		if rt.Kind() == types.TDECIMAL128 &&
 			(Arch.LinkArch.Family == sys.ARM64 || Arch.LinkArch.Family == sys.AMD64) {
 			switch op {
-			case ir.OADD:
-				return s.bidAdd128(rt, args[0], args[1])
+			case ir.OADD, ir.OSUB:
+				return s.bidAddSub128(op, rt, args[0], args[1])
 			case ir.OMUL:
 				return s.bidMul128(rt, args[0], args[1])
 			}
