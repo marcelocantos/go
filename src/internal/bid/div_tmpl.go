@@ -22,7 +22,12 @@ package bid
 // "Exponent of a result" and "Sign of a result" in the package
 // documentation.
 //
-// The finite case is long division in one step. With dx and dy the digit
+// A divisor coefficient 10^k needs no long division: the exact quotient is
+// xc at exponent xe-ye-k. Strip at most k coefficient zeros to approach the
+// preferred exponent xe-ye, then let roundW handle exponent bounds. This
+// includes a coefficient of one without discarding any of x's quantum.
+//
+// The general finite case is long division in one step. With dx and dy the digit
 // counts of the coefficients, the dividend is scaled by
 //
 //	k = PrecisionW + 1 - dx + dy
@@ -87,11 +92,17 @@ func divW(x, y coefW, mode Mode) coefW {
 		return r
 	}
 
-	k := PrecisionW + 1 - cDigitsW(xc) + cDigitsW(yc)
-	q, rem := cDivFullW(cMulPow10FullW(xc, k), yc)
-	class := classBelowHalf
-	if cIsZeroW(rem) {
-		class = classZero
+	dy := cDigitsW(yc)
+	k, q, class := dy-1, xc, classZero
+	if cCmpW(yc, cPow10W(k)) != 0 {
+		k = PrecisionW + 1 - cDigitsW(xc) + dy
+		var rem coefW
+		q, rem = cDivFullW(cMulPow10FullW(xc, k), yc)
+		if !cIsZeroW(rem) {
+			class = classBelowHalf
+		}
+	}
+	if class == classZero {
 		step := 1
 		for step*2 <= min(k, PrecisionW+1) {
 			step *= 2

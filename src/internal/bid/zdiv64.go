@@ -11,7 +11,12 @@ package bid
 // "Exponent of a result" and "Sign of a result" in the package
 // documentation.
 //
-// The finite case is long division in one step. With dx and dy the digit
+// A divisor coefficient 10^k needs no long division: the exact quotient is
+// xc at exponent xe-ye-k. Strip at most k coefficient zeros to approach the
+// preferred exponent xe-ye, then let round64 handle exponent bounds. This
+// includes a coefficient of one without discarding any of x's quantum.
+//
+// The general finite case is long division in one step. With dx and dy the digit
 // counts of the coefficients, the dividend is scaled by
 //
 //	k = Precision64 + 1 - dx + dy
@@ -76,11 +81,17 @@ func div64(x, y coef64, mode Mode) coef64 {
 		return r
 	}
 
-	k := Precision64 + 1 - cDigits64(xc) + cDigits64(yc)
-	q, rem := cDivFull64(cMulPow10Full64(xc, k), yc)
-	class := classBelowHalf
-	if cIsZero64(rem) {
-		class = classZero
+	dy := cDigits64(yc)
+	k, q, class := dy-1, xc, classZero
+	if cCmp64(yc, cPow1064(k)) != 0 {
+		k = Precision64 + 1 - cDigits64(xc) + dy
+		var rem coef64
+		q, rem = cDivFull64(cMulPow10Full64(xc, k), yc)
+		if !cIsZero64(rem) {
+			class = classBelowHalf
+		}
+	}
+	if class == classZero {
 		step := 1
 		for step*2 <= min(k, Precision64+1) {
 			step *= 2

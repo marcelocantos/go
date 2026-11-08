@@ -11,7 +11,12 @@ package bid
 // "Exponent of a result" and "Sign of a result" in the package
 // documentation.
 //
-// The finite case is long division in one step. With dx and dy the digit
+// A divisor coefficient 10^k needs no long division: the exact quotient is
+// xc at exponent xe-ye-k. Strip at most k coefficient zeros to approach the
+// preferred exponent xe-ye, then let round128 handle exponent bounds. This
+// includes a coefficient of one without discarding any of x's quantum.
+//
+// The general finite case is long division in one step. With dx and dy the digit
 // counts of the coefficients, the dividend is scaled by
 //
 //	k = Precision128 + 1 - dx + dy
@@ -76,11 +81,17 @@ func div128(x, y coef128, mode Mode) coef128 {
 		return r
 	}
 
-	k := Precision128 + 1 - cDigits128(xc) + cDigits128(yc)
-	q, rem := cDivFull128(cMulPow10Full128(xc, k), yc)
-	class := classBelowHalf
-	if cIsZero128(rem) {
-		class = classZero
+	dy := cDigits128(yc)
+	k, q, class := dy-1, xc, classZero
+	if cCmp128(yc, cPow10128(k)) != 0 {
+		k = Precision128 + 1 - cDigits128(xc) + dy
+		var rem coef128
+		q, rem = cDivFull128(cMulPow10Full128(xc, k), yc)
+		if !cIsZero128(rem) {
+			class = classBelowHalf
+		}
+	}
+	if class == classZero {
 		step := 1
 		for step*2 <= min(k, Precision128+1) {
 			step *= 2
