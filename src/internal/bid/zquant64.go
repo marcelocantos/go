@@ -44,7 +44,7 @@ func roundToIntegral64(x coef64, mode Mode) coef64 {
 // whatever the distance. An exact zero takes the exponent of y.
 func quantize64(x, y coef64, mode Mode) coef64 {
 	xk, xneg, xc, xe := Unpack64(x)
-	yk, _, _, ye := Unpack64(y)
+	yk, ye := kindExp64(y)
 	switch {
 	case xk == KindNaN || yk == KindNaN:
 		return nan64(x, y, y)
@@ -107,8 +107,8 @@ func reduce64(x coef64) coef64 {
 // sameQuantum64 reports whether x and y are both finite with one exponent,
 // both infinities or both NaNs.
 func sameQuantum64(x, y coef64) bool {
-	xk, _, _, xe := Unpack64(x)
-	yk, _, _, ye := Unpack64(y)
+	xk, xe := kindExp64(x)
+	yk, ye := kindExp64(y)
 	return xk == yk && (xk != KindFinite || xe == ye)
 }
 
@@ -118,7 +118,7 @@ func sameQuantum64(x, y coef64) bool {
 // quiet. A non-canonical finite encoding reads as a zero with its encoded
 // exponent, so its quantum is that of the zero.
 func quantum64(x coef64) coef64 {
-	kind, _, _, exp := Unpack64(x)
+	kind, exp := kindExp64(x)
 	switch kind {
 	case KindNaN:
 		return cQuiet64(x)

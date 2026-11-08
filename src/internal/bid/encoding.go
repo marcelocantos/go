@@ -154,24 +154,54 @@ func Unpack64(x uint64) (kind Kind, neg bool, coeff uint64, exp int) {
 func Unpack128(x Uint128) (kind Kind, neg bool, coeff Uint128, exp int) {
 	t := x.Hi
 	neg = t>>63 != 0
-	if t>>59&0xF == 0xF {
-		if t>>58&1 == 0 {
+	// Every canonical finite decimal128 uses the first form. Test that
+	// form once before the special and non-canonical second forms.
+	if t&Form2Mask128Hi != Form2Mask128Hi {
+		coeff = Uint128{Hi: t & CoeffMask128Hi, Lo: x.Lo}
+		if u128GtMaxCoeff(coeff) {
+			coeff = Uint128{}
+		}
+		return KindFinite, neg, coeff, int(t>>ExpShift128&ExpMask128) - Bias128
+	}
+	if t&SpecialMask128Hi == SpecialMask128Hi {
+		if t&NaNBit128Hi == 0 {
 			return KindInf, neg, Uint128{}, 0
 		}
 		return KindNaN, neg, Uint128{}, 0
 	}
-	var biased uint64
-	if t>>61&3 == 3 {
-		biased = t >> Form2ExpShift128 & ExpMask128
-		// Second-form decimal128 coefficients are always ≥ 2^113 > 10^34-1.
-		return KindFinite, neg, Uint128{}, int(biased) - Bias128
+	// Second-form decimal128 coefficients are always ≥ 2^113 > 10^34-1.
+	return KindFinite, neg, Uint128{}, int(t>>Form2ExpShift128&ExpMask128) - Bias128
+}
+
+// kindExp64 and kindExp128 decode only the fields that quantum operations
+// use. A coefficient, canonical or otherwise, cannot change these fields.
+// Keeping that work separate lets these small decoders inline into callers
+// that do not need Unpack's sign and coefficient results.
+func kindExp64(x uint64) (Kind, int) {
+	if x&Form2Mask64 != Form2Mask64 {
+		return KindFinite, int(x>>ExpShift64&ExpMask64) - Bias64
 	}
-	biased = t >> ExpShift128 & ExpMask128
-	coeff = Uint128{Hi: t & CoeffMask128Hi, Lo: x.Lo}
-	if u128GtMaxCoeff(coeff) {
-		coeff = Uint128{}
+	if x&SpecialMask64 == SpecialMask64 {
+		if x&NaNBit64 != 0 {
+			return KindNaN, 0
+		}
+		return KindInf, 0
 	}
-	return KindFinite, neg, coeff, int(biased) - Bias128
+	return KindFinite, int(x>>Form2ExpShift64&ExpMask64) - Bias64
+}
+
+func kindExp128(x Uint128) (Kind, int) {
+	t := x.Hi
+	if t&Form2Mask128Hi != Form2Mask128Hi {
+		return KindFinite, int(t>>ExpShift128&ExpMask128) - Bias128
+	}
+	if t&SpecialMask128Hi == SpecialMask128Hi {
+		if t&NaNBit128Hi != 0 {
+			return KindNaN, 0
+		}
+		return KindInf, 0
+	}
+	return KindFinite, int(t>>Form2ExpShift128&ExpMask128) - Bias128
 }
 
 // Pack64 encodes the finite value (-1)^neg × coeff × 10^exp exactly in

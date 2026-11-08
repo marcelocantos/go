@@ -52,7 +52,7 @@ func roundToIntegralW(x coefW, mode Mode) coefW {
 // whatever the distance. An exact zero takes the exponent of y.
 func quantizeW(x, y coefW, mode Mode) coefW {
 	xk, xneg, xc, xe := UnpackW(x)
-	yk, _, _, ye := UnpackW(y)
+	yk, ye := kindExpW(y)
 	switch {
 	case xk == KindNaN || yk == KindNaN:
 		return nanW(x, y, y)
@@ -115,8 +115,8 @@ func reduceW(x coefW) coefW {
 // sameQuantumW reports whether x and y are both finite with one exponent,
 // both infinities or both NaNs.
 func sameQuantumW(x, y coefW) bool {
-	xk, _, _, xe := UnpackW(x)
-	yk, _, _, ye := UnpackW(y)
+	xk, xe := kindExpW(x)
+	yk, ye := kindExpW(y)
 	return xk == yk && (xk != KindFinite || xe == ye)
 }
 
@@ -126,7 +126,7 @@ func sameQuantumW(x, y coefW) bool {
 // quiet. A non-canonical finite encoding reads as a zero with its encoded
 // exponent, so its quantum is that of the zero.
 func quantumW(x coefW) coefW {
-	kind, _, _, exp := UnpackW(x)
+	kind, exp := kindExpW(x)
 	switch kind {
 	case KindNaN:
 		return cQuietW(x)

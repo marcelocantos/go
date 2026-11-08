@@ -44,7 +44,7 @@ func roundToIntegral128(x coef128, mode Mode) coef128 {
 // whatever the distance. An exact zero takes the exponent of y.
 func quantize128(x, y coef128, mode Mode) coef128 {
 	xk, xneg, xc, xe := Unpack128(x)
-	yk, _, _, ye := Unpack128(y)
+	yk, ye := kindExp128(y)
 	switch {
 	case xk == KindNaN || yk == KindNaN:
 		return nan128(x, y, y)
@@ -107,8 +107,8 @@ func reduce128(x coef128) coef128 {
 // sameQuantum128 reports whether x and y are both finite with one exponent,
 // both infinities or both NaNs.
 func sameQuantum128(x, y coef128) bool {
-	xk, _, _, xe := Unpack128(x)
-	yk, _, _, ye := Unpack128(y)
+	xk, xe := kindExp128(x)
+	yk, ye := kindExp128(y)
 	return xk == yk && (xk != KindFinite || xe == ye)
 }
 
@@ -118,7 +118,7 @@ func sameQuantum128(x, y coef128) bool {
 // quiet. A non-canonical finite encoding reads as a zero with its encoded
 // exponent, so its quantum is that of the zero.
 func quantum128(x coef128) coef128 {
-	kind, _, _, exp := Unpack128(x)
+	kind, exp := kindExp128(x)
 	switch kind {
 	case KindNaN:
 		return cQuiet128(x)

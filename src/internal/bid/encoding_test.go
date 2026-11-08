@@ -149,6 +149,20 @@ func checkDecode64(t *testing.T, x uint64) {
 		t.Fatalf("Unpack64(%016x) = (%d, %t, %d, %d), want (%d, %t, %d, %d)",
 			x, kind, neg, coeff, exp, w.kind, w.neg, w.coeff.Lo, w.exp)
 	}
+	// Quantum operations use a partial decoder. Exercise it over the same
+	// complete combination-field sweep as the full IEEE decoder.
+	if got, want := bid.Quantum64(x), dec64.quantum(lo(x)).Lo; got != want {
+		t.Fatalf("Quantum64(%016x) = %016x, want %016x", x, got, want)
+	}
+	for _, target := range []struct {
+		x    uint64
+		kind bid.Kind
+	}{{ieeeEncode64(false, 1, 0), bid.KindFinite}, {bid.Inf64, bid.KindInf}, {bid.NaN64, bid.KindNaN}} {
+		want := w.kind == target.kind && (w.kind != bid.KindFinite || w.exp == 0)
+		if got := bid.SameQuantum64(x, target.x); got != want {
+			t.Fatalf("SameQuantum64(%016x, %016x) = %t, want %t", x, target.x, got, want)
+		}
+	}
 	if got := bid.IsNaN64(x); got != (w.kind == bid.KindNaN) {
 		t.Fatalf("IsNaN64(%016x) = %t", x, got)
 	}
@@ -208,6 +222,18 @@ func checkDecode128(t *testing.T, x bid.Uint128) {
 	if kind != w.kind || neg != w.neg || coeff != w.coeff || exp != w.exp {
 		t.Fatalf("Unpack128(%s) = (%d, %t, %s, %d), want (%d, %t, %s, %d)",
 			hex128(x), kind, neg, hex128(coeff), exp, w.kind, w.neg, hex128(w.coeff), w.exp)
+	}
+	if got, want := bid.Quantum128(x), dec128.quantum(x); got != want {
+		t.Fatalf("Quantum128(%s) = %s, want %s", hex128(x), hex128(got), hex128(want))
+	}
+	for _, target := range []struct {
+		x    bid.Uint128
+		kind bid.Kind
+	}{{ieeeEncode128(false, bid.Uint128{Lo: 1}, 0), bid.KindFinite}, {{Hi: bid.Inf128Hi}, bid.KindInf}, {{Hi: bid.NaN128Hi}, bid.KindNaN}} {
+		want := w.kind == target.kind && (w.kind != bid.KindFinite || w.exp == 0)
+		if got := bid.SameQuantum128(x, target.x); got != want {
+			t.Fatalf("SameQuantum128(%s, %s) = %t, want %t", hex128(x), hex128(target.x), got, want)
+		}
 	}
 	if got := bid.IsNaN128(x); got != (w.kind == bid.KindNaN) {
 		t.Fatalf("IsNaN128(%s) = %t", hex128(x), got)
