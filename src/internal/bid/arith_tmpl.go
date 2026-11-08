@@ -294,10 +294,11 @@ func keyW(x coefW) (kind Kind, neg bool, c coefW, exp int) {
 // refuses what does not fit. No function other than roundW may call it,
 // unless it re-encodes a coefficient and exponent already known to be
 // representable because UnpackW returned them, possibly with another
-// sign or for a narrower width, or decoded them from an encoding that cannot
-// hold anything else, and is named both here and in the allowlist of
-// TestRoundIsTheOnlyPacker, which parses the package source. At present
-// there are two. Widen re-encodes the decimal64 coefficient and exponent
+// sign or for a narrower width, decoded them from an encoding that cannot
+// hold anything else, or accepts an integer type whose whole range fits,
+// and is named both here and in the allowlist of TestRoundIsTheOnlyPacker,
+// which parses the package source. Widen re-encodes the decimal64
+// coefficient and exponent
 // that Unpack64 returned as a decimal128 with Pack128, because every
 // decimal64 value is a decimal128 value. It measured two to three times
 // faster than the rounding routine on a 256-bit wide value. BIDFromDPD64
@@ -306,7 +307,9 @@ func keyW(x coefW) (kind Kind, neg bool, c coefW, exp int) {
 // three to each declet) and a biased exponent below 3 × 2^(ExpBits-2) (the
 // combination field's two leading exponent bits are never 11), so that
 // every DPD finite value is representable exactly; they are conversions
-// between encodings, not operations, and round nothing.
+// between encodings, not operations, and round nothing. Int64To128 and
+// Uint64To128 encode an exponent-zero magnitude below 2^64, which has at
+// most 20 digits and therefore always fits Precision128's 34 digits.
 func roundW(neg bool, p wideW, exp int, class digitClass, mode Mode, floor int) (coefW, Status) {
 	// An exact coefficient already inside the format keeps its exponent.
 	// Check its bound directly instead of counting wide digits and deriving

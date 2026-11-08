@@ -200,14 +200,14 @@ func Pack128(neg bool, coeff Uint128, exp int) (x Uint128, ok bool) {
 	if u128GtMaxCoeff(coeff) || exp < MinExp128 || exp > MaxExp128 {
 		return Uint128{Hi: NaN128Hi}, false
 	}
-	sign := uint64(0)
+	// The coefficient bound above also proves that its high word fits
+	// CoeffMask128Hi, so no second mask is needed.
+	hi := uint64(exp+Bias128)<<ExpShift128 | coeff.Hi
 	if neg {
-		sign = SignMask128Hi
+		hi |= SignMask128Hi
 	}
-	biased := uint64(exp + Bias128)
-	hi := coeff.Hi & CoeffMask128Hi
 	return Uint128{
-		Hi: sign | biased<<ExpShift128 | hi,
+		Hi: hi,
 		Lo: coeff.Lo,
 	}, true
 }

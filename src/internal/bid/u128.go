@@ -152,13 +152,7 @@ func u128Div(a, d Uint128) (q, r Uint128) {
 // u128GtMaxCoeff reports whether c exceeds the largest decimal128
 // coefficient, 10^34 - 1.
 func u128GtMaxCoeff(c Uint128) bool {
-	if c.Hi > MaxCoeff128Hi {
-		return true
-	}
-	if c.Hi < MaxCoeff128Hi {
-		return false
-	}
-	return c.Lo > MaxCoeff128Lo
+	return c.Hi > MaxCoeff128Hi || c.Hi == MaxCoeff128Hi && c.Lo > MaxCoeff128Lo
 }
 
 // u128GePow10 reports whether c >= 10^n. A negative n is treated as 0. For
