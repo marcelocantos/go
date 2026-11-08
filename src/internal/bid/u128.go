@@ -109,15 +109,26 @@ func u128Mul64(a Uint128, b uint64) (p Uint128, hi uint64) {
 
 // u128Mul returns the exact 256-bit product a × b.
 func u128Mul(a, b Uint128) Uint256 {
-	// a × b = a × b.Lo + (a × b.Hi) << 64, each a 192-bit product.
-	p, p2 := u128Mul64(a, b.Lo)
-	q, q2 := u128Mul64(a, b.Hi)
+	if a.Hi|b.Hi == 0 {
+		// Two word-sized factors have an exact two-word product.
+		hi, lo := bits.Mul64(a.Lo, b.Lo)
+		return Uint256{Lo: Uint128{Hi: hi, Lo: lo}}
+	}
+	// Form all four word products, then add the two cross products to
+	// the diagonal product as two independent carry chains.
+	h00, l00 := bits.Mul64(a.Lo, b.Lo)
+	h01, l01 := bits.Mul64(a.Lo, b.Hi)
+	h10, l10 := bits.Mul64(a.Hi, b.Lo)
+	h11, l11 := bits.Mul64(a.Hi, b.Hi)
 	var r Uint256
 	var c uint64
-	r.Lo.Lo = p.Lo
-	r.Lo.Hi, c = bits.Add64(p.Hi, q.Lo, 0)
-	r.Hi.Lo, c = bits.Add64(p2, q.Hi, c)
-	r.Hi.Hi = q2 + c // cannot overflow: the product is below 2^256
+	r.Lo.Lo = l00
+	r.Lo.Hi, c = bits.Add64(h00, l01, 0)
+	r.Hi.Lo, c = bits.Add64(l11, h01, c)
+	r.Hi.Hi = h11 + c
+	r.Lo.Hi, c = bits.Add64(r.Lo.Hi, l10, 0)
+	r.Hi.Lo, c = bits.Add64(r.Hi.Lo, h10, c)
+	r.Hi.Hi += c // cannot overflow: the product is below 2^256
 	return r
 }
 
