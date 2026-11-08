@@ -111,3 +111,92 @@ func (s *state) bidAdd128(rt *types.Type, x, y *ssa.Value) *ssa.Value {
 	s.startBlock(bAfter)
 	return s.variable(bidAddVar, rt)
 }
+
+var bidMulVar = ssaMarker("bidmul")
+
+// bidMul128 multiplies two canonical finite word coefficients directly when
+// the full product and the sum of exponents fit decimal128. Mul64uhilo gives
+// the exact product, including every bit needed to decide the coefficient
+// bound. An unsigned range check on the biased exponent sum rejects both
+// underflow and overflow. Within these bounds the preferred quantum is the
+// exponent sum, the sign is the XOR of the operand signs (also for zero), and
+// no digit is discarded. This is an exact packing exception; every failed
+// guard calls the original multiplication, which handles rounding, clamping,
+// noncanonical encodings and specials.
+func (s *state) bidMul128(rt *types.Type, x, y *ssa.Value) *ssa.Value {
+	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
+	zero := s.constInt64(u64, 0)
+	xh := s.newValue1(ssaop.OpDecimal128Hi, u64, x)
+	yh := s.newValue1(ssaop.OpDecimal128Hi, u64, y)
+	xl := s.newValue1(ssaop.OpDecimal128Lo, u64, x)
+	yl := s.newValue1(ssaop.OpDecimal128Lo, u64, y)
+	coeff := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpOr64, u64, xh, yh), s.constInt64(u64, int64(bid.CoeffMask128Hi)))
+	words := s.newValue2(ssaop.OpEq64, boolT, coeff, zero)
+	mask := s.constInt64(u64, int64(bid.Form2Mask128Hi))
+	second := s.constInt64(u64, int64(bid.Form2Mask128Hi^(bid.Zero128Hi&bid.Form2Mask128Hi)))
+	xfinite := s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, xh, mask), second)
+	yfinite := s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, yh, mask), second)
+	bSlow := s.f.NewBlock(block.BlockPlain)
+	bAfter := s.f.NewBlock(block.BlockPlain)
+	for _, guard := range []*ssa.Value{words, xfinite, yfinite} {
+		b := s.endBlock()
+		b.Kind = block.BlockIf
+		b.SetControl(guard)
+		next := s.f.NewBlock(block.BlockPlain)
+		b.AddEdgeTo(next)
+		b.AddEdgeTo(bSlow)
+		s.startBlock(next)
+	}
+
+	xnative := s.newValue2(ssaop.OpXor64, u64, xh, s.constInt64(u64, int64(bid.Zero128Hi)))
+	ynative := s.newValue2(ssaop.OpXor64, u64, yh, s.constInt64(u64, int64(bid.Zero128Hi)))
+	shift := s.constInt64(u64, bid.ExpShift128)
+	expMask := s.constInt64(u64, int64(bid.ExpMask128))
+	xe := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpRsh64Ux64, u64, xnative, shift), expMask)
+	ye := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpRsh64Ux64, u64, ynative, shift), expMask)
+	exp := s.newValue2(ssaop.OpSub64, u64, s.newValue2(ssaop.OpAdd64, u64, xe, ye), s.constInt64(u64, bid.Bias128))
+	expOK := s.newValue2(ssaop.OpLeq64U, boolT, exp, s.constInt64(u64, bid.MaxExp128+bid.Bias128))
+	b := s.endBlock()
+	b.Kind = block.BlockIf
+	b.SetControl(expOK)
+	bProduct := s.f.NewBlock(block.BlockPlain)
+	b.AddEdgeTo(bProduct)
+	b.AddEdgeTo(bSlow)
+	s.startBlock(bProduct)
+
+	product := s.newValue2(ssaop.OpMul64uhilo, types.NewTuple(u64, u64), xl, yl)
+	hi := s.newValue1(ssaop.OpSelect0, u64, product)
+	lo := s.newValue1(ssaop.OpSelect1, u64, product)
+	maxHi, maxLo := s.constInt64(u64, int64(bid.MaxCoeff128Hi)), s.constInt64(u64, int64(bid.MaxCoeff128Lo))
+	// Most word products are well below the 34-digit limit. Only inspect
+	// the low-word boundary when the high word cannot establish that.
+	below := s.newValue2(ssaop.OpLess64U, boolT, hi, maxHi)
+	b = s.endBlock()
+	b.Kind = block.BlockIf
+	b.SetControl(below)
+	bExact := s.f.NewBlock(block.BlockPlain)
+	bBoundary := s.f.NewBlock(block.BlockPlain)
+	b.AddEdgeTo(bExact)
+	b.AddEdgeTo(bBoundary)
+	s.startBlock(bBoundary)
+	coeffOK := s.newValue2(ssaop.OpAndB, boolT, s.newValue2(ssaop.OpEq64, boolT, hi, maxHi), s.newValue2(ssaop.OpLeq64U, boolT, lo, maxLo))
+	b = s.endBlock()
+	b.Kind = block.BlockIf
+	b.SetControl(coeffOK)
+	b.AddEdgeTo(bExact)
+	b.AddEdgeTo(bSlow)
+	s.startBlock(bExact)
+
+	signMask := bid.SignMask128Hi
+	sign := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpXor64, u64, xh, yh), s.constInt64(u64, int64(signMask)))
+	header := s.newValue2(ssaop.OpOr64, u64, sign, s.newValue2(ssaop.OpLsh64x64, u64, exp, shift))
+	header = s.newValue2(ssaop.OpXor64, u64, header, s.constInt64(u64, int64(bid.Zero128Hi)))
+	s.vars[bidMulVar] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, s.newValue2(ssaop.OpOr64, u64, header, hi))
+	s.endBlock().AddEdgeTo(bAfter)
+
+	s.startBlock(bSlow)
+	s.vars[bidMulVar] = s.softDecimalOp(ir.OMUL, rt, x, y)
+	s.endBlock().AddEdgeTo(bAfter)
+	s.startBlock(bAfter)
+	return s.variable(bidMulVar, rt)
+}

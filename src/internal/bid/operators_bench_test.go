@@ -40,3 +40,24 @@ func BenchmarkOperatorAdd128(b *testing.B) {
 		operatorSink128 = x
 	})
 }
+
+func BenchmarkOperatorMul128(b *testing.B) {
+	type pair struct{ x, y decimal128 }
+	hits := [4]pair{{123.45, 0.0675}, {-12.00, 0.25}, {0.00, -19.25}, {99999999999999999, 100000000000000001}}
+	misses := [4]pair{{1e-6176, 0.1}, {1e6111, 1e1}, {18446744073709551615, 18446744073709551615}, {1.234567890123456789012345678901234, 0.01}}
+	for _, c := range []struct {
+		name string
+		args [4]pair
+	}{
+		{"hit", hits},
+		{"miss", misses},
+		{"mixed", [4]pair{hits[0], misses[0], hits[1], misses[1]}},
+	} {
+		b.Run(c.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				p := c.args[i%len(c.args)]
+				operatorSink128 = p.x * p.y
+			}
+		})
+	}
+}

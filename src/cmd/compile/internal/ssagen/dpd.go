@@ -131,9 +131,14 @@ var dpdArith = map[opAndType]ssaop.Op{
 // integer fast paths with runtime calls for the general case.
 func (s *state) decimalOp(op ir.Op, rt *types.Type, args ...*ssa.Value) *ssa.Value {
 	if !ir.DecimalDPD() {
-		if op == ir.OADD && rt.Kind() == types.TDECIMAL128 &&
+		if rt.Kind() == types.TDECIMAL128 &&
 			(Arch.LinkArch.Family == sys.ARM64 || Arch.LinkArch.Family == sys.AMD64) {
-			return s.bidAdd128(rt, args[0], args[1])
+			switch op {
+			case ir.OADD:
+				return s.bidAdd128(rt, args[0], args[1])
+			case ir.OMUL:
+				return s.bidMul128(rt, args[0], args[1])
+			}
 		}
 		return s.softDecimalOp(op, rt, args...)
 	}
