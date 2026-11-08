@@ -186,7 +186,7 @@ var depsRules = `
 	MATH
 	< runtime/metrics;
 
-	MATH, unicode/utf8
+	MATH, math/decimal, unicode/utf8
 	< strconv;
 
 	unicode !< strconv;

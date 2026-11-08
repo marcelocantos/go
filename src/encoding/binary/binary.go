@@ -25,6 +25,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"math/decimal"
 	"reflect"
 	"slices"
 	"sync"
@@ -353,7 +354,7 @@ func decodeFast(bs []byte, order ByteOrder, data any) bool {
 	case *float64:
 		*data = math.Float64frombits(order.Uint64(bs))
 	case *decimal64:
-		*data = math.Decimal64frombits(order.Uint64(bs))
+		*data = decimal.BID64frombits(order.Uint64(bs))
 	case *decimal128:
 		*data = getDecimal128(order, bs)
 	case []bool:
@@ -400,7 +401,7 @@ func decodeFast(bs []byte, order ByteOrder, data any) bool {
 		}
 	case []decimal64:
 		for i := range data {
-			data[i] = math.Decimal64frombits(order.Uint64(bs[8*i:]))
+			data[i] = decimal.BID64frombits(order.Uint64(bs[8*i:]))
 		}
 	case []decimal128:
 		for i := range data {
@@ -602,12 +603,12 @@ func encodeFast(bs []byte, order ByteOrder, data any) {
 			order.PutUint64(bs[8*i:], math.Float64bits(x))
 		}
 	case *decimal64:
-		order.PutUint64(bs, math.Decimal64bits(*v))
+		order.PutUint64(bs, decimal.BID64bits(*v))
 	case decimal64:
-		order.PutUint64(bs, math.Decimal64bits(v))
+		order.PutUint64(bs, decimal.BID64bits(v))
 	case []decimal64:
 		for i := range v {
-			order.PutUint64(bs[8*i:], math.Decimal64bits(v[i]))
+			order.PutUint64(bs[8*i:], decimal.BID64bits(v[i]))
 		}
 	case *decimal128:
 		putDecimal128(order, bs, *v)
@@ -947,7 +948,7 @@ func (d *decoder) value(v reflect.Value) {
 		v.SetFloat(math.Float64frombits(d.uint64()))
 
 	case reflect.Decimal64:
-		*(*decimal64)(unsafe.Pointer(v.Addr().Pointer())) = math.Decimal64frombits(d.uint64())
+		*(*decimal64)(unsafe.Pointer(v.Addr().Pointer())) = decimal.BID64frombits(d.uint64())
 	case reflect.Decimal128:
 		v.SetDecimal(getDecimal128(d.order, d.buf[d.offset:]))
 		d.offset += 16
@@ -1018,7 +1019,7 @@ func (e *encoder) value(v reflect.Value) {
 		e.uint64(math.Float64bits(v.Float()))
 
 	case reflect.Decimal64:
-		e.uint64(math.Decimal64bits(v.Convert(reflect.TypeFor[decimal64]()).Interface().(decimal64)))
+		e.uint64(decimal.BID64bits(v.Convert(reflect.TypeFor[decimal64]()).Interface().(decimal64)))
 	case reflect.Decimal128:
 		putDecimal128(e.order, e.buf[e.offset:], v.Decimal())
 		e.offset += 16
@@ -1111,14 +1112,14 @@ var endianProbe = [2]byte{0, 1}
 // significant word comes first if the order is big-endian.
 func getDecimal128(order ByteOrder, b []byte) decimal128 {
 	if order.Uint16(endianProbe[:]) == 1 {
-		return math.Decimal128frombits(order.Uint64(b), order.Uint64(b[8:]))
+		return decimal.BID128frombits(order.Uint64(b), order.Uint64(b[8:]))
 	}
-	return math.Decimal128frombits(order.Uint64(b[8:]), order.Uint64(b))
+	return decimal.BID128frombits(order.Uint64(b[8:]), order.Uint64(b))
 }
 
 // putDecimal128 writes d to the first 16 bytes of b; see getDecimal128.
 func putDecimal128(order ByteOrder, b []byte, d decimal128) {
-	hi, lo := math.Decimal128bits(d)
+	hi, lo := decimal.BID128bits(d)
 	if order.Uint16(endianProbe[:]) == 1 {
 		order.PutUint64(b, hi)
 		order.PutUint64(b[8:], lo)

@@ -6,7 +6,7 @@ package strconv
 
 import (
 	"internal/bid"
-	"math"
+	"math/decimal"
 )
 
 // The conversions between decimal values and text are those of
@@ -42,7 +42,7 @@ func AppendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 	// so both widths have the same digits and the same rounding.
 	_ = bitSize
 
-	hi, lo := math.Decimal128bits(d)
+	hi, lo := decimal.BID128bits(d)
 	x := bid.Uint128{Hi: hi, Lo: lo}
 
 	var text [bid.MaxLen128]byte
@@ -87,11 +87,11 @@ func ParseDecimal(s string, bitSize int) (decimal128, error) {
 	if bitSize == 64 {
 		var x uint64
 		x, st = bid.Parse64(s, bid.ToNearestEven)
-		d = decimal128(math.Decimal64frombits(x))
+		d = decimal128(decimal.BID64frombits(x))
 	} else {
 		var x bid.Uint128
 		x, st = bid.Parse128(s, bid.ToNearestEven)
-		d = math.Decimal128frombits(x.Hi, x.Lo)
+		d = decimal.BID128frombits(x.Hi, x.Lo)
 	}
 	if st&bid.Syntax != 0 {
 		return 0, syntaxError("ParseDecimal", s)

@@ -90,7 +90,7 @@ func testArithmetic() {
 	// Division: 10/3 is 3.333333333333333 (16 digits, rounded down), so the
 	// result is the encoding of 3333333333333333E-15 exactly.
 	quot := a / b
-	if got := math.Decimal64bits(quot); got != enc64(false, 3333333333333333, -15) {
+	if got := decimal.BID64bits(quot); got != enc64(false, 3333333333333333, -15) {
 		failBits64("decimal64 10/3 != 3.333333333333333", got, enc64(false, 3333333333333333, -15))
 	}
 
@@ -256,7 +256,7 @@ func testNegativeZero() {
 	}
 
 	// But they have different bit representations
-	if math.Decimal64bits(negZero) == math.Decimal64bits(zero) {
+	if decimal.BID64bits(negZero) == decimal.BID64bits(zero) {
 		fail("decimal64 -0 and +0 should have different bits")
 	}
 }
@@ -692,7 +692,7 @@ func testInfinity128() {
 // folding in the compiler, and results are compared as encodings so that the
 // quantum (1.50 against 1.5) is checked too, not just the value.
 
-// d128bits is the encoding of a decimal128 as math.Decimal128bits returns it.
+// d128bits is the encoding of a decimal128 as decimal.BID128bits returns it.
 type d128bits struct{ hi, lo uint64 }
 
 // enc64 is the BID encoding of (-1)^neg × coeff × 10^exp.
@@ -741,18 +741,18 @@ var (
 	ninf128bits = d128bits{0xf800000000000000, 0}
 	nan128bits  = d128bits{0x7c00000000000000, 0}
 
-	pinf64  = math.Decimal64frombits(pinf64bits)
-	ninf64  = math.Decimal64frombits(ninf64bits)
-	nan64   = math.Decimal64frombits(nan64bits)
-	nzero64 = math.Decimal64frombits(enc64(true, 0, 0))
+	pinf64  = decimal.BID64frombits(pinf64bits)
+	ninf64  = decimal.BID64frombits(ninf64bits)
+	nan64   = decimal.BID64frombits(nan64bits)
+	nzero64 = decimal.BID64frombits(enc64(true, 0, 0))
 
 	// Go constants have no negative zero, so -0.0 and -0.00 are built here.
-	nzeroE1_64 = math.Decimal64frombits(enc64(true, 0, -1))
-	nzeroE2_64 = math.Decimal64frombits(enc64(true, 0, -2))
+	nzeroE1_64 = decimal.BID64frombits(enc64(true, 0, -1))
+	nzeroE2_64 = decimal.BID64frombits(enc64(true, 0, -2))
 
-	pinf128  = math.Decimal128frombits(pinf128bits.hi, pinf128bits.lo)
-	ninf128  = math.Decimal128frombits(ninf128bits.hi, ninf128bits.lo)
-	nan128   = math.Decimal128frombits(nan128bits.hi, nan128bits.lo)
+	pinf128  = decimal.BID128frombits(pinf128bits.hi, pinf128bits.lo)
+	ninf128  = decimal.BID128frombits(ninf128bits.hi, ninf128bits.lo)
+	nan128   = decimal.BID128frombits(nan128bits.hi, nan128bits.lo)
 	nzero128 = frombits128(enc128(true, "0", 0))
 
 	// Zeros whose exponents lie outside decimal64's range.
@@ -760,10 +760,10 @@ var (
 	zeroEm1000 = frombits128(enc128(false, "0", -1000))
 )
 
-func frombits128(b d128bits) decimal128 { return math.Decimal128frombits(b.hi, b.lo) }
+func frombits128(b d128bits) decimal128 { return decimal.BID128frombits(b.hi, b.lo) }
 
 func bits128(d decimal128) d128bits {
-	hi, lo := math.Decimal128bits(d)
+	hi, lo := decimal.BID128bits(d)
 	return d128bits{hi, lo}
 }
 
@@ -857,7 +857,7 @@ func apply128(a decimal128, op byte, b decimal128) decimal128 {
 
 func testIEEEArithmetic() {
 	for _, c := range arith64 {
-		if got := math.Decimal64bits(apply64(c.a, c.op, c.b)); got != c.want {
+		if got := decimal.BID64bits(apply64(c.a, c.op, c.b)); got != c.want {
 			failBits64("decimal64 "+c.name, got, c.want)
 		}
 	}
@@ -873,12 +873,12 @@ func testIEEEArithmetic() {
 func testIEEECompound() {
 	x := decimal64(1234567890123455)
 	x += 0.5
-	if got := math.Decimal64bits(x); got != enc64(false, 1234567890123456, 0) {
+	if got := decimal.BID64bits(x); got != enc64(false, 1234567890123456, 0) {
 		failBits64("decimal64 x += 0.5 tie", got, enc64(false, 1234567890123456, 0))
 	}
 	y := decimal64(1)
 	y /= 3
-	if got := math.Decimal64bits(y); got != enc64(false, 3333333333333333, -16) {
+	if got := decimal.BID64bits(y); got != enc64(false, 3333333333333333, -16) {
 		failBits64("decimal64 y /= 3", got, enc64(false, 3333333333333333, -16))
 	}
 	z := decimal128(2)
@@ -1328,12 +1328,12 @@ func widen(d decimal64) decimal128 { return decimal128(d) }
 
 func testIEEEConversions() {
 	for _, c := range int64ToDec64 {
-		if got := math.Decimal64bits(i64to64(c.v)); got != c.want {
+		if got := decimal.BID64bits(i64to64(c.v)); got != c.want {
 			failBits64("decimal64(int64) "+c.name, got, c.want)
 		}
 	}
 	for _, c := range uint64ToDec64 {
-		if got := math.Decimal64bits(u64to64(c.v)); got != c.want {
+		if got := decimal.BID64bits(u64to64(c.v)); got != c.want {
 			failBits64("decimal64(uint64) "+c.name, got, c.want)
 		}
 	}
@@ -1348,7 +1348,7 @@ func testIEEEConversions() {
 		}
 	}
 	for _, c := range float64ToDec64 {
-		if got := math.Decimal64bits(f64to64(c.v)); got != c.want {
+		if got := decimal.BID64bits(f64to64(c.v)); got != c.want {
 			failBits64("decimal64(float64) "+c.name, got, c.want)
 		}
 	}
@@ -1358,7 +1358,7 @@ func testIEEEConversions() {
 		}
 	}
 	for _, c := range float32ToDec64 {
-		if got := math.Decimal64bits(f32to64(c.v)); got != c.want {
+		if got := decimal.BID64bits(f32to64(c.v)); got != c.want {
 			failBits64("decimal64(float32) "+c.name, got, c.want)
 		}
 	}
@@ -1388,7 +1388,7 @@ func testIEEEConversions() {
 		}
 	}
 	for _, c := range narrowCases {
-		if got := math.Decimal64bits(narrow(c.d)); got != c.want {
+		if got := decimal.BID64bits(narrow(c.d)); got != c.want {
 			failBits64("decimal64(decimal128) "+c.name, got, c.want)
 		}
 	}
@@ -1496,7 +1496,7 @@ func testSpecialComparisons() {
 	// Members of a cohort are equal but not identical: the quantum is
 	// carried in the encoding.
 	one, oneZero := decimal64(1), decimal64(1.00)
-	if one != oneZero || math.Decimal64bits(one) == math.Decimal64bits(oneZero) {
+	if one != oneZero || decimal.BID64bits(one) == decimal.BID64bits(oneZero) {
 		fail("decimal64 1 and 1.00 should be equal with different encodings")
 	}
 	one128, oneZero128 := decimal128(1), decimal128(1.00)

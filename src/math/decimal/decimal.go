@@ -17,7 +17,6 @@ package decimal
 
 import (
 	"internal/bid"
-	"math"
 	"unsafe"
 )
 
@@ -56,16 +55,16 @@ func (m RoundingMode) mode() bid.Mode {
 // is64 reports whether x is a decimal64.
 func is64[D Decimal](x D) bool { return unsafe.Sizeof(x) == 8 }
 
-func bits64[D Decimal](x D) uint64 { return math.Decimal64bits(decimal64(x)) }
+func bits64[D Decimal](x D) uint64 { return BID64bits(decimal64(x)) }
 
 func bits128[D Decimal](x D) bid.Uint128 {
-	hi, lo := math.Decimal128bits(decimal128(x))
+	hi, lo := BID128bits(decimal128(x))
 	return bid.Uint128{Hi: hi, Lo: lo}
 }
 
-func from64[D Decimal](b uint64) D { return D(math.Decimal64frombits(b)) }
+func from64[D Decimal](b uint64) D { return D(BID64frombits(b)) }
 
-func from128[D Decimal](b bid.Uint128) D { return D(math.Decimal128frombits(b.Hi, b.Lo)) }
+func from128[D Decimal](b bid.Uint128) D { return D(BID128frombits(b.Hi, b.Lo)) }
 
 func unary[D Decimal](x D, f64 func(uint64) uint64, f128 func(bid.Uint128) bid.Uint128) D {
 	if is64(x) {

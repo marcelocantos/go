@@ -7,7 +7,6 @@
 package runtime_test
 
 import (
-	"math"
 	"math/decimal"
 	"strconv"
 	"testing"
@@ -17,7 +16,7 @@ import (
 func TestDecimal64NegativeZero(t *testing.T) {
 	m := make(map[decimal64]bool, 0)
 	posZero := decimal64(0)
-	negZero := math.Decimal64frombits(1 << 63)
+	negZero := decimal.BID64frombits(1 << 63)
 
 	m[posZero] = true
 	m[negZero] = true // should overwrite
@@ -25,7 +24,7 @@ func TestDecimal64NegativeZero(t *testing.T) {
 		t.Errorf("length = %d, want 1", len(m))
 	}
 	for k := range m {
-		if math.Decimal64bits(k)>>63 == 0 {
+		if decimal.BID64bits(k)>>63 == 0 {
 			t.Error("wrong sign: expected -0 key")
 		}
 	}
@@ -37,7 +36,7 @@ func TestDecimal64NegativeZero(t *testing.T) {
 		t.Errorf("length = %d, want 1", len(m))
 	}
 	for k := range m {
-		if math.Decimal64bits(k)>>63 != 0 {
+		if decimal.BID64bits(k)>>63 != 0 {
 			t.Error("wrong sign: expected +0 key")
 		}
 	}
@@ -76,9 +75,9 @@ func TestDecimal64NonCanonical(t *testing.T) {
 	//   coeff=100, exp=0 (biasedExp=398=0x18E): 0x31C0000000000064
 	//   coeff=10,  exp=1 (biasedExp=399=0x18F): 0x31E000000000000A
 	//   coeff=1,   exp=2 (biasedExp=400=0x190): 0x3200000000000001
-	a := math.Decimal64frombits(0x31C0000000000064)
-	b := math.Decimal64frombits(0x31E000000000000A)
-	c := math.Decimal64frombits(0x3200000000000001)
+	a := decimal.BID64frombits(0x31C0000000000064)
+	b := decimal.BID64frombits(0x31E000000000000A)
+	c := decimal.BID64frombits(0x3200000000000001)
 
 	if a != b || b != c || a != c {
 		t.Errorf("non-canonical values not equal: a=%v b=%v c=%v", a, b, c)

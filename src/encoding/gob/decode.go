@@ -13,6 +13,7 @@ import (
 	"io"
 	"math"
 	"math/bits"
+	"math/decimal"
 	"reflect"
 	"unsafe"
 )
@@ -364,14 +365,14 @@ func decComplex128(i *decInstr, state *decoderState, value reflect.Value) {
 
 // decDecimal64 decodes a uint64 and stores it as a decimal64 in value.
 func decDecimal64(i *decInstr, state *decoderState, value reflect.Value) {
-	*(*decimal64)(unsafe.Pointer(value.Addr().Pointer())) = math.Decimal64frombits(state.decodeUint())
+	*(*decimal64)(unsafe.Pointer(value.Addr().Pointer())) = decimal.BID64frombits(state.decodeUint())
 }
 
 // decDecimal128 decodes two uint64 values and stores them as a decimal128 in value.
 func decDecimal128(i *decInstr, state *decoderState, value reflect.Value) {
 	hi := state.decodeUint()
 	lo := state.decodeUint()
-	value.SetDecimal(math.Decimal128frombits(hi, lo))
+	value.SetDecimal(decimal.BID128frombits(hi, lo))
 }
 
 // decUint8Slice decodes a byte slice and stores in value a slice header

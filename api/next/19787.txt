@@ -1,0 +1,15 @@
+pkg math/decimal, const BIDXOR = 0 #19787
+pkg math/decimal, const BIDXOR Representation #19787
+pkg math/decimal, const DPDXOR = 1 #19787
+pkg math/decimal, const DPDXOR Representation #19787
+pkg math/decimal, const NativeRepresentation = 0 #19787
+pkg math/decimal, const NativeRepresentation Representation #19787
+pkg math/decimal, func BID128bits(decimal128) (uint64, uint64) #19787
+pkg math/decimal, func BID128frombits(uint64, uint64) decimal128 #19787
+pkg math/decimal, func BID64bits(decimal64) uint64 #19787
+pkg math/decimal, func BID64frombits(uint64) decimal64 #19787
+pkg math/decimal, func DPD128bits(decimal128) (uint64, uint64) #19787
+pkg math/decimal, func DPD128frombits(uint64, uint64) decimal128 #19787
+pkg math/decimal, func DPD64bits(decimal64) uint64 #19787
+pkg math/decimal, func DPD64frombits(uint64) decimal64 #19787
+pkg math/decimal, type Representation uint8 #19787

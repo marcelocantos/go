@@ -15,7 +15,6 @@ package main
 
 import (
 	"fmt"
-	"math"
 	"math/decimal"
 )
 
@@ -31,8 +30,8 @@ func check(ok bool, format string, args ...any) {
 }
 
 func testStruct64() {
-	negZero := math.Decimal64frombits(1 << 63)
-	if negZero != 0 || math.Decimal64bits(negZero) == math.Decimal64bits(decimal64(0)) {
+	negZero := decimal.BID64frombits(1 << 63)
+	if negZero != 0 || decimal.BID64bits(negZero) == decimal.BID64bits(decimal64(0)) {
 		panic("negZero is not a distinct encoding of zero")
 	}
 
@@ -50,7 +49,7 @@ func testStruct64() {
 	// Members of a cohort are one key: 1.5, 1.50 and 1.500 are equal.
 	var a, b, c decimal64 = 1.5, 1.50, 1.500
 	check(a == b && b == c, "cohort members compare unequal")
-	check(math.Decimal64bits(a) != math.Decimal64bits(b), "cohort members share an encoding")
+	check(decimal.BID64bits(a) != decimal.BID64bits(b), "cohort members share an encoding")
 	m[key64{b, 1}]++
 	m[key64{c, 1}]++
 	check(m[key64{a, 1}] == 12, "cohort lookup: got %d", m[key64{a, 1}])
@@ -98,7 +97,7 @@ func testStruct64() {
 }
 
 func testArray128() {
-	negZero := math.Decimal128frombits(1<<63, 0)
+	negZero := decimal.BID128frombits(1<<63, 0)
 	if negZero != 0 {
 		panic("negZero is not zero")
 	}
@@ -116,8 +115,8 @@ func testArray128() {
 
 	// Members of a cohort are one key, in either element.
 	var a, b decimal128 = 1.5, 1.50
-	hiA, loA := math.Decimal128bits(a)
-	hiB, loB := math.Decimal128bits(b)
+	hiA, loA := decimal.BID128bits(a)
+	hiB, loB := decimal.BID128bits(b)
 	check(a == b, "cohort members compare unequal")
 	check(hiA != hiB || loA != loB, "cohort members share an encoding")
 	m[[2]decimal128{a, 1}] = 1
@@ -164,14 +163,14 @@ func testArray128() {
 // rather than generated ones, and a key reached through an interface, which
 // goes through the runtime's typehash.
 func testPlain() {
-	negZero64 := math.Decimal64frombits(1 << 63)
+	negZero64 := decimal.BID64frombits(1 << 63)
 	m64 := map[decimal64]int{1.5: 1}
 	m64[1.50] = 2
 	m64[0] = 3
 	m64[negZero64] = 4
 	check(len(m64) == 2 && m64[1.500] == 2 && m64[0] == 4, "map[decimal64]int")
 
-	negZero128 := math.Decimal128frombits(1<<63, 0)
+	negZero128 := decimal.BID128frombits(1<<63, 0)
 	m128 := map[decimal128]int{1.5: 1}
 	m128[1.50] = 2
 	m128[0] = 3
@@ -203,7 +202,7 @@ func testPlain() {
 func testCompositeEquality() {
 	check(key64{1.5, 1} == key64{1.50, 1}, "struct cohort equality")
 	check(key64{1.5, 1} != key64{1.5, 2}, "struct inequality")
-	check(key64{0, 1} == key64{math.Decimal64frombits(1 << 63), 1}, "struct zero equality")
+	check(key64{0, 1} == key64{decimal.BID64frombits(1 << 63), 1}, "struct zero equality")
 	nan := decimal.NaN[decimal64]()
 	check(key64{nan, 1} != key64{nan, 1}, "struct NaN equality")
 	check([2]decimal128{1.5, 0} == [2]decimal128{1.50, 0.0}, "array cohort equality")

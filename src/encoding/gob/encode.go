@@ -11,6 +11,7 @@ import (
 	"encoding/binary"
 	"math"
 	"math/bits"
+	"math/decimal"
 	"reflect"
 	"sync"
 )
@@ -239,8 +240,8 @@ func encComplex(i *encInstr, state *encoderState, v reflect.Value) {
 // decimal64 values are transmitted as their raw uint64 BID bits.
 // Only the zero value is omitted, not a zero with another exponent or sign.
 func encDecimal64(i *encInstr, state *encoderState, v reflect.Value) {
-	bits := math.Decimal64bits(v.Convert(reflect.TypeFor[decimal64]()).Interface().(decimal64))
-	if bits != math.Decimal64bits(0) || state.sendZero {
+	bits := decimal.BID64bits(v.Convert(reflect.TypeFor[decimal64]()).Interface().(decimal64))
+	if bits != decimal.BID64bits(0) || state.sendZero {
 		state.update(i)
 		state.encodeUint(bits)
 	}
@@ -250,8 +251,8 @@ func encDecimal64(i *encInstr, state *encoderState, v reflect.Value) {
 // decimal128 values are transmitted as the two uint64 words of their BID
 // encoding, most significant first.
 func encDecimal128(i *encInstr, state *encoderState, v reflect.Value) {
-	hi, lo := math.Decimal128bits(v.Decimal())
-	zeroHi, zeroLo := math.Decimal128bits(0)
+	hi, lo := decimal.BID128bits(v.Decimal())
+	zeroHi, zeroLo := decimal.BID128bits(0)
 	if hi != zeroHi || lo != zeroLo || state.sendZero {
 		state.update(i)
 		state.encodeUint(hi)

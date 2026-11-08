@@ -6,7 +6,7 @@ package quick
 
 import (
 	"internal/bid"
-	"math"
+	"math/decimal"
 	"math/rand"
 	"reflect"
 	"testing"
@@ -437,7 +437,7 @@ func TestDecimalDistribution(t *testing.T) {
 	}
 	for range n {
 		d := randDecimal64(r)
-		bits := math.Decimal64bits(d)
+		bits := decimal.BID64bits(d)
 		kind, neg, c, exp := bid.Unpack64(bits)
 		record(&s64, bid.IsCanonical64(bits), kind, neg, bid.IsSignaling64(bits),
 			c < 1000 && exp == 0, c < 1000000 && exp >= -8 && exp <= 8 && exp != 0,
@@ -445,7 +445,7 @@ func TestDecimalDistribution(t *testing.T) {
 			c == bid.MaxCoeff64 && exp == bid.MaxExp64, exp)
 
 		d2 := randDecimal128(r)
-		hi, lo := math.Decimal128bits(d2)
+		hi, lo := decimal.BID128bits(d2)
 		x2 := bid.Uint128{Hi: hi, Lo: lo}
 		kind, neg, c2, exp := bid.Unpack128(x2)
 		record(&s128, bid.IsCanonical128(x2), kind, neg, bid.IsSignaling128(x2),

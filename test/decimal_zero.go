@@ -13,7 +13,6 @@ package main
 
 import (
 	"fmt"
-	"math"
 	"math/decimal"
 	"reflect"
 	"runtime"
@@ -42,13 +41,13 @@ type pair struct {
 }
 
 func check64(name string, got decimal64, want uint64) {
-	if b := math.Decimal64bits(got); b != want {
+	if b := decimal.BID64bits(got); b != want {
 		panic(fmt.Sprintf("%s: bits %#x, want %#x", name, b, want))
 	}
 }
 
 func check128(name string, got decimal128, wantHi, wantLo uint64) {
-	if hi, lo := math.Decimal128bits(got); hi != wantHi || lo != wantLo {
+	if hi, lo := decimal.BID128bits(got); hi != wantHi || lo != wantLo {
 		panic(fmt.Sprintf("%s: bits %#x %#x, want %#x %#x", name, hi, lo, wantHi, wantLo))
 	}
 }
@@ -66,8 +65,8 @@ func add64(x, y decimal64) decimal64 { return x + y }
 func add128(x, y decimal128) decimal128 { return x + y }
 
 func main() {
-	zero64Bits := math.Decimal64bits(decimal64(0))
-	zero128Hi, zero128Lo := math.Decimal128bits(decimal128(0))
+	zero64Bits := decimal.BID64bits(decimal64(0))
+	zero128Hi, zero128Lo := decimal.BID128bits(decimal128(0))
 
 	if zero64Bits != 0x31c0000000000000 {
 		panic(fmt.Sprintf("decimal64(0) bits %#x", zero64Bits))
@@ -111,23 +110,23 @@ func main() {
 	// An accumulator takes the quantum of what is added to it.
 	var total64 decimal64
 	total64 += 19.99
-	check64("accumulator", total64, math.Decimal64bits(19.99))
+	check64("accumulator", total64, decimal.BID64bits(19.99))
 	var total128 decimal128
 	total128 += 19.99
-	wantHi, wantLo := math.Decimal128bits(19.99)
+	wantHi, wantLo := decimal.BID128bits(19.99)
 	check128("accumulator", total128, wantHi, wantLo)
-	check64("zero value + x", add64(local64, 1.50), math.Decimal64bits(1.50))
-	wantHi, wantLo = math.Decimal128bits(1.50)
+	check64("zero value + x", add64(local64, 1.50), decimal.BID64bits(1.50))
+	wantHi, wantLo = decimal.BID128bits(1.50)
 	check128("zero value + x", add128(local128, 1.50), wantHi, wantLo)
 
 	// Other zeros are not the zero value, and stay distinct.
-	if math.Decimal64bits(staticQ64) == zero64Bits {
+	if decimal.BID64bits(staticQ64) == zero64Bits {
 		panic("0.00 lost its quantum in static data")
 	}
-	if hi, _ := math.Decimal128bits(staticQ128); hi == zero128Hi {
+	if hi, _ := decimal.BID128bits(staticQ128); hi == zero128Hi {
 		panic("0.00 lost its quantum in static data")
 	}
-	if math.Decimal64bits(staticArr[1]) == zero64Bits || math.Decimal64bits(staticStruct.a) == zero64Bits {
+	if decimal.BID64bits(staticArr[1]) == zero64Bits || decimal.BID64bits(staticStruct.a) == zero64Bits {
 		panic("0.00 lost its quantum in a static composite")
 	}
 	if staticArr[1] != 0 || staticStruct.a != 0 {
@@ -142,10 +141,10 @@ func main() {
 	if !decimal.Signbit[decimal64](neg) || neg != 0 {
 		panic("-0 of the zero value")
 	}
-	if math.Decimal64bits(neg) != zero64Bits|1<<63 {
-		panic(fmt.Sprintf("-zero bits %#x", math.Decimal64bits(neg)))
+	if decimal.BID64bits(neg) != zero64Bits|1<<63 {
+		panic(fmt.Sprintf("-zero bits %#x", decimal.BID64bits(neg)))
 	}
-	negHi, _ := math.Decimal128bits(-local128)
+	negHi, _ := decimal.BID128bits(-local128)
 	if negHi != zero128Hi|1<<63 {
 		panic(fmt.Sprintf("-zero bits %#x", negHi))
 	}
@@ -154,7 +153,7 @@ func main() {
 	// encoding survives on every target. A non-canonical one survives where
 	// the memory form is BID; where it is DPD (linux/ppc64le), a value
 	// holds the value the encoding reads as, and the bits functions return
-	// its canonical encoding (see math.Decimal64bits).
+	// its canonical encoding (see decimal.BID64bits).
 	dpd := runtime.GOARCH == "ppc64le"
 	for _, c := range []struct {
 		b, canon64, canonHi, canonLo uint64
@@ -171,10 +170,10 @@ func main() {
 		if dpd {
 			want64, wantHi, wantLo = c.canon64, c.canonHi, c.canonLo
 		}
-		if got := math.Decimal64bits(math.Decimal64frombits(c.b)); got != want64 {
+		if got := decimal.BID64bits(decimal.BID64frombits(c.b)); got != want64 {
 			panic(fmt.Sprintf("decimal64 round trip %#x got %#x, want %#x", c.b, got, want64))
 		}
-		if hi, lo := math.Decimal128bits(math.Decimal128frombits(c.b, c.b)); hi != wantHi || lo != wantLo {
+		if hi, lo := decimal.BID128bits(decimal.BID128frombits(c.b, c.b)); hi != wantHi || lo != wantLo {
 			panic(fmt.Sprintf("decimal128 round trip %#x got %#x %#x, want %#x %#x", c.b, hi, lo, wantHi, wantLo))
 		}
 	}
