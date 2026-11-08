@@ -49,6 +49,15 @@ func TestAppendDigitPairs(t *testing.T) {
 				check(new(big.Int).Add(pow10(n), big.NewInt(delta)))
 			}
 		}
+		for _, shift := range []uint{53, 64} {
+			for _, delta := range []int64{-1, 0, 1} {
+				c := new(big.Int).Lsh(big.NewInt(1), shift)
+				c.Add(c, big.NewInt(delta))
+				if c.Cmp(f.maxCoeff) <= 0 {
+					check(c)
+				}
+			}
+		}
 	}
 }
 

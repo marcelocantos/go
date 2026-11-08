@@ -4,6 +4,8 @@
 
 package bid
 
+import "math/bits"
+
 // The decimal128 instantiation of the coefficient vocabulary used by the
 // shared core (see "Width parameterisation" in the package documentation,
 // rule 4). The decimal64 instantiation, with identical signatures, is in
@@ -360,13 +362,14 @@ func cFromU128128(q Uint128) wide128 {
 // cSplit128 returns c split into the words hi and lo with
 // c = hi × 10^19 + lo and lo < 10^19, the form writeDigits renders.
 // Precondition: c is at most MaxCoeff128, below 10^34, so hi is below 10^15
-// and fits a word; a c that does not panics rather than truncates.
+// and fits a word. Div64 checks its quotient fits rather than truncating it.
 func cSplit128(c coef128) (hi, lo uint64) {
-	q, r := u128Div64(c, pow10tab64[u64Digits])
-	if q.Hi != 0 {
-		panic(errQuotientOverflow)
+	if c.Hi == 0 && c.Lo < pow10tab64[u64Digits] {
+		return 0, c.Lo
 	}
-	return q.Lo, r
+	// The canonical coefficient bound establishes c.Hi < 10^19, so one
+	// 128-by-64 divide suffices; no high quotient word needs computing.
+	return bits.Div64(c.Hi, c.Lo, pow10tab64[u64Digits])
 }
 
 // cWide128 returns the 128-bit value m as a wide128.
