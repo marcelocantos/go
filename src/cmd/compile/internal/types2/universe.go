@@ -9,6 +9,7 @@ package types2
 import (
 	"go/constant"
 	"strings"
+	_ "unsafe"
 )
 
 // The Universe scope contains all predeclared objects of Go.
@@ -37,7 +38,7 @@ var (
 // The *Basic type for Typ[Byte] will have the name "uint8".
 // Use Universe.Lookup("byte").Type() to obtain the specific
 // alias basic type named "byte" (and analogous for "rune").
-var Typ = [...]*Basic{
+var Typ = []*Basic{
 	Invalid: {Invalid, 0, "invalid type"},
 
 	Bool:          {Bool, IsBoolean, "bool"},
@@ -56,8 +57,6 @@ var Typ = [...]*Basic{
 	Float64:       {Float64, IsFloat, "float64"},
 	Complex64:     {Complex64, IsComplex, "complex64"},
 	Complex128:    {Complex128, IsComplex, "complex128"},
-	Decimal64:     {Decimal64, IsDecimal, "decimal64"},
-	Decimal128:    {Decimal128, IsDecimal, "decimal128"},
 	String:        {String, IsString, "string"},
 	UnsafePointer: {UnsafePointer, 0, "Pointer"},
 
@@ -238,6 +237,9 @@ func DefPredeclaredTestFuncs() {
 }
 
 func init() {
+	if decimalEnabled {
+		Typ = append(Typ, decimal64Type, decimal128Type)
+	}
 	Universe = NewScope(nil, nopos, nopos, "universe")
 	Unsafe = NewPackage("unsafe", "unsafe")
 	Unsafe.complete = true
@@ -289,3 +291,11 @@ func def(obj Object) {
 		panic("double declaration of predeclared identifier")
 	}
 }
+
+// The private models remain available to export-data readers even when the
+// public type universe and Typ list omit the experimental types.
+var decimal64Type = &Basic{decimal64Kind, isDecimalInfo, "decimal64"}
+var decimal128Type = &Basic{decimal128Kind, isDecimalInfo, "decimal128"}
+
+//go:linkname decimalTypes
+func decimalTypes() (*Basic, *Basic) { return decimal64Type, decimal128Type }

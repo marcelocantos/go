@@ -10,6 +10,7 @@ package reflect_test
 
 import (
 	"fmt"
+	"internal/decimalreflect"
 	. "reflect"
 	"strconv"
 )
@@ -29,7 +30,7 @@ func valueToString(val Value) string {
 		return strconv.FormatUint(val.Uint(), 10)
 	case Float32, Float64:
 		return strconv.FormatFloat(val.Float(), 'g', -1, 64)
-	case Decimal64, Decimal128:
+	case decimalreflect.Decimal64, decimalreflect.Decimal128:
 		return fmt.Sprintf("%g", val.Interface())
 	case Complex64, Complex128:
 		c := val.Complex()

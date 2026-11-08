@@ -10,6 +10,7 @@ package fmtsort
 
 import (
 	"cmp"
+	"internal/decimalreflect"
 	"reflect"
 	"slices"
 )
@@ -83,8 +84,8 @@ func compare(aVal, bVal reflect.Value) int {
 		return cmp.Compare(aVal.String(), bVal.String())
 	case reflect.Float32, reflect.Float64:
 		return cmp.Compare(aVal.Float(), bVal.Float())
-	case reflect.Decimal64, reflect.Decimal128:
-		return compareDecimal(aVal.Decimal(), bVal.Decimal())
+	case decimalreflect.Decimal64, decimalreflect.Decimal128:
+		return compareDecimal(decimalreflect.Decimal(aVal), decimalreflect.Decimal(bVal))
 	case reflect.Complex64, reflect.Complex128:
 		a, b := aVal.Complex(), bVal.Complex()
 		if c := cmp.Compare(real(a), real(b)); c != 0 {

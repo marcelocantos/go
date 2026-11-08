@@ -12,6 +12,7 @@ import (
 	"database/sql/internal"
 	"errors"
 	"fmt"
+	"internal/decimalreflect"
 	"reflect"
 	"strconv"
 	"time"
@@ -450,7 +451,7 @@ func convertAssignRows(dest, src any, rows *Rows) error {
 			reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
 			reflect.Float32, reflect.Float64,
-			reflect.Decimal64, reflect.Decimal128:
+			decimalreflect.Decimal64, decimalreflect.Decimal128:
 			*d = asString(src)
 			return nil
 		}
@@ -558,29 +559,29 @@ func convertAssignRows(dest, src any, rows *Rows) error {
 		}
 		dv.SetFloat(f64)
 		return nil
-	case reflect.Decimal64:
+	case decimalreflect.Decimal64:
 		if src == nil {
 			return fmt.Errorf("converting NULL to %s is unsupported", dv.Kind())
 		}
 		s := asString(src)
-		d, err := strconv.ParseDecimal(s, 64)
+		d, err := decimalreflect.ParseDecimal(s, 64)
 		if err != nil {
 			err = strconvErr(err)
 			return fmt.Errorf("converting driver.Value type %T (%q) to a %s: %v", src, s, dv.Kind(), err)
 		}
-		dv.SetDecimal(d)
+		decimalreflect.SetDecimal(dv, d)
 		return nil
-	case reflect.Decimal128:
+	case decimalreflect.Decimal128:
 		if src == nil {
 			return fmt.Errorf("converting NULL to %s is unsupported", dv.Kind())
 		}
 		s := asString(src)
-		d, err := strconv.ParseDecimal(s, 128)
+		d, err := decimalreflect.ParseDecimal(s, 128)
 		if err != nil {
 			err = strconvErr(err)
 			return fmt.Errorf("converting driver.Value type %T (%q) to a %s: %v", src, s, dv.Kind(), err)
 		}
-		dv.SetDecimal(d)
+		decimalreflect.SetDecimal(dv, d)
 		return nil
 	case reflect.String:
 		if src == nil {

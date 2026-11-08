@@ -43,8 +43,8 @@ const (
 	UntypedNil
 
 	// decimal types, appended so the values above keep their Go 1 values
-	Decimal64
-	Decimal128
+	decimal64Kind
+	decimal128Kind
 
 	// aliases
 	Byte = Uint8
@@ -63,10 +63,10 @@ const (
 	IsComplex
 	IsString
 	IsUntyped
-	IsDecimal
+	isDecimalInfo
 
-	IsOrdered   = IsInteger | IsFloat | IsDecimal | IsString
-	IsNumeric   = IsInteger | IsFloat | IsComplex | IsDecimal
+	IsOrdered   = IsInteger | IsFloat | decimalInfo | IsString
+	IsNumeric   = IsInteger | IsFloat | IsComplex | decimalInfo
 	IsConstType = IsBoolean | IsNumeric | IsString
 )
 
@@ -88,3 +88,11 @@ func (b *Basic) Name() string { return b.name }
 
 func (b *Basic) Underlying() Type { return b }
 func (b *Basic) String() string   { return TypeString(b, nil) }
+
+// Internal predicates also handle private decimal models when a standard
+// library source checker needs them, independent of the public API flags.
+const (
+	numericInfo   = IsNumeric | isDecimalInfo
+	orderedInfo   = IsOrdered | isDecimalInfo
+	constTypeInfo = IsConstType | isDecimalInfo
+)

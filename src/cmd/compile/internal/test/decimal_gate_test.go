@@ -38,7 +38,7 @@ func TestDecimalGates(t *testing.T) {
 	}
 
 	// The default is the GOEXPERIMENT the toolchain was built with, which
-	// turns the experiment on unless it said nodecimal.
+	// defaults off unless the owner explicitly built with decimal enabled.
 	def, err := buildcfg.ParseGOEXPERIMENT(runtime.GOOS, runtime.GOARCH, buildcfg.DefaultGOEXPERIMENT)
 	if err != nil {
 		t.Fatal(err)

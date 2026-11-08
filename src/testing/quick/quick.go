@@ -11,9 +11,10 @@ import (
 	"flag"
 	"fmt"
 	"internal/bid"
+	"internal/decimal"
+	"internal/decimalreflect"
 	"math"
 	"math/bits"
-	"math/decimal"
 	"math/rand"
 	"reflect"
 	"strings"
@@ -250,9 +251,9 @@ func sizedValue(t reflect.Type, rand *rand.Rand, size int) (value reflect.Value,
 		v.SetFloat(float64(randFloat32(rand)))
 	case reflect.Float64:
 		v.SetFloat(randFloat64(rand))
-	case reflect.Decimal64:
+	case decimalreflect.Decimal64:
 		v.Set(reflect.ValueOf(randDecimal64(rand)).Convert(t))
-	case reflect.Decimal128:
+	case decimalreflect.Decimal128:
 		v.Set(reflect.ValueOf(randDecimal128(rand)).Convert(t))
 	case reflect.Complex64:
 		v.SetComplex(complex(float64(randFloat32(rand)), float64(randFloat32(rand))))

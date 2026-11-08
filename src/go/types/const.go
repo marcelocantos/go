@@ -221,7 +221,7 @@ func representableConst(x constant.Value, check *Checker, typ *Basic, rounded *c
 			return false
 		}
 		w := constdecimal.Decimal64
-		if typ.kind == Decimal128 {
+		if typ.kind == decimal128Kind {
 			w = constdecimal.Decimal128
 		}
 		// A typed constant has the value and quantum its type can hold,

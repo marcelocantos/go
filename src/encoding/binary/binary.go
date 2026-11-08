@@ -23,9 +23,10 @@ package binary
 
 import (
 	"errors"
+	"internal/decimal"
+	"internal/decimalreflect"
 	"io"
 	"math"
-	"math/decimal"
 	"reflect"
 	"slices"
 	"sync"
@@ -800,7 +801,7 @@ func sizeof(t reflect.Type) int {
 		reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
 		reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Float32, reflect.Float64, reflect.Complex64, reflect.Complex128,
-		reflect.Decimal64, reflect.Decimal128:
+		decimalreflect.Decimal64, decimalreflect.Decimal128:
 		return int(t.Size())
 	}
 
@@ -947,10 +948,10 @@ func (d *decoder) value(v reflect.Value) {
 	case reflect.Float64:
 		v.SetFloat(math.Float64frombits(d.uint64()))
 
-	case reflect.Decimal64:
+	case decimalreflect.Decimal64:
 		*(*decimal64)(unsafe.Pointer(v.Addr().Pointer())) = decimal.BID64frombits(d.uint64())
-	case reflect.Decimal128:
-		v.SetDecimal(getDecimal128(d.order, d.buf[d.offset:]))
+	case decimalreflect.Decimal128:
+		decimalreflect.SetDecimal(v, getDecimal128(d.order, d.buf[d.offset:]))
 		d.offset += 16
 
 	case reflect.Complex64:
@@ -1018,10 +1019,10 @@ func (e *encoder) value(v reflect.Value) {
 	case reflect.Float64:
 		e.uint64(math.Float64bits(v.Float()))
 
-	case reflect.Decimal64:
+	case decimalreflect.Decimal64:
 		e.uint64(decimal.BID64bits(v.Convert(reflect.TypeFor[decimal64]()).Interface().(decimal64)))
-	case reflect.Decimal128:
-		putDecimal128(e.order, e.buf[e.offset:], v.Decimal())
+	case decimalreflect.Decimal128:
+		putDecimal128(e.order, e.buf[e.offset:], decimalreflect.Decimal(v))
 		e.offset += 16
 
 	case reflect.Complex64:

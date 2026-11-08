@@ -142,6 +142,9 @@ func (p *Importer) ImportFrom(path, srcDir string, mode types.ImportMode) (*type
 		}
 	}
 
+	if bp.Goroot {
+		allowDecimal(&conf)
+	}
 	pkg, err = conf.Check(bp.ImportPath, p.fset, files, nil)
 	if err != nil {
 		// If there was a hard error it is possibly unsafe
@@ -267,3 +270,6 @@ func (p *Importer) joinPath(elem ...string) string {
 
 //go:linkname setUsesCgo go/types.srcimporter_setUsesCgo
 func setUsesCgo(conf *types.Config)
+
+//go:linkname allowDecimal go/types.allowDecimal
+func allowDecimal(conf *types.Config)

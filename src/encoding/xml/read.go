@@ -9,6 +9,7 @@ import (
 	"encoding"
 	"errors"
 	"fmt"
+	"internal/decimalreflect"
 	"reflect"
 	"runtime"
 	"strconv"
@@ -434,7 +435,7 @@ func (d *Decoder) unmarshal(val reflect.Value, start *StartElement) error {
 		}
 		return nil
 
-	case reflect.Bool, reflect.Float32, reflect.Float64, reflect.Decimal64, reflect.Decimal128, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.String:
+	case reflect.Bool, reflect.Float32, reflect.Float64, decimalreflect.Decimal64, decimalreflect.Decimal128, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.String:
 		saveData = v
 
 	case reflect.Struct:
@@ -679,26 +680,26 @@ func copyValue(dst reflect.Value, src []byte) (err error) {
 			return err
 		}
 		dst.SetFloat(ftmp)
-	case reflect.Decimal64:
+	case decimalreflect.Decimal64:
 		if len(src) == 0 {
-			dst.SetDecimal(0)
+			decimalreflect.SetDecimal(dst, 0)
 			return nil
 		}
-		dtmp, err := strconv.ParseDecimal(strings.TrimSpace(string(src)), 64)
+		dtmp, err := decimalreflect.ParseDecimal(strings.TrimSpace(string(src)), 64)
 		if err != nil {
 			return err
 		}
-		dst.SetDecimal(dtmp)
-	case reflect.Decimal128:
+		decimalreflect.SetDecimal(dst, dtmp)
+	case decimalreflect.Decimal128:
 		if len(src) == 0 {
-			dst.SetDecimal(0)
+			decimalreflect.SetDecimal(dst, 0)
 			return nil
 		}
-		dtmp, err := strconv.ParseDecimal(strings.TrimSpace(string(src)), 128)
+		dtmp, err := decimalreflect.ParseDecimal(strings.TrimSpace(string(src)), 128)
 		if err != nil {
 			return err
 		}
-		dst.SetDecimal(dtmp)
+		decimalreflect.SetDecimal(dst, dtmp)
 	case reflect.Bool:
 		if len(src) == 0 {
 			dst.SetBool(false)

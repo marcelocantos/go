@@ -25,6 +25,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	_ "unsafe"
 
 	. "go/types"
 )
@@ -426,6 +427,7 @@ func typecheckFiles(path string, filenames []string, importer Importer) (*Packag
 		Types:     make(map[ast.Expr]TypeAndValue),
 		Scopes:    make(map[ast.Node]*Scope),
 	}
+	allowStdDecimal(&conf)
 	pkg, _ := conf.Check(path, fset, files, &info)
 	err := errors.Join(errs...)
 	if err != nil {
@@ -516,3 +518,6 @@ func (w *walker) walk(dir string) {
 		}
 	}
 }
+
+//go:linkname allowStdDecimal go/types.allowDecimal
+func allowStdDecimal(conf *Config)

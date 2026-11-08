@@ -210,9 +210,9 @@ func (a *abiSeq) regAssign(t *abi.Type, offset uintptr) bool {
 		}
 	case Float32, Float64:
 		return a.assignFloatN(offset, t.Size(), 1)
-	case Decimal64:
+	case decimal64Kind:
 		return a.assignIntN(offset, 8, 1, 0b0)
-	case Decimal128:
+	case decimal128Kind:
 		// The compiler passes decimal128 as two uint64 integer registers.
 		return a.assignIntN(offset, 8, 2, 0b0)
 	case Complex64:

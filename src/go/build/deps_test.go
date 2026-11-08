@@ -177,8 +177,8 @@ var depsRules = `
 	MATH
 	< math/cmplx;
 
-	internal/bid, math, unsafe
-	< math/decimal;
+	internal/bid, unsafe < internal/decimal;
+	internal/decimal, math < math/decimal;
 
 	MATH
 	< math/rand, math/rand/v2;
@@ -186,7 +186,7 @@ var depsRules = `
 	MATH
 	< runtime/metrics;
 
-	MATH, math/decimal, unicode/utf8
+	MATH, internal/decimal, unicode/utf8
 	< strconv;
 
 	unicode !< strconv;
@@ -233,7 +233,9 @@ var depsRules = `
 	arena, strconv, unicode
 	< reflect;
 
-	os, reflect
+	reflect, strconv < internal/decimalreflect;
+
+	os, reflect, internal/decimalreflect
 	< internal/fmtsort
 	< fmt;
 
@@ -262,7 +264,7 @@ var depsRules = `
 	io, strconv, slices
 	< encoding, encoding/base32, encoding/base64;
 
-	encoding, reflect
+	encoding, reflect, internal/decimal, internal/decimalreflect
 	< encoding/binary;
 
 	FMT, encoding < flag;
@@ -656,7 +658,7 @@ var depsRules = `
 	< golang.org/x/tools/go/gcexportdata;
 
 	# go/importer
-	DEBUG, crypto/sha256, go/build, go/types, text/scanner
+	DEBUG, crypto/sha256, go/build, go/types, text/scanner, internal/constdecimal
 	< internal/exportdata, internal/pkgbits;
 
 	golang.org/x/tools/go/gcexportdata, internal/exportdata, internal/pkgbits

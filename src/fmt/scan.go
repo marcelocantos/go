@@ -6,6 +6,7 @@ package fmt
 
 import (
 	"errors"
+	"internal/decimalreflect"
 	"io"
 	"math"
 	"os"
@@ -805,7 +806,7 @@ func (s *ss) convertFloat(str string, n int) float64 {
 
 // convertDecimal64 converts the string to a decimal64 value.
 func (s *ss) convertDecimal64(str string) decimal64 {
-	d, err := strconv.ParseDecimal(str, 64)
+	d, err := decimalreflect.ParseDecimal(str, 64)
 	if err != nil {
 		s.error(err)
 	}
@@ -814,7 +815,7 @@ func (s *ss) convertDecimal64(str string) decimal64 {
 
 // convertDecimal128 converts the string to a decimal128 value.
 func (s *ss) convertDecimal128(str string) decimal128 {
-	d, err := strconv.ParseDecimal(str, 128)
+	d, err := decimalreflect.ParseDecimal(str, 128)
 	if err != nil {
 		s.error(err)
 	}
@@ -1077,27 +1078,27 @@ func (s *ss) scanOne(verb rune, arg any) {
 			v.SetFloat(s.convertFloat(s.floatToken(), v.Type().Bits()))
 		case reflect.Complex64, reflect.Complex128:
 			v.SetComplex(s.scanComplex(verb, v.Type().Bits()))
-		case reflect.Decimal64:
+		case decimalreflect.Decimal64:
 			if s.okVerb(verb, floatVerbs, "decimal64") {
 				s.SkipSpace()
 				s.notEOF()
 				tok := s.floatToken()
-				d, err := strconv.ParseDecimal(tok, 64)
+				d, err := decimalreflect.ParseDecimal(tok, 64)
 				if err != nil {
 					s.error(err)
 				}
-				v.SetDecimal(d)
+				decimalreflect.SetDecimal(v, d)
 			}
-		case reflect.Decimal128:
+		case decimalreflect.Decimal128:
 			if s.okVerb(verb, floatVerbs, "decimal128") {
 				s.SkipSpace()
 				s.notEOF()
 				tok := s.floatToken()
-				d, err := strconv.ParseDecimal(tok, 128)
+				d, err := decimalreflect.ParseDecimal(tok, 128)
 				if err != nil {
 					s.error(err)
 				}
-				v.SetDecimal(d)
+				decimalreflect.SetDecimal(v, d)
 			}
 		default:
 			s.errorString("can't scan type: " + val.Type().String())

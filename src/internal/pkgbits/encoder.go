@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"go/constant"
+	"internal/constdecimal"
 	"io"
 	"math/big"
 	"runtime"
@@ -352,7 +353,7 @@ func (w *Encoder) Value(val constant.Value) {
 	} else {
 		w.scalar(val)
 		if w.p.version.Has(ConstQuantum) && val.Kind() == constant.Float {
-			q, ok := constant.Quantum(val)
+			q, ok := constdecimal.Quantum(val)
 			if w.Bool(ok) {
 				w.Int64(int64(q))
 			}

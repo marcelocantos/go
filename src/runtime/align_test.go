@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	_ "unsafe"
 )
 
 // Check that 64-bit fields on which we apply atomic operations
@@ -87,6 +88,7 @@ func TestAtomicAlignment(t *testing.T) {
 	var info types.Info
 	info.Types = map[ast.Expr]types.TypeAndValue{}
 	conf := types.Config{Importer: importer.Default()}
+	allowStdDecimal(&conf)
 	_, err = conf.Check("runtime", fset, files, &info)
 	if err != nil {
 		t.Fatalf("typechecking runtime failed: %v", err)
@@ -198,3 +200,6 @@ func buildableFiles(t *testing.T, dir string) []string {
 	}
 	return pkg.GoFiles
 }
+
+//go:linkname allowStdDecimal go/types.allowDecimal
+func allowStdDecimal(conf *types.Config)

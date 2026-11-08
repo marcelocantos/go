@@ -120,6 +120,8 @@ type ImporterFrom interface {
 // A Config specifies the configuration for type checking.
 // The zero value for Config is a ready-to-use default configuration.
 type Config struct {
+	// allowDecimal permits standard-library implementation names without exposing them in Universe.
+	allowDecimal bool
 	// Context is the context used for resolving global identifiers. If nil, the
 	// type checker will initialize this field with a newly created context.
 	Context *Context
@@ -485,3 +487,6 @@ func (conf *Config) Check(path string, fset *token.FileSet, files []*ast.File, i
 	pkg := NewPackage(path, "")
 	return pkg, NewChecker(conf, fset, pkg, info).Files(files)
 }
+
+//go:linkname allowDecimal
+func allowDecimal(conf *Config) { conf.allowDecimal = true }

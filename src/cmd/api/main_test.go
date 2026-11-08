@@ -18,6 +18,7 @@ import (
 	"go/token"
 	"go/types"
 	"internal/buildcfg"
+	"internal/goexperiment"
 	"internal/testenv"
 	"io"
 	"log"
@@ -31,6 +32,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	_ "unsafe"
 )
 
 const verbose = false
@@ -112,11 +114,18 @@ func Check(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		nextFiles = next
+		for _, path := range next {
+			if filepath.Base(path) != "19787.txt" || goexperiment.Decimal {
+				nextFiles = append(nextFiles, path)
+			}
+		}
 	}
 
 	for _, c := range contexts {
 		c.Compiler = build.Default.Compiler
+		if goexperiment.Decimal {
+			c.ToolTags = append(c.ToolTags, "goexperiment.decimal")
+		}
 
 		// Include baseline goexperiment.* tool tags.
 		baseline, err := buildcfg.ParseGOEXPERIMENT(c.GOOS, c.GOARCH, "")
@@ -686,6 +695,8 @@ func (w *Walker) importFrom(fromPath, fromDir string, mode types.ImportMode) (*a
 		Importer:         w,
 		Sizes:            sizes,
 	}
+
+	allowStdDecimal(&conf)
 	tpkg, err := conf.Check(name, fset, files, nil)
 	if err != nil {
 		ctxt := "<no context>"
@@ -1252,3 +1263,6 @@ func (w *Walker) collectDeprecated() {
 func (w *Walker) isDeprecated(obj types.Object) bool {
 	return w.deprecated[obj.Pos()]
 }
+
+//go:linkname allowStdDecimal go/types.allowDecimal
+func allowStdDecimal(conf *types.Config)

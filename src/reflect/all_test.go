@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"go/token"
 	"internal/asan"
+	"internal/decimalreflect"
 	"internal/goarch"
 	"internal/msan"
 	"internal/race"
@@ -284,10 +285,10 @@ func TestSet(t *testing.T) {
 			v.SetFloat(256.25)
 		case Float64:
 			v.SetFloat(512.125)
-		case Decimal64:
-			v.SetDecimal(256.25)
-		case Decimal128:
-			v.SetDecimal(512.125)
+		case decimalreflect.Decimal64:
+			decimalreflect.SetDecimal(v, 256.25)
+		case decimalreflect.Decimal128:
+			decimalreflect.SetDecimal(v, 512.125)
 		case Complex64:
 			v.SetComplex(532.125 + 10i)
 		case Complex128:
@@ -332,7 +333,7 @@ func TestSetValue(t *testing.T) {
 			v.Set(ValueOf(float32(256.25)))
 		case Float64:
 			v.Set(ValueOf(512.125))
-		case Decimal64, Decimal128:
+		case decimalreflect.Decimal64, decimalreflect.Decimal128:
 			v.Set(decimalSetValues[v.Kind()])
 		case Complex64:
 			v.Set(ValueOf(complex64(532.125 + 10i)))
@@ -465,7 +466,7 @@ func TestCanIntUintFloatComplex(t *testing.T) {
 
 	for i, tc := range testCases {
 		v := ValueOf(tc.i)
-		got := [...]bool{v.CanInt(), v.CanUint(), v.CanFloat(), v.CanComplex(), v.CanDecimal()}
+		got := [...]bool{v.CanInt(), v.CanUint(), v.CanFloat(), v.CanComplex(), decimalreflect.CanDecimal(v)}
 
 		for j := range tc.want {
 			if got[j] != tc.want[j] {

@@ -1210,24 +1210,26 @@ func (v Value) Complex() complex128 {
 	panic(&ValueError{"reflect.Value.Complex", v.kind()})
 }
 
-// CanDecimal reports whether [Value.Decimal] can be used without panicking.
-func (v Value) CanDecimal() bool {
+// canDecimal reports whether decimalValue can be used without panicking.
+func canDecimal(v Value) bool {
 	switch v.kind() {
-	case Decimal64, Decimal128:
+	case decimal64Kind, decimal128Kind:
 		return true
 	default:
 		return false
 	}
 }
 
-// Decimal returns v's underlying value, as a decimal128.
-// It panics if v's Kind is not [Decimal64] or [Decimal128].
-func (v Value) Decimal() decimal128 {
+// decimalValue returns v's underlying value, as a decimal128.
+// It panics if v's Kind is not [decimal64Kind] or [decimal128Kind].
+//
+//go:linkname decimalValue
+func decimalValue(v Value) decimal128 {
 	k := v.kind()
 	switch k {
-	case Decimal64:
+	case decimal64Kind:
 		return decimal128(*(*decimal64)(v.ptr))
-	case Decimal128:
+	case decimal128Kind:
 		return *(*decimal128)(v.ptr)
 	}
 	panic(&ValueError{"reflect.Value.Decimal", v.kind()})
@@ -1691,10 +1693,10 @@ func (v Value) IsZero() bool {
 		return v.Uint() == 0
 	case Float32, Float64:
 		return v.Float() == 0
-	case Decimal64, Decimal128:
+	case decimal64Kind, decimal128Kind:
 		// By value, as for floats: every member of the zero cohort, of either
 		// sign, is zero, and only one of them has all bits clear.
-		return v.Decimal() == 0
+		return decimalValue(v) == 0
 	case Complex64, Complex128:
 		return v.Complex() == 0
 	case Array:
@@ -1847,9 +1849,9 @@ func (v Value) SetZero() {
 		*(*complex64)(v.ptr) = 0
 	case Complex128:
 		*(*complex128)(v.ptr) = 0
-	case Decimal64:
+	case decimal64Kind:
 		*(*uint64)(v.ptr) = 0
-	case Decimal128:
+	case decimal128Kind:
 		*(*[2]uint64)(v.ptr) = [2]uint64{}
 	case String:
 		*(*string)(v.ptr) = ""
@@ -2232,17 +2234,19 @@ func (v Value) SetComplex(x complex128) {
 	}
 }
 
-// SetDecimal sets v's underlying value to x.
-// It panics if v's Kind is not [Decimal64] or [Decimal128],
+// setDecimalValue sets v's underlying value to x.
+// It panics if v's Kind is not [decimal64Kind] or [decimal128Kind],
 // or if [Value.CanSet] returns false.
-func (v Value) SetDecimal(x decimal128) {
+//
+//go:linkname setDecimalValue
+func setDecimalValue(v Value, x decimal128) {
 	v.mustBeAssignable()
 	switch k := v.kind(); k {
 	default:
 		panic(&ValueError{"reflect.Value.SetDecimal", v.kind()})
-	case Decimal64:
+	case decimal64Kind:
 		*(*decimal64)(v.ptr) = decimal64(x)
-	case Decimal128:
+	case decimal128Kind:
 		*(*decimal128)(v.ptr) = x
 	}
 }
@@ -3339,7 +3343,7 @@ func (v Value) Equal(u Value) bool {
 		return v.Float() == u.Float()
 	case Complex64, Complex128:
 		return v.Complex() == u.Complex()
-	case Decimal64, Decimal128:
+	case decimal64Kind, decimal128Kind:
 		return v.typ().Equal(v.ptr, u.ptr)
 	case String:
 		return v.String() == u.String()
@@ -3386,7 +3390,7 @@ func convertOp(dst, src *abi.Type) func(Value, Type) Value {
 			return cvtInt
 		case Float32, Float64:
 			return cvtIntFloat
-		case Decimal64, Decimal128:
+		case decimal64Kind, decimal128Kind:
 			return cvtIntDecimal
 		case String:
 			return cvtIntString
@@ -3398,7 +3402,7 @@ func convertOp(dst, src *abi.Type) func(Value, Type) Value {
 			return cvtUint
 		case Float32, Float64:
 			return cvtUintFloat
-		case Decimal64, Decimal128:
+		case decimal64Kind, decimal128Kind:
 			return cvtUintDecimal
 		case String:
 			return cvtUintString
@@ -3412,11 +3416,11 @@ func convertOp(dst, src *abi.Type) func(Value, Type) Value {
 			return cvtFloatUint
 		case Float32, Float64:
 			return cvtFloat
-		case Decimal64, Decimal128:
+		case decimal64Kind, decimal128Kind:
 			return cvtFloatDecimal
 		}
 
-	case Decimal64, Decimal128:
+	case decimal64Kind, decimal128Kind:
 		switch Kind(dst.Kind()) {
 		case Int, Int8, Int16, Int32, Int64:
 			return cvtDecimalInt
@@ -3424,7 +3428,7 @@ func convertOp(dst, src *abi.Type) func(Value, Type) Value {
 			return cvtDecimalUint
 		case Float32, Float64:
 			return cvtDecimalFloat
-		case Decimal64, Decimal128:
+		case decimal64Kind, decimal128Kind:
 			return cvtDecimal
 		}
 
@@ -3649,22 +3653,22 @@ func cvtFloatDecimal(v Value, t Type) Value {
 
 // convertOp: decimalXX -> decimalXX
 func cvtDecimal(v Value, t Type) Value {
-	return makeDecimal(v.flag.ro(), v.Decimal(), t)
+	return makeDecimal(v.flag.ro(), decimalValue(v), t)
 }
 
 // convertOp: decimalXX -> intXX
 func cvtDecimalInt(v Value, t Type) Value {
-	return makeInt(v.flag.ro(), uint64(int64(v.Decimal())), t)
+	return makeInt(v.flag.ro(), uint64(int64(decimalValue(v))), t)
 }
 
 // convertOp: decimalXX -> uintXX
 func cvtDecimalUint(v Value, t Type) Value {
-	return makeInt(v.flag.ro(), uint64(v.Decimal()), t)
+	return makeInt(v.flag.ro(), uint64(decimalValue(v)), t)
 }
 
 // convertOp: decimalXX -> floatXX
 func cvtDecimalFloat(v Value, t Type) Value {
-	return makeFloat(v.flag.ro(), float64(v.Decimal()), t)
+	return makeFloat(v.flag.ro(), float64(decimalValue(v)), t)
 }
 
 // convertOp: intXX -> string

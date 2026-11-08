@@ -5,6 +5,7 @@
 package fmt
 
 import (
+	"internal/decimalreflect"
 	"strconv"
 	"unicode/utf8"
 )
@@ -602,7 +603,7 @@ func (f *fmt) fmtDecimal(d decimal128, size int, verb rune, prec int) {
 		prec = f.prec
 	}
 	// Format number, reserving space for leading + sign if needed.
-	num := strconv.AppendDecimal(f.intbuf[:1], d, byte(verb), prec, size)
+	num := decimalreflect.AppendDecimal(f.intbuf[:1], d, byte(verb), prec, size)
 	if num[1] == '-' || num[1] == '+' {
 		num = num[1:]
 	} else {

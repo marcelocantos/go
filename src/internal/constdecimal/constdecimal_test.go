@@ -98,11 +98,11 @@ func TestRoundAndDecode(t *testing.T) {
 	if !ok {
 		t.Fatal("Round failed")
 	}
-	if e, ok := constant.Quantum(v); !ok || e != -15 || constant.Compare(v, token.NEQ, constant.MakeInt64(1)) {
+	if e, ok := constdecimal.Quantum(v); !ok || e != -15 || constant.Compare(v, token.NEQ, constant.MakeInt64(1)) {
 		t.Errorf("Round(1.0000000000000005) = %v with quantum %d, %v; want 1 with quantum -15", v, e, ok)
 	}
 	v, _ = constdecimal.Round(neg(lit("0.00")), constdecimal.Decimal64)
-	if e, ok := constant.Quantum(v); !ok || e != -2 || constant.Sign(v) != 0 {
+	if e, ok := constdecimal.Quantum(v); !ok || e != -2 || constant.Sign(v) != 0 {
 		t.Errorf("Round(-0.00) = %v with quantum %d, %v; want 0 with quantum -2", v, e, ok)
 	}
 }

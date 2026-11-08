@@ -22,6 +22,14 @@ func (check *Checker) ident(x *operand, e *ast.Ident, wantType bool) {
 	x.expr = e
 
 	scope, obj := check.lookupScope(e.Name)
+	if obj == nil && check.conf.allowDecimal {
+		switch e.Name {
+		case "decimal64":
+			obj = NewTypeName(nopos, nil, "decimal64", decimal64Type)
+		case "decimal128":
+			obj = NewTypeName(nopos, nil, "decimal128", decimal128Type)
+		}
+	}
 	switch obj {
 	case nil:
 		if e.Name == "_" {

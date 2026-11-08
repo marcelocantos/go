@@ -21,9 +21,11 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"internal/buildcfg"
 	"log"
 	"os"
 	"strings"
+	_ "unsafe"
 
 	"golang.org/x/tools/go/gcexportdata"
 )
@@ -47,13 +49,14 @@ func usage() {
 
 // config defines the JSON schema of the file passed by 'go list -export'.
 type config struct {
-	ImportPath  string            // package path
-	GoVersion   string            // minimum required Go version, such as "go1.21.0"
-	GoFiles     []string          // absolute paths to package source files
-	ImportMap   map[string]string // maps import path to package path
-	PackageFile map[string]string // maps package path to file of type information
-	Output      string            // where to write file of type information
-	TrimPath    string            // rewrites for source file paths, as in -trimpath
+	StandardPackage bool              // standard-library implementation, as for compiler -std
+	ImportPath      string            // package path
+	GoVersion       string            // minimum required Go version, such as "go1.21.0"
+	GoFiles         []string          // absolute paths to package source files
+	ImportMap       map[string]string // maps import path to package path
+	PackageFile     map[string]string // maps package path to file of type information
+	Output          string            // where to write file of type information
+	TrimPath        string            // rewrites for source file paths, as in -trimpath
 }
 
 func main() {
@@ -101,6 +104,9 @@ func export(configFile string) error {
 		Importer:  makeTypesImporter(cfg, fset),
 		Sizes:     types.SizesFor("gc", build.Default.GOARCH),
 		GoVersion: cfg.GoVersion,
+	}
+	if cfg.StandardPackage || buildcfg.Experiment.Decimal {
+		allowDecimal(tc)
 	}
 	pkg, err := tc.Check(cfg.ImportPath, fset, files, nil)
 	if err != nil {
@@ -165,3 +171,6 @@ func makeTypesImporter(cfg *config, fset *token.FileSet) types.Importer {
 type importerFunc func(string) (*types.Package, error)
 
 func (f importerFunc) Import(path string) (*types.Package, error) { return f(path) }
+
+//go:linkname allowDecimal go/types.allowDecimal
+func allowDecimal(conf *types.Config)

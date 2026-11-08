@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"unicode/utf8"
+	_ "unsafe"
 )
 
 //go:generate stringer -type Kind
@@ -1477,7 +1478,9 @@ const maxQuantum = 1 << 40
 // the largest exponent no greater than the difference at which the quotient
 // is exact. Other values, including complex values and the results of
 // inexact division, have none.
-func Quantum(x Value) (exp int, ok bool) {
+//
+//go:linkname decimalQuantum
+func decimalQuantum(x Value) (exp int, ok bool) {
 	q := quantumOf(x)
 	return int(q.exp), q.ok
 }

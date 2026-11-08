@@ -329,8 +329,8 @@ const (
 	UnsafePointer
 
 	// The decimal kinds are appended, so the values above keep their Go 1 values.
-	Decimal64
-	Decimal128
+	decimal64Kind
+	decimal128Kind
 )
 
 // Ptr is the old name for the [Pointer] kind.
@@ -496,13 +496,13 @@ func (m Method) IsExported() bool {
 
 // String returns the name of k.
 //
-// While GOEXPERIMENT=decimal is off, Decimal64 and Decimal128 are not yet
+// While GOEXPERIMENT=decimal is off, decimal64Kind and decimal128Kind are not yet
 // part of the language, and String gives them the name of an unknown kind,
 // "kind27" and "kind28", as an earlier release would. A program that checks
 // for kinds it doesn't know (as some encoders do at start-up, to detect a
 // newly added kind) is then unaffected until the experiment is on.
 func (k Kind) String() string {
-	if !goexperiment.Decimal && (k == Decimal64 || k == Decimal128) {
+	if !goexperiment.Decimal && (k == decimal64Kind || k == decimal128Kind) {
 		return "kind" + strconv.Itoa(int(k))
 	}
 	if uint(k) < uint(len(kindNames)) {
@@ -512,35 +512,35 @@ func (k Kind) String() string {
 }
 
 var kindNames = []string{
-	Invalid:       "invalid",
-	Bool:          "bool",
-	Int:           "int",
-	Int8:          "int8",
-	Int16:         "int16",
-	Int32:         "int32",
-	Int64:         "int64",
-	Uint:          "uint",
-	Uint8:         "uint8",
-	Uint16:        "uint16",
-	Uint32:        "uint32",
-	Uint64:        "uint64",
-	Uintptr:       "uintptr",
-	Float32:       "float32",
-	Float64:       "float64",
-	Decimal64:     "decimal64",
-	Decimal128:    "decimal128",
-	Complex64:     "complex64",
-	Complex128:    "complex128",
-	Array:         "array",
-	Chan:          "chan",
-	Func:          "func",
-	Interface:     "interface",
-	Map:           "map",
-	Pointer:       "ptr",
-	Slice:         "slice",
-	String:        "string",
-	Struct:        "struct",
-	UnsafePointer: "unsafe.Pointer",
+	Invalid:        "invalid",
+	Bool:           "bool",
+	Int:            "int",
+	Int8:           "int8",
+	Int16:          "int16",
+	Int32:          "int32",
+	Int64:          "int64",
+	Uint:           "uint",
+	Uint8:          "uint8",
+	Uint16:         "uint16",
+	Uint32:         "uint32",
+	Uint64:         "uint64",
+	Uintptr:        "uintptr",
+	Float32:        "float32",
+	Float64:        "float64",
+	decimal64Kind:  "decimal64",
+	decimal128Kind: "decimal128",
+	Complex64:      "complex64",
+	Complex128:     "complex128",
+	Array:          "array",
+	Chan:           "chan",
+	Func:           "func",
+	Interface:      "interface",
+	Map:            "map",
+	Pointer:        "ptr",
+	Slice:          "slice",
+	String:         "string",
+	Struct:         "struct",
+	UnsafePointer:  "unsafe.Pointer",
 }
 
 // resolveNameOff resolves a name offset from a base pointer.
@@ -1670,7 +1670,7 @@ func haveIdenticalUnderlyingType(T, V *abi.Type, cmpTags bool) bool {
 
 	// Non-composite types of equal kind have same underlying type
 	// (the predefined instance of the type).
-	if Bool <= kind && kind <= Complex128 || kind == String || kind == UnsafePointer || kind == Decimal64 || kind == Decimal128 {
+	if Bool <= kind && kind <= Complex128 || kind == String || kind == UnsafePointer || kind == decimal64Kind || kind == decimal128Kind {
 		return true
 	}
 
@@ -2082,7 +2082,7 @@ func isReflexive(t *abi.Type) bool {
 	switch Kind(t.Kind()) {
 	case Bool, Int, Int8, Int16, Int32, Int64, Uint, Uint8, Uint16, Uint32, Uint64, Uintptr, Chan, Pointer, String, UnsafePointer:
 		return true
-	case Float32, Float64, Decimal64, Decimal128, Complex64, Complex128, Interface:
+	case Float32, Float64, decimal64Kind, decimal128Kind, Complex64, Complex128, Interface:
 		return false
 	case Array:
 		tt := (*arrayType)(unsafe.Pointer(t))
@@ -2106,7 +2106,7 @@ func needKeyUpdate(t *abi.Type) bool {
 	switch Kind(t.Kind()) {
 	case Bool, Int, Int8, Int16, Int32, Int64, Uint, Uint8, Uint16, Uint32, Uint64, Uintptr, Chan, Pointer, UnsafePointer:
 		return false
-	case Float32, Float64, Decimal64, Decimal128, Complex64, Complex128, Interface, String:
+	case Float32, Float64, decimal64Kind, decimal128Kind, Complex64, Complex128, Interface, String:
 		// Float/decimal keys can be updated from +0 to -0.
 		// String keys can be updated to use a smaller backing store.
 		// Interfaces might have floats, decimals, or strings in them.

@@ -50,6 +50,7 @@ import (
 	"encoding"
 	"encoding/base64"
 	"fmt"
+	"internal/decimalreflect"
 	"math"
 	"reflect"
 	"slices"
@@ -351,7 +352,7 @@ func isEmptyValue(v reflect.Value) bool {
 		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
 		reflect.Float32, reflect.Float64,
-		reflect.Decimal64, reflect.Decimal128,
+		decimalreflect.Decimal64, decimalreflect.Decimal128,
 		reflect.Interface, reflect.Pointer:
 		return v.IsZero()
 	}
@@ -442,9 +443,9 @@ func newTypeEncoder(t reflect.Type, allowAddr bool) encoderFunc {
 		return float32Encoder
 	case reflect.Float64:
 		return float64Encoder
-	case reflect.Decimal64:
+	case decimalreflect.Decimal64:
 		return decimal64Encoder
-	case reflect.Decimal128:
+	case decimalreflect.Decimal128:
 		return decimal128Encoder
 	case reflect.String:
 		return stringEncoder
@@ -616,7 +617,7 @@ func cleanDecimalExp(s string) string {
 }
 
 func decimal64Encoder(e *encodeState, v reflect.Value, opts encOpts) {
-	s := cleanDecimalExp(strconv.FormatDecimal(v.Decimal(), 'g', -1, 64))
+	s := cleanDecimalExp(decimalreflect.FormatDecimal(decimalreflect.Decimal(v), 'g', -1, 64))
 	if s == "NaN" || s == "+Inf" || s == "-Inf" {
 		e.error(&UnsupportedValueError{v, s})
 	}
@@ -628,7 +629,7 @@ func decimal64Encoder(e *encodeState, v reflect.Value, opts encOpts) {
 }
 
 func decimal128Encoder(e *encodeState, v reflect.Value, opts encOpts) {
-	s := cleanDecimalExp(strconv.FormatDecimal(v.Decimal(), 'g', -1, 128))
+	s := cleanDecimalExp(decimalreflect.FormatDecimal(decimalreflect.Decimal(v), 'g', -1, 128))
 	if s == "NaN" || s == "+Inf" || s == "-Inf" {
 		e.error(&UnsupportedValueError{v, s})
 	}
@@ -1193,7 +1194,7 @@ func typeFields(t reflect.Type) structFields {
 						reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 						reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
 						reflect.Float32, reflect.Float64,
-						reflect.Decimal64, reflect.Decimal128,
+						decimalreflect.Decimal64, decimalreflect.Decimal128,
 						reflect.String:
 						quoted = true
 					}

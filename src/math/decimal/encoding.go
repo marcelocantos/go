@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build goexperiment.decimal
+
 package decimal
 
 import (
 	"internal/bid"
-	"math"
+	impl "internal/decimal"
 )
 
 // Representation identifies the stored representation of a decimal value.
@@ -31,71 +33,36 @@ const (
 // If the native representation uses DPD, this converts the value to canonical
 // BID, preserving its sign, quantum and NaN payload. If it uses BID, every
 // encoding bit is preserved. For exact stored bits, use math.Decimal64bits.
-func BID64bits(d decimal64) uint64 {
-	return bid.FromNative64(math.Decimal64bits(d) ^ bid.NativeZero64)
-}
+func BID64bits(d decimal64) uint64 { return impl.BID64bits(d) }
 
 // BID64frombits returns the decimal64 denoted by the IEEE 754 BID encoding b.
 // It applies the native zero-value XOR. If the native representation uses DPD,
 // it converts to canonical DPD; non-canonical BID encodings are interpreted as
 // their IEEE values. If it uses BID, every encoding bit is preserved.
-func BID64frombits(b uint64) decimal64 {
-	return math.Decimal64frombits(bid.ToNative64(b) ^ bid.NativeZero64)
-}
+func BID64frombits(b uint64) decimal64 { return impl.BID64frombits(b) }
 
 // BID128bits is BID64bits for decimal128. It returns the high word first,
 // independently of the target's byte order.
-func BID128bits(d decimal128) (hi, lo uint64) {
-	hi, lo = math.Decimal128bits(d)
-	x := bid.FromNative128(bid.Uint128{Hi: hi ^ bid.NativeZero128Hi, Lo: lo})
-	return x.Hi, x.Lo
-}
+func BID128bits(d decimal128) (hi, lo uint64) { return impl.BID128bits(d) }
 
 // BID128frombits is BID64frombits for decimal128, with the high word first.
-func BID128frombits(hi, lo uint64) decimal128 {
-	x := bid.ToNative128(bid.Uint128{Hi: hi, Lo: lo})
-	return math.Decimal128frombits(x.Hi^bid.NativeZero128Hi, x.Lo)
-}
+func BID128frombits(hi, lo uint64) decimal128 { return impl.BID128frombits(hi, lo) }
 
 // DPD64bits returns the IEEE 754 DPD encoding of d, without the zero-value XOR.
 // If the native representation uses BID, this converts the value to canonical
 // DPD, preserving its sign, quantum and NaN payload. If it uses DPD, every
 // encoding bit is preserved. For exact stored bits, use math.Decimal64bits.
-func DPD64bits(d decimal64) uint64 {
-	if bid.NativeDPD {
-		return math.Decimal64bits(d) ^ bid.NativeZero64
-	}
-	return bid.DPDFromBID64(BID64bits(d))
-}
+func DPD64bits(d decimal64) uint64 { return impl.DPD64bits(d) }
 
 // DPD64frombits returns the decimal64 denoted by the IEEE 754 DPD encoding b.
 // It applies the native zero-value XOR. If the native representation uses BID,
 // it converts to canonical BID; redundant DPD declets and reserved bits are
 // interpreted as their IEEE values. If it uses DPD, every encoding bit survives.
-func DPD64frombits(b uint64) decimal64 {
-	if bid.NativeDPD {
-		return math.Decimal64frombits(b ^ bid.NativeZero64)
-	}
-	return BID64frombits(bid.BIDFromDPD64(b))
-}
+func DPD64frombits(b uint64) decimal64 { return impl.DPD64frombits(b) }
 
 // DPD128bits is DPD64bits for decimal128. It returns the high word first,
 // independently of the target's byte order.
-func DPD128bits(d decimal128) (hi, lo uint64) {
-	if bid.NativeDPD {
-		hi, lo = math.Decimal128bits(d)
-		return hi ^ bid.NativeZero128Hi, lo
-	}
-	hi, lo = BID128bits(d)
-	x := bid.DPDFromBID128(bid.Uint128{Hi: hi, Lo: lo})
-	return x.Hi, x.Lo
-}
+func DPD128bits(d decimal128) (hi, lo uint64) { return impl.DPD128bits(d) }
 
 // DPD128frombits is DPD64frombits for decimal128, with the high word first.
-func DPD128frombits(hi, lo uint64) decimal128 {
-	if bid.NativeDPD {
-		return math.Decimal128frombits(hi^bid.NativeZero128Hi, lo)
-	}
-	x := bid.BIDFromDPD128(bid.Uint128{Hi: hi, Lo: lo})
-	return BID128frombits(x.Hi, x.Lo)
-}
+func DPD128frombits(hi, lo uint64) decimal128 { return impl.DPD128frombits(hi, lo) }

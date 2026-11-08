@@ -6,6 +6,7 @@ package reflect_test
 
 import (
 	"fmt"
+	"internal/abi"
 	"internal/goexperiment"
 	"reflect"
 	"testing"
@@ -20,13 +21,13 @@ func TestDecimalKindNames(t *testing.T) {
 	if !goexperiment.Decimal {
 		want64, want128 = "kind27", "kind28"
 	}
-	if got := reflect.Decimal64.String(); got != want64 {
+	if got := reflect.Kind(abi.Decimal64).String(); got != want64 {
 		t.Errorf("Decimal64.String() = %q, want %q", got, want64)
 	}
-	if got := reflect.Decimal128.String(); got != want128 {
+	if got := reflect.Kind(abi.Decimal128).String(); got != want128 {
 		t.Errorf("Decimal128.String() = %q, want %q", got, want128)
 	}
-	if got := reflect.Kind(reflect.Decimal128 + 1).String(); got != "kind29" {
+	if got := reflect.Kind(reflect.Kind(abi.Decimal128) + 1).String(); got != "kind29" {
 		t.Errorf("Kind(Decimal128+1).String() = %q, want %q", got, "kind29")
 	}
 
@@ -34,7 +35,7 @@ func TestDecimalKindNames(t *testing.T) {
 	for _, tt := range []struct {
 		k    reflect.Kind
 		want string
-	}{{reflect.Decimal64, want64}, {reflect.Decimal128, want128}} {
+	}{{reflect.Kind(abi.Decimal64), want64}, {reflect.Kind(abi.Decimal128), want128}} {
 		if got := fmt.Sprint(tt.k); got != tt.want {
 			t.Errorf("Sprint(Kind(%d)) = %q, want %q", int(tt.k), got, tt.want)
 		}

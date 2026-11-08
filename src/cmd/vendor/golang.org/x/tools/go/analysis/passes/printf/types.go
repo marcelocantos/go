@@ -20,6 +20,13 @@ var errorType = types.Universe.Lookup("error").Type().Underlying().(*types.Inter
 //
 // If arg is a type parameter, the verb t must be appropriate for every type in
 // the type parameter type set.
+// The decimal kinds follow the existing untyped kinds. Their public names
+// are experimental; the analyzer also reads private standard-library models.
+const (
+	decimal64BasicKind  = types.UntypedNil + 1
+	decimal128BasicKind = decimal64BasicKind + 1
+)
+
 func matchArgType(pass *analysis.Pass, t printfArgType, arg ast.Expr) (reason string, ok bool) {
 	// %v, %T accept any argument type.
 	if t == anyType {
@@ -253,8 +260,8 @@ func (m *argMatcher) match(typ types.Type, topLevel bool) bool {
 		case types.UntypedFloat,
 			types.Float32,
 			types.Float64,
-			types.Decimal64,
-			types.Decimal128:
+			decimal64BasicKind,
+			decimal128BasicKind:
 			return m.t&argFloat != 0
 
 		case types.UntypedComplex,

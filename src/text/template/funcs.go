@@ -7,6 +7,7 @@ package template
 import (
 	"errors"
 	"fmt"
+	"internal/decimalreflect"
 	"io"
 	"net/url"
 	"reflect"
@@ -482,7 +483,7 @@ func basicKind(v reflect.Value) (kind, error) {
 		return uintKind, nil
 	case reflect.Float32, reflect.Float64:
 		return floatKind, nil
-	case reflect.Decimal64, reflect.Decimal128:
+	case decimalreflect.Decimal64, decimalreflect.Decimal128:
 		return decimalKind, nil
 	case reflect.Complex64, reflect.Complex128:
 		return complexKind, nil
@@ -550,7 +551,7 @@ func eq(arg1 reflect.Value, arg2 ...reflect.Value) (bool, error) {
 			case intKind:
 				truth = arg1.Int() == arg.Int()
 			case decimalKind:
-				truth = arg1.Decimal() == arg.Decimal()
+				truth = decimalreflect.Decimal(arg1) == decimalreflect.Decimal(arg)
 			case stringKind:
 				truth = arg1.String() == arg.String()
 			case uintKind:
@@ -615,7 +616,7 @@ func lt(arg1, arg2 reflect.Value) (bool, error) {
 		case intKind:
 			truth = arg1.Int() < arg2.Int()
 		case decimalKind:
-			truth = arg1.Decimal() < arg2.Decimal()
+			truth = decimalreflect.Decimal(arg1) < decimalreflect.Decimal(arg2)
 		case stringKind:
 			truth = arg1.String() < arg2.String()
 		case uintKind:

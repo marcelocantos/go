@@ -9,9 +9,10 @@ package gob
 import (
 	"encoding"
 	"encoding/binary"
+	"internal/decimal"
+	"internal/decimalreflect"
 	"math"
 	"math/bits"
-	"math/decimal"
 	"reflect"
 	"sync"
 )
@@ -251,7 +252,7 @@ func encDecimal64(i *encInstr, state *encoderState, v reflect.Value) {
 // decimal128 values are transmitted as the two uint64 words of their BID
 // encoding, most significant first.
 func encDecimal128(i *encInstr, state *encoderState, v reflect.Value) {
-	hi, lo := decimal.BID128bits(v.Decimal())
+	hi, lo := decimal.BID128bits(decimalreflect.Decimal(v))
 	zeroHi, zeroLo := decimal.BID128bits(0)
 	if hi != zeroHi || lo != zeroLo || state.sendZero {
 		state.update(i)
@@ -486,25 +487,25 @@ func (enc *Encoder) encodeGobEncoder(b *encBuffer, ut *userTypeInfo, v reflect.V
 }
 
 var encOpTable = [...]encOp{
-	reflect.Bool:       encBool,
-	reflect.Int:        encInt,
-	reflect.Int8:       encInt,
-	reflect.Int16:      encInt,
-	reflect.Int32:      encInt,
-	reflect.Int64:      encInt,
-	reflect.Uint:       encUint,
-	reflect.Uint8:      encUint,
-	reflect.Uint16:     encUint,
-	reflect.Uint32:     encUint,
-	reflect.Uint64:     encUint,
-	reflect.Uintptr:    encUint,
-	reflect.Float32:    encFloat,
-	reflect.Float64:    encFloat,
-	reflect.Complex64:  encComplex,
-	reflect.Complex128: encComplex,
-	reflect.Decimal64:  encDecimal64,
-	reflect.Decimal128: encDecimal128,
-	reflect.String:     encString,
+	reflect.Bool:              encBool,
+	reflect.Int:               encInt,
+	reflect.Int8:              encInt,
+	reflect.Int16:             encInt,
+	reflect.Int32:             encInt,
+	reflect.Int64:             encInt,
+	reflect.Uint:              encUint,
+	reflect.Uint8:             encUint,
+	reflect.Uint16:            encUint,
+	reflect.Uint32:            encUint,
+	reflect.Uint64:            encUint,
+	reflect.Uintptr:           encUint,
+	reflect.Float32:           encFloat,
+	reflect.Float64:           encFloat,
+	reflect.Complex64:         encComplex,
+	reflect.Complex128:        encComplex,
+	decimalreflect.Decimal64:  encDecimal64,
+	decimalreflect.Decimal128: encDecimal128,
+	reflect.String:            encString,
 }
 
 // encOpFor returns (a pointer to) the encoding op for the base type under rt and

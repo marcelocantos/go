@@ -790,7 +790,7 @@ func TestQuantum(t *testing.T) {
 		{"float64 has none", MakeFloat64(1.5), none},
 	} {
 		got := none
-		if e, ok := Quantum(test.v); ok {
+		if e, ok := decimalQuantum(test.v); ok {
 			got = fmt.Sprint(e)
 		}
 		if got != test.want {

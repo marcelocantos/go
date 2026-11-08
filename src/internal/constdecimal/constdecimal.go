@@ -173,7 +173,7 @@ func parts(x constant.Value, w Width) (neg bool, coeff *big.Int, exp int, sticky
 	}
 	precision, minExp, emax := w.precision(), w.minExp(), w.emax()
 	neg = constant.Sign(v) < 0
-	quantum, hasQuantum := constant.Quantum(v)
+	quantum, hasQuantum := Quantum(v)
 
 	// go/constant holds a value between 2^-4096 and 2^4096 as a fraction,
 	// which is exact, and any other as a 512-bit float.

@@ -9,11 +9,12 @@ package gob
 import (
 	"encoding"
 	"errors"
+	"internal/decimal"
+	"internal/decimalreflect"
 	"internal/saferio"
 	"io"
 	"math"
 	"math/bits"
-	"math/decimal"
 	"reflect"
 	"unsafe"
 )
@@ -372,7 +373,7 @@ func decDecimal64(i *decInstr, state *decoderState, value reflect.Value) {
 func decDecimal128(i *decInstr, state *decoderState, value reflect.Value) {
 	hi := state.decodeUint()
 	lo := state.decodeUint()
-	value.SetDecimal(decimal.BID128frombits(hi, lo))
+	decimalreflect.SetDecimal(value, decimal.BID128frombits(hi, lo))
 }
 
 // decUint8Slice decodes a byte slice and stores in value a slice header
@@ -818,22 +819,22 @@ func (dec *Decoder) ignoreGobDecoder(state *decoderState) {
 
 // Index by Go types.
 var decOpTable = [...]decOp{
-	reflect.Bool:       decBool,
-	reflect.Int8:       decInt8,
-	reflect.Int16:      decInt16,
-	reflect.Int32:      decInt32,
-	reflect.Int64:      decInt64,
-	reflect.Uint8:      decUint8,
-	reflect.Uint16:     decUint16,
-	reflect.Uint32:     decUint32,
-	reflect.Uint64:     decUint64,
-	reflect.Float32:    decFloat32,
-	reflect.Float64:    decFloat64,
-	reflect.Complex64:  decComplex64,
-	reflect.Complex128: decComplex128,
-	reflect.Decimal64:  decDecimal64,
-	reflect.Decimal128: decDecimal128,
-	reflect.String:     decString,
+	reflect.Bool:              decBool,
+	reflect.Int8:              decInt8,
+	reflect.Int16:             decInt16,
+	reflect.Int32:             decInt32,
+	reflect.Int64:             decInt64,
+	reflect.Uint8:             decUint8,
+	reflect.Uint16:            decUint16,
+	reflect.Uint32:            decUint32,
+	reflect.Uint64:            decUint64,
+	reflect.Float32:           decFloat32,
+	reflect.Float64:           decFloat64,
+	reflect.Complex64:         decComplex64,
+	reflect.Complex128:        decComplex128,
+	decimalreflect.Decimal64:  decDecimal64,
+	decimalreflect.Decimal128: decDecimal128,
+	reflect.String:            decString,
 }
 
 // Indexed by gob types.  tComplex will be added during type.init().
@@ -1073,9 +1074,9 @@ func (dec *Decoder) compatibleType(fr reflect.Type, fw typeId, inProgress map[re
 		return fw == tFloat
 	case reflect.Complex64, reflect.Complex128:
 		return fw == tComplex
-	case reflect.Decimal64:
+	case decimalreflect.Decimal64:
 		return fw == tDecimal64
-	case reflect.Decimal128:
+	case decimalreflect.Decimal128:
 		return fw == tDecimal128
 	case reflect.String:
 		return fw == tString

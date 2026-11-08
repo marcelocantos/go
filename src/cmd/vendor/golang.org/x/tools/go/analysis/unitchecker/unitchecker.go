@@ -37,6 +37,7 @@ import (
 	"go/scanner"
 	"go/token"
 	"go/types"
+	"internal/buildcfg"
 	"log"
 	"os"
 	"path/filepath"
@@ -45,6 +46,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	_ "unsafe"
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/analysis"
@@ -58,6 +60,7 @@ import (
 // It is provided to the tool in a JSON-encoded file
 // whose name ends with ".cfg".
 type Config struct {
+	StandardPackage           bool   // standard-library implementation, as for compiler -std
 	ID                        string // e.g. "fmt [fmt.test]"
 	Compiler                  string // (unused)
 	Dir                       string // (unused)
@@ -335,6 +338,9 @@ func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]re
 		FileVersions: make(map[*ast.File]string),
 	}
 
+	if cfg.StandardPackage || buildcfg.Experiment.Decimal {
+		allowDecimal(tc)
+	}
 	pkg, err := tc.Check(cfg.ImportPath, fset, files, info)
 	if err != nil {
 		return nil, err
@@ -614,3 +620,6 @@ func writeVetxFile(fset *token.FileSet, pkg *types.Package, filename string, fac
 	binary.LittleEndian.PutUint32(data[8:12], uint32(factsLen))
 	return os.WriteFile(filename, data, 0666)
 }
+
+//go:linkname allowDecimal go/types.allowDecimal
+func allowDecimal(conf *types.Config)

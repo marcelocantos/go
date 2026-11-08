@@ -910,7 +910,7 @@ checked:
 		// and its result takes the IEEE 754 preferred exponent.
 		if isDecimal(x.typ()) {
 			w := constdecimal.Decimal64
-			if x.typ().Underlying().(*Basic).kind == Decimal128 {
+			if x.typ().Underlying().(*Basic).kind == decimal128Kind {
 				w = constdecimal.Decimal128
 			}
 			v, ok := constdecimal.BinaryOp(x.val, op, y.val, w)

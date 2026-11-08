@@ -1530,13 +1530,14 @@ func (b *Builder) loadCachedCompiledGoFiles(a *Action) error {
 
 // vetConfig is the configuration passed to vet describing a single package.
 type vetConfig struct {
-	ID           string   // package ID (example: "fmt [fmt.test]")
-	Compiler     string   // compiler name (gc, gccgo)
-	Dir          string   // directory containing package
-	ImportPath   string   // canonical import path ("package path")
-	GoFiles      []string // absolute paths to package source files
-	NonGoFiles   []string // absolute paths to package non-Go files
-	IgnoredFiles []string // absolute paths to ignored source files
+	StandardPackage bool     // standard-library implementation, as for compiler -std
+	ID              string   // package ID (example: "fmt [fmt.test]")
+	Compiler        string   // compiler name (gc, gccgo)
+	Dir             string   // directory containing package
+	ImportPath      string   // canonical import path ("package path")
+	GoFiles         []string // absolute paths to package source files
+	NonGoFiles      []string // absolute paths to package non-Go files
+	IgnoredFiles    []string // absolute paths to ignored source files
 
 	Module      *analysis.Module  // module information, if any
 	ImportMap   map[string]string // map import path in source code to package path
@@ -1554,13 +1555,14 @@ type vetConfig struct {
 
 // exportConfig is the configuration passed to the export tool describing a single package.
 type exportConfig struct {
-	ImportPath  string            // package path
-	GoVersion   string            // minimum required Go version, such as "go1.21.0"
-	GoFiles     []string          // absolute paths to package source files
-	ImportMap   map[string]string // maps import path to package path
-	PackageFile map[string]string // maps package path to file of type information
-	Output      string            // where to write file of type information
-	TrimPath    string            // rewrites for source file paths, as in -trimpath
+	StandardPackage bool              // standard-library implementation, as for compiler -std
+	ImportPath      string            // package path
+	GoVersion       string            // minimum required Go version, such as "go1.21.0"
+	GoFiles         []string          // absolute paths to package source files
+	ImportMap       map[string]string // maps import path to package path
+	PackageFile     map[string]string // maps package path to file of type information
+	Output          string            // where to write file of type information
+	TrimPath        string            // rewrites for source file paths, as in -trimpath
 }
 
 // analysisModuleFromModulePublic converts a modinfo.ModulePublic to a analysis.Module.
@@ -1604,16 +1606,17 @@ func buildVetConfig(a *Action, srcfiles []string, vetDeps []*Action) {
 	// so that we can reformat them relative to the directory
 	// in which the go command is invoked.
 	vcfg := &vetConfig{
-		ID:           a.Package.ImportPath,
-		Compiler:     cfg.BuildToolchainName,
-		Dir:          a.Package.Dir,
-		GoFiles:      actualFiles(mkAbsFiles(a.Package.Dir, gofiles)),
-		NonGoFiles:   actualFiles(mkAbsFiles(a.Package.Dir, nongofiles)),
-		IgnoredFiles: actualFiles(mkAbsFiles(a.Package.Dir, ignored)),
-		ImportPath:   a.Package.ImportPath,
-		ImportMap:    make(map[string]string),
-		PackageFile:  make(map[string]string),
-		Standard:     make(map[string]bool),
+		StandardPackage: a.Package.Standard,
+		ID:              a.Package.ImportPath,
+		Compiler:        cfg.BuildToolchainName,
+		Dir:             a.Package.Dir,
+		GoFiles:         actualFiles(mkAbsFiles(a.Package.Dir, gofiles)),
+		NonGoFiles:      actualFiles(mkAbsFiles(a.Package.Dir, nongofiles)),
+		IgnoredFiles:    actualFiles(mkAbsFiles(a.Package.Dir, ignored)),
+		ImportPath:      a.Package.ImportPath,
+		ImportMap:       make(map[string]string),
+		PackageFile:     make(map[string]string),
+		Standard:        make(map[string]bool),
 	}
 	v := gover.Local()
 	if a.Package.Module != nil {
@@ -1974,13 +1977,14 @@ func (b *Builder) buildExportConfig(a *Action) *exportConfig {
 	}
 
 	ecfg := &exportConfig{
-		ImportPath:  a.Package.ImportPath,
-		GoVersion:   "go" + v,
-		GoFiles:     srcs,
-		ImportMap:   make(map[string]string),
-		PackageFile: make(map[string]string),
-		Output:      a.Target,
-		TrimPath:    a.trimpath(),
+		StandardPackage: a.Package.Standard,
+		ImportPath:      a.Package.ImportPath,
+		GoVersion:       "go" + v,
+		GoFiles:         srcs,
+		ImportMap:       make(map[string]string),
+		PackageFile:     make(map[string]string),
+		Output:          a.Target,
+		TrimPath:        a.trimpath(),
 	}
 	for i, s := range a.Package.Internal.RawImports {
 		if s != "C" {
@@ -2007,6 +2011,7 @@ func (b *Builder) exportActionID(a *Action, ecfg *exportConfig) cache.ActionID {
 	fmt.Fprintf(h, "export %s\n", b.toolID("export"))
 	// Flags.
 	fmt.Fprintf(h, "importPath %s\n", ecfg.ImportPath)
+	fmt.Fprintf(h, "standard %t\n", ecfg.StandardPackage)
 	fmt.Fprintf(h, "goVersion %s\n", ecfg.GoVersion)
 	// The type checker's sizes depend on the target architecture.
 	fmt.Fprintf(h, "goos %s goarch %s\n", cfg.Goos, cfg.Goarch)

@@ -6,7 +6,8 @@ package quick
 
 import (
 	"internal/bid"
-	"math/decimal"
+	"internal/decimal"
+	"internal/decimalreflect"
 	"math/rand"
 	"reflect"
 	"testing"
@@ -318,7 +319,7 @@ func TestDecimalValue(t *testing.T) {
 	if !ok {
 		t.Fatal("Value failed for decimal64")
 	}
-	if v64.Kind() != reflect.Decimal64 {
+	if v64.Kind() != decimalreflect.Decimal64 {
 		t.Fatalf("Value returned kind %v, want Decimal64", v64.Kind())
 	}
 
@@ -327,7 +328,7 @@ func TestDecimalValue(t *testing.T) {
 	if !ok {
 		t.Fatal("Value failed for decimal128")
 	}
-	if v128.Kind() != reflect.Decimal128 {
+	if v128.Kind() != decimalreflect.Decimal128 {
 		t.Fatalf("Value returned kind %v, want Decimal128", v128.Kind())
 	}
 

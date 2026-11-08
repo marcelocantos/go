@@ -8,6 +8,7 @@ import (
 	"encoding"
 	"errors"
 	"fmt"
+	"internal/decimalreflect"
 	"maps"
 	"os"
 	"reflect"
@@ -255,14 +256,14 @@ var (
 	// Primordial types, needed during initialization.
 	// Always passed as pointers so the interface{} type
 	// goes through without losing its interfaceness.
-	tBool      = bootstrapType("bool", (*bool)(nil))
-	tInt       = bootstrapType("int", (*int)(nil))
-	tUint      = bootstrapType("uint", (*uint)(nil))
-	tFloat     = bootstrapType("float", (*float64)(nil))
-	tBytes     = bootstrapType("bytes", (*[]byte)(nil))
-	tString    = bootstrapType("string", (*string)(nil))
-	tComplex   = bootstrapType("complex", (*complex128)(nil))
-	tInterface = bootstrapType("interface", (*any)(nil))
+	tBool       = bootstrapType("bool", (*bool)(nil))
+	tInt        = bootstrapType("int", (*int)(nil))
+	tUint       = bootstrapType("uint", (*uint)(nil))
+	tFloat      = bootstrapType("float", (*float64)(nil))
+	tBytes      = bootstrapType("bytes", (*[]byte)(nil))
+	tString     = bootstrapType("string", (*string)(nil))
+	tComplex    = bootstrapType("complex", (*complex128)(nil))
+	tInterface  = bootstrapType("interface", (*any)(nil))
 	tDecimal64  = bootstrapType("decimal64", (*decimal64)(nil))
 	tDecimal128 = bootstrapType("decimal128", (*decimal128)(nil))
 	// Reserve some Ids for compatible expansion
@@ -481,10 +482,10 @@ func newTypeObject(name string, ut *userTypeInfo, rt reflect.Type) (gobType, err
 	case reflect.Complex64, reflect.Complex128:
 		return tComplex.gobType(), nil
 
-	case reflect.Decimal64:
+	case decimalreflect.Decimal64:
 		return tDecimal64.gobType(), nil
 
-	case reflect.Decimal128:
+	case decimalreflect.Decimal128:
 		return tDecimal128.gobType(), nil
 
 	case reflect.String:

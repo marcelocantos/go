@@ -9,6 +9,7 @@ package json
 import (
 	"errors"
 	"fmt"
+	"internal/decimalreflect"
 	"reflect"
 	"strconv"
 	"strings"
@@ -121,7 +122,7 @@ func transformUnmarshalError(root any, err error) error {
 				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 					reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
 					reflect.Float32, reflect.Float64,
-					reflect.Decimal64, reflect.Decimal128:
+					decimalreflect.Decimal64, decimalreflect.Decimal128:
 					return true
 				}
 				return false

@@ -40,6 +40,7 @@ import (
 	"go/scanner"
 	"go/token"
 	"internal/buildcfg"
+	"internal/goexperiment"
 	"internal/testenv"
 	"internal/types/errors"
 	"os"
@@ -135,6 +136,9 @@ func parseFlags(src []byte, flags *flag.FlagSet) error {
 //
 // If provided, opts may be used to mutate the Config before type-checking.
 func testFiles(t *testing.T, filenames []string, srcs [][]byte, manual bool, opts ...func(*Config)) {
+	if !goexperiment.Decimal && strings.HasSuffix(t.Name(), "/decimal_version.go") {
+		t.Skip("decimal experiment disabled")
+	}
 	if len(filenames) == 0 {
 		t.Fatal("no source files")
 	}

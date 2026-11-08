@@ -23,11 +23,11 @@ func isInteger(t Type) bool        { return isBasic(t, IsInteger) }
 func isUnsigned(t Type) bool       { return isBasic(t, IsUnsigned) }
 func isFloat(t Type) bool          { return isBasic(t, IsFloat) }
 func isComplex(t Type) bool        { return isBasic(t, IsComplex) }
-func isNumeric(t Type) bool        { return isBasic(t, IsNumeric) }
+func isNumeric(t Type) bool        { return isBasic(t, numericInfo) }
 func isString(t Type) bool         { return isBasic(t, IsString) }
-func isDecimal(t Type) bool        { return isBasic(t, IsDecimal) }
+func isDecimal(t Type) bool        { return isBasic(t, isDecimalInfo) }
 func isIntegerOrFloat(t Type) bool { return isBasic(t, IsInteger|IsFloat) }
-func isConstType(t Type) bool      { return isBasic(t, IsConstType) }
+func isConstType(t Type) bool      { return isBasic(t, constTypeInfo) }
 
 // isBasic reports whether t.Underlying() is a basic type with the specified info.
 // If t is a type parameter the result is false; i.e.,
@@ -44,10 +44,10 @@ func isBasic(t Type, info BasicInfo) bool {
 func allBoolean(t Type) bool         { return allBasic(t, IsBoolean) }
 func allInteger(t Type) bool         { return allBasic(t, IsInteger) }
 func allUnsigned(t Type) bool        { return allBasic(t, IsUnsigned) }
-func allNumeric(t Type) bool         { return allBasic(t, IsNumeric) }
+func allNumeric(t Type) bool         { return allBasic(t, numericInfo) }
 func allString(t Type) bool          { return allBasic(t, IsString) }
-func allOrdered(t Type) bool         { return allBasic(t, IsOrdered) }
-func allNumericOrString(t Type) bool { return allBasic(t, IsNumeric|IsString) }
+func allOrdered(t Type) bool         { return allBasic(t, orderedInfo) }
+func allNumericOrString(t Type) bool { return allBasic(t, numericInfo|IsString) }
 
 // allBasic reports whether t.Underlying() is a basic type with the specified info.
 // If t is a type parameter, the result is true if isBasic(t, info) is true
@@ -103,7 +103,7 @@ func isUntypedNumeric(t Type) bool {
 	// Alias and named types cannot denote untyped types
 	// so there's no need to call Unalias or Underlying, below.
 	b, _ := t.(*Basic)
-	return b != nil && b.info&IsUntyped != 0 && b.info&IsNumeric != 0
+	return b != nil && b.info&IsUntyped != 0 && b.info&numericInfo != 0
 }
 
 // IsInterface reports whether t is an interface type.

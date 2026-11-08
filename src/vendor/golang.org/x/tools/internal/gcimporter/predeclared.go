@@ -80,11 +80,9 @@ func predeclared() []types.Type {
 
 		// any
 		anyt,
-
-		// decimal types (appended so the indices above stay stable)
-		types.Typ[types.Decimal64],
-		types.Typ[types.Decimal128],
 	}
+
+	decls = append(decls, decimalPredeclared()...)
 
 	predecl[anyt] = decls
 	return decls

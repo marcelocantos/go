@@ -13,6 +13,7 @@ import (
 	"encoding"
 	"encoding/base64"
 	"fmt"
+	"internal/decimalreflect"
 	"reflect"
 	"strconv"
 	"strings"
@@ -1030,21 +1031,21 @@ func (d *decodeState) literalStore(item []byte, v reflect.Value, fromQuoted bool
 			}
 			v.SetFloat(n)
 
-		case reflect.Decimal64:
-			n, err := strconv.ParseDecimal(string(item), 64)
+		case decimalreflect.Decimal64:
+			n, err := decimalreflect.ParseDecimal(string(item), 64)
 			if err != nil {
 				d.saveError(&UnmarshalTypeError{Value: "number " + string(item), Type: v.Type(), Offset: int64(d.readIndex())})
 				break
 			}
-			v.SetDecimal(n)
+			decimalreflect.SetDecimal(v, n)
 
-		case reflect.Decimal128:
-			n, err := strconv.ParseDecimal(string(item), 128)
+		case decimalreflect.Decimal128:
+			n, err := decimalreflect.ParseDecimal(string(item), 128)
 			if err != nil {
 				d.saveError(&UnmarshalTypeError{Value: "number " + string(item), Type: v.Type(), Offset: int64(d.readIndex())})
 				break
 			}
-			v.SetDecimal(n)
+			decimalreflect.SetDecimal(v, n)
 		}
 	}
 	return nil

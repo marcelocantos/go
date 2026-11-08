@@ -5,6 +5,7 @@
 package fmt
 
 import (
+	"internal/decimalreflect"
 	"internal/fmtsort"
 	"io"
 	"os"
@@ -813,10 +814,10 @@ func (p *pp) printValue(value reflect.Value, verb rune, depth int) {
 		p.fmtComplex(nil, value, f.Complex(), 64, verb)
 	case reflect.Complex128:
 		p.fmtComplex(nil, value, f.Complex(), 128, verb)
-	case reflect.Decimal64:
-		p.fmtDecimal(nil, value, f.Decimal(), 64, verb)
-	case reflect.Decimal128:
-		p.fmtDecimal(nil, value, f.Decimal(), 128, verb)
+	case decimalreflect.Decimal64:
+		p.fmtDecimal(nil, value, decimalreflect.Decimal(f), 64, verb)
+	case decimalreflect.Decimal128:
+		p.fmtDecimal(nil, value, decimalreflect.Decimal(f), 128, verb)
 	case reflect.String:
 		p.fmtString(nil, value, f.String(), verb)
 	case reflect.Map:

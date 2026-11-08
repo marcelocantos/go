@@ -15,6 +15,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"internal/decimalreflect"
 	"math"
 	"reflect"
 	"slices"
@@ -101,9 +102,9 @@ func makeDefaultMarshaler(t reflect.Type) *marshaler {
 		return makeUintMarshaler(t)
 	case reflect.Float32, reflect.Float64:
 		return makeFloatMarshaler(t)
-	case reflect.Decimal64:
+	case decimalreflect.Decimal64:
 		return makeDecimal64Marshaler(t)
-	case reflect.Decimal128:
+	case decimalreflect.Decimal128:
 		return makeDecimal128Marshaler(t)
 	case reflect.Map:
 		return makeMapMarshaler(t)
@@ -142,9 +143,9 @@ func makeDefaultUnmarshaler(t reflect.Type) *unmarshaler {
 		return makeUintUnmarshaler(t)
 	case reflect.Float32, reflect.Float64:
 		return makeFloatUnmarshaler(t)
-	case reflect.Decimal64:
+	case decimalreflect.Decimal64:
 		return makeDecimal64Unmarshaler(t)
-	case reflect.Decimal128:
+	case decimalreflect.Decimal128:
 		return makeDecimal128Unmarshaler(t)
 	case reflect.Map:
 		return makeMapUnmarshaler(t)
@@ -893,7 +894,7 @@ func makeDecimal64Marshaler(t reflect.Type) *marshaler {
 			return newInvalidFormatError(enc, t)
 		}
 
-		s := cleanDecimalExp(strconv.FormatDecimal(va.Decimal(), 'g', -1, 64))
+		s := cleanDecimalExp(decimalreflect.FormatDecimal(decimalreflect.Decimal(va.Value), 'g', -1, 64))
 		if s == "NaN" || s == "+Inf" || s == "-Inf" {
 			err := fmt.Errorf("unsupported value: %s", s)
 			return newMarshalErrorBefore(enc, t, err)
@@ -956,11 +957,11 @@ func makeDecimal64Unmarshaler(t reflect.Type) *unmarshaler {
 			if stringify && k == '0' {
 				break
 			}
-			d, parseErr := strconv.ParseDecimal(string(val), 64)
+			d, parseErr := decimalreflect.ParseDecimal(string(val), 64)
 			if parseErr != nil {
 				return newUnmarshalErrorAfterWithValue(dec, t, strconv.ErrSyntax)
 			}
-			va.SetDecimal(d)
+			decimalreflect.SetDecimal(va.Value, d)
 			return nil
 		}
 		return newUnmarshalErrorAfter(dec, t, nil)
@@ -977,7 +978,7 @@ func makeDecimal128Marshaler(t reflect.Type) *marshaler {
 			return newInvalidFormatError(enc, t)
 		}
 
-		s := cleanDecimalExp(strconv.FormatDecimal(va.Decimal(), 'g', -1, 128))
+		s := cleanDecimalExp(decimalreflect.FormatDecimal(decimalreflect.Decimal(va.Value), 'g', -1, 128))
 		if s == "NaN" || s == "+Inf" || s == "-Inf" {
 			err := fmt.Errorf("unsupported value: %s", s)
 			return newMarshalErrorBefore(enc, t, err)
@@ -1040,11 +1041,11 @@ func makeDecimal128Unmarshaler(t reflect.Type) *unmarshaler {
 			if stringify && k == '0' {
 				break
 			}
-			d, parseErr := strconv.ParseDecimal(string(val), 128)
+			d, parseErr := decimalreflect.ParseDecimal(string(val), 128)
 			if parseErr != nil {
 				return newUnmarshalErrorAfterWithValue(dec, t, strconv.ErrSyntax)
 			}
-			va.SetDecimal(d)
+			decimalreflect.SetDecimal(va.Value, d)
 			return nil
 		}
 		return newUnmarshalErrorAfter(dec, t, nil)
@@ -1794,7 +1795,7 @@ func isLegacyEmpty(v addressableValue) bool {
 		return v.Uint() == 0
 	case reflect.Float32, reflect.Float64:
 		return v.Float() == 0
-	case reflect.Decimal64, reflect.Decimal128:
+	case decimalreflect.Decimal64, decimalreflect.Decimal128:
 		return v.IsZero()
 	case reflect.String, reflect.Map, reflect.Slice, reflect.Array:
 		return v.Len() == 0
