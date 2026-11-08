@@ -6,6 +6,7 @@ package strconv
 
 import (
 	"internal/bid"
+	"internal/bytealg"
 	"internal/decimal"
 	_ "unsafe"
 )
@@ -54,8 +55,17 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 	x := bid.Uint128{Hi: hi, Lo: lo}
 
 	var text [bid.MaxLen128]byte
+	chars := bid.Append128(text[:0], x)
+	// For short fixed-point values the kernel's character form is already
+	// the canonical Go form. With at most canonicalMaxExp total bytes its
+	// leading digit cannot reach the scientific-notation threshold. Special
+	// values end in a letter, and an exponent needs the normal layout path.
+	if prec < 0 && (normalFormat(fmt) == 'g' || fmt == 'G') &&
+		len(chars) <= canonicalMaxExp && chars[len(chars)-1] <= '9' && bytealg.IndexByte(chars, 'E') < 0 {
+		return append(dst, chars...)
+	}
 	var v finite
-	if v.scan(bid.Append128(text[:0], x)) {
+	if v.scan(chars) {
 		return appendSpecial(dst, text[:])
 	}
 

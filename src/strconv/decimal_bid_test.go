@@ -12,6 +12,7 @@ import (
 	"math/decimal"
 	"math/rand"
 	. "strconv"
+	"strings"
 	"testing"
 )
 
@@ -951,6 +952,42 @@ func TestFormatDecimalCanonical(t *testing.T) {
 		}
 		if decimal.BID64bits(back) != bits {
 			t.Errorf("ParseDecimal(%q) = %#x, want %#x", tt.g, decimal.BID64bits(back), bits)
+		}
+	}
+}
+
+func TestFormatDecimalCanonicalNotation(t *testing.T) {
+	for _, tt := range []struct{ in, want string }{
+		{"100000000000000000000", "100000000000000000000"},
+		{"-100000000000000000000", "-100000000000000000000"},
+		{"1000000000000000000000", "1.000000000000000000000e+21"},
+		{"1.234567890123456789012", "1.234567890123456789012"},
+		{"0.000001", "0.000001"},
+		{"0.0000001", "1e-07"},
+		{"0.00", "0.00"},
+		{"-0.00", "-0.00"},
+		{"0e3", "0e+03"},
+		{"1e3", "1e+03"},
+		{"1.50", "1.50"},
+		{"NaN", "NaN"},
+		{"Infinity", "+Inf"},
+		{"-Infinity", "-Inf"},
+	} {
+		x, err := ParseDecimal(tt.in, 128)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, format := range []byte{'g', 'G'} {
+			want := tt.want
+			if format == 'G' {
+				want = strings.ReplaceAll(want, "e", "E")
+			}
+			if got := FormatDecimal(x, format, -1, 128); got != want {
+				t.Errorf("FormatDecimal(%s, %c) = %q, want %q", tt.in, format, got, want)
+			}
+			if got := string(AppendDecimal([]byte("prefix:"), x, format, -1, 128)); got != "prefix:"+want {
+				t.Errorf("AppendDecimal(%s, %c) = %q, want %q", tt.in, format, got, "prefix:"+want)
+			}
 		}
 	}
 }
