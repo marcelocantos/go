@@ -688,6 +688,14 @@ func benchRowList() benchRows {
 	rs.add("Append", "float64", "mixed", "", func(b *testing.B) {
 		loop1(b, mixed.xf, func(x float64) int { return len(strconv.AppendFloat(buf[:0], x, 'E', -1, 64)) })
 	})
+	var digs64 [bid.Precision64]byte
+	var digs128 [bid.Precision128]byte
+	rs.add("UnpackDigits", "64", "mixed", "UnpackDigits64", func(b *testing.B) {
+		loop1(b, mixed.x64, func(x uint64) int { _, _, n, _ := bid.UnpackDigits64(&digs64, x); return n })
+	})
+	rs.add("UnpackDigits", "128", "mixed", "UnpackDigits128", func(b *testing.B) {
+		loop1(b, mixed.x128, func(x bits) int { _, _, n, _ := bid.UnpackDigits128(&digs128, x); return n })
+	})
 
 	return rs
 }

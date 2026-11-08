@@ -18,6 +18,26 @@
 // string.go.
 package bid
 
+// UnpackDigitsW decodes x and writes its coefficient digits to buf, without a sign,
+// decimal point or exponent. It returns the same kind, sign and exponent as
+// UnpackW, and the number of bytes written. Zero and non-finite values write
+// no digits and return n = 0. Nonzero finite values have no leading zeros.
+// The buffer must be non-nil; bytes beyond n are unchanged. It does not allocate.
+func UnpackDigitsW(buf *[PrecisionW]byte, x coefW) (kind Kind, neg bool, n, exp int) {
+	var c coefW
+	kind, neg, c, exp = UnpackW(x)
+	if kind != KindFinite || cIsZeroW(c) {
+		return
+	}
+	hi, lo := cSplitW(c)
+	if hi == 0 {
+		n = writeWordDigits(buf[:], lo)
+	} else {
+		n = writeDigits(buf[:], hi, lo)
+	}
+	return
+}
+
 // appendW is Append64 and Append128: it appends the to-scientific-string
 // form of x to dst. A NaN of any kind is "NaN" and an infinity "Infinity"
 // with its sign; a finite value is its coefficient digits, rendered into a

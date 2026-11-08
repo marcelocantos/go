@@ -6,7 +6,6 @@ package strconv
 
 import (
 	"internal/bid"
-	"internal/bytealg"
 	"internal/decimal"
 	_ "unsafe"
 )
@@ -14,7 +13,7 @@ import (
 // The conversions between decimal values and text are those of
 // internal/bid: parseDecimal reads its input with bid.Parse64 or bid.Parse128,
 // and formatDecimal and appendDecimal take
-// the digits of a value from the character form bid.Append128 writes. This
+// the coefficient digits, sign and quantum from bid.UnpackDigits128. This
 // file owns the format verbs and precision, and the layout of the digits
 // that follows from them. Whenever a precision asks for fewer digits than
 // a value has, the value is rounded by the kernel's Quantize.
@@ -54,19 +53,17 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 	hi, lo := decimal.BID128bits(d)
 	x := bid.Uint128{Hi: hi, Lo: lo}
 
-	var text [bid.MaxLen128]byte
-	chars := bid.Append128(text[:0], x)
-	// For short fixed-point values the kernel's character form is already
-	// the canonical Go form. With at most canonicalMaxExp total bytes its
-	// leading digit cannot reach the scientific-notation threshold. Special
-	// values end in a letter, and an exponent needs the normal layout path.
-	if prec < 0 && (normalFormat(fmt) == 'g' || fmt == 'G') &&
-		len(chars) <= canonicalMaxExp && chars[len(chars)-1] <= '9' && bytealg.IndexByte(chars, 'E') < 0 {
-		return append(dst, chars...)
-	}
 	var v finite
-	if v.scan(chars) {
-		return appendSpecial(dst, text[:])
+	kind, neg, n, exp := bid.UnpackDigits128(&v.digs, x)
+	v.neg, v.n, v.exp = neg, n, exp
+	switch kind {
+	case bid.KindNaN:
+		return append(dst, "NaN"...)
+	case bid.KindInf:
+		if neg {
+			return append(dst, "-Inf"...)
+		}
+		return append(dst, "+Inf"...)
 	}
 
 	if prec < 0 {
@@ -122,9 +119,9 @@ func parseDecimal(s string, bitSize int) (decimal128, error) {
 	return d, nil
 }
 
-// --- Digits of the character form ---
+// --- Coefficient digits ---
 
-// A finite is a finite value as the digits of its character form: the value
+// A finite holds the coefficient digits of a finite value: the value
 // is (-1)^neg × digs[:n] × 10^exp. There are no leading zeros; n is zero
 // for a zero value, whatever its exponent.
 type finite struct {
@@ -132,69 +129,6 @@ type finite struct {
 	n    int
 	exp  int
 	digs [bid.Precision128]byte
-}
-
-// scan reads the character form of a value, as bid.Append128 writes it. It
-// reports whether the value is an infinity or a NaN, which have no digits.
-func (v *finite) scan(text []byte) (special bool) {
-	i := 0
-	if text[i] == '-' {
-		v.neg = true
-		i++
-	}
-	if text[i] > '9' { // "Infinity" or "NaN"
-		return true
-	}
-	text = text[i:]
-	e := -1
-	if len(text) > 1 && text[1] == 'E' {
-		// A one-digit scientific mantissa needs no search.
-		e = 1
-	} else {
-		e = bytealg.IndexByte(text, 'E')
-	}
-	if e >= 0 {
-		neg := text[e+1] == '-'
-		for _, c := range text[e+2:] {
-			v.exp = v.exp*10 + int(c-'0')
-		}
-		if neg {
-			v.exp = -v.exp
-		}
-		text = text[:e]
-	}
-	if len(text) == 1 {
-		// A one-digit mantissa has neither a point nor leading zeroes.
-		// Avoid another search and a dynamic copy for this common case.
-		if text[0] != '0' {
-			v.n = 1
-			v.digs[0] = text[0]
-		}
-		return false
-	}
-	// A multi-digit scientific mantissa always has its point after the
-	// first digit. Only fixed notation needs a search for the point.
-	point := 1
-	if e < 0 {
-		point = bytealg.IndexByte(text, '.')
-	}
-	if point >= 0 {
-		v.exp -= len(text) - point - 1
-	}
-	// Append's mantissa is canonical: only a fixed-point fraction or a
-	// zero can have leading zeroes. Keep its quantum while discarding
-	// those zeroes and the point, then copy each run of digits in bulk.
-	for len(text) > 0 && (text[0] == '0' || text[0] == '.') {
-		text = text[1:]
-		point--
-	}
-	if point >= 0 {
-		v.n = copy(v.digs[:], text[:point])
-		v.n += copy(v.digs[v.n:], text[point+1:])
-	} else {
-		v.n = copy(v.digs[:], text)
-	}
-	return false
 }
 
 // round rounds the value to the precision that format and prec call for:
@@ -236,12 +170,9 @@ func (v *finite) round(x bid.Uint128, format byte, prec int) {
 	quantum, _ := bid.Pack128(false, bid.Uint128{Lo: 1}, drop)
 	q := bid.Quantize128(c, quantum, bid.ToNearestEven)
 
-	var text [bid.MaxLen128]byte
-	var r finite
-	r.scan(bid.Append128(text[:0], q))
-	v.n = r.n
-	v.digs = r.digs
-	v.exp += r.exp
+	_, _, n, qexp := bid.UnpackDigits128(&v.digs, q)
+	v.n = n
+	v.exp += qexp
 	if keep > 0 && v.n > keep {
 		// A carry made 9.99 into 10.0. The extra digit is a zero.
 		v.exp += v.n - keep
@@ -259,17 +190,6 @@ func normalFormat(fmt byte) byte {
 		return fmt
 	}
 	return 'g'
-}
-
-// appendSpecial appends the infinity or NaN whose character form is text.
-func appendSpecial(dst []byte, text []byte) []byte {
-	switch {
-	case text[0] == 'N':
-		return append(dst, "NaN"...)
-	case text[0] == '-':
-		return append(dst, "-Inf"...)
-	}
-	return append(dst, "+Inf"...)
 }
 
 // appendZero appends a zero of the given sign.

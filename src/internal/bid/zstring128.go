@@ -6,6 +6,26 @@
 
 package bid
 
+// UnpackDigits128 decodes x and writes its coefficient digits to buf, without a sign,
+// decimal point or exponent. It returns the same kind, sign and exponent as
+// Unpack128, and the number of bytes written. Zero and non-finite values write
+// no digits and return n = 0. Nonzero finite values have no leading zeros.
+// The buffer must be non-nil; bytes beyond n are unchanged. It does not allocate.
+func UnpackDigits128(buf *[Precision128]byte, x coef128) (kind Kind, neg bool, n, exp int) {
+	var c coef128
+	kind, neg, c, exp = Unpack128(x)
+	if kind != KindFinite || cIsZero128(c) {
+		return
+	}
+	hi, lo := cSplit128(c)
+	if hi == 0 {
+		n = writeWordDigits(buf[:], lo)
+	} else {
+		n = writeDigits(buf[:], hi, lo)
+	}
+	return
+}
+
 // append128 is Append64 and Append128: it appends the to-scientific-string
 // form of x to dst. A NaN of any kind is "NaN" and an infinity "Infinity"
 // with its sign; a finite value is its coefficient digits, rendered into a

@@ -354,6 +354,8 @@ func allocCases() map[string]func() {
 	all64, core64 := allocOperands64()
 	all128, core128 := allocOperands128()
 	buf := make([]byte, 0, bid.MaxLen128)
+	var digs64 [bid.Precision64]byte
+	var digs128 [bid.Precision128]byte
 
 	// Float operands. The largest and the smallest subnormal float64 are the
 	// multiword paths of Float64To; the exactly representable ties and the
@@ -588,6 +590,12 @@ func allocCases() map[string]func() {
 		// string.go. dst has the spare capacity the contract requires.
 		"Append64":  each(all64, func(x uint64) { asBuf = bid.Append64(buf[:0], x) }),
 		"Append128": each(all128, func(x bid.Uint128) { asBuf = bid.Append128(buf[:0], x) }),
+		"UnpackDigits64": each(all64, func(x uint64) {
+			asKind, asBool, asInt, _ = bid.UnpackDigits64(&digs64, x)
+		}),
+		"UnpackDigits128": each(all128, func(x bid.Uint128) {
+			asKind, asBool, asInt, _ = bid.UnpackDigits128(&digs128, x)
+		}),
 		"Parse64": func() {
 			for _, s := range strs {
 				for _, m := range allocModes {

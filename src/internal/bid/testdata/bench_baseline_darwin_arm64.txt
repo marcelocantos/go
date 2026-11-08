@@ -1812,3 +1812,22 @@ BenchmarkKernel/SignalingNaNWithPayload/128/mixed-16        	16177957	         9
 BenchmarkKernel/SignalingNaNWithPayload/128/mixed-16        	14609804	         8.070 ns/op	       0 B/op	       0 allocs/op
 BenchmarkKernel/SignalingNaNWithPayload/128/mixed-16        	15136066	         7.062 ns/op	       0 B/op	       0 allocs/op
 BenchmarkKernel/SignalingNaNWithPayload/128/mixed-16        	16141234	        10.66 ns/op	       0 B/op	       0 allocs/op
+
+# UnpackDigits rows added 2026-11-09, Apple M4 Max, 8 x 100ms.
+# Existing 219 rows and limits are unchanged. Source parent 8aaa173c13b7.
+BenchmarkKernel/UnpackDigits/64/mixed-16         	19614919	         6.065 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/UnpackDigits/64/mixed-16         	19633375	         5.990 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/UnpackDigits/64/mixed-16         	19395114	         6.166 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/UnpackDigits/64/mixed-16         	16839150	         6.452 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/UnpackDigits/64/mixed-16         	16803387	         6.478 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/UnpackDigits/64/mixed-16         	18387986	         6.329 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/UnpackDigits/64/mixed-16         	19517352	         6.437 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/UnpackDigits/64/mixed-16         	17675325	         6.241 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/UnpackDigits/128/mixed-16        	 9567088	        12.53 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/UnpackDigits/128/mixed-16        	 9485197	        12.29 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/UnpackDigits/128/mixed-16        	 9288884	        12.25 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/UnpackDigits/128/mixed-16        	 9702718	        12.11 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/UnpackDigits/128/mixed-16        	 9842552	        12.12 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/UnpackDigits/128/mixed-16        	 9924531	        12.10 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/UnpackDigits/128/mixed-16        	 9798549	        12.19 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/UnpackDigits/128/mixed-16        	 9942724	        12.00 ns/op	       0 B/op	       0 allocs/op
