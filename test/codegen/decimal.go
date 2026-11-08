@@ -9,8 +9,8 @@ package codegen
 
 // On linux/ppc64le the decimal operators are POWER's decimal
 // floating-point instructions, not runtime calls (see
-// cmd/compile/internal/ssagen/dpd.go). Elsewhere they are calls into the
-// kernel through the runtime.
+// cmd/compile/internal/ssagen/dpd.go). BID targets use integer fast paths
+// where proved exact, with runtime calls into the kernel for general cases.
 
 func Add64(x, y decimal64) decimal64 {
 	// ppc64le:"DADD" -"CALL"
@@ -42,6 +42,7 @@ func Less64(x, y decimal64) bool {
 func Add128(x, y decimal128) decimal128 {
 	// ppc64le:"DADDQ" -"CALL"
 	// amd64:"CALL runtime.dadd128"
+	// arm64:"CALL runtime.dadd128" "ADDS" "ADC"
 	return x + y
 }
 
@@ -53,6 +54,30 @@ func Mul128(x, y decimal128) decimal128 {
 func Eq128(x, y decimal128) bool {
 	// ppc64le:"DCMPUQ" -"CALL"
 	return x == y
+}
+
+func Zero64(x decimal64) bool {
+	// arm64:-"CALL"
+	// amd64:-"CALL"
+	return x == 0
+}
+
+func Nonzero64(x decimal64) bool {
+	// arm64:-"CALL"
+	// amd64:-"CALL"
+	return 0.00 != x
+}
+
+func Zero128(x decimal128) bool {
+	// arm64:-"CALL"
+	// amd64:-"CALL"
+	return 0 == x
+}
+
+func Nonzero128(x decimal128) bool {
+	// arm64:-"CALL"
+	// amd64:-"CALL"
+	return x != 0.00
 }
 
 func Widen(x decimal64) decimal128 {

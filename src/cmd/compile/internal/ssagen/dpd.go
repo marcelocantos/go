@@ -12,6 +12,7 @@ import (
 	"cmd/compile/internal/ssa/block"
 	"cmd/compile/internal/ssa/ssaop"
 	"cmd/compile/internal/types"
+	"cmd/internal/sys"
 )
 
 // Decimal operators on targets whose native decimal encoding is DPD
@@ -126,10 +127,14 @@ var dpdArith = map[opAndType]ssaop.Op{
 }
 
 // decimalOp is the operator op on decimal operands of a common type, with
-// result type rt: on a DPD target the hardware's instructions, elsewhere a
-// runtime call.
+// result type rt: on a DPD target the hardware's instructions, elsewhere
+// integer fast paths with runtime calls for the general case.
 func (s *state) decimalOp(op ir.Op, rt *types.Type, args ...*ssa.Value) *ssa.Value {
 	if !ir.DecimalDPD() {
+		if op == ir.OADD && rt.Kind() == types.TDECIMAL128 &&
+			(Arch.LinkArch.Family == sys.ARM64 || Arch.LinkArch.Family == sys.AMD64) {
+			return s.bidAdd128(rt, args[0], args[1])
+		}
 		return s.softDecimalOp(op, rt, args...)
 	}
 	x, y := args[0], args[1]

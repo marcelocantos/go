@@ -17,8 +17,8 @@ import (
 )
 
 // The language's decimal operators, compared with the kernel. On every
-// target but linux/ppc64le the operators are runtime calls into the kernel,
-// so this checks the compiler's calls and the memory form. On linux/ppc64le
+// BID target the operators use integer fast paths or runtime calls into the
+// kernel, so this checks both paths and the memory form. On linux/ppc64le
 // most of them are POWER's decimal floating-point instructions (see
 // cmd/compile/internal/ssagen/dpd.go), and this is the differential test of
 // the hardware path: every case of the oracle's generators, run through the
