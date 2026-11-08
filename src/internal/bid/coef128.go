@@ -134,6 +134,12 @@ func cIncFull128(p wide128) wide128 {
 // k >= 0 is allowed; see "Decimal-digit primitives" in digits.go for what
 // the caller may assume.
 func cShift128(c coef128, k int) (q coef128, class digitClass) {
+	if c.Hi == 0 {
+		// The word-sized primitive accepts every uint64, including the
+		// 20-digit values that do not fit a decimal64 coefficient.
+		lo, class := cShift64(c.Lo, k)
+		return coef128{Lo: lo}, class
+	}
 	if k >= len(pow10tab128) {
 		if c == (coef128{}) {
 			return coef128{}, classZero
