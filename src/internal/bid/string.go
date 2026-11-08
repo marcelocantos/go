@@ -246,6 +246,7 @@ func scanDecimal(s string, keep int) numeral {
 	// Significand: digits with at most one point, at least one digit.
 	var digits, fraction, kept, dropped int
 	point := false
+	wordKeep := min(keep, u64Digits)
 	for ; i < len(s); i++ {
 		c := s[i]
 		if c == '.' {
@@ -266,6 +267,11 @@ func scanDecimal(s string, keep int) numeral {
 		switch {
 		case kept == 0 && d == 0:
 			// A leading zero.
+		case kept < wordKeep:
+			// At most 19 significant digits are below 10^19 and fit
+			// one word. No carry or high-word multiply is needed.
+			r.mant.Lo = r.mant.Lo*10 + uint64(d)
+			kept++
 		case kept < keep:
 			r.mant, _ = u128Mul64(r.mant, 10)
 			r.mant, _ = u128Add(r.mant, Uint128{Lo: uint64(d)})
