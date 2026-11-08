@@ -318,8 +318,28 @@ func roundW(neg bool, p wideW, exp int, class digitClass, mode Mode, floor int) 
 			if cIsZeroW(p.Lo) {
 				return packW(neg, zero, min(max(exp, floor), MaxExpW)), Exact
 			}
-			if exp >= floor && exp <= MaxExpW && !cGtMaxW(p.Lo) {
-				return packW(neg, p.Lo, exp), Exact
+			if exp <= MaxExpW && floor <= MaxExpW && !cGtMaxW(p.Lo) {
+				if exp >= floor {
+					return packW(neg, p.Lo, exp), Exact
+				}
+				// A bounded coefficient shifted right to floor cannot exceed
+				// Precision digits, even after an increment. Quantize and
+				// integral rounding therefore need no wide digit count.
+				shift := floor - max(exp, floor-maxWideDigits)
+				q, dropped := cShiftW(p.Lo, shift)
+				st := Exact
+				if dropped != classZero {
+					if roundUp(dropped, mode, neg, cOddW(q)) {
+						q = cIncW(q)
+					}
+					st = Inexact
+					// Far-below-format exponents are tiny without adding to
+					// them, which also avoids overflow for an int minimum.
+					if exp < EminW && (exp < EminW-PrecisionW || cDigitsW(p.Lo)-1+exp < EminW) {
+						st |= Underflow
+					}
+				}
+				return packW(neg, q, floor), st
 			}
 		}
 	}

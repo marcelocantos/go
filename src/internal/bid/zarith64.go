@@ -307,8 +307,28 @@ func round64(neg bool, p wide64, exp int, class digitClass, mode Mode, floor int
 			if cIsZero64(p.Lo) {
 				return pack64(neg, zero, min(max(exp, floor), MaxExp64)), Exact
 			}
-			if exp >= floor && exp <= MaxExp64 && !cGtMax64(p.Lo) {
-				return pack64(neg, p.Lo, exp), Exact
+			if exp <= MaxExp64 && floor <= MaxExp64 && !cGtMax64(p.Lo) {
+				if exp >= floor {
+					return pack64(neg, p.Lo, exp), Exact
+				}
+				// A bounded coefficient shifted right to floor cannot exceed
+				// Precision digits, even after an increment. Quantize and
+				// integral rounding therefore need no wide digit count.
+				shift := floor - max(exp, floor-maxWideDigits)
+				q, dropped := cShift64(p.Lo, shift)
+				st := Exact
+				if dropped != classZero {
+					if roundUp(dropped, mode, neg, cOdd64(q)) {
+						q = cInc64(q)
+					}
+					st = Inexact
+					// Far-below-format exponents are tiny without adding to
+					// them, which also avoids overflow for an int minimum.
+					if exp < Emin64 && (exp < Emin64-Precision64 || cDigits64(p.Lo)-1+exp < Emin64) {
+						st |= Underflow
+					}
+				}
+				return pack64(neg, q, floor), st
 			}
 		}
 	}

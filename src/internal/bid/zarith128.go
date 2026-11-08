@@ -307,8 +307,28 @@ func round128(neg bool, p wide128, exp int, class digitClass, mode Mode, floor i
 			if cIsZero128(p.Lo) {
 				return pack128(neg, zero, min(max(exp, floor), MaxExp128)), Exact
 			}
-			if exp >= floor && exp <= MaxExp128 && !cGtMax128(p.Lo) {
-				return pack128(neg, p.Lo, exp), Exact
+			if exp <= MaxExp128 && floor <= MaxExp128 && !cGtMax128(p.Lo) {
+				if exp >= floor {
+					return pack128(neg, p.Lo, exp), Exact
+				}
+				// A bounded coefficient shifted right to floor cannot exceed
+				// Precision digits, even after an increment. Quantize and
+				// integral rounding therefore need no wide digit count.
+				shift := floor - max(exp, floor-maxWideDigits)
+				q, dropped := cShift128(p.Lo, shift)
+				st := Exact
+				if dropped != classZero {
+					if roundUp(dropped, mode, neg, cOdd128(q)) {
+						q = cInc128(q)
+					}
+					st = Inexact
+					// Far-below-format exponents are tiny without adding to
+					// them, which also avoids overflow for an int minimum.
+					if exp < Emin128 && (exp < Emin128-Precision128 || cDigits128(p.Lo)-1+exp < Emin128) {
+						st |= Underflow
+					}
+				}
+				return pack128(neg, q, floor), st
 			}
 		}
 	}
