@@ -145,37 +145,55 @@ func (v *finite) scan(text []byte) (special bool) {
 	if text[i] > '9' { // "Infinity" or "NaN"
 		return true
 	}
-	// Digits with an optional point, then an optional exponent.
-	frac := 0
-	point := false
-	for ; i < len(text) && text[i] != 'E'; i++ {
-		c := text[i]
-		if c == '.' {
-			point = true
-			continue
-		}
-		if point {
-			frac++
-		}
-		if v.n == 0 && c == '0' {
-			continue // not significant
-		}
-		v.digs[v.n] = c
-		v.n++
+	text = text[i:]
+	e := -1
+	if len(text) > 1 && text[1] == 'E' {
+		// A one-digit scientific mantissa needs no search.
+		e = 1
+	} else {
+		e = bytealg.IndexByte(text, 'E')
 	}
-	e := 0
-	if i < len(text) {
-		i++ // E
-		eneg := text[i] == '-'
-		i++ // the sign is always written
-		for ; i < len(text); i++ {
-			e = e*10 + int(text[i]-'0')
+	if e >= 0 {
+		neg := text[e+1] == '-'
+		for _, c := range text[e+2:] {
+			v.exp = v.exp*10 + int(c-'0')
 		}
-		if eneg {
-			e = -e
+		if neg {
+			v.exp = -v.exp
 		}
+		text = text[:e]
 	}
-	v.exp = e - frac
+	if len(text) == 1 {
+		// A one-digit mantissa has neither a point nor leading zeroes.
+		// Avoid another search and a dynamic copy for this common case.
+		if text[0] != '0' {
+			v.n = 1
+			v.digs[0] = text[0]
+		}
+		return false
+	}
+	// A multi-digit scientific mantissa always has its point after the
+	// first digit. Only fixed notation needs a search for the point.
+	point := 1
+	if e < 0 {
+		point = bytealg.IndexByte(text, '.')
+	}
+	if point >= 0 {
+		v.exp -= len(text) - point - 1
+	}
+	// Append's mantissa is canonical: only a fixed-point fraction or a
+	// zero can have leading zeroes. Keep its quantum while discarding
+	// those zeroes and the point, then copy each run of digits in bulk.
+	for len(text) > 0 && (text[0] == '0' || text[0] == '.') {
+		text = text[1:]
+		point--
+	}
+	if point >= 0 {
+		v.n = copy(v.digs[:], text[:point])
+		v.n += copy(v.digs[v.n:], text[point+1:])
+	} else {
+		v.n = copy(v.digs[:], text)
+	}
 	return false
 }
 
