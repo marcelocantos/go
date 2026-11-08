@@ -297,9 +297,20 @@ func key128(x coef128) (kind Kind, neg bool, c coef128, exp int) {
 // every DPD finite value is representable exactly; they are conversions
 // between encodings, not operations, and round nothing.
 func round128(neg bool, p wide128, exp int, class digitClass, mode Mode, floor int) (coef128, Status) {
-	if p == (wide128{}) && class == classZero {
+	// An exact coefficient already inside the format keeps its exponent.
+	// Check its bound directly instead of counting wide digits and deriving
+	// the same exponent through the general rounding path. floor still
+	// applies to quantize and integral rounding, including exact results.
+	if class == classZero {
 		var zero coef128
-		return pack128(neg, zero, min(max(exp, floor), MaxExp128)), Exact
+		if p.Hi == zero {
+			if cIsZero128(p.Lo) {
+				return pack128(neg, zero, min(max(exp, floor), MaxExp128)), Exact
+			}
+			if exp >= floor && exp <= MaxExp128 && !cGtMax128(p.Lo) {
+				return pack128(neg, p.Lo, exp), Exact
+			}
+		}
 	}
 	// Far outside the format every exponent rounds alike: overflow in every
 	// mode above, a value below a tenth of the smallest subnormal below.

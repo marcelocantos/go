@@ -123,9 +123,15 @@ func u128Mul(a, b Uint128) Uint256 {
 
 // u128Div64 returns the quotient and remainder of a / d. The quotient is a
 // full 128 bits: a / d < 2^128 always, so there is no precondition beyond
-// d != 0. It panics with the math/bits divide error if d is zero.
+// d != 0. It panics with an integer divide error if d is zero.
 func u128Div64(a Uint128, d uint64) (q Uint128, r uint64) {
-	q.Hi, r = bits.Div64(0, a.Hi, d)
+	if a.Hi == 0 {
+		// A one-word coefficient needs one native divide, without either
+		// of the software wide divides on architectures such as ARM64.
+		q.Lo, r = a.Lo/d, a.Lo%d
+		return q, r
+	}
+	q.Hi, r = a.Hi/d, a.Hi%d
 	q.Lo, r = bits.Div64(r, a.Lo, d)
 	return q, r
 }

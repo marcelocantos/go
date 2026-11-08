@@ -849,6 +849,18 @@ func FuzzDecimal128RoundTrip(f *testing.F) {
 
 // --- Benchmarks ---
 
+var formatDecimalSink string
+
+func TestFormatDecimalAllocs(t *testing.T) {
+	for _, x := range []decimal128{123.45, 1.50, 1e100, -1e-6000, 1234567890123456789012345678901234} {
+		if n := testing.AllocsPerRun(100, func() {
+			formatDecimalSink = FormatDecimal(x, 'g', -1, 128)
+		}); n != 1 {
+			t.Errorf("FormatDecimal(%v) allocated %v times; want one result string", x, n)
+		}
+	}
+}
+
 func BenchmarkFormatDecimal64(b *testing.B) {
 	benchmarks := []struct {
 		name string

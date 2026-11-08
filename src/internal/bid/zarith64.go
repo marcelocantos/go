@@ -297,9 +297,20 @@ func key64(x coef64) (kind Kind, neg bool, c coef64, exp int) {
 // every DPD finite value is representable exactly; they are conversions
 // between encodings, not operations, and round nothing.
 func round64(neg bool, p wide64, exp int, class digitClass, mode Mode, floor int) (coef64, Status) {
-	if p == (wide64{}) && class == classZero {
+	// An exact coefficient already inside the format keeps its exponent.
+	// Check its bound directly instead of counting wide digits and deriving
+	// the same exponent through the general rounding path. floor still
+	// applies to quantize and integral rounding, including exact results.
+	if class == classZero {
 		var zero coef64
-		return pack64(neg, zero, min(max(exp, floor), MaxExp64)), Exact
+		if p.Hi == zero {
+			if cIsZero64(p.Lo) {
+				return pack64(neg, zero, min(max(exp, floor), MaxExp64)), Exact
+			}
+			if exp >= floor && exp <= MaxExp64 && !cGtMax64(p.Lo) {
+				return pack64(neg, p.Lo, exp), Exact
+			}
+		}
 	}
 	// Far outside the format every exponent rounds alike: overflow in every
 	// mode above, a value below a tenth of the smallest subnormal below.

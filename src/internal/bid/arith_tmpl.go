@@ -308,9 +308,20 @@ func keyW(x coefW) (kind Kind, neg bool, c coefW, exp int) {
 // every DPD finite value is representable exactly; they are conversions
 // between encodings, not operations, and round nothing.
 func roundW(neg bool, p wideW, exp int, class digitClass, mode Mode, floor int) (coefW, Status) {
-	if p == (wideW{}) && class == classZero {
+	// An exact coefficient already inside the format keeps its exponent.
+	// Check its bound directly instead of counting wide digits and deriving
+	// the same exponent through the general rounding path. floor still
+	// applies to quantize and integral rounding, including exact results.
+	if class == classZero {
 		var zero coefW
-		return packW(neg, zero, min(max(exp, floor), MaxExpW)), Exact
+		if p.Hi == zero {
+			if cIsZeroW(p.Lo) {
+				return packW(neg, zero, min(max(exp, floor), MaxExpW)), Exact
+			}
+			if exp >= floor && exp <= MaxExpW && !cGtMaxW(p.Lo) {
+				return packW(neg, p.Lo, exp), Exact
+			}
+		}
 	}
 	// Far outside the format every exponent rounds alike: overflow in every
 	// mode above, a value below a tenth of the smallest subnormal below.

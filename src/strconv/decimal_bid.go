@@ -34,7 +34,10 @@ import (
 //
 //go:linkname formatDecimal
 func formatDecimal(d decimal128, fmt byte, prec int, bitSize int) string {
-	return string(appendDecimal(nil, d, fmt, prec, bitSize))
+	// The canonical form fits on the stack. Explicit fixed-point formats
+	// and large precisions may grow past this buffer through append.
+	var buf [bid.MaxLen128]byte
+	return string(appendDecimal(buf[:0], d, fmt, prec, bitSize))
 }
 
 // appendDecimal appends the string form of the decimal128 value d,
