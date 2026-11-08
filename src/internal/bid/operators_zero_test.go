@@ -16,10 +16,18 @@ import (
 // constant-zero comparison path, including a zero with another quantum.
 //
 //go:noinline
-func opZero64(x decimal64) [4]bool { return [4]bool{x == 0, x != 0, 0.00 == x, 0.00 != x} }
+func opZero64(x decimal64) [12]bool {
+	return [12]bool{x == 0, x != 0, 0.00 == x, 0.00 != x,
+		x < 0, x <= 0, x > 0, x >= 0,
+		0.00 < x, 0.00 <= x, 0.00 > x, 0.00 >= x}
+}
 
 //go:noinline
-func opZero128(x decimal128) [4]bool { return [4]bool{x == 0, x != 0, 0.00 == x, 0.00 != x} }
+func opZero128(x decimal128) [12]bool {
+	return [12]bool{x == 0, x != 0, 0.00 == x, 0.00 != x,
+		x < 0, x <= 0, x > 0, x >= 0,
+		0.00 < x, 0.00 <= x, 0.00 > x, 0.00 >= x}
+}
 
 // TestOperatorZero compares the compiled predicates to the independent
 // reference decoder, including every sign/exponent/special prefix and the
@@ -29,8 +37,12 @@ func TestOperatorZero(t *testing.T) {
 		t.Helper()
 		v := f.decode(x)
 		zero := v.kind == finite && v.coeff.Sign() == 0
-		want := [4]bool{zero, !zero, zero, !zero}
-		var got [4]bool
+		negative := v.kind != notANumber && !zero && v.neg
+		positive := v.kind != notANumber && !zero && !v.neg
+		want := [12]bool{zero, !zero, zero, !zero,
+			negative, negative || zero, positive, positive || zero,
+			positive, positive || zero, negative, negative || zero}
+		var got [12]bool
 		if f == dec64 {
 			got = opZero64(d64(x))
 		} else {

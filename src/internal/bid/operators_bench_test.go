@@ -82,3 +82,22 @@ func BenchmarkOperatorMul128(b *testing.B) {
 		})
 	}
 }
+
+// Constant-zero comparisons rotate signs, quanta and zeros. The equality
+// control already uses integer SSA in the baseline compiler.
+func BenchmarkOperatorZero(b *testing.B) {
+	xs64 := []decimal64{0, 0.00, -0.00, 1, -1, 0.01, -0.01, 1e10}
+	xs128 := []decimal128{0, 0.00, -0.00, 1, -1, 0.01, -0.01, 1e10}
+	// A negated variable, unlike a Go constant, retains negative zero.
+	xs64[2], xs128[2] = -xs64[1], -xs128[1]
+	b.Run("64/lt", func(b *testing.B) { loop1(b, xs64, func(x decimal64) bool { return x < 0 }) })
+	b.Run("64/le", func(b *testing.B) { loop1(b, xs64, func(x decimal64) bool { return x <= 0 }) })
+	b.Run("64/gt", func(b *testing.B) { loop1(b, xs64, func(x decimal64) bool { return x > 0 }) })
+	b.Run("64/ge", func(b *testing.B) { loop1(b, xs64, func(x decimal64) bool { return x >= 0 }) })
+	b.Run("64/eq", func(b *testing.B) { loop1(b, xs64, func(x decimal64) bool { return x == 0 }) })
+	b.Run("128/lt", func(b *testing.B) { loop1(b, xs128, func(x decimal128) bool { return x < 0 }) })
+	b.Run("128/le", func(b *testing.B) { loop1(b, xs128, func(x decimal128) bool { return x <= 0 }) })
+	b.Run("128/gt", func(b *testing.B) { loop1(b, xs128, func(x decimal128) bool { return x > 0 }) })
+	b.Run("128/ge", func(b *testing.B) { loop1(b, xs128, func(x decimal128) bool { return x >= 0 }) })
+	b.Run("128/eq", func(b *testing.B) { loop1(b, xs128, func(x decimal128) bool { return x == 0 }) })
+}

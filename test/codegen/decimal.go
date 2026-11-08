@@ -88,6 +88,54 @@ func Nonzero128(x decimal128) bool {
 	return x != 0.00
 }
 
+func LessZero64(x decimal64) bool {
+	// arm64:-"CALL"
+	// amd64:-"CALL"
+	return x < 0
+}
+
+func LessEqualZero64(x decimal64) bool {
+	// arm64:-"CALL"
+	// amd64:-"CALL"
+	return x <= 0
+}
+
+func GreaterZero64(x decimal64) bool {
+	// arm64:-"CALL"
+	// amd64:-"CALL"
+	return 0.00 < x
+}
+
+func GreaterEqualZero64(x decimal64) bool {
+	// arm64:-"CALL"
+	// amd64:-"CALL"
+	return 0.00 <= x
+}
+
+func LessZero128(x decimal128) bool {
+	// arm64:-"CALL"
+	// amd64:-"CALL"
+	return 0.00 > x
+}
+
+func LessEqualZero128(x decimal128) bool {
+	// arm64:-"CALL"
+	// amd64:-"CALL"
+	return 0.00 >= x
+}
+
+func GreaterZero128(x decimal128) bool {
+	// arm64:-"CALL"
+	// amd64:-"CALL"
+	return x > 0
+}
+
+func GreaterEqualZero128(x decimal128) bool {
+	// arm64:-"CALL"
+	// amd64:-"CALL"
+	return x >= 0
+}
+
 func Widen(x decimal64) decimal128 {
 	// ppc64le:"DCTQPQ" -"CALL"
 	return decimal128(x)

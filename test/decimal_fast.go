@@ -80,6 +80,9 @@ func main() {
 	if calls != 8 {
 		panic("decimal subtract evaluation")
 	}
+	if got := [4]bool{operand(-1, 8) < 0, 0 < operand(1, 9), operand(0.00, 10) >= 0, 0.00 >= operand(0, 11)}; got != [4]bool{true, true, true, true} || calls != 12 {
+		panic("decimal ordered zero evaluation")
+	}
 	for _, v := range []struct{ x, y, z decimal128 }{
 		{1.25, 2.50, 0.001},
 		{-1.25, -2.50, 0.001},

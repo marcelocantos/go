@@ -54,6 +54,57 @@ func (s *state) bidIsZero(x *ssa.Value) *ssa.Value {
 	return s.newValue2(ssaop.OpAndB, boolT, finite, s.newValue2(ssaop.OpOrB, boolT, coeff, noncanonical))
 }
 
+// bidCompareZero implements every comparison with a constant zero. Once NaNs
+// and all encodings of zero are excluded, the sign alone determines ordering,
+// including infinities. No decimal magnitude comparison or runtime call is
+// needed. x has already been evaluated exactly once, in source order.
+func (s *state) bidCompareZero(op ir.Op, x *ssa.Value, zeroOnLeft bool) *ssa.Value {
+	isZero := s.bidIsZero(x)
+	boolT, u64 := types.Types[types.TBOOL], types.Types[types.TUINT64]
+	if op == ir.OEQ {
+		return isZero
+	}
+	if op == ir.ONE {
+		return s.newValue1(ssaop.OpNot, boolT, isZero)
+	}
+	if zeroOnLeft {
+		switch op {
+		case ir.OLT:
+			op = ir.OGT
+		case ir.OLE:
+			op = ir.OGE
+		case ir.OGT:
+			op = ir.OLT
+		case ir.OGE:
+			op = ir.OLE
+		}
+	}
+	var hi *ssa.Value
+	if x.Type.Kind() == types.TDECIMAL64 {
+		hi = s.newValue2(ssaop.OpXor64, u64, s.newValue1(ssaop.OpCopy, u64, x), s.constInt64(u64, int64(bid.Zero64)))
+	} else {
+		hi = s.newValue2(ssaop.OpXor64, u64, s.newValue1(ssaop.OpDecimal128Hi, u64, x), s.constInt64(u64, int64(bid.Zero128Hi)))
+	}
+	// These fields occupy the same high-word bits in both BID widths.
+	mask := s.constInt64(u64, int64(bid.SpecialMask64|bid.NaNBit64))
+	ordered := s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, hi, mask), mask)
+	negative := s.newValue2(ssaop.OpLess64, boolT, hi, s.constInt64(u64, 0))
+	var result *ssa.Value
+	switch op {
+	case ir.OLT:
+		result = s.newValue2(ssaop.OpAndB, boolT, negative, s.newValue1(ssaop.OpNot, boolT, isZero))
+	case ir.OLE:
+		result = s.newValue2(ssaop.OpOrB, boolT, negative, isZero)
+	case ir.OGT:
+		result = s.newValue2(ssaop.OpAndB, boolT, s.newValue1(ssaop.OpNot, boolT, negative), s.newValue1(ssaop.OpNot, boolT, isZero))
+	case ir.OGE:
+		result = s.newValue2(ssaop.OpOrB, boolT, s.newValue1(ssaop.OpNot, boolT, negative), isZero)
+	default:
+		s.Fatalf("unexpected decimal zero comparison %v", op)
+	}
+	return s.newValue2(ssaop.OpAndB, boolT, ordered, result)
+}
+
 var bidAddVar = ssaMarker("bidadd")
 
 // bidAddSub128 adds or subtracts word-sized coefficients directly.

@@ -3382,6 +3382,18 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			}
 		}
 
+		if n.X.Type().IsDecimal() && !ir.DecimalDPD() {
+			// Test the original operand order, before OGT/OGE are reversed.
+			// Unlike ir.IsZero (zero storage), this recognizes zero literals
+			// with any quantum, such as 0.00.
+			if n.X.Op() == ir.OLITERAL && constant.Sign(n.X.Val()) == 0 {
+				return s.bidCompareZero(n.Op(), b, true)
+			}
+			if n.Y.Op() == ir.OLITERAL && constant.Sign(n.Y.Val()) == 0 {
+				return s.bidCompareZero(n.Op(), a, false)
+			}
+		}
+
 		// Convert OGE and OGT into OLE and OLT.
 		op := n.Op()
 		switch op {
@@ -3395,23 +3407,6 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			return s.newValueOrSfCall2(s.ssaOp(op, n.X.Type()), types.Types[types.TBOOL], a, b)
 		}
 		if n.X.Type().IsDecimal() {
-			if !ir.DecimalDPD() && (op == ir.OEQ || op == ir.ONE) {
-				var x *ssa.Value
-				// Unlike ir.IsZero (zero storage), this also recognizes zero
-				// literals with a nonzero quantum, such as 0.00.
-				if n.X.Op() == ir.OLITERAL && constant.Sign(n.X.Val()) == 0 {
-					x = b
-				} else if n.Y.Op() == ir.OLITERAL && constant.Sign(n.Y.Val()) == 0 {
-					x = a
-				}
-				if x != nil {
-					r := s.bidIsZero(x)
-					if op == ir.ONE {
-						r = s.newValue1(ssaop.OpNot, types.Types[types.TBOOL], r)
-					}
-					return r
-				}
-			}
 			return s.decimalOp(op, types.Types[types.TBOOL], a, b)
 		}
 		// integer comparison
