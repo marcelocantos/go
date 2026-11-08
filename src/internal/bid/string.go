@@ -105,27 +105,62 @@ const (
 // leading zeros ("0" for zero), and returns the number written. buf must
 // have room for digitBufLen digits, or for the digits of the value.
 func writeDigits(buf []byte, hi, lo uint64) int {
+	if hi == 0 {
+		return writeWordDigits(buf, lo)
+	}
+	const pairs = "00010203040506070809" +
+		"10111213141516171819" +
+		"20212223242526272829" +
+		"30313233343536373839" +
+		"40414243444546474849" +
+		"50515253545556575859" +
+		"60616263646566676869" +
+		"70717273747576777879" +
+		"80818283848586878889" +
+		"90919293949596979899"
 	var tmp [digitBufLen]byte
 	i := len(tmp)
-	if hi != 0 {
-		// The low word is written in full, zeros included.
-		for range u64Digits {
-			i--
-			tmp[i] = byte('0' + lo%10)
-			lo /= 10
-		}
-		for ; hi != 0; hi /= 10 {
-			i--
-			tmp[i] = byte('0' + hi%10)
-		}
+	// The low word has exactly 19 digits, including leading zeros.
+	// Write the odd last digit, then nine pairs.
+	i--
+	tmp[i] = byte('0' + lo%10)
+	lo /= 10
+	for range u64Digits / 2 {
+		i -= 2
+		p := lo % 100 * 2
+		tmp[i], tmp[i+1] = pairs[p], pairs[p+1]
+		lo /= 100
+	}
+	lo = hi
+	// The high word has no padding. Pairs shorten the long coefficient's
+	// division chain; the single-word case keeps its smaller scalar loop.
+	for lo >= 100 {
+		i -= 2
+		p := lo % 100 * 2
+		tmp[i], tmp[i+1] = pairs[p], pairs[p+1]
+		lo /= 100
+	}
+	if lo >= 10 {
+		i -= 2
+		tmp[i], tmp[i+1] = pairs[lo*2], pairs[lo*2+1]
 	} else {
-		for {
-			i--
-			tmp[i] = byte('0' + lo%10)
-			lo /= 10
-			if lo == 0 {
-				break
-			}
+		i--
+		tmp[i] = byte('0' + lo)
+	}
+	return copy(buf, tmp[i:])
+}
+
+// writeWordDigits is the small, inlinable single-word extraction loop.
+// cSplitW establishes lo < 10^19, so u64Digits bytes suffice even for zero.
+func writeWordDigits(buf []byte, lo uint64) int {
+	var tmp [u64Digits]byte
+	i := len(tmp)
+	for {
+		i--
+		tmp[i] = byte('0' + lo%10)
+		lo /= 10
+		if lo == 0 {
+			break
 		}
 	}
 	return copy(buf, tmp[i:])

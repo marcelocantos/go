@@ -21,6 +21,37 @@ import (
 // parseModes is every mode, with one out of range.
 var parseModes = []bid.Mode{bid.ToNearestEven, bid.ToNearestAway, bid.TowardZero, bid.TowardPositive, bid.TowardNegative, 9}
 
+// TestAppendDigitPairs covers every pair at every interior decimal position,
+// including zeros in the low word, and the boundaries between digit lengths.
+// The expected text comes from the independent big.Int formatter.
+func TestAppendDigitPairs(t *testing.T) {
+	for _, f := range both {
+		check := func(c *big.Int) {
+			t.Helper()
+			for _, exp := range []int{0, -3, -f.prec - 6, f.maxExp} {
+				for _, neg := range []bool{false, true} {
+					x := f.encode(value{kind: finite, neg: neg, coeff: c, exp: exp})
+					if got, want := (kernel{}).appendTo(f, x), f.format(x); got != want {
+						t.Fatalf("%s Append(%x) = %q, want %q", f.name, x, got, want)
+					}
+				}
+			}
+		}
+		for pos := 0; pos < f.prec-2; pos++ {
+			for pair := int64(0); pair < 100; pair++ {
+				c := new(big.Int).Mul(big.NewInt(pair), pow10(pos))
+				c.Add(c, pow10(f.prec-1))
+				check(c)
+			}
+		}
+		for n := 0; n < f.prec; n++ {
+			for _, delta := range []int64{-1, 0, 1} {
+				check(new(big.Int).Add(pow10(n), big.NewInt(delta)))
+			}
+		}
+	}
+}
+
 // checkParse compares the kernel's Parse of s with the reference's in
 // every mode and every width.
 func checkParse(t *testing.T, s string, modes []bid.Mode) {

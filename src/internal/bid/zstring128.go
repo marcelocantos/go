@@ -25,7 +25,12 @@ func append128(dst []byte, x coef128) []byte {
 	}
 	var digs [digitBufLen]byte
 	hi, lo := cSplit128(c)
-	n := writeDigits(digs[:], hi, lo)
+	var n int
+	if hi == 0 {
+		n = writeWordDigits(digs[:], lo)
+	} else {
+		n = writeDigits(digs[:], hi, lo)
+	}
 	return appendDecimal(dst, neg, digs[:n], exp)
 }
 
