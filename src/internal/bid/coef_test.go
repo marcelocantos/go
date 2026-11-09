@@ -27,9 +27,9 @@ import (
 func TestGenerated(t *testing.T) {
 	testenv.MustHaveGoRun(t)
 	dir := t.TempDir()
-	cmd := testenv.Command(t, testenv.GoToolPath(t), "run", "gen_arith.go", "-out", dir)
+	cmd := testenv.Command(t, testenv.GoToolPath(t), "run", "-tags", "bidgen", "gen_arith.go", "-out", dir)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("go run gen_arith.go: %v\n%s", err, out)
+		t.Fatalf("go run -tags bidgen gen_arith.go: %v\n%s", err, out)
 	}
 	// Compare in both directions, so that a generated file whose template
 	// was removed is reported too.

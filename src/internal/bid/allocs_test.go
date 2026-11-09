@@ -114,12 +114,13 @@ func exportedAPI(t testing.TB) []string {
 	return names
 }
 
-// ignoredByBuildTag reports whether src has a "//go:build ignore" line
-// before its package clause: the generator and the templates.
+// ignoredByBuildTag reports whether src has a "//go:build ignore" or
+// "//go:build bidgen" line before its package clause: the generator, the
+// templates and the generator's stand-in for the generated files.
 func ignoredByBuildTag(src string) bool {
 	for _, line := range strings.Split(src, "\n") {
 		line = strings.TrimSpace(line)
-		if line == "//go:build ignore" {
+		if line == "//go:build ignore" || line == "//go:build bidgen" {
 			return true
 		}
 		if strings.HasPrefix(line, "package ") {

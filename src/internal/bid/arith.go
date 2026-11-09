@@ -6,7 +6,7 @@ package bid
 
 import "math/bits"
 
-//go:generate go run gen_arith.go
+//go:generate go run -tags bidgen gen_arith.go
 
 // The arithmetic operations of IEEE 754-2019 clause 5.4.1 and the
 // homogeneous operations of clause 5.3, for both widths. Each computes its

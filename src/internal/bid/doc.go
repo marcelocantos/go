@@ -1698,10 +1698,15 @@
 //  1. Source of truth. Every width-dependent algorithm lives in a template
 //     NAME_tmpl.go (//go:build ignore), written once in the template
 //     vocabulary below, one template per family of operations. gen_arith.go
-//     (//go:build ignore, run by "//go:generate go run gen_arith.go" in
-//     arith.go) writes zNAME64.go and zNAME128.go from each template, which
-//     are committed, and zpow10.go, the tables of powers of ten that the
-//     helpers below index. Nobody edits a z*.go file. A test,
+//     (//go:build ignore, run by "//go:generate go run -tags bidgen
+//     gen_arith.go" in arith.go) writes zNAME64.go and zNAME128.go from each
+//     template, which are committed, and zpow10.go, the tables of powers of
+//     ten that the helpers below index. The generator links this package
+//     (the runtime imports it), so it is built with the tag bidgen, under
+//     which the files generated from templates are replaced by zbidgen.go,
+//     their declarations with bodies that return zero values: generated code
+//     that does not compile never stops the generator from building. Nobody
+//     edits a z*.go file. A test,
 //     TestGenerated, guarded by testenv.MustHaveGoRun, regenerates into a
 //     scratch directory and fails on any difference from the committed
 //     files.
