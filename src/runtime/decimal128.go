@@ -3,7 +3,9 @@
 // license that can be found in the LICENSE file.
 
 // Soft-decimal entry points for decimal128; see decimal64.go. A decimal128
-// passes as the two uint64 halves of its BID bit pattern, high first.
+// passes as the two uint64 halves of its BID bit pattern, high first. The
+// comparisons, which the compiler also decides inline on some targets, are
+// in decimal128_inline.go and decimal128_call.go.
 
 package runtime
 
@@ -30,18 +32,6 @@ func dmul128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
 func ddiv128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
 	z := bid.Div128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven)
 	return to128(z)
-}
-
-func deq128(xhi, xlo, yhi, ylo uint64) bool {
-	return bid.Equal128(from128(xhi, xlo), from128(yhi, ylo))
-}
-
-func dlt128(xhi, xlo, yhi, ylo uint64) bool {
-	return bid.Less128(from128(xhi, xlo), from128(yhi, ylo))
-}
-
-func dle128(xhi, xlo, yhi, ylo uint64) bool {
-	return bid.LessEqual128(from128(xhi, xlo), from128(yhi, ylo))
 }
 
 func dmin128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
