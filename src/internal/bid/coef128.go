@@ -61,12 +61,23 @@ func cDigits128(c coef128) int {
 
 // cMulPow10128 returns c × 10^k. Precondition: 0 <= k <= 38 and the product
 // fits 128 bits; a product that does not panics rather than wrap.
+//
+// It is u128MulFits written out so that it inlines (a call cost addition
+// and rounding a call each): a product that fits 128 bits has a factor
+// below 2^64, which is taken as a, and the product is a.Lo times both
+// words of b.
 func cMulPow10128(c coef128, k int) coef128 {
-	p, ok := u128MulFits(c, pow10tab128[k])
-	if !ok {
+	a, b := c, pow10tab128[k]
+	if a.Hi != 0 {
+		a, b = b, a
+	}
+	h0, lo := bits.Mul64(a.Lo, b.Lo)
+	h1, l1 := bits.Mul64(a.Lo, b.Hi)
+	hi, carry := bits.Add64(h0, l1, 0)
+	if a.Hi|h1|carry != 0 {
 		panic("internal/bid: coefficient overflow")
 	}
-	return p
+	return coef128{Hi: hi, Lo: lo}
 }
 
 // cDivPow10128 returns the quotient and remainder of c / 10^k, so that
