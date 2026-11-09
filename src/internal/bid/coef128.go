@@ -362,14 +362,35 @@ func cFromU128128(q Uint128) wide128 {
 // cSplit128 returns c split into the words hi and lo with
 // c = hi × 10^19 + lo and lo < 10^19, the form writeDigits renders.
 // Precondition: c is at most MaxCoeff128, below 10^34, so hi is below 10^15
-// and fits a word. Div64 checks its quotient fits rather than truncating it.
+// and fits a word.
 func cSplit128(c coef128) (hi, lo uint64) {
-	if c.Hi == 0 && c.Lo < pow10tab64[u64Digits] {
-		return 0, c.Lo
+	const divisor = 10_000_000_000_000_000_000 // The u64Digits decimal chunk.
+	if c.Hi == 0 {
+		if c.Lo < divisor {
+			return 0, c.Lo
+		}
+		// 2^64 < 2*divisor, so a word has quotient at most one.
+		return 1, c.Lo - divisor
 	}
-	// The canonical coefficient bound establishes c.Hi < 10^19, so one
-	// 128-by-64 divide suffices; no high quotient word needs computing.
-	return bits.Div64(c.Hi, c.Lo, pow10tab64[u64Digits])
+	// Let R = floor(2^128/divisor). Since 2^63 < divisor < 2^64,
+	// R's high word is one. The high half of c*R is the quotient estimate.
+	// 0 <= c/divisor - c*R/2^128 < c/2^128 < 1, so that estimate is
+	// exact or one too small. The coefficient bound makes it fit uint64.
+	const reciprocalLo = uint64((1<<128)/divisor - (1 << 64))
+	p0hi, _ := bits.Mul64(c.Lo, reciprocalLo)
+	p1hi, p1lo := bits.Mul64(c.Hi, reciprocalLo)
+	middle, carry0 := bits.Add64(p0hi, c.Lo, 0)
+	_, carry1 := bits.Add64(middle, p1lo, 0)
+	hi = c.Hi + p1hi + carry0 + carry1
+	// The tighter bound c < 10^34 gives remainder < divisor +
+	// 10^34*divisor/2^128 < 2^64. Low-word arithmetic therefore recovers
+	// the full remainder even though hi*divisor itself can exceed a word.
+	lo = c.Lo - hi*divisor
+	if lo >= divisor {
+		hi++
+		lo -= divisor
+	}
+	return hi, lo
 }
 
 // cWide128 returns the 128-bit value m as a wide128.
