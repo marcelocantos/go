@@ -77,22 +77,32 @@ const (
 // dpdEncode15 returns the five declets of the 15 low-order decimal digits
 // of c, which must be below 10^15, as the low 50 bits of the result.
 func dpdEncode15(c uint64) uint64 {
-	var r uint64
-	for i := range 5 {
-		r |= uint64(bin2dpd[c%1000]) << (10 * i)
-		c /= 1000
-	}
-	return r
+	// Two independent chains of divisions by 1000, below and above 10^9,
+	// rather than one of five: each division by a constant is a multiply,
+	// and the chain's length is the latency.
+	hi, lo := c/1_000_000_000, c%1_000_000_000
+	return dpdEncode9(lo) | uint64(bin2dpd[hi%1000])<<30 | uint64(bin2dpd[hi/1000])<<40
+}
+
+// dpdEncode9 returns the three declets of c, which must be below 10^9, as
+// the low 30 bits of the result.
+func dpdEncode9(c uint64) uint64 {
+	return uint64(bin2dpd[c%1000]) | uint64(bin2dpd[c/1000%1000])<<10 | uint64(bin2dpd[c/1_000_000])<<20
 }
 
 // dpdDecode15 is the inverse of dpdEncode15: the integer below 10^15 whose
 // digits the five declets in the low 50 bits of d hold.
 func dpdDecode15(d uint64) uint64 {
-	var c uint64
-	for i := 4; i >= 0; i-- {
-		c = c*1000 + uint64(dpd2bin[d>>(10*i)&dpdDecletMask])
-	}
-	return c
+	// Independent products rather than a chain of five multiply-adds; see
+	// dpdEncode15.
+	hi := uint64(dpd2bin[d>>40&dpdDecletMask])*1000 + uint64(dpd2bin[d>>30&dpdDecletMask])
+	return hi*1_000_000_000 + dpdDecode9(d)
+}
+
+// dpdDecode9 is the inverse of dpdEncode9: the integer below 10^9 whose
+// digits the three declets in the low 30 bits of d hold.
+func dpdDecode9(d uint64) uint64 {
+	return uint64(dpd2bin[d>>20&dpdDecletMask])*1_000_000 + uint64(dpd2bin[d>>10&dpdDecletMask])*1000 + uint64(dpd2bin[d&dpdDecletMask])
 }
 
 // dpdComb returns the combination field for the leading digit lead and the
@@ -169,16 +179,12 @@ func DPDFromBID128(x Uint128) Uint128 {
 	}
 	// Split the coefficient (below 10^34, or a payload below 10^33) at
 	// 10^18: q < 10^16 holds the leading 16 digits and r < 10^18 the
-	// trailing 18. coeff.Hi < 10^34 / 2^64 < 10^18, so Div64 cannot
-	// overflow.
-	q, r := bits.Div64(coeff.Hi, coeff.Lo, pow10_18)
+	// trailing 18, by the reciprocal division of recip128.go.
+	qw, rw := divPow10Recip128(coeff, 18)
+	q, r := qw.Lo, rw.Lo
 	lead := q / pow10_15
 	// Declets 0 to 5 hold r and declets 6 to 10 the low 15 digits of q.
-	var lo6 uint64
-	for i := range 6 {
-		lo6 |= uint64(bin2dpd[r%1000]) << (10 * i)
-		r /= 1000
-	}
+	lo6 := dpdEncode9(r%1_000_000_000) | dpdEncode9(r/1_000_000_000)<<30
 	t := u128Or(u128Shl(Uint128{Lo: dpdEncode15(q % pow10_15)}, 60), Uint128{Lo: lo6})
 	if kind == KindFinite {
 		biased := uint64(exp + Bias128)
@@ -197,10 +203,7 @@ func BIDFromDPD128(x Uint128) Uint128 {
 	// The trailing field's 33 digits: the high 15 in declets 6 to 10 and
 	// the low 18 in declets 0 to 5.
 	t := Uint128{Hi: x.Hi & dpdTrailingMask128Hi, Lo: x.Lo}
-	var lo18 uint64
-	for i := 5; i >= 0; i-- {
-		lo18 = lo18*1000 + uint64(dpd2bin[u128Shr(t, uint(10*i)).Lo&dpdDecletMask])
-	}
+	lo18 := dpdDecode9(t.Lo>>30)*1_000_000_000 + dpdDecode9(t.Lo) // declets 0 to 5 are bits 0 to 59
 	hi15 := dpdDecode15(u128Shr(t, 60).Lo)
 	if comb == 0x1F {
 		hi, lo := bits.Mul64(hi15, pow10_18)
