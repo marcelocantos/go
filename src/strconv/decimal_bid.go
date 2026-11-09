@@ -259,6 +259,21 @@ func appendCanonical(dst []byte, v *finite, format byte) []byte {
 		}
 		return appendExp(dst, digits, exp, ef, -1)
 	}
+	if exp == 0 {
+		return append(dst, digits...)
+	}
+	// The canonical fixed form neither rounds nor pads when the point is
+	// inside the coefficient. Reserve the whole result once, then place
+	// the two digit spans without the general formatter's append checks.
+	point := len(digits) + exp
+	if point > 0 && cap(dst)-len(dst) >= len(digits)+1 {
+		start := len(dst)
+		dst = dst[:start+len(digits)+1]
+		copy(dst[start:], digits[:point])
+		dst[start+point] = '.'
+		copy(dst[start+point+1:], digits[point:])
+		return dst
+	}
 	return appendFixed(dst, digits, exp, -1)
 }
 

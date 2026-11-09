@@ -962,6 +962,8 @@ func TestFormatDecimalCanonicalNotation(t *testing.T) {
 		{"-100000000000000000000", "-100000000000000000000"},
 		{"1000000000000000000000", "1.000000000000000000000e+21"},
 		{"1.234567890123456789012", "1.234567890123456789012"},
+		{"-123456789012345678901.2345678901234", "-123456789012345678901.2345678901234"},
+		{"1.234567890123456789012345678901234", "1.234567890123456789012345678901234"},
 		{"0.000001", "0.000001"},
 		{"0.0000001", "1e-07"},
 		{"0.00", "0.00"},
@@ -985,8 +987,15 @@ func TestFormatDecimalCanonicalNotation(t *testing.T) {
 			if got := FormatDecimal(x, format, -1, 128); got != want {
 				t.Errorf("FormatDecimal(%s, %c) = %q, want %q", tt.in, format, got, want)
 			}
-			if got := string(AppendDecimal([]byte("prefix:"), x, format, -1, 128)); got != "prefix:"+want {
-				t.Errorf("AppendDecimal(%s, %c) = %q, want %q", tt.in, format, got, "prefix:"+want)
+			// Exercise every capacity boundary, including growth, exact fit,
+			// and spare capacity. The prefix must survive all of them.
+			const prefix = "prefix:"
+			for spare := 0; spare <= len(want)+1; spare++ {
+				dst := make([]byte, len(prefix), len(prefix)+spare)
+				copy(dst, prefix)
+				if got := string(AppendDecimal(dst, x, format, -1, 128)); got != prefix+want {
+					t.Errorf("AppendDecimal(%s, %c, spare=%d) = %q, want %q", tt.in, format, spare, got, prefix+want)
+				}
 			}
 		}
 	}
