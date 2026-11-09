@@ -12,15 +12,21 @@ package bid
 
 import "math/bits"
 
-// addDigitsW is the number of digits addW scales a coefficient up to. Two
-// bounds fix it. The sum of two operands aligned this way must fit the
-// coefficient type, so no addition needs the wide type: 10^19 + 10^16 and
-// 10^37 + 10^34 are below 2^64 and 2^128. And an operand scaled this far must
-// keep more than PrecisionW digits when the other, shifted, is taken from it,
-// which is what roundW requires of a value with a discarded tail: PrecisionW
-// plus two digits would do, because the shifted operand is at most
-// 10^PrecisionW, a borrow included.
-const addDigitsW = PrecisionW + 3
+// addDigitsW is the number of digits addW scales a coefficient up to: the
+// most the coefficient type holds for every value, 19 digits in 64 bits and
+// 38 in 128, the exponent of the last power of ten in pow10tabW. Two bounds
+// allow it. The sum of two operands aligned this way must fit the
+// coefficient type, so no addition needs the wide type: it is below
+// 10^19 + 10^16 < 2^64 and 10^38 + 10^34 < 2^128. And an operand scaled this
+// far must keep more than PrecisionW digits when the other, shifted, is
+// taken from it, which is what roundW requires of a value with a discarded
+// tail: PrecisionW plus two digits would do, because the shifted operand is
+// at most 10^PrecisionW, a borrow included, and addDigitsW is PrecisionW+3
+// for decimal64 and PrecisionW+4 for decimal128. The larger it is, the
+// wider the gap that an exact sum spans: two decimal128 operands of
+// PrecisionW digits up to four places apart are added exactly and rounded
+// once, with no shift of the smaller.
+const addDigitsW = len(pow10tabW) - 1
 
 // addW returns x + y rounded in mode.
 //
@@ -49,7 +55,7 @@ const addDigitsW = PrecisionW + 3
 // packing exception roundW's comment allows, and the general path gives the
 // same encoding. It scales the operand with the larger exponent by
 // k = min(gap, addDigitsW - digits) places and shifts the other only if
-// k < gap; then the scaled operand has at least addDigitsW = PrecisionW+3
+// k < gap; then the scaled operand has at least addDigitsW >= PrecisionW+3
 // digits and the other is below 10^PrecisionW, so the sum or difference has
 // more than PrecisionW digits and does not fit. When k = gap the general sum
 // is this one, exact, at the same exponent, and roundW packs it unchanged.

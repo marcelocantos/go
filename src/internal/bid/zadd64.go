@@ -10,15 +10,21 @@ package bid
 
 import "math/bits"
 
-// addDigits64 is the number of digits add64 scales a coefficient up to. Two
-// bounds fix it. The sum of two operands aligned this way must fit the
-// coefficient type, so no addition needs the wide type: 10^19 + 10^16 and
-// 10^37 + 10^34 are below 2^64 and 2^128. And an operand scaled this far must
-// keep more than Precision64 digits when the other, shifted, is taken from it,
-// which is what round64 requires of a value with a discarded tail: Precision64
-// plus two digits would do, because the shifted operand is at most
-// 10^Precision64, a borrow included.
-const addDigits64 = Precision64 + 3
+// addDigits64 is the number of digits add64 scales a coefficient up to: the
+// most the coefficient type holds for every value, 19 digits in 64 bits and
+// 38 in 128, the exponent of the last power of ten in pow10tab64. Two bounds
+// allow it. The sum of two operands aligned this way must fit the
+// coefficient type, so no addition needs the wide type: it is below
+// 10^19 + 10^16 < 2^64 and 10^38 + 10^34 < 2^128. And an operand scaled this
+// far must keep more than Precision64 digits when the other, shifted, is
+// taken from it, which is what round64 requires of a value with a discarded
+// tail: Precision64 plus two digits would do, because the shifted operand is
+// at most 10^Precision64, a borrow included, and addDigits64 is Precision64+3
+// for decimal64 and Precision64+4 for decimal128. The larger it is, the
+// wider the gap that an exact sum spans: two decimal128 operands of
+// Precision64 digits up to four places apart are added exactly and rounded
+// once, with no shift of the smaller.
+const addDigits64 = len(pow10tab64) - 1
 
 // add64 returns x + y rounded in mode.
 //
@@ -47,7 +53,7 @@ const addDigits64 = Precision64 + 3
 // packing exception round64's comment allows, and the general path gives the
 // same encoding. It scales the operand with the larger exponent by
 // k = min(gap, addDigits64 - digits) places and shifts the other only if
-// k < gap; then the scaled operand has at least addDigits64 = Precision64+3
+// k < gap; then the scaled operand has at least addDigits64 >= Precision64+3
 // digits and the other is below 10^Precision64, so the sum or difference has
 // more than Precision64 digits and does not fit. When k = gap the general sum
 // is this one, exact, at the same exponent, and round64 packs it unchanged.

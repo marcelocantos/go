@@ -264,3 +264,58 @@ func TestWordDecodeBounds(t *testing.T) {
 		t.Logf("%s: %d operand pairs × 4 operations", f.name, n)
 	}
 }
+
+// TestAddAlignBound checks the general path of addition where the scale of
+// the operand with the larger exponent reaches addDigits, the most digits
+// the coefficient type holds for every value (19 in 64 bits, 38 in 128):
+// with dx digits and a gap of addDigits - dx or less the sum is exact and
+// rounded once, and one place more shifts the other operand by a digit
+// with its class. The gaps put dx + gap at addDigits - 1, addDigits and one
+// and two beyond it, for coefficients of x of Precision digits and fewer,
+// and coefficients of y whose low digits make the dropped part of the sum
+// exactly a half, just below and just above it, with both signs and every
+// mode, against the reference.
+func TestAddAlignBound(t *testing.T) {
+	var k kernel
+	for _, f := range []*format{dec64, dec128} {
+		p := f.prec
+		addDigits := 19
+		if f == dec128 {
+			addDigits = 38
+		}
+		nines := func(n int) string { return strings.Repeat("9", n) }
+		pow := func(n int) string { return "1" + strings.Repeat("0", n) }
+		xcs := []string{nines(p), pow(p - 1), "1" + strings.Repeat("2", p-1), "7" + strings.Repeat("0", p-3) + "1", "12345"}
+		ycs := []string{"1", "5", "50", "4999", "5000", "5001", "15000", "25000", "49999", "50000", "50001", nines(p), pow(p - 1), "5" + strings.Repeat("0", p-1)}
+		n := 0
+		for _, xc := range xcs {
+			dx := len(xc)
+			for _, over := range []int{-1, 0, 1, 2} {
+				gap := addDigits - dx + over
+				for _, yc := range ycs {
+					for _, ye := range []int{-gap, f.minExp} {
+						x, ok := wordOperand(f, false, xc, ye+gap)
+						if !ok {
+							continue
+						}
+						for _, neg := range []bool{false, true} {
+							y, ok := wordOperand(f, neg, yc, ye)
+							if !ok {
+								continue
+							}
+							for _, m := range allModes {
+								n++
+								for _, pair := range [][2]bits{{x, y}, {y, x}, {k.neg(f, x), k.neg(f, y)}} {
+									if got, want := k.add(f, pair[0], pair[1], m), f.add(pair[0], pair[1], m); got != want {
+										t.Fatalf("%s add(%s, %s, %s) = %s, want %s", f.name, f.format(pair[0]), f.format(pair[1]), modeName(m), f.format(got), f.format(want))
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		t.Logf("%s: %d cases", f.name, n)
+	}
+}

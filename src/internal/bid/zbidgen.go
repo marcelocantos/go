@@ -13,13 +13,13 @@ package bid
 // depend on the code it generates. The generator never calls them, and each
 // returns zero values.
 
-const addDigits64 = Precision64 + 3
+const addDigits64 = len(pow10tab64) - 1
 
 func add64(x, y coef64, mode Mode) coef64 {
 	return *new(coef64)
 }
 
-const addDigits128 = Precision128 + 3
+const addDigits128 = len(pow10tab128) - 1
 
 func add128(x, y coef128, mode Mode) coef128 {
 	return *new(coef128)
