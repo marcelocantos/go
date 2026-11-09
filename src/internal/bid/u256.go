@@ -83,46 +83,83 @@ func u256Shr(a Uint256, n uint) Uint256 {
 	}
 }
 
-// div3by2 divides the three-word number (u2, u1, u0) by the two-word number
-// (v1, v0) and returns the one-word quotient q and the two-word remainder
-// (r1, r0). It is one step of Knuth's Algorithm D (TAOCP vol. 2, 4.3.1)
-// with a two-word divisor.
+// The division by a two-word divisor uses the method of Möller and
+// Granlund, "Improved division by invariant integers" (IEEE Transactions on
+// Computers 60(2), 2011): each quotient word is estimated by multiplying by
+// a reciprocal of the normalised divisor, computed once per divisor and
+// shared by both quotient words of u256Div128, instead of by a 128-by-64
+// division per word. The reciprocal itself takes one bits.Div64.
 //
-// Preconditions, not checked: v1 has its top bit set (the divisor is
-// normalised), and (u2, u1) < (v1, v0), which is exactly the condition for
+// Measured on arm64 (Apple M4 Max), where bits.Div64 is software: the
+// two-word division is about 16% faster this way. A one-word divisor still
+// uses two bits.Div64, which measured faster than a reciprocal and two
+// Möller–Granlund 2/1 steps, and computing the reciprocal without any
+// division (their Algorithm 3, Newton steps from a 9-bit approximation)
+// measured slower than the one bits.Div64.
+
+// reciprocal3by2 returns ⌊(2^192 - 1) / (d1, d0)⌋ - 2^64, the reciprocal
+// of the normalised two-word divisor (d1, d0) that div3by2 multiplies by,
+// from the reciprocal ⌊(2^128 - 1) / d1⌋ - 2^64 of d1 alone, which is the
+// quotient of (2^128 - 1) - d1 × 2^64 by d1 (Möller and Granlund,
+// Algorithm 6).
+func reciprocal3by2(d1, d0 uint64) uint64 {
+	v, _ := bits.Div64(^d1, ^uint64(0), d1)
+	p := d1*v + d0
+	if p < d0 { // the addition carried
+		v--
+		if p >= d1 {
+			v--
+			p -= d1
+		}
+		p -= d1
+	}
+	t1, t0 := bits.Mul64(v, d0)
+	p += t1
+	if p < t1 { // the addition carried
+		v--
+		if p > d1 || p == d1 && t0 >= d0 {
+			v--
+		}
+	}
+	return v
+}
+
+// div3by2 divides the three-word number (u2, u1, u0) by the two-word number
+// (d1, d0), whose reciprocal v is reciprocal3by2(d1, d0), and returns the
+// one-word quotient q and the two-word remainder (r1, r0) (Möller and
+// Granlund, Algorithm 5).
+//
+// Preconditions, not checked: d1 has its top bit set (the divisor is
+// normalised), and (u2, u1) < (d1, d0), which is exactly the condition for
 // the quotient to fit one word.
 //
-// The quotient digit is first estimated from the top words alone, as
-// q̂ = min(⌊(u2·2^64 + u1) / v1⌋, 2^64-1). Because v1 is normalised the
-// estimate is never too small and at most 2 too large. The estimate is
-// then multiplied back and subtracted, and when that borrows (q̂ was too
-// large) the divisor is added back and q̂ decremented, at most twice.
-func div3by2(u2, u1, u0, v1, v0 uint64) (q, r1, r0 uint64) {
-	if u2 >= v1 {
-		q = 1<<64 - 1
-	} else {
-		q, _ = bits.Div64(u2, u1, v1)
-	}
-
-	// (r2, r1, r0) = (u2, u1, u0) - q × (v1, v0), modulo 2^192.
-	h0, p0 := bits.Mul64(q, v0)
-	h1, p1 := bits.Mul64(q, v1)
-	var c, b uint64
-	p1, c = bits.Add64(p1, h0, 0)
-	p2 := h1 + c // q × v < 2^192, so this cannot overflow
-	r0, b = bits.Sub64(u0, p0, 0)
-	r1, b = bits.Sub64(u1, p1, b)
-	r2, b := bits.Sub64(u2, p2, b)
-
-	// A borrow means q̂ was too large and the difference wrapped negative.
-	// Add the divisor back; the difference is non-negative again exactly
-	// when the addition carries out of the top word.
-	for b != 0 {
+// The candidate quotient (q1, q0) = v u2 + (u2, u1) is the quotient or one
+// more than it after the increment below; the remainder computed modulo
+// 2^128 against that candidate says which, by comparison with the fraction
+// word q0, and adding the divisor back corrects it. A last, rare step
+// corrects a remainder that is still at or above the divisor.
+func div3by2(u2, u1, u0, d1, d0, v uint64) (q, r1, r0 uint64) {
+	q, q0 := bits.Mul64(v, u2)
+	q0, c := bits.Add64(q0, u1, 0)
+	q += u2 + c
+	r1 = u1 - q*d1
+	t1, t0 := bits.Mul64(d0, q)
+	// (r1, r0) = (r1, u0) - (t1, t0) - (d1, d0), modulo 2^128.
+	var b uint64
+	r0, b = bits.Sub64(u0, t0, 0)
+	r1, _ = bits.Sub64(r1, t1, b)
+	r0, b = bits.Sub64(r0, d0, 0)
+	r1, _ = bits.Sub64(r1, d1, b)
+	q++
+	if r1 >= q0 {
 		q--
-		r0, c = bits.Add64(r0, v0, 0)
-		r1, c = bits.Add64(r1, v1, c)
-		r2, c = bits.Add64(r2, 0, c)
-		b ^= c
+		r0, c = bits.Add64(r0, d0, 0)
+		r1, _ = bits.Add64(r1, d1, c)
+	}
+	if r1 > d1 || r1 == d1 && r0 >= d0 {
+		q++
+		r0, b = bits.Sub64(r0, d0, 0)
+		r1, _ = bits.Sub64(r1, d1, b)
 	}
 	return q, r1, r0
 }
@@ -166,9 +203,14 @@ func u256Div128(n Uint256, d Uint128) (q, r Uint128, ok bool) {
 	// Two quotient words, high first. The first step's precondition
 	// (w3, w2) < (v1, v0) is n.Hi < d after the shift; the second's is that
 	// the remainder of the first is below the divisor.
-	var r1, r0 uint64
-	q.Hi, r1, r0 = div3by2(w3, w2, w1, v1, v0)
-	q.Lo, r1, r0 = div3by2(r1, r0, w0, v1, v0)
+	// A dividend below 2^128 has a high quotient word of zero, because
+	// d >= 2^64, and the first remainder is then (w2, w1) itself.
+	v := reciprocal3by2(v1, v0)
+	r1, r0 := w2, w1
+	if n.Hi != (Uint128{}) {
+		q.Hi, r1, r0 = div3by2(w3, w2, w1, v1, v0, v)
+	}
+	q.Lo, r1, r0 = div3by2(r1, r0, w0, v1, v0, v)
 
 	// Undo the normalisation of the remainder.
 	r = Uint128{Hi: r1 >> s, Lo: r0>>s | r1<<(64-s)}

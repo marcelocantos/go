@@ -79,6 +79,7 @@ var (
 	Digits128       = digits128
 	Log10Pow2       = log10Pow2
 	Pow5            = pow5
+	Reciprocal3by2  = reciprocal3by2
 	DivPow10Recip64 = divPow10Recip64
 	U128Add         = u128Add
 	U128Cmp         = u128Cmp

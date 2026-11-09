@@ -263,3 +263,96 @@ func oldDiv3by2(u2, u1, u0, v1, v0 uint64) (q, r1, r0 uint64) {
 	_ = r2
 	return q, r1, r0
 }
+
+// TestReciprocal3by2 compares the two-word reciprocal with math/big.
+func TestReciprocal3by2(t *testing.T) {
+	two192 := new(big.Int).Lsh(bigOne, 192)
+	two192.Sub(two192, bigOne)
+	check := func(d1, d0 uint64) {
+		d := bigOf(bid.Uint128{Hi: d1, Lo: d0})
+		want := new(big.Int).Quo(two192, d)
+		want.Sub(want, bigTwo64)
+		if got := bid.Reciprocal3by2(d1, d0); new(big.Int).SetUint64(got).Cmp(want) != 0 {
+			t.Fatalf("Reciprocal3by2(%#x, %#x) = %#x, want %v", d1, d0, got, want)
+		}
+	}
+	edges := []uint64{0, 1, 2, 1<<63 - 1, 1 << 63, 1<<64 - 2, 1<<64 - 1}
+	for _, d1 := range []uint64{1 << 63, 1<<63 + 1, 1<<64 - 2, 1<<64 - 1} {
+		for _, d0 := range edges {
+			check(d1, d0)
+		}
+	}
+	rng := rand.New(rand.NewPCG(2011, 0x3233))
+	for range 200_000 {
+		check(rng.Uint64()|1<<63, rng.Uint64())
+	}
+}
+
+// TestRecipDivide compares u256Div128, the division by an arbitrary divisor
+// whose quotient fits 128 bits, with math/big and with the old long
+// division, for divisors at the word boundary (2^64 ± 1), at the precision
+// of decimal128 (10^33, 10^34 - 1, 10^34), at the edges of normalisation,
+// and at random, with dividends at the bound n.Hi < d, near multiples of the
+// divisor, and at random.
+func TestRecipDivide(t *testing.T) {
+	rng := rand.New(rand.NewPCG(2011, 0x3334))
+	var ds []*big.Int
+	for _, d := range []*big.Int{
+		new(big.Int).Sub(bigTwo64, bigOne), bigTwo64, new(big.Int).Add(bigTwo64, bigOne),
+		bigPow10(33), new(big.Int).Sub(bigPow10(34), bigOne), bigPow10(34), bigPow10(19), bigPow10(38),
+		big.NewInt(1), big.NewInt(3), big.NewInt(10), new(big.Int).Lsh(bigOne, 63), new(big.Int).Sub(bigTwo128, bigOne),
+		new(big.Int).Lsh(bigOne, 127), new(big.Int).Add(new(big.Int).Lsh(bigOne, 127), bigOne),
+		new(big.Int).Sub(new(big.Int).Lsh(bigOne, 127), bigOne),
+	} {
+		ds = append(ds, d)
+	}
+	random := 2000
+	if testing.Short() {
+		random /= 10
+	}
+	for range random {
+		d := new(big.Int).SetUint64(rng.Uint64())
+		d.Lsh(d, 64).Or(d, new(big.Int).SetUint64(rng.Uint64()))
+		ds = append(ds, d.Rsh(d, uint(rng.IntN(128))))
+	}
+	q, r := new(big.Int), new(big.Int)
+	for _, d := range ds {
+		if d.Sign() == 0 {
+			continue
+		}
+		top := new(big.Int).Lsh(d, 128) // n < d × 2^128
+		ns := []*big.Int{
+			big.NewInt(0), big.NewInt(1), new(big.Int).Sub(d, bigOne), d,
+			new(big.Int).Sub(top, bigOne), new(big.Int).Sub(top, d), new(big.Int).Sub(top, new(big.Int).Add(d, bigOne)),
+		}
+		for _, j := range []*big.Int{bigTwo64, new(big.Int).Sub(bigTwo64, bigOne), bigPow10(34), new(big.Int).Sub(bigTwo128, bigOne)} {
+			p := new(big.Int).Mul(j, d)
+			ns = append(ns, new(big.Int).Sub(p, bigOne), p, new(big.Int).Add(p, bigOne))
+		}
+		for range 50 {
+			n := new(big.Int)
+			for i := range 4 {
+				n.Or(n, new(big.Int).Lsh(new(big.Int).SetUint64(rng.Uint64()), uint(64*i)))
+			}
+			ns = append(ns, n.Mod(n.Rsh(n, uint(rng.IntN(256))), top))
+		}
+		dd := from128(d)
+		for _, n := range ns {
+			if n.Sign() < 0 || n.Cmp(top) >= 0 {
+				continue
+			}
+			q.QuoRem(n, d, r)
+			nn := from256(n)
+			what := fmt.Sprintf("%v / %v", n, d)
+			gq, gr, ok := bid.U256Div128(nn, dd)
+			if !ok {
+				t.Fatalf("U256Div128(%s): not ok", what)
+			}
+			eq128(t, "U256Div128("+what+") q", gq, q)
+			eq128(t, "U256Div128("+what+") r", gr, r)
+			oq, or := oldDiv128(nn, dd)
+			eq128(t, "old division "+what+" q", oq, q)
+			eq128(t, "old division "+what+" r", or, r)
+		}
+	}
+}
