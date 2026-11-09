@@ -324,3 +324,61 @@ func FuzzRoundTrip(f *testing.F) {
 		}
 	})
 }
+
+// TestParseEightDigits checks the eight-digit step of scanDecimal against
+// the reference at its bounds: digit runs of every length from 1 to 48, so
+// that a run of eight starts at every offset and crosses the word bound (19
+// kept digits) and the bound of kept digits (Precision+1) at every offset,
+// behind 0 to 9 leading zeros, with a point at every position, with zeros
+// and non-zero digits beyond the kept ones (the sticky bit), and with one
+// byte replaced by each of the bytes next to the digits in ASCII and by
+// bytes whose low nibble is a digit (which the digit test must refuse), so
+// that every chunk position sees a non-digit.
+func TestParseEightDigits(t *testing.T) {
+	digitsOf := func(n int, salt int) string {
+		var b strings.Builder
+		for i := range n {
+			b.WriteByte(byte('0' + (i*7+salt*3+1)%10))
+		}
+		return b.String()
+	}
+	check := func(f *format, s string) {
+		t.Helper()
+		got, gst := kernel{}.parse(f, s, rne)
+		want, wst := f.parse(s, rne)
+		if got != want || gst != wst {
+			t.Fatalf("%s Parse(%q) = %s, %v; reference %s, %v", f.name, s, f.format(got), gst, f.format(want), wst)
+		}
+	}
+	bad := []byte{'/', ':', '.', 'e', '+', ' ', 0, 0x30 | 0x80, 0x39 + 0x40, 0x13, 0x3A, 0xB5}
+	n := 0
+	for _, f := range both {
+		for length := 1; length <= 48; length++ {
+			for zeros := range 10 {
+				for salt := range 3 {
+					run := digitsOf(length, salt)
+					if salt == 2 && length > f.prec+1 {
+						// Zeros beyond the kept digits: no sticky bit.
+						run = run[:f.prec+1] + strings.Repeat("0", length-f.prec-1)
+					}
+					s := strings.Repeat("0", zeros) + run
+					check(f, s)
+					check(f, "-"+s+"E-3")
+					for p := 0; p <= len(s); p++ {
+						check(f, s[:p]+"."+s[p:])
+						n++
+					}
+					if zeros < 2 {
+						for p := range len(s) {
+							for _, c := range bad {
+								check(f, s[:p]+string([]byte{c})+s[p+1:])
+								n++
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	t.Logf("%d strings", n)
+}

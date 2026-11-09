@@ -4,6 +4,8 @@
 
 package bid
 
+import "math/bits"
+
 // Conversion between decimal values and character sequences
 // (IEEE 754-2019 clause 5.4.2 and 5.12, convertFromDecimalCharacter and
 // convertToDecimalCharacter). The character form is the to-scientific-string
@@ -282,6 +284,17 @@ func scanDecimal(s string, keep int) numeral {
 	var digits, fraction, kept, dropped int
 	point := false
 	wordKeep := min(keep, u64Digits)
+	// Runs of eight digits go to scanEights, at the three places where a
+	// long run can start: the first digit, the digit after the point, and a
+	// digit beyond keep, and only when eight digits follow, which costs a
+	// load and is checked before the call. The byte loop itself does no
+	// more than it would without them, so short numerals pay nothing.
+	if i+8 <= len(s) && eightDigits(load8(s, i)) {
+		j := i
+		j, kept, r.mant, dropped, r.sticky = scanEights(s, j, kept, keep, wordKeep, r.mant, dropped, r.sticky)
+		digits += j - i
+		i = j
+	}
 	for ; i < len(s); i++ {
 		c := s[i]
 		if c == '.' {
@@ -289,6 +302,13 @@ func scanDecimal(s string, keep int) numeral {
 				return numeral{}
 			}
 			point = true
+			if i+9 <= len(s) && eightDigits(load8(s, i+1)) {
+				j := i + 1
+				j, kept, r.mant, dropped, r.sticky = scanEights(s, j, kept, keep, wordKeep, r.mant, dropped, r.sticky)
+				digits += j - i - 1
+				fraction += j - i - 1
+				i = j - 1
+			}
 			continue
 		}
 		d := c - '0'
@@ -314,6 +334,15 @@ func scanDecimal(s string, keep int) numeral {
 		default:
 			dropped++
 			r.sticky = r.sticky || d != 0
+			if i+9 <= len(s) && eightDigits(load8(s, i+1)) {
+				j := i + 1
+				j, kept, r.mant, dropped, r.sticky = scanEights(s, j, kept, keep, wordKeep, r.mant, dropped, r.sticky)
+				digits += j - i - 1
+				if point {
+					fraction += j - i - 1
+				}
+				i = j - 1
+			}
 		}
 	}
 	if digits == 0 {
@@ -350,6 +379,90 @@ func scanDecimal(s string, keep int) numeral {
 	r.exp = int(min(max(exp, -expClamp), expClamp))
 	r.kind = scanNumeral
 	return r
+}
+
+// scanEights is the eight-digit step of scanDecimal's significand loop. It
+// takes digits from s[i:] eight at a time while all eight fall in one phase
+// of that loop, whose counts and value it reproduces exactly: leading zeros
+// (which it skips whatever their number, up to the first significant digit
+// of a run of eight digits), digits kept in the word mant.Lo while kept
+// stays at most wordKeep, digits kept in mant while it stays at most keep,
+// and digits beyond keep, which raise dropped and set sticky if any is not
+// zero. It returns the index of the first byte it did not take, which the
+// byte loop takes next: a non-digit, the end of fewer than eight digits, or
+// the first of eight that straddle keep. Every byte from i to that index is
+// a digit, so the caller adds their number to its digit counts.
+//
+// It is a call and not part of the byte loop so that the loop, which short
+// numerals never leave, keeps its registers.
+//
+//go:noinline
+func scanEights(s string, i, kept, keep, wordKeep int, mant Uint128, dropped int, sticky bool) (int, int, Uint128, int, bool) {
+	for i+8 <= len(s) {
+		u := load8(s, i)
+		if !eightDigits(u) {
+			break
+		}
+		switch {
+		case kept == 0 && u&0xFF == '0':
+			// Leading zeros: skip all eight, or up to the first other
+			// digit. The bytes are digits, so one that is not '0' differs
+			// from it in its low nibble, and the lowest set bit of the
+			// difference lies in the first such byte.
+			if u == asciiZeros {
+				i += 8
+			} else {
+				i += bits.TrailingZeros64(u^asciiZeros) / 8
+			}
+			continue
+		case kept < keep && kept+8 > keep:
+			return i, kept, mant, dropped, sticky
+		case kept+8 <= wordKeep:
+			mant.Lo = mant.Lo*1e8 + eightDigitsValue(u)
+			kept += 8
+		case kept < keep:
+			mant, _ = u128Mul64(mant, 1e8)
+			mant, _ = u128Add(mant, Uint128{Lo: eightDigitsValue(u)})
+			kept += 8
+		default:
+			dropped += 8
+			sticky = sticky || u != asciiZeros
+		}
+		i += 8
+	}
+	return i, kept, mant, dropped, sticky
+}
+
+// load8 returns s[i:i+8] as a word, s[i] in the low byte, on every
+// platform; the compiler makes it one load where it can.
+func load8(s string, i int) uint64 {
+	s = s[i : i+8]
+	return uint64(s[0]) | uint64(s[1])<<8 | uint64(s[2])<<16 | uint64(s[3])<<24 |
+		uint64(s[4])<<32 | uint64(s[5])<<40 | uint64(s[6])<<48 | uint64(s[7])<<56
+}
+
+// asciiZeros is eight '0' bytes in one word.
+const asciiZeros = 0x3030303030303030
+
+// eightDigits reports whether each byte of u is an ASCII digit (Lemire,
+// "Fast number parsing", is_made_of_eight_digits_fast): a byte is a digit
+// exactly when its high nibble is 3 and adding 6 to it leaves the high
+// nibble 3, that is, when its low nibble is at most 9. The first term puts
+// the high nibble of every byte of u in the high nibble of the result,
+// unchanged by the or, so equality needs every byte below 0x40; for such
+// bytes adding 6 carries out of none of them.
+func eightDigits(u uint64) bool {
+	return u&0xF0F0F0F0F0F0F0F0|(u+0x0606060606060606)&0xF0F0F0F0F0F0F0F0>>4 == 0x3333333333333333
+}
+
+// eightDigitsValue returns the value of the eight ASCII digits in u, the
+// first digit in the low byte, as Lemire's parse_eight_digits_unrolled:
+// three multiply-and-shift steps combine pairs of digits, then pairs of
+// pairs, then the two halves. Each product of a step stays within its lane.
+func eightDigitsValue(u uint64) uint64 {
+	u = (u & 0x0F0F0F0F0F0F0F0F) * (10<<8 + 1) >> 8
+	u = (u & 0x00FF00FF00FF00FF) * (100<<16 + 1) >> 16
+	return uint64(uint32((u & 0x0000FFFF0000FFFF) * (10000<<32 + 1) >> 32))
 }
 
 // foldEqual reports whether s is word with each letter in either case.
