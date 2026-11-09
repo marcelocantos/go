@@ -92,6 +92,10 @@ func InitConfig(config *ssa.Config) {
 		softfloatInit()
 	}
 	softdecimalInit()
+	if Arch.LinkArch.Family == sys.ARM64 || Arch.LinkArch.Family == sys.AMD64 {
+		// The standard library uses decimals even with the experiment off.
+		initBIDPowerTables()
+	}
 
 	// Generate a few pointer types that are uncommon in the frontend but common in the backend.
 	// Caching is disabled in the backend, so generating these here avoids allocations.

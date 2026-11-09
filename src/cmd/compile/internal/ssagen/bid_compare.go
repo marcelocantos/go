@@ -143,7 +143,7 @@ func (s *state) bidCompare(op ir.Op, x, y *ssa.Value) *ssa.Value {
 	s.startBlock(bScale)
 	swap := s.newValue2(ssaop.OpLess64U, boolT, xe, ye)
 	gap := s.newValue3(ssaop.OpCondSelect, u64, s.newValue2(ssaop.OpSub64, u64, ye, xe), s.newValue2(ssaop.OpSub64, u64, xe, ye), swap)
-	const maxGap = 19 // 10^19 is the largest power of ten fitting uint64.
+	const maxGap = bidMaxWordPower // 10^19 is the largest power of ten fitting uint64.
 	near := s.newValue2(ssaop.OpLeq64U, boolT, gap, s.constInt64(u64, maxGap))
 	bNear, bFar := s.f.NewBlock(block.BlockPlain), s.f.NewBlock(block.BlockPlain)
 	b = s.endBlock()
@@ -159,15 +159,9 @@ func (s *state) bidCompare(op ir.Op, x, y *ssa.Value) *ssa.Value {
 	higher := s.newValue3(ssaop.OpCondSelect, u64, yc, xc, swap)
 	lower := s.newValue3(ssaop.OpCondSelect, u64, xc, yc, swap)
 	// The gap guard proves the immutable content-addressed load is in bounds.
-	const wordBytes = 8
-	var powers [(maxGap + 1) * wordBytes]byte
-	power := uint64(1)
-	for i := 0; i <= maxGap; i++ {
-		Arch.LinkArch.ByteOrder.PutUint64(powers[i*wordBytes:], power)
-		power *= 10
-	}
+	const wordBytes = bidWordBytes
 	ptrT := types.NewPtr(u64)
-	table := s.newValue1A(ssaop.OpAddr, ptrT, s.f.Frontend().StringData(string(powers[:])), s.sb)
+	table := s.newValue1A(ssaop.OpAddr, ptrT, bidComparePowers, s.sb)
 	index := s.newValue2(ssaop.OpMul64, u64, gap, s.constInt64(u64, wordBytes))
 	scale := s.rawLoad(u64, s.newValue2(ssaop.OpAddPtr, ptrT, table, index))
 	product := s.newValue2(ssaop.OpMul64uhilo, types.NewTuple(u64, u64), higher, scale)

@@ -96,18 +96,12 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 	s.endBlock().AddEdgeTo(bAfter)
 	s.startBlock(bShift)
 	gap := s.newValue2(ssaop.OpSub64, u64, ye, xe)
-	const maxShift = 19 // 10^19 is the largest power of ten fitting uint64.
+	const maxShift = bidMaxWordPower // 10^19 is the largest power of ten fitting uint64.
 	guard(s.newValue2(ssaop.OpLeq64U, boolT, s.newValue2(ssaop.OpSub64, u64, gap, one), s.constInt64(u64, maxShift-1)))
 	// Immutable content-addressed data, as in the exact addition lowering.
-	const wordBytes = 8
-	var powers [maxShift * wordBytes]byte
-	power := uint64(10)
-	for i := 0; i < maxShift; i++ {
-		Arch.LinkArch.ByteOrder.PutUint64(powers[i*wordBytes:], power)
-		power *= 10
-	}
+	const wordBytes = bidWordBytes
 	ptrT := types.NewPtr(u64)
-	table := s.newValue1A(ssaop.OpAddr, ptrT, s.f.Frontend().StringData(string(powers[:])), s.sb)
+	table := s.newValue1A(ssaop.OpAddr, ptrT, bidRoundPowers, s.sb)
 	index := s.newValue2(ssaop.OpMul64, u64, s.newValue2(ssaop.OpSub64, u64, gap, one), s.constInt64(u64, wordBytes))
 	divisor := s.rawLoad(u64, s.newValue2(ssaop.OpAddPtr, ptrT, table, index))
 	q := s.newValue2(ssaop.OpDiv64u, u64, coeff, divisor)
