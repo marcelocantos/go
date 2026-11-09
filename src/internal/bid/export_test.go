@@ -130,3 +130,9 @@ func (x *FloatNat) Len() int { return x.n }
 
 // Words returns all the words of x, little-endian, in use or not.
 func (x *FloatNat) Words() []uint64 { return x.w[:] }
+
+// The reciprocal division by powers of ten (recip128.go).
+var (
+	DivPow10Recip128   = divPow10Recip128
+	RecipTrunc10tab128 = recipTrunc10tab128
+)
