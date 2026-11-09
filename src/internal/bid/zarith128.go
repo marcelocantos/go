@@ -398,8 +398,15 @@ func round128(neg bool, p wide128, exp int, class digitClass, mode Mode, floor i
 
 	// a is the adjusted exponent of v, the power of ten of its leading
 	// digit, and tiny whether v is below 10^Emin128. For p = 0, v is below
-	// 10^exp, which is what a = exp - 1 says.
-	d := cLenFull128(p)
+	// 10^exp, which is what a = exp - 1 says. A p whose high half is zero,
+	// which every sum is, has the digits of its low half, counted in the
+	// coefficient type by a helper that inlines.
+	var d int
+	if cIsZero128(p.Hi) {
+		d = cDigits128(p.Lo)
+	} else {
+		d = cLenFull128(p)
+	}
 	a := d - 1 + exp
 	tiny := a < Emin128
 

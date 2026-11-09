@@ -407,8 +407,15 @@ func roundW(neg bool, p wideW, exp int, class digitClass, mode Mode, floor int) 
 
 	// a is the adjusted exponent of v, the power of ten of its leading
 	// digit, and tiny whether v is below 10^EminW. For p = 0, v is below
-	// 10^exp, which is what a = exp - 1 says.
-	d := cLenFullW(p)
+	// 10^exp, which is what a = exp - 1 says. A p whose high half is zero,
+	// which every sum is, has the digits of its low half, counted in the
+	// coefficient type by a helper that inlines.
+	var d int
+	if cIsZeroW(p.Hi) {
+		d = cDigitsW(p.Lo)
+	} else {
+		d = cLenFullW(p)
+	}
 	a := d - 1 + exp
 	tiny := a < EminW
 

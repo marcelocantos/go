@@ -398,8 +398,15 @@ func round64(neg bool, p wide64, exp int, class digitClass, mode Mode, floor int
 
 	// a is the adjusted exponent of v, the power of ten of its leading
 	// digit, and tiny whether v is below 10^Emin64. For p = 0, v is below
-	// 10^exp, which is what a = exp - 1 says.
-	d := cLenFull64(p)
+	// 10^exp, which is what a = exp - 1 says. A p whose high half is zero,
+	// which every sum is, has the digits of its low half, counted in the
+	// coefficient type by a helper that inlines.
+	var d int
+	if cIsZero64(p.Hi) {
+		d = cDigits64(p.Lo)
+	} else {
+		d = cLenFull64(p)
+	}
 	a := d - 1 + exp
 	tiny := a < Emin64
 

@@ -354,3 +354,65 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 		t.Errorf("%d call(s) reach the encoder outside the rounding routine; see roundW in arith_tmpl.go for the exact fast paths allowed", len(violations))
 	}
 }
+
+// TestRoundWideHalfBound checks roundW where it counts digits: in the
+// coefficient type when the high half of the value is zero, and over the
+// whole double-width value otherwise. Products reach it on both sides: the
+// factor pairs below multiply to 2^n - 1, 2^n and 2^n + 1 for the width n
+// of the coefficient type (64 and 128 bits), and to powers of ten and
+// their neighbours below and above it, at exponents in the middle of the
+// range, at the subnormal edge and at overflow, both signs and every mode,
+// against the reference.
+func TestRoundWideHalfBound(t *testing.T) {
+	var k kernel
+	pairs := map[*format][][2]string{
+		dec64: {
+			{"4294967295", "4294967297"},             // 2^64 - 1
+			{"4294967296", "4294967296"},             // 2^64
+			{"4294967297", "4294967297"},             // 2^64 + 2^33 + 1
+			{"1844674407370955", "10000"},            // just below 2^64, 20 digits
+			{"1844674407370956", "10000"},            // just above 2^64
+			{"1000000000", "1000000000"},             // 10^18
+			{"10000000000", "1000000000"},            // 10^19
+			{"9999999999", "1000000001"},             // 10^19 - 1 + 10^9 - 10^10
+			{"9999999999999999", "9999999999999999"}, // 32 digits
+		},
+		dec128: {
+			{"18446744073709551615", "18446744073709551617"}, // 2^128 - 1
+			{"18446744073709551616", "18446744073709551616"}, // 2^128
+			{"18446744073709551617", "18446744073709551617"}, // above 2^128
+			{"3402823669209384634633746074317682", "100000"}, // just below 2^128, 39 digits
+			{"3402823669209384634633746074317683", "100000"}, // just above 2^128
+			{"10000000000000000000", "1000000000000000000"},  // 10^37
+			{"10000000000000000000", "10000000000000000000"}, // 10^38
+			{"9999999999999999999999999999999999", "9999999999999999999999999999999999"},
+		},
+	}
+	for _, f := range []*format{dec64, dec128} {
+		n := 0
+		for _, p := range pairs[f] {
+			for _, e := range [][2]int{{0, 0}, {-10, 3}, {f.minExp, 0}, {f.minExp, 5}, {f.maxExp, 0}, {f.maxExp / 2, f.maxExp / 2}} {
+				for _, neg := range []bool{false, true} {
+					x, ok := wordOperand(f, neg, p[0], e[0])
+					if !ok {
+						t.Fatalf("%s: %s is not a coefficient", f.name, p[0])
+					}
+					y, ok := wordOperand(f, false, p[1], e[1])
+					if !ok {
+						t.Fatalf("%s: %s is not a coefficient", f.name, p[1])
+					}
+					for _, m := range allModes {
+						n++
+						if got, want := k.mul(f, x, y, m), f.mul(x, y, m); got != want {
+							t.Fatalf("%s mul(%s, %s, %s) = %s, want %s", f.name, f.format(x), f.format(y), modeName(m), f.format(got), f.format(want))
+						}
+						if got, want := k.mul(f, y, x, m), f.mul(y, x, m); got != want {
+							t.Fatalf("%s mul(%s, %s, %s) = %s, want %s", f.name, f.format(y), f.format(x), modeName(m), f.format(got), f.format(want))
+						}
+					}
+				}
+			}
+		}
+		t.Logf("%s: %d products", f.name, n)
+	}
+}
