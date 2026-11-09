@@ -6,4 +6,10 @@
 
 package dwarf
 
-func newDecimalFloatType() Type { return nil }
+// decimalFloatType represents a DW_ATE_decimal_float base type when the
+// exported DecimalFloatType is not part of the API. Decoding the attribute
+// does not depend on the language experiment: the linker emits it in every
+// mode, and other producers may emit it too.
+type decimalFloatType struct{ BasicType }
+
+func newDecimalFloatType() Type { return new(decimalFloatType) }
