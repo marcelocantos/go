@@ -218,13 +218,39 @@ func key128(x coef128) (kind Kind, neg bool, c coef128, exp int) {
 	return kind, neg, c, exp
 }
 
-// round128 is the rounding routine of the package: the one function that
-// turns an exact result into an encoding, under each of the five modes,
-// and the only way any operation produces a rounded result. Every rule of
+// roundFinite128 is the bounded-coefficient part of the rounding routine.
+// c is canonical (at most Precision128 digits), floor is within the format,
+// and exp <= MaxExp128. It preserves exp when exp >= floor; otherwise it
+// rounds once at floor. Discarding at least one digit leaves room for an
+// increment, so the result cannot carry beyond Precision128 digits. Zero
+// keeps its sign and takes max(exp, floor). No overflow or fold-down is
+// possible under these preconditions.
+//
+// Quantize and RoundToIntegral already establish these bounds. round128
+// shares this helper after checking them, and derives conversion Status
+// from the returned discarded class plus the original magnitude.
+func roundFinite128(neg bool, c coef128, exp int, mode Mode, floor int) (coef128, digitClass) {
+	class := classZero
+	if exp < floor {
+		// Clamp before subtracting so an arbitrary negative int exponent
+		// from Round128 cannot overflow. Such a far shift discards all digits.
+		shift := floor - max(exp, floor-maxWideDigits)
+		c, class = cShift128(c, shift)
+		if class != classZero && roundUp(class, mode, neg, cOdd128(c)) {
+			c = cInc128(c)
+		}
+		exp = floor
+	}
+	return pack128(neg, c, exp), class
+}
+
+// round128 is the general rounding routine of the package. Together with
+// its bounded-coefficient helper roundFinite128, it is the only way an
+// operation produces a rounded result under each of the five modes. Every rule of
 // "Exponent of a result", "Overflow", "Underflow and subnormal results"
 // and "Sign of a result" (for zeros) in the package documentation is
-// implemented here and nowhere else. The width-independent direction
-// decision is roundUp in round.go; the rest is this function.
+// implemented by these routines and nowhere else. The width-independent
+// direction decision is roundUp in round.go.
 //
 // The input is the exact value
 //
@@ -285,7 +311,7 @@ func key128(x coef128) (kind Kind, neg bool, c coef128, exp int) {
 // and to the integer conversions, which report it.
 //
 // Exact fast paths. Pack128 is the raw encoder; it rounds nothing and
-// refuses what does not fit. No function other than round128 may call it,
+// refuses what does not fit. Only the rounding routines may call it,
 // unless it re-encodes a coefficient and exponent already known to be
 // representable because Unpack128 returned them, possibly with another
 // sign or for a narrower width, decoded them from an encoding that cannot
@@ -322,13 +348,9 @@ func round128(neg bool, p wide128, exp int, class digitClass, mode Mode, floor i
 				// A bounded coefficient shifted right to floor cannot exceed
 				// Precision digits, even after an increment. Quantize and
 				// integral rounding therefore need no wide digit count.
-				shift := floor - max(exp, floor-maxWideDigits)
-				q, dropped := cShift128(p.Lo, shift)
+				r, dropped := roundFinite128(neg, p.Lo, exp, mode, floor)
 				st := Exact
 				if dropped != classZero {
-					if roundUp(dropped, mode, neg, cOdd128(q)) {
-						q = cInc128(q)
-					}
 					st = Inexact
 					// Far-below-format exponents are tiny without adding to
 					// them, which also avoids overflow for an int minimum.
@@ -336,7 +358,7 @@ func round128(neg bool, p wide128, exp int, class digitClass, mode Mode, floor i
 						st |= Underflow
 					}
 				}
-				return pack128(neg, q, floor), st
+				return r, st
 			}
 		}
 	}
@@ -415,9 +437,9 @@ func overflow128(neg bool, mode Mode) (coef128, Status) {
 	return pack128(neg, cMax128(), MaxExp128), Inexact | Overflow
 }
 
-// pack128 is Pack128 for a coefficient and exponent that round128 has brought
-// within the format. Pack128 refusing them is a bug in round128, not an input
-// condition, and panics rather than yielding a NaN.
+// pack128 is Pack128 for a coefficient and exponent that a rounding routine
+// has brought within the format. Pack128 refusing them is an internal bug,
+// not an input condition, and panics rather than yielding a NaN.
 func pack128(neg bool, c coef128, exp int) coef128 {
 	x, ok := Pack128(neg, c, exp)
 	if !ok {

@@ -8,7 +8,7 @@ package bid
 
 // roundToIntegral128 rounds the decimal x to an integral value in mode. The
 // result exponent is max(Q(x), 0) whether or not a fraction was discarded
-// (see "Exponent of a result"), which is exactly what round128 produces with
+// (see "Exponent of a result"), which is exactly what roundFinite128 produces with
 // floor 0: for Q(x) < 0 the value has fewer than Precision128 integer digits,
 // so the least exponent at which the coefficient fits is the floor, and the
 // digits below it are dropped and rounded; for Q(x) >= 0 nothing is
@@ -24,7 +24,7 @@ func roundToIntegral128(x coef128, mode Mode) coef128 {
 	case KindInf:
 		return cInf128(neg)
 	}
-	r, _ := round128(neg, wide128{Lo: c}, exp, classZero, mode, 0)
+	r, _ := roundFinite128(neg, c, exp, mode, 0)
 	return r
 }
 
@@ -34,10 +34,10 @@ func roundToIntegral128(x coef128, mode Mode) coef128 {
 // never needs its exponent adjusted.
 //
 // When x has the larger exponent its coefficient is scaled up by the
-// difference; round128 has nothing to round then (a coefficient padded to
+// difference; roundFinite128 has nothing to round then (a coefficient padded to
 // Precision128 digits or fewer at the exponent of y is already the result)
-// but it is the one function that encodes a result. When x has the smaller
-// exponent, round128 drops the digits below the exponent of y, with floor
+// and the shared rounding helper encodes the result. When x has the smaller
+// exponent, roundFinite128 drops the digits below the exponent of y, with floor
 // that exponent. Dropping at least one digit leaves at most Precision128-1
 // digits, so rounding up cannot carry out of the coefficient, and
 // an x so small that every digit is dropped rounds to zero or to one unit,
@@ -61,7 +61,7 @@ func quantize128(x, y coef128, mode Mode) coef128 {
 		}
 		xe = ye
 	}
-	r, _ := round128(xneg, wide128{Lo: xc}, xe, classZero, mode, ye)
+	r, _ := roundFinite128(xneg, xc, xe, mode, ye)
 	return r
 }
 

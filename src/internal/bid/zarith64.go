@@ -218,13 +218,39 @@ func key64(x coef64) (kind Kind, neg bool, c coef64, exp int) {
 	return kind, neg, c, exp
 }
 
-// round64 is the rounding routine of the package: the one function that
-// turns an exact result into an encoding, under each of the five modes,
-// and the only way any operation produces a rounded result. Every rule of
+// roundFinite64 is the bounded-coefficient part of the rounding routine.
+// c is canonical (at most Precision64 digits), floor is within the format,
+// and exp <= MaxExp64. It preserves exp when exp >= floor; otherwise it
+// rounds once at floor. Discarding at least one digit leaves room for an
+// increment, so the result cannot carry beyond Precision64 digits. Zero
+// keeps its sign and takes max(exp, floor). No overflow or fold-down is
+// possible under these preconditions.
+//
+// Quantize and RoundToIntegral already establish these bounds. round64
+// shares this helper after checking them, and derives conversion Status
+// from the returned discarded class plus the original magnitude.
+func roundFinite64(neg bool, c coef64, exp int, mode Mode, floor int) (coef64, digitClass) {
+	class := classZero
+	if exp < floor {
+		// Clamp before subtracting so an arbitrary negative int exponent
+		// from Round64 cannot overflow. Such a far shift discards all digits.
+		shift := floor - max(exp, floor-maxWideDigits)
+		c, class = cShift64(c, shift)
+		if class != classZero && roundUp(class, mode, neg, cOdd64(c)) {
+			c = cInc64(c)
+		}
+		exp = floor
+	}
+	return pack64(neg, c, exp), class
+}
+
+// round64 is the general rounding routine of the package. Together with
+// its bounded-coefficient helper roundFinite64, it is the only way an
+// operation produces a rounded result under each of the five modes. Every rule of
 // "Exponent of a result", "Overflow", "Underflow and subnormal results"
 // and "Sign of a result" (for zeros) in the package documentation is
-// implemented here and nowhere else. The width-independent direction
-// decision is roundUp in round.go; the rest is this function.
+// implemented by these routines and nowhere else. The width-independent
+// direction decision is roundUp in round.go.
 //
 // The input is the exact value
 //
@@ -285,7 +311,7 @@ func key64(x coef64) (kind Kind, neg bool, c coef64, exp int) {
 // and to the integer conversions, which report it.
 //
 // Exact fast paths. Pack64 is the raw encoder; it rounds nothing and
-// refuses what does not fit. No function other than round64 may call it,
+// refuses what does not fit. Only the rounding routines may call it,
 // unless it re-encodes a coefficient and exponent already known to be
 // representable because Unpack64 returned them, possibly with another
 // sign or for a narrower width, decoded them from an encoding that cannot
@@ -322,13 +348,9 @@ func round64(neg bool, p wide64, exp int, class digitClass, mode Mode, floor int
 				// A bounded coefficient shifted right to floor cannot exceed
 				// Precision digits, even after an increment. Quantize and
 				// integral rounding therefore need no wide digit count.
-				shift := floor - max(exp, floor-maxWideDigits)
-				q, dropped := cShift64(p.Lo, shift)
+				r, dropped := roundFinite64(neg, p.Lo, exp, mode, floor)
 				st := Exact
 				if dropped != classZero {
-					if roundUp(dropped, mode, neg, cOdd64(q)) {
-						q = cInc64(q)
-					}
 					st = Inexact
 					// Far-below-format exponents are tiny without adding to
 					// them, which also avoids overflow for an int minimum.
@@ -336,7 +358,7 @@ func round64(neg bool, p wide64, exp int, class digitClass, mode Mode, floor int
 						st |= Underflow
 					}
 				}
-				return pack64(neg, q, floor), st
+				return r, st
 			}
 		}
 	}
@@ -415,9 +437,9 @@ func overflow64(neg bool, mode Mode) (coef64, Status) {
 	return pack64(neg, cMax64(), MaxExp64), Inexact | Overflow
 }
 
-// pack64 is Pack64 for a coefficient and exponent that round64 has brought
-// within the format. Pack64 refusing them is a bug in round64, not an input
-// condition, and panics rather than yielding a NaN.
+// pack64 is Pack64 for a coefficient and exponent that a rounding routine
+// has brought within the format. Pack64 refusing them is an internal bug,
+// not an input condition, and panics rather than yielding a NaN.
 func pack64(neg bool, c coef64, exp int) coef64 {
 	x, ok := Pack64(neg, c, exp)
 	if !ok {

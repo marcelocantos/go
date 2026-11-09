@@ -9,14 +9,14 @@
 // compute a new value, namely RoundToIntegral, Quantize, Reduce,
 // SameQuantum and Quantum. It is written in the vocabulary of "Width parameterisation"
 // in the package documentation (see arith_tmpl.go for the rules). Nothing
-// here rounds by itself: the first two hand their exact value to roundW,
+// here rounds by itself: the first two hand their bounded coefficient to roundFiniteW,
 // with its floor parameter set to the fixed exponent of the result, which is
 // why they need no second rounding routine.
 package bid
 
 // roundToIntegralW rounds the decimal x to an integral value in mode. The
 // result exponent is max(Q(x), 0) whether or not a fraction was discarded
-// (see "Exponent of a result"), which is exactly what roundW produces with
+// (see "Exponent of a result"), which is exactly what roundFiniteW produces with
 // floor 0: for Q(x) < 0 the value has fewer than PrecisionW integer digits,
 // so the least exponent at which the coefficient fits is the floor, and the
 // digits below it are dropped and rounded; for Q(x) >= 0 nothing is
@@ -32,7 +32,7 @@ func roundToIntegralW(x coefW, mode Mode) coefW {
 	case KindInf:
 		return cInfW(neg)
 	}
-	r, _ := roundW(neg, wideW{Lo: c}, exp, classZero, mode, 0)
+	r, _ := roundFiniteW(neg, c, exp, mode, 0)
 	return r
 }
 
@@ -42,10 +42,10 @@ func roundToIntegralW(x coefW, mode Mode) coefW {
 // never needs its exponent adjusted.
 //
 // When x has the larger exponent its coefficient is scaled up by the
-// difference; roundW has nothing to round then (a coefficient padded to
+// difference; roundFiniteW has nothing to round then (a coefficient padded to
 // PrecisionW digits or fewer at the exponent of y is already the result)
-// but it is the one function that encodes a result. When x has the smaller
-// exponent, roundW drops the digits below the exponent of y, with floor
+// and the shared rounding helper encodes the result. When x has the smaller
+// exponent, roundFiniteW drops the digits below the exponent of y, with floor
 // that exponent. Dropping at least one digit leaves at most PrecisionW-1
 // digits, so rounding up cannot carry out of the coefficient, and
 // an x so small that every digit is dropped rounds to zero or to one unit,
@@ -69,7 +69,7 @@ func quantizeW(x, y coefW, mode Mode) coefW {
 		}
 		xe = ye
 	}
-	r, _ := roundW(xneg, wideW{Lo: xc}, xe, classZero, mode, ye)
+	r, _ := roundFiniteW(xneg, xc, xe, mode, ye)
 	return r
 }
 

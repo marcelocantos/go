@@ -229,13 +229,39 @@ func keyW(x coefW) (kind Kind, neg bool, c coefW, exp int) {
 	return kind, neg, c, exp
 }
 
-// roundW is the rounding routine of the package: the one function that
-// turns an exact result into an encoding, under each of the five modes,
-// and the only way any operation produces a rounded result. Every rule of
+// roundFiniteW is the bounded-coefficient part of the rounding routine.
+// c is canonical (at most PrecisionW digits), floor is within the format,
+// and exp <= MaxExpW. It preserves exp when exp >= floor; otherwise it
+// rounds once at floor. Discarding at least one digit leaves room for an
+// increment, so the result cannot carry beyond PrecisionW digits. Zero
+// keeps its sign and takes max(exp, floor). No overflow or fold-down is
+// possible under these preconditions.
+//
+// Quantize and RoundToIntegral already establish these bounds. roundW
+// shares this helper after checking them, and derives conversion Status
+// from the returned discarded class plus the original magnitude.
+func roundFiniteW(neg bool, c coefW, exp int, mode Mode, floor int) (coefW, digitClass) {
+	class := classZero
+	if exp < floor {
+		// Clamp before subtracting so an arbitrary negative int exponent
+		// from RoundW cannot overflow. Such a far shift discards all digits.
+		shift := floor - max(exp, floor-maxWideDigits)
+		c, class = cShiftW(c, shift)
+		if class != classZero && roundUp(class, mode, neg, cOddW(c)) {
+			c = cIncW(c)
+		}
+		exp = floor
+	}
+	return packW(neg, c, exp), class
+}
+
+// roundW is the general rounding routine of the package. Together with
+// its bounded-coefficient helper roundFiniteW, it is the only way an
+// operation produces a rounded result under each of the five modes. Every rule of
 // "Exponent of a result", "Overflow", "Underflow and subnormal results"
 // and "Sign of a result" (for zeros) in the package documentation is
-// implemented here and nowhere else. The width-independent direction
-// decision is roundUp in round.go; the rest is this function.
+// implemented by these routines and nowhere else. The width-independent
+// direction decision is roundUp in round.go.
 //
 // The input is the exact value
 //
@@ -296,7 +322,7 @@ func keyW(x coefW) (kind Kind, neg bool, c coefW, exp int) {
 // and to the integer conversions, which report it.
 //
 // Exact fast paths. PackW is the raw encoder; it rounds nothing and
-// refuses what does not fit. No function other than roundW may call it,
+// refuses what does not fit. Only the rounding routines may call it,
 // unless it re-encodes a coefficient and exponent already known to be
 // representable because UnpackW returned them, possibly with another
 // sign or for a narrower width, decoded them from an encoding that cannot
@@ -333,13 +359,9 @@ func roundW(neg bool, p wideW, exp int, class digitClass, mode Mode, floor int) 
 				// A bounded coefficient shifted right to floor cannot exceed
 				// Precision digits, even after an increment. Quantize and
 				// integral rounding therefore need no wide digit count.
-				shift := floor - max(exp, floor-maxWideDigits)
-				q, dropped := cShiftW(p.Lo, shift)
+				r, dropped := roundFiniteW(neg, p.Lo, exp, mode, floor)
 				st := Exact
 				if dropped != classZero {
-					if roundUp(dropped, mode, neg, cOddW(q)) {
-						q = cIncW(q)
-					}
 					st = Inexact
 					// Far-below-format exponents are tiny without adding to
 					// them, which also avoids overflow for an int minimum.
@@ -347,7 +369,7 @@ func roundW(neg bool, p wideW, exp int, class digitClass, mode Mode, floor int) 
 						st |= Underflow
 					}
 				}
-				return packW(neg, q, floor), st
+				return r, st
 			}
 		}
 	}
@@ -426,9 +448,9 @@ func overflowW(neg bool, mode Mode) (coefW, Status) {
 	return packW(neg, cMaxW(), MaxExpW), Inexact | Overflow
 }
 
-// packW is PackW for a coefficient and exponent that roundW has brought
-// within the format. PackW refusing them is a bug in roundW, not an input
-// condition, and panics rather than yielding a NaN.
+// packW is PackW for a coefficient and exponent that a rounding routine
+// has brought within the format. PackW refusing them is an internal bug,
+// not an input condition, and panics rather than yielding a NaN.
 func packW(neg bool, c coefW, exp int) coefW {
 	x, ok := PackW(neg, c, exp)
 	if !ok {

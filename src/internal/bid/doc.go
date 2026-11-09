@@ -83,7 +83,7 @@
 //     written after initialization. Static tables are permitted.
 //   - Exactly one rounding per operation. Every operation computes its
 //     result exactly, or with an exact sticky bit, and that intermediate
-//     reaches the encoding through one rounding routine. No operation
+//     reaches the encoding through the shared rounding implementation. No operation
 //     rounds an intermediate and then rounds again, and no two operations
 //     carry their own rounding logic. The exported [Round64] and
 //     [Round128] are that routine's entry points for callers that already

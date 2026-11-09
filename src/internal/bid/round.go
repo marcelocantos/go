@@ -64,10 +64,11 @@ const (
 
 // Round64 is the rounding routine of the package, exposed for callers that
 // hold an exact value in parts: the compiler encoding a constant whose
-// exact value it has reduced, and the string parser. Every operation of
-// the package reaches an encoding through this routine (round64 in
-// zarith64.go, generated from roundW in arith_tmpl.go, whose comment is
-// the contract for callers inside the package).
+// exact value it has reduced, and the string parser. The general
+// rounding implementation is round64 in zarith64.go, generated from
+// roundW in arith_tmpl.go. Fixed-quantum operations with bounded
+// coefficients use its shared roundFinite64 helper; the templates document
+// the preconditions of both entry points.
 //
 // The input describes the exact value v = (-1)^neg × (coeff + f) × 10^exp,
 // where f is zero when sticky is false and an unspecified fraction with
@@ -94,7 +95,8 @@ func Round128(neg bool, coeff Uint128, exp int, sticky bool, mode Mode) (Uint128
 // The width-independent half of the rounding routine (rule 7 of "Width
 // parameterisation" in the package documentation): the direction decision
 // and the overflow result, which look at a digit class, a mode and a sign
-// and at no coefficient. roundW in arith_tmpl.go is the other half.
+// and at no coefficient. roundW and roundFiniteW in arith_tmpl.go are
+// the coefficient-dependent half.
 
 // roundUp reports whether a truncated magnitude is to be incremented by one
 // unit in its last place: class is the class of the discarded part (never
@@ -133,8 +135,8 @@ func overflowsToInf(mode Mode, neg bool) bool {
 	return true
 }
 
-// errRoundRange is the panic value of packW when roundW hands PackW a
-// coefficient or exponent outside the format, which is a bug in roundW.
+// errRoundRange is the panic value of packW when a rounding routine hands
+// PackW a coefficient or exponent outside the format, which is an internal bug.
 const errRoundRange = "internal/bid: rounded result outside the format"
 
 // maxWideDigits bounds the decimal digits of a wideW of either width: the

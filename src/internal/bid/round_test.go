@@ -251,7 +251,7 @@ func FuzzRound128(f *testing.F) {
 // TestRoundIsTheOnlyPacker enforces the fourth criterion of the rounding
 // routine by reading the package source: the raw encoders Pack64, Pack128
 // and PackW (in the template) are called only by packW and its
-// instantiations; those are called only by roundW and overflowW and their
+// instantiations; those are called only by roundW, roundFiniteW, overflowW and their
 // instantiations; and the field layout constants that would let a function
 // assemble an encoding by hand are referenced only in encoding.go. The
 // exact fast paths that roundW's comment enumerates are the allowlist
@@ -267,6 +267,7 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 	// overflow result (no exact fast path uses the checked encoder).
 	checkedPackers := map[string]bool{
 		"roundW": true, "round64": true, "round128": true,
+		"roundFiniteW": true, "roundFinite64": true, "roundFinite128": true,
 		"overflowW": true, "overflow64": true, "overflow128": true,
 	}
 	rawEncoder := map[string]bool{"Pack64": true, "Pack128": true, "PackW": true}
