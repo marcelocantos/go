@@ -235,3 +235,54 @@ func BenchmarkCompiledRoundingExtended(b *testing.B) {
 		compiledRoundSink128 = x
 	})
 }
+
+// This generic dispatch resembles ordinary callers selecting a rounding rule.
+// It must remain correct whether its caller supplies a constant or a value.
+func compiledIntegralDispatch[D dec.Decimal](x D, m dec.RoundingMode) D {
+	switch m {
+	case dec.ToNearestEven:
+		return dec.RoundToEven(x)
+	case dec.ToNearestAway:
+		return dec.Round(x)
+	case dec.ToZero:
+		return dec.Trunc(x)
+	case dec.ToPositiveInf:
+		return dec.Ceil(x)
+	case dec.ToNegativeInf:
+		return dec.Floor(x)
+	default:
+		panic("invalid rounding mode")
+	}
+}
+
+var compiledCeilFunction = dec.Ceil[roundingNamed64]
+var compiledFloorFunction = dec.Floor[roundingNamed128]
+
+func TestCompiledRoundingCallForms(t *testing.T) {
+	for _, text := range []string{"-0.00", "0.0001", "-0.0001", "12.5", "-12.5", "1E+100", "1234567890123456789012345678901234", "NaN", "-Infinity"} {
+		a, _ := bid.Parse64(text, bid.ToNearestEven)
+		x := bits{Lo: a}
+		y, _ := bid.Parse128(text, bid.ToNearestEven)
+		if got, want := b64(decimal64(compiledCeilFunction(roundingNamed64(d64(x))))), (reference{}).roundToIntegral(dec64, x, bid.TowardPositive); got != want {
+			t.Fatalf("function value64 %s: got %x want %x", text, got, want)
+		}
+		if got, want := b128(decimal128(compiledFloorFunction(roundingNamed128(d128(y))))), (reference{}).roundToIntegral(dec128, y, bid.TowardNegative); got != want {
+			t.Fatalf("function value128 %s: got %x want %x", text, got, want)
+		}
+		for m := dec.ToNearestEven; m <= dec.ToNegativeInf; m++ {
+			if got, want := b128(compiledIntegralDispatch(d128(y), m)), (reference{}).roundToIntegral(dec128, y, bid.Mode(m)); got != want {
+				t.Fatalf("dispatch %s mode %d: got %x want %x", text, m, got, want)
+			}
+		}
+		var deferred decimal64
+		func() { defer func(v decimal64) { deferred = dec.Trunc(v) }(d64(x)) }()
+		if got, want := b64(deferred), (reference{}).roundToIntegral(dec64, x, bid.TowardZero); got != want {
+			t.Fatalf("defer %s: got %x want %x", text, got, want)
+		}
+		c := make(chan decimal128)
+		go func(v decimal128) { c <- dec.RoundToEven(v) }(d128(y))
+		if got, want := b128(<-c), (reference{}).roundToIntegral(dec128, y, bid.ToNearestEven); got != want {
+			t.Fatalf("goroutine %s: got %x want %x", text, got, want)
+		}
+	}
+}

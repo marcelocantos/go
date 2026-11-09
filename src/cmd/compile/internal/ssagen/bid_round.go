@@ -12,6 +12,7 @@ import (
 	"cmd/compile/internal/ssa/block"
 	"cmd/compile/internal/ssa/ssaop"
 	"cmd/compile/internal/types"
+	"cmd/internal/obj"
 )
 
 var bidRoundVar = ssaMarker("bidround")
@@ -27,9 +28,9 @@ var bidRoundVar = ssaMarker("bidround")
 // decides exact/below-half/tie/above-half, and invalid modes default to even.
 // No approximate reciprocal or floating operation is involved. Constants
 // propagated through the typed calls remove unused mode and target decoding.
-// Any unproved case calls the original function with already-evaluated args;
+// Any unproved case calls the portable typed helper with already-evaluated args;
 // this preserves special values, arbitrary encodings and argument evaluation.
-func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool) *ssa.Value {
+func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fallback *obj.LSym) *ssa.Value {
 	u64, u8, boolT := types.Types[types.TUINT64], types.Types[types.TUINT8], types.Types[types.TBOOL]
 	zero, one := s.constInt64(u64, 0), s.constInt64(u64, 1)
 	x, mode := args[0], args[len(args)-1]
@@ -141,7 +142,7 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool) *s
 	}
 	s.endBlock().AddEdgeTo(bAfter)
 	s.startBlock(bSlow)
-	s.vars[bidRoundVar] = s.rtcall(callTargetLSym(n.Fun.(*ir.Name)), true, []*types.Type{n.Type()}, args...)[0]
+	s.vars[bidRoundVar] = s.rtcall(fallback, true, []*types.Type{n.Type()}, args...)[0]
 	s.endBlock().AddEdgeTo(bAfter)
 	s.startBlock(bAfter)
 	return s.variable(bidRoundVar, n.Type())

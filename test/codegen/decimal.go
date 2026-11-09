@@ -210,3 +210,26 @@ func IntegralTrunc64(x decimal64) decimal64 {
 	// amd64:"DIVQ" "CALL internal/decimal.integral64" -"CALL .*Trunc"
 	return decimal.Trunc(x)
 }
+
+func integralDispatch128(x decimal128, mode decimal.RoundingMode) decimal128 {
+	switch mode {
+	case decimal.ToNearestEven:
+		return decimal.RoundToEven(x)
+	case decimal.ToNearestAway:
+		return decimal.Round(x)
+	case decimal.ToZero:
+		return decimal.Trunc(x)
+	case decimal.ToPositiveInf:
+		return decimal.Ceil(x)
+	case decimal.ToNegativeInf:
+		return decimal.Floor(x)
+	default:
+		panic("invalid rounding mode")
+	}
+}
+
+func TruncThroughDispatch128(x decimal128) decimal128 {
+	// arm64:"UDIV" "CALL internal/decimal.integral128" -"CALL .*integralDispatch128"
+	// amd64:"DIVQ" "CALL internal/decimal.integral128" -"CALL .*integralDispatch128"
+	return integralDispatch128(x, decimal.ToZero)
+}

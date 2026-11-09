@@ -7,6 +7,7 @@ package ssagen
 import (
 	"fmt"
 	"internal/abi"
+	"internal/bid"
 	"internal/buildcfg"
 	"strings"
 
@@ -142,8 +143,36 @@ func initIntrinsics(cfg *intrinsicBuildConfig) {
 	for _, name := range []string{"quantize64", "quantize128", "integral64", "integral128"} {
 		integral := strings.HasPrefix(name, "integral")
 		addF("internal/decimal", name, func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
-			return s.bidRounding(n, args, integral)
+			return s.bidRounding(n, args, integral, callTargetLSym(n.Fun.(*ir.Name)))
 		}, sys.ARM64, sys.AMD64)
+	}
+
+	// Recognize the public shape instantiations too. This makes the rounding
+	// operation cost a single intrinsic to the inliner, rather than charging
+	// each layer of generic dictionary plumbing. A caller selecting a fixed
+	// rounding direction can then inline its dispatch and remove other arms.
+	// These exact shape names cover defined decimal types as well as the
+	// predeclared types; ordinary non-decimal generics cannot match them.
+	for _, op := range []struct {
+		name string
+		mode bid.Mode
+	}{
+		{"Trunc", bid.TowardZero}, {"Floor", bid.TowardNegative},
+		{"Ceil", bid.TowardPositive}, {"Round", bid.ToNearestAway},
+		{"RoundToEven", bid.ToNearestEven},
+	} {
+		for _, width := range []string{"64", "128"} {
+			addF("math/decimal", op.name+"[go.shape.decimal"+width+"]",
+				func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
+					// A shape call has its dictionary followed by the value.
+					// All arguments have already been evaluated. The fallback
+					// calls the existing typed portable helper directly, avoiding
+					// another generic call and another copy of the fast guards.
+					mode := s.constInt8(types.Types[types.TUINT8], int8(op.mode))
+					fallback := base.PkgLinksym("internal/decimal", "integral"+width, s.f.ABIDefault.Which())
+					return s.bidRounding(n, []*ssa.Value{args[1], mode}, true, fallback)
+				}, sys.ARM64, sys.AMD64)
+		}
 	}
 
 	/******** runtime ********/
