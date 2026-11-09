@@ -229,7 +229,11 @@ func totalOrderW(x, y coefW) bool {
 
 // keyW returns the fields of the hash key of x. See Key.
 func keyW(x coefW) (kind Kind, neg bool, c coefW, exp int) {
-	kind, neg, c, exp = UnpackW(x)
+	neg, c, exp, ok := unpackFirstW(x)
+	kind = KindFinite
+	if !ok {
+		kind, neg, c, exp = unpackRestW(x)
+	}
 	if kind == KindNaN {
 		return KindNaN, false, c, 0
 	}

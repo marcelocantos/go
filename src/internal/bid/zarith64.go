@@ -220,7 +220,11 @@ func totalOrder64(x, y coef64) bool {
 
 // key64 returns the fields of the hash key of x. See Key.
 func key64(x coef64) (kind Kind, neg bool, c coef64, exp int) {
-	kind, neg, c, exp = Unpack64(x)
+	neg, c, exp, ok := unpackFirst64(x)
+	kind = KindFinite
+	if !ok {
+		kind, neg, c, exp = unpackRest64(x)
+	}
 	if kind == KindNaN {
 		return KindNaN, false, c, 0
 	}

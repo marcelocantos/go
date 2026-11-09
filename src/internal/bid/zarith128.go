@@ -220,7 +220,11 @@ func totalOrder128(x, y coef128) bool {
 
 // key128 returns the fields of the hash key of x. See Key.
 func key128(x coef128) (kind Kind, neg bool, c coef128, exp int) {
-	kind, neg, c, exp = Unpack128(x)
+	neg, c, exp, ok := unpackFirst128(x)
+	kind = KindFinite
+	if !ok {
+		kind, neg, c, exp = unpackRest128(x)
+	}
 	if kind == KindNaN {
 		return KindNaN, false, c, 0
 	}

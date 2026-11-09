@@ -785,3 +785,66 @@ func BenchmarkCompareWords(b *testing.B) {
 		}
 	}
 }
+
+// TestKeyUnpackSplit checks Key64 and Key128 on both sides of the bound
+// between the inline first-form decode and unpackRest, which keyW calls
+// itself: the largest first-form coefficients, the second form (canonical
+// and not), the largest decimal128 first-form coefficients from
+// MaxCoeff128Hi × 2^64 up, zeros and the special values. The key must be
+// that of Unpack's decoding with trailing zeros stripped.
+func TestKeyUnpackSplit(t *testing.T) {
+	want := func(kind bid.Kind, neg bool, c *big.Int, exp int) bid.Key {
+		if kind != bid.KindFinite || c.Sign() == 0 {
+			if kind == bid.KindNaN || kind == bid.KindFinite {
+				neg = false
+			}
+			return bid.Key{Kind: kind, Neg: neg}
+		}
+		ten := big.NewInt(10)
+		c = new(big.Int).Set(c)
+		for {
+			q, r := new(big.Int).QuoRem(c, ten, new(big.Int))
+			if r.Sign() != 0 {
+				break
+			}
+			c, exp = q, exp+1
+		}
+		return bid.Key{Coeff: bid.Uint128{Hi: new(big.Int).Rsh(c, 64).Uint64(), Lo: c.Uint64()}, Exp: int32(exp), Kind: kind, Neg: neg}
+	}
+	var xs64 []uint64
+	for _, neg := range []uint64{0, bid.SignMask64} {
+		for _, e := range []uint64{0, 398, 767} {
+			for _, c := range []uint64{0, 1, 10, 1<<53 - 1, 9000000000000000, 1<<53 - 3} {
+				xs64 = append(xs64, neg|e<<bid.ExpShift64|c)
+			}
+			for _, c := range []uint64{0, 1, 0x2386F26FC0FFFF & (1<<51 - 1), 1<<51 - 1} {
+				xs64 = append(xs64, neg|bid.Form2Mask64|e<<bid.Form2ExpShift64|c)
+			}
+		}
+		xs64 = append(xs64, neg|bid.Inf64, neg|bid.NaN64|5, neg|bid.SNaN64)
+	}
+	for _, x := range xs64 {
+		kind, neg, c, exp := bid.Unpack64(x)
+		if got, w := bid.Key64(x), want(kind, neg, new(big.Int).SetUint64(c), exp); got != w {
+			t.Errorf("Key64(%#016x) = %+v, want %+v", x, got, w)
+		}
+	}
+	var xs128 []bid.Uint128
+	for _, neg := range []uint64{0, bid.SignMask128Hi} {
+		for _, e := range []uint64{0, 6176, 12287} {
+			for _, c := range []bid.Uint128{{}, {Lo: 10}, {Hi: bid.MaxCoeff128Hi - 1, Lo: 1<<64 - 1}, {Hi: bid.MaxCoeff128Hi}, {Hi: bid.MaxCoeff128Hi, Lo: bid.MaxCoeff128Lo}, {Hi: bid.MaxCoeff128Hi, Lo: bid.MaxCoeff128Lo + 1}, {Hi: bid.CoeffMask128Hi, Lo: 1<<64 - 1}} {
+				xs128 = append(xs128, bid.Uint128{Hi: neg | e<<bid.ExpShift128 | c.Hi, Lo: c.Lo})
+			}
+			xs128 = append(xs128, bid.Uint128{Hi: neg | bid.Form2Mask128Hi | e<<bid.Form2ExpShift128, Lo: 7})
+		}
+		xs128 = append(xs128, bid.Uint128{Hi: neg | bid.Inf128Hi}, bid.Uint128{Hi: neg | bid.NaN128Hi, Lo: 5}, bid.Uint128{Hi: neg | bid.SNaN128Hi})
+	}
+	for _, x := range xs128 {
+		kind, neg, c, exp := bid.Unpack128(x)
+		n := new(big.Int).Lsh(new(big.Int).SetUint64(c.Hi), 64)
+		n.Or(n, new(big.Int).SetUint64(c.Lo))
+		if got, w := bid.Key128(x), want(kind, neg, n, exp); got != w {
+			t.Errorf("Key128(%#x) = %+v, want %+v", x, got, w)
+		}
+	}
+}
