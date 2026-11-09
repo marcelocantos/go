@@ -44,16 +44,20 @@ func Less64(x, y decimal64) bool {
 }
 
 func Add128(x, y decimal128) decimal128 {
+	// Operands of opposite signs at one quantum take the difference of
+	// Sub128.
 	// ppc64le:"DADDQ" -"CALL"
-	// amd64:"CALL runtime.dadd128"
-	// arm64:"CALL runtime.dadd128" "ADDS" "ADC"
+	// amd64:"CALL runtime.dadd128" "NEGQ" "CMOVQCS"
+	// arm64:"CALL runtime.dadd128" "ADDS" "ADC" "CSNEG"
 	return x + y
 }
 
 func Sub128(x, y decimal128) decimal128 {
+	// The difference of word coefficients at one quantum is negated, not
+	// realigned, when it borrows.
 	// ppc64le:"DSUBQ" -"CALL"
-	// arm64:"CALL runtime.dsub128" "SUBS"
-	// amd64:"CALL runtime.dsub128"
+	// arm64:"CALL runtime.dsub128" "SUBS" "CSNEG"
+	// amd64:"CALL runtime.dsub128" "NEGQ" "CMOVQCS"
 	return x - y
 }
 

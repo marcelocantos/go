@@ -166,6 +166,18 @@ var bidAddVar = ssaMarker("bidadd")
 // This is an exact packing exception: neither rounding
 // nor exponent clamping is needed, and even negative zero keeps its sign.
 //
+// Next, effective subtraction at one quantum: stored high words that differ
+// in the sign bit alone (x - y of one sign, or x + y of opposite signs). The
+// same word and first-form guards on x hold for y, whose high word differs
+// only in the sign. The coefficient difference xl - yl, negated when it
+// borrows, is below 2^64 <= 10^34 and exact at the common exponent, the
+// preferred one. Its sign is x's when xl >= yl and the other sign when the
+// difference borrows. An exact zero difference is +0: under IEEE 754-2019
+// clause 6.3 a cancellation is -0 only when rounding toward negative, and the
+// operators always round to nearest, ties to even. Without this branch these
+// operands took the aligned path below at a gap of zero: a table load, a
+// multiply by one and the general sign selection.
+//
 // Both operands were evaluated before this method. Only the slow branch calls
 // the runtime, with the original operands. The normal variable/memory phis at
 // bAfter join that call's memory with the unchanged fast-branch memory.
@@ -193,6 +205,7 @@ func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	bSlow := s.f.NewBlock(block.BlockPlain)
 	bAfter := s.f.NewBlock(block.BlockPlain)
 	bAlign := s.f.NewBlock(block.BlockPlain)
+	bOpposite := s.f.NewBlock(block.BlockPlain)
 	// Short-circuit the guards, particularly the common mismatch in quantum
 	// or sign. Branches also let the backend use condition codes directly
 	// instead of materializing and combining three boolean values.
@@ -204,7 +217,7 @@ func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 		b.AddEdgeTo(next)
 		if i == 0 {
 			// A sign or quantum mismatch may still have an exact result.
-			b.AddEdgeTo(bAlign)
+			b.AddEdgeTo(bOpposite)
 		} else {
 			b.AddEdgeTo(bSlow)
 		}
@@ -215,6 +228,32 @@ func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	lo := s.newValue1(ssaop.OpSelect0, u64, sum)
 	carry := s.newValue1(ssaop.OpSelect1, u64, sum)
 	hi := s.newValue2(ssaop.OpOr64, u64, xh, carry)
+	s.vars[bidAddVar] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, hi)
+	s.endBlock().AddEdgeTo(bAfter)
+
+	s.startBlock(bOpposite)
+	opposite := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpXor64, u64, xh, yh), signBit)
+	for i, guard := range []*ssa.Value{opposite, word, finite} {
+		b := s.endBlock()
+		b.Kind = block.BlockIf
+		b.SetControl(guard)
+		next := s.f.NewBlock(block.BlockPlain)
+		b.AddEdgeTo(next)
+		if i == 0 {
+			b.AddEdgeTo(bAlign)
+		} else {
+			b.AddEdgeTo(bSlow)
+		}
+		s.startBlock(next)
+	}
+	diff := s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), xl, yl, zero)
+	lo = s.newValue1(ssaop.OpSelect0, u64, diff)
+	borrow := s.newValue1(ssaop.OpSelect1, u64, diff)
+	borrowed := s.newValue2(ssaop.OpNeq64, boolT, borrow, zero)
+	lo = s.newValue3(ssaop.OpCondSelect, u64, s.newValue1(ssaop.OpNeg64, u64, lo), lo, borrowed)
+	hi = s.newValue2(ssaop.OpXor64, u64, xh, s.newValue2(ssaop.OpLsh64x64, u64, borrow, s.constInt64(u64, 63)))
+	cancelled := s.newValue2(ssaop.OpEq64, boolT, lo, zero)
+	hi = s.newValue3(ssaop.OpCondSelect, u64, s.newValue2(ssaop.OpAnd64, u64, hi, s.constInt64(u64, int64(^signMask))), hi, cancelled)
 	s.vars[bidAddVar] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, hi)
 	s.endBlock().AddEdgeTo(bAfter)
 
@@ -290,9 +329,9 @@ func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	// aligned operand only when that operand's high product word is zero.
 	less := s.newValue2(ssaop.OpAndB, boolT,
 		s.newValue2(ssaop.OpEq64, boolT, phi, zero), s.newValue2(ssaop.OpLess64U, boolT, plo, lower))
-	diff := s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), plo, lower, zero)
+	diff = s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), plo, lower, zero)
 	lo = s.newValue1(ssaop.OpSelect0, u64, diff)
-	borrow := s.newValue1(ssaop.OpSelect1, u64, diff)
+	borrow = s.newValue1(ssaop.OpSelect1, u64, diff)
 	hi = s.newValue2(ssaop.OpSub64, u64, phi, borrow)
 	lo = s.newValue3(ssaop.OpCondSelect, u64, s.newValue2(ssaop.OpSub64, u64, lower, plo), lo, less)
 	hi = s.newValue3(ssaop.OpCondSelect, u64, zero, hi, less)

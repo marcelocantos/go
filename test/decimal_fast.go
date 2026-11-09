@@ -38,6 +38,12 @@ func chain(x, y, z decimal128, n int) result {
 //go:noinline
 func difference(x, y decimal128) decimal128 { return x - y }
 
+//go:noinline
+func plus(x, y decimal128) decimal128 { return x + y }
+
+//go:noinline
+func negate(x decimal128) decimal128 { return -x }
+
 type named decimal128
 
 // Keep decimal values and pointers alive across calls, including a call in
@@ -107,6 +113,36 @@ func main() {
 	check(sum, 9.000)
 	check(difference(1.0, 1.00), 0.00)
 	check(difference(-1.0, -1.00), 0.00)
+	// Effective subtraction at one quantum: x - y of one sign and x + y of
+	// opposite signs, the difference with and without a borrow, at the
+	// largest word coefficient, and exact cancellations, which give +0 under
+	// round-to-nearest whatever the signs of the operands and of zero.
+	const maxWord = 18446744073709551615.00
+	check(difference(2.50, 1.25), 1.25)
+	check(difference(1.25, 2.50), -1.25)
+	check(difference(-1.25, -2.50), 1.25)
+	check(difference(-2.50, -1.25), -1.25)
+	check(plus(2.50, -1.25), 1.25)
+	check(plus(-2.50, 1.25), -1.25)
+	check(plus(1.25, -2.50), -1.25)
+	check(difference(maxWord, 0.00), maxWord)
+	check(difference(0.00, maxWord), -maxWord)
+	check(difference(maxWord, 18446744073709551614.00), 1.00)
+	check(difference(18446744073709551614.00, maxWord), -1.00)
+	check(plus(-maxWord, 0.01), -18446744073709551614.99)
+	check(difference(1.25, 1.25), 0.00)
+	check(difference(-1.25, -1.25), 0.00)
+	check(plus(1.25, -1.25), 0.00)
+	check(plus(-1.25, 1.25), 0.00)
+	negZero := negate(0.00)
+	check(difference(negZero, negZero), 0.00)
+	check(difference(0.00, 0.00), 0.00)
+	check(plus(negZero, 0.00), 0.00)
+	check(plus(0.00, negZero), 0.00)
+	check(plus(negZero, negZero), negZero)
+	check(difference(negZero, 0.00), negZero)
+	// One coefficient past a word at the same quantum takes the runtime.
+	check(difference(18446744073709551616.00, 0.01), 18446744073709551615.99)
 	a := [5]named{1.25, 2.50, 18446744073709551615, -1.25, 2.50}
 	b := [5]named{2.50, 0.001, 18446744073709551615, -2.50, -2.50}
 	// The third coefficient product exceeds 34 digits and must round through
