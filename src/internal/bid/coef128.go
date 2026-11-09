@@ -72,9 +72,6 @@ func cMulPow10128(c coef128, k int) coef128 {
 // cDivPow10128 returns the quotient and remainder of c / 10^k, so that
 // c = q × 10^k + r with 0 <= r < 10^k. Precondition: 0 <= k <= 38.
 func cDivPow10128(c coef128, k int) (q, r coef128) {
-	if q, r, ok := u256DivPow10(wide128{Lo: c}, k); ok {
-		return q, r
-	}
 	return u128Div(c, pow10tab128[k])
 }
 

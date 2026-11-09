@@ -164,6 +164,41 @@ func div3by2(u2, u1, u0, d1, d0, v uint64) (q, r1, r0 uint64) {
 	return q, r1, r0
 }
 
+// div3by2Knuth is div3by2 without a reciprocal: one step of Knuth's
+// Algorithm D (TAOCP vol. 2, 4.3.1) with a two-word divisor. Preconditions,
+// not checked: d1 has its top bit set, and u2 < d1, which u256Div128's one
+// caller meets because there u2 < 2^s <= 2^63 for its shift s <= 63. The
+// quotient word is estimated from the top words alone, as
+// q̂ = ⌊(u2·2^64 + u1) / d1⌋; because d1 is normalised the estimate is never
+// too small and at most 2 too large. It is multiplied back and subtracted,
+// and while that borrows the divisor is added back and q̂ decremented, at
+// most twice.
+func div3by2Knuth(u2, u1, u0, d1, d0 uint64) (q, r1, r0 uint64) {
+	q, _ = bits.Div64(u2, u1, d1)
+
+	// (r2, r1, r0) = (u2, u1, u0) - q × (d1, d0), modulo 2^192.
+	h0, p0 := bits.Mul64(q, d0)
+	h1, p1 := bits.Mul64(q, d1)
+	var c, b uint64
+	p1, c = bits.Add64(p1, h0, 0)
+	p2 := h1 + c // q × d < 2^192, so this cannot overflow
+	r0, b = bits.Sub64(u0, p0, 0)
+	r1, b = bits.Sub64(u1, p1, b)
+	r2, b := bits.Sub64(u2, p2, b)
+
+	// A borrow means q̂ was too large and the difference wrapped negative.
+	// Add the divisor back; the difference is non-negative again exactly
+	// when the addition carries out of the top word.
+	for b != 0 {
+		q--
+		r0, c = bits.Add64(r0, d0, 0)
+		r1, c = bits.Add64(r1, d1, c)
+		r2, c = bits.Add64(r2, 0, c)
+		b ^= c
+	}
+	return q, r1, r0
+}
+
 // u256Div128 divides n by d when the quotient fits 128 bits.
 //
 // Precondition, checked: d != 0 and n.Hi < d. That is exactly the condition
@@ -204,13 +239,16 @@ func u256Div128(n Uint256, d Uint128) (q, r Uint128, ok bool) {
 	// (w3, w2) < (v1, v0) is n.Hi < d after the shift; the second's is that
 	// the remainder of the first is below the divisor.
 	// A dividend below 2^128 has a high quotient word of zero, because
-	// d >= 2^64, and the first remainder is then (w2, w1) itself.
-	v := reciprocal3by2(v1, v0)
-	r1, r0 := w2, w1
-	if n.Hi != (Uint128{}) {
+	// d >= 2^64, and only the low word to find. One word does not repay
+	// the reciprocal: Knuth's estimate from one bits.Div64 is cheaper.
+	var r1, r0 uint64
+	if n.Hi == (Uint128{}) {
+		q.Lo, r1, r0 = div3by2Knuth(w2, w1, w0, v1, v0)
+	} else {
+		v := reciprocal3by2(v1, v0)
 		q.Hi, r1, r0 = div3by2(w3, w2, w1, v1, v0, v)
+		q.Lo, r1, r0 = div3by2(r1, r0, w0, v1, v0, v)
 	}
-	q.Lo, r1, r0 = div3by2(r1, r0, w0, v1, v0, v)
 
 	// Undo the normalisation of the remainder.
 	r = Uint128{Hi: r1 >> s, Lo: r0>>s | r1<<(64-s)}
