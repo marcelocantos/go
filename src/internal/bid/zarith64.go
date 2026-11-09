@@ -405,6 +405,29 @@ func round64(neg bool, p wide64, exp int, class digitClass, mode Mode, floor int
 			}
 		}
 	}
+	// A coefficient of exactly Precision64 digits at an exponent inside the
+	// format and at or above floor is at the place of its result: below, a
+	// is Precision64-1+exp and x is exp, so s is 0, nothing is dropped and
+	// the class is that of the caller, and the result is q or q+1 at exp,
+	// which carries to 10^(Precision64-1) at exp+1. That is the swamped
+	// addend of add64, whose class is known at face value. An exact one
+	// (class zero) was packed above. This is the general path with the
+	// clamp, the digit count and the shift left out, all of which leave
+	// such a value unchanged.
+	if cIsZero64(p.Hi) && MinExp64 <= exp && floor <= exp && exp <= MaxExp64 && !cGtMax64(p.Lo) && cCmp64(p.Lo, cPow1064(Precision64-1)) >= 0 {
+		q, x := p.Lo, exp
+		if roundUp(class, mode, neg, cOdd64(q)) {
+			q = cInc64(q)
+			if cGtMax64(q) {
+				q, x = cPow1064(Precision64-1), x+1
+				if x > MaxExp64 {
+					return overflow64(neg, mode)
+				}
+			}
+		}
+		return pack64(neg, q, x), Inexact
+	}
+
 	// Far outside the format every exponent rounds alike: overflow in every
 	// mode above, a value below a tenth of the smallest subnormal below.
 	// Clamping keeps the exponent arithmetic below in range and the shift

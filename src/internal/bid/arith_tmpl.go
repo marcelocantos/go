@@ -414,6 +414,29 @@ func roundW(neg bool, p wideW, exp int, class digitClass, mode Mode, floor int) 
 			}
 		}
 	}
+	// A coefficient of exactly PrecisionW digits at an exponent inside the
+	// format and at or above floor is at the place of its result: below, a
+	// is PrecisionW-1+exp and x is exp, so s is 0, nothing is dropped and
+	// the class is that of the caller, and the result is q or q+1 at exp,
+	// which carries to 10^(PrecisionW-1) at exp+1. That is the swamped
+	// addend of addW, whose class is known at face value. An exact one
+	// (class zero) was packed above. This is the general path with the
+	// clamp, the digit count and the shift left out, all of which leave
+	// such a value unchanged.
+	if cIsZeroW(p.Hi) && MinExpW <= exp && floor <= exp && exp <= MaxExpW && !cGtMaxW(p.Lo) && cCmpW(p.Lo, cPow10W(PrecisionW-1)) >= 0 {
+		q, x := p.Lo, exp
+		if roundUp(class, mode, neg, cOddW(q)) {
+			q = cIncW(q)
+			if cGtMaxW(q) {
+				q, x = cPow10W(PrecisionW-1), x+1
+				if x > MaxExpW {
+					return overflowW(neg, mode)
+				}
+			}
+		}
+		return packW(neg, q, x), Inexact
+	}
+
 	// Far outside the format every exponent rounds alike: overflow in every
 	// mode above, a value below a tenth of the smallest subnormal below.
 	// Clamping keeps the exponent arithmetic below in range and the shift

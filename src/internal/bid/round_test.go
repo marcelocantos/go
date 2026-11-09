@@ -432,3 +432,52 @@ func TestRoundWideHalfBound(t *testing.T) {
 		t.Logf("%s: %d products", f.name, n)
 	}
 }
+
+// TestRoundFaceValue checks roundW where it takes a coefficient of exactly
+// Precision digits at an exponent inside the format without counting its
+// digits: the swamped addend of add, whose class is known at face value.
+// The larger operand's coefficient runs from one digit to Precision digits,
+// the largest (whose increment carries to 10^(Precision-1) one place up)
+// and the power of ten whose difference needs one more place included; its
+// exponent runs up to the largest, where the carry overflows; the smaller
+// operand is far enough below to be swamped, of either sign and of one to
+// Precision digits; every mode, against the reference.
+func TestRoundFaceValue(t *testing.T) {
+	var k kernel
+	for _, f := range []*format{dec64, dec128} {
+		nines := strings.Repeat("9", f.prec)
+		one := "1" + strings.Repeat("0", f.prec-1)
+		xs := []string{"1", "7", "5" + strings.Repeat("0", f.prec-2), one, nines[1:], nines}
+		ys := []string{"1", "5", nines}
+		n := 0
+		for _, xc := range xs {
+			for _, xe := range []int{0, f.maxExp - 1, f.maxExp, f.minExp + 2*f.prec + 2} {
+				for _, yc := range ys {
+					// A gap of 2·prec+2 swamps every y below x scaled to
+					// prec digits; prec+3 is the least that does for a
+					// one-digit y and x of prec digits.
+					for _, gap := range []int{f.prec + 3, 2*f.prec + 2, 3 * f.prec} {
+						ye := xe - gap
+						for _, sign := range [][2]bool{{false, false}, {false, true}, {true, false}, {true, true}} {
+							x, ok1 := wordOperand(f, sign[0], xc, xe)
+							y, ok2 := wordOperand(f, sign[1], yc, ye)
+							if !ok1 || !ok2 {
+								continue
+							}
+							for _, m := range allModes {
+								n++
+								if got, want := k.add(f, x, y, m), f.add(x, y, m); got != want {
+									t.Fatalf("%s add(%s, %s, %s) = %s, want %s", f.name, f.format(x), f.format(y), modeName(m), f.format(got), f.format(want))
+								}
+								if got, want := k.add(f, y, x, m), f.add(y, x, m); got != want {
+									t.Fatalf("%s add(%s, %s, %s) = %s, want %s", f.name, f.format(y), f.format(x), modeName(m), f.format(got), f.format(want))
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		t.Logf("%s: %d sums", f.name, n)
+	}
+}
