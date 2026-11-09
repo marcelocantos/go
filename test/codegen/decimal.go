@@ -38,6 +38,8 @@ func Div64(x, y decimal64) decimal64 {
 
 func Less64(x, y decimal64) bool {
 	// ppc64le:"DCMPU" -"CALL"
+	// arm64:"UMULH" -"CALL runtime.dlt64"
+	// amd64:"MULX?Q" -"CALL runtime.dlt64"
 	return x < y
 }
 
@@ -63,6 +65,8 @@ func Mul128(x, y decimal128) decimal128 {
 
 func Eq128(x, y decimal128) bool {
 	// ppc64le:"DCMPUQ" -"CALL"
+	// arm64:"UMULH" "CALL runtime.deq128"
+	// amd64:"MULX?Q" "CALL runtime.deq128"
 	return x == y
 }
 
