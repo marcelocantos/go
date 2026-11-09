@@ -75,7 +75,7 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 	if v.n == 0 {
 		return appendZero(dst, v.neg, fmt, prec)
 	}
-	return formatDigits(dst, v.neg, v.exp, v.digs[:v.n], normalFormat(fmt), prec)
+	return formatDigits(dst, v.neg, v.exp, v.digs[len(v.digs)-v.n:], normalFormat(fmt), prec)
 }
 
 // parseDecimal converts a string to a decimal value of the given bitSize, 64 or
@@ -122,8 +122,8 @@ func parseDecimal(s string, bitSize int) (decimal128, error) {
 // --- Coefficient digits ---
 
 // A finite holds the coefficient digits of a finite value: the value
-// is (-1)^neg × digs[:n] × 10^exp. There are no leading zeros; n is zero
-// for a zero value, whatever its exponent.
+// is (-1)^neg × digs[len(digs)-n:] × 10^exp. There are no leading zeros;
+// n is zero for a zero value, whatever its exponent.
 type finite struct {
 	neg  bool
 	n    int
@@ -175,6 +175,8 @@ func (v *finite) round(x bid.Uint128, format byte, prec int) {
 	v.exp += qexp
 	if keep > 0 && v.n > keep {
 		// A carry made 9.99 into 10.0. The extra digit is a zero.
+		// Keep the leading digits right-aligned after dropping that zero.
+		copy(v.digs[len(v.digs)-keep:], v.digs[len(v.digs)-v.n:len(v.digs)-v.n+keep])
 		v.exp += v.n - keep
 		v.n = keep
 	}
@@ -235,7 +237,7 @@ const (
 // appendCanonical appends all the digits of v, which keeps its quantum, for a
 // negative precision. A zero has one digit and the exponent of its quantum.
 func appendCanonical(dst []byte, v *finite, format byte) []byte {
-	digits, exp := v.digs[:v.n], v.exp
+	digits, exp := v.digs[len(v.digs)-v.n:], v.exp
 	if v.n == 0 {
 		digits = []byte{'0'}
 	}

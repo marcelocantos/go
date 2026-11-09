@@ -101,9 +101,10 @@ const (
 	expClamp = 1 << 30
 )
 
-// writeDigits writes the decimal digits of hi × 10^19 + lo to buf, without
-// leading zeros ("0" for zero), and returns the number written. buf must
-// have room for digitBufLen digits, or for the digits of the value.
+// writeDigits writes the decimal digits of hi × 10^19 + lo to the end of buf,
+// without leading zeros ("0" for zero), and returns the number written.
+// Bytes before the digits are unchanged. buf must have room for digitBufLen
+// digits, or for the digits of the value.
 func writeDigits(buf []byte, hi, lo uint64) int {
 	if hi == 0 {
 		return writeWordDigits(buf, lo)
@@ -118,17 +119,16 @@ func writeDigits(buf []byte, hi, lo uint64) int {
 		"70717273747576777879" +
 		"80818283848586878889" +
 		"90919293949596979899"
-	var tmp [digitBufLen]byte
-	i := len(tmp)
+	i := len(buf)
 	// The low word has exactly 19 digits, including leading zeros.
 	// Write the odd last digit, then nine pairs.
 	i--
-	tmp[i] = byte('0' + lo%10)
+	buf[i] = byte('0' + lo%10)
 	lo /= 10
 	for range u64Digits / 2 {
 		i -= 2
 		p := lo % 100 * 2
-		tmp[i], tmp[i+1] = pairs[p], pairs[p+1]
+		buf[i], buf[i+1] = pairs[p], pairs[p+1]
 		lo /= 100
 	}
 	lo = hi
@@ -137,33 +137,33 @@ func writeDigits(buf []byte, hi, lo uint64) int {
 	for lo >= 100 {
 		i -= 2
 		p := lo % 100 * 2
-		tmp[i], tmp[i+1] = pairs[p], pairs[p+1]
+		buf[i], buf[i+1] = pairs[p], pairs[p+1]
 		lo /= 100
 	}
 	if lo >= 10 {
 		i -= 2
-		tmp[i], tmp[i+1] = pairs[lo*2], pairs[lo*2+1]
+		buf[i], buf[i+1] = pairs[lo*2], pairs[lo*2+1]
 	} else {
 		i--
-		tmp[i] = byte('0' + lo)
+		buf[i] = byte('0' + lo)
 	}
-	return copy(buf, tmp[i:])
+	return len(buf) - i
 }
 
-// writeWordDigits is the small, inlinable single-word extraction loop.
+// writeWordDigits writes a word backwards into the end of buf without
+// a temporary buffer or a digit-counting pass. It returns the digit count.
 // cSplitW establishes lo < 10^19, so u64Digits bytes suffice even for zero.
 func writeWordDigits(buf []byte, lo uint64) int {
-	var tmp [u64Digits]byte
-	i := len(tmp)
+	i := len(buf)
 	for {
 		i--
-		tmp[i] = byte('0' + lo%10)
+		buf[i] = byte('0' + lo%10)
 		lo /= 10
 		if lo == 0 {
 			break
 		}
 	}
-	return copy(buf, tmp[i:])
+	return len(buf) - i
 }
 
 // appendDecimal appends the to-scientific-string form of the finite value

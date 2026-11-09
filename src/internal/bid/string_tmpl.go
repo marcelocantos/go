@@ -18,15 +18,35 @@
 // string.go.
 package bid
 
-// UnpackDigitsW decodes x and writes its coefficient digits to buf, without a sign,
-// decimal point or exponent. It returns the same kind, sign and exponent as
+// UnpackDigitsW decodes x and writes its coefficient digits to the end of buf,
+// without a sign, decimal point or exponent. It returns the same kind, sign and exponent as
 // UnpackW, and the number of bytes written. Zero and non-finite values write
 // no digits and return n = 0. Nonzero finite values have no leading zeros.
-// The buffer must be non-nil; bytes beyond n are unchanged. It does not allocate.
+// The buffer must be non-nil; bytes before the last n are unchanged.
+// It does not allocate.
 func UnpackDigitsW(buf *[PrecisionW]byte, x coefW) (kind Kind, neg bool, n, exp int) {
+	// The common word coefficient needs neither a general decoder call nor
+	// a 128-bit split. The word guard proves a finite canonical encoding;
+	// the base-10 word bound is exactly the digit writer's precondition.
+	if sign, word, biased, ok := unpackWordW(x); ok && word < pow10tab64[u64Digits] {
+		if word != 0 {
+			n = writeWordDigits(buf[:], word)
+		}
+		return KindFinite, sign, n, biased - BiasW
+	}
+	// A word-guard miss may be non-finite. Decode it directly rather than
+	// paying both the guard and a general decoder call for a digitless value.
+	if !IsFiniteW(x) {
+		kind = KindInf
+		if IsNaNW(x) {
+			kind = KindNaN
+		}
+		return kind, SignbitW(x), 0, 0
+	}
 	var c coefW
 	kind, neg, c, exp = UnpackW(x)
-	if kind != KindFinite || cIsZeroW(c) {
+	// The non-finite cases returned above; only a zero coefficient is empty.
+	if cIsZeroW(c) {
 		return
 	}
 	hi, lo := cSplitW(c)
@@ -63,7 +83,7 @@ func appendW(dst []byte, x coefW) []byte {
 	} else {
 		n = writeDigits(digs[:], hi, lo)
 	}
-	return appendDecimal(dst, neg, digs[:n], exp)
+	return appendDecimal(dst, neg, digs[len(digs)-n:], exp)
 }
 
 // parseW is Parse64 and Parse128. The string is scanned once, keeping the

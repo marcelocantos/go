@@ -734,6 +734,34 @@ func TestFormatDecimalRounding(t *testing.T) {
 	}
 }
 
+// A carry can discard a trailing zero after rounding at any precision. Exercise
+// every retained length, including overlapping moves of a full-width coefficient.
+func TestFormatDecimalCarryDigits(t *testing.T) {
+	for _, width := range []struct{ bits, digits int }{{64, 16}, {128, 34}} {
+		for n := 2; n <= width.digits; n++ {
+			coeff := strings.Repeat("9", n)
+			for _, exp := range []int{-2 * n, 0, 20} {
+				for _, neg := range []bool{false, true} {
+					input := coeff + "e" + Itoa(exp)
+					if neg {
+						input = "-" + input
+					}
+					x, err := ParseDecimal(input, width.bits)
+					if err != nil {
+						t.Fatal(err)
+					}
+					for prec := 0; prec < n-1; prec++ {
+						want := refFormat(neg, coeff, exp, 'e', prec)
+						if got := FormatDecimal(x, 'e', prec, width.bits); got != want {
+							t.Fatalf("decimal%d %s, precision %d: got %q, want %q", width.bits, input, prec, got, want)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 // --- Quantum-preserving format tests ---
 
 func TestFormatDecimal64Quantum(t *testing.T) {

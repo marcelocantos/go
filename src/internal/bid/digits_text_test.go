@@ -6,6 +6,7 @@ package bid_test
 
 import (
 	"internal/bid"
+	"math/big"
 	"math/rand/v2"
 	"testing"
 )
@@ -58,14 +59,61 @@ func TestUnpackDigits(t *testing.T) {
 			if kind != wantKind || neg != v.neg || exp != v.exp || n < 0 || n > len(buf) {
 				t.Fatalf("%s UnpackDigits(%x): got (%v, %t, %d, %d), want (%v, %t, %d, %d)", f.name, x, kind, neg, n, exp, wantKind, v.neg, len(want), v.exp)
 			}
-			if string(buf[:n]) != want {
-				t.Fatalf("%s UnpackDigits(%x) = %q, want %q", f.name, x, buf[:n], want)
+			if string(buf[len(buf)-n:]) != want {
+				t.Fatalf("%s UnpackDigits(%x) = %q, want %q", f.name, x, buf[len(buf)-n:], want)
 			}
-			for _, c := range buf[n:] {
+			for _, c := range buf[:len(buf)-n] {
 				if c != '?' {
-					t.Fatalf("%s UnpackDigits(%x) overwrote the buffer beyond %d", f.name, x, n)
+					t.Fatalf("%s UnpackDigits(%x) overwrote the buffer before its final %d digits", f.name, x, n)
 				}
 			}
 		}
+	}
+}
+
+// BenchmarkUnpackDigitsCases keeps the word shortcut's misses visible separately
+// from the mixed API ratchet. Rotate operands so no fixed value is folded.
+func BenchmarkUnpackDigitsCases(b *testing.B) {
+	for _, f := range both {
+		b.Run(f.name, func(b *testing.B) {
+			r := rand.New(rand.NewPCG(541, streamSeed("digit-cases-"+f.name)))
+			for _, name := range []string{"word", "wide", "zero", "special", "raw"} {
+				var xs [64]bits
+				for i := range xs {
+					switch name {
+					case "word":
+						c := new(big.Int).SetUint64(1 + r.Uint64()%1_000_000_000)
+						xs[i] = f.encode(value{kind: finite, neg: i&1 != 0, coeff: c, exp: i%15 - 7})
+					case "wide":
+						c := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(f.prec)), nil)
+						c.Sub(c, big.NewInt(int64(i+1)))
+						xs[i] = f.encode(value{kind: finite, neg: i&1 != 0, coeff: c, exp: i%15 - 7})
+					case "zero":
+						xs[i] = f.encode(value{kind: finite, neg: i&1 != 0, coeff: new(big.Int), exp: i%15 - 7})
+					case "special":
+						xs[i] = f.encode(value{kind: []kind{infinite, notANumber}[i%2], neg: i&2 != 0})
+					case "raw":
+						xs[i] = bits{Hi: r.Uint64(), Lo: r.Uint64()}
+					}
+				}
+				b.Run(name, func(b *testing.B) {
+					var buf64 [bid.Precision64]byte
+					var buf128 [bid.Precision128]byte
+					sum := 0
+					b.ReportAllocs()
+					for i := 0; i < b.N; i++ {
+						x := xs[i%len(xs)]
+						var n int
+						if f == dec64 {
+							_, _, n, _ = bid.UnpackDigits64(&buf64, x.Lo)
+						} else {
+							_, _, n, _ = bid.UnpackDigits128(&buf128, x)
+						}
+						sum += n
+					}
+					asInt = sum
+				})
+			}
+		})
 	}
 }
