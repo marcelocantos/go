@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"internal/abi"
 	"internal/buildcfg"
+	"strings"
 
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
@@ -133,6 +134,16 @@ func initIntrinsics(cfg *intrinsicBuildConfig) {
 	}
 	alias := func(pkg, fn, pkg2, fn2 string, archs ...*sys.Arch) {
 		intrinsics.alias(pkg, fn, pkg2, fn2, archs...)
+	}
+
+	// Decimal rounding uses typed entry points so generic wrappers expose
+	// constant modes and quanta before SSA lowering. DPD targets retain the
+	// portable implementations, as do calls with intrinsics disabled.
+	for _, name := range []string{"quantize64", "quantize128", "integral64", "integral128"} {
+		integral := strings.HasPrefix(name, "integral")
+		addF("internal/decimal", name, func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
+			return s.bidRounding(n, args, integral)
+		}, sys.ARM64, sys.AMD64)
 	}
 
 	/******** runtime ********/

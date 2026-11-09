@@ -7,6 +7,8 @@
 
 package codegen
 
+import "math/decimal"
+
 // On linux/ppc64le the decimal operators are POWER's decimal
 // floating-point instructions, not runtime calls (see
 // cmd/compile/internal/ssagen/dpd.go). BID targets use integer fast paths
@@ -184,4 +186,27 @@ func ToFloat(x decimal64) float64 {
 	// No instruction converts between the radices: a runtime call.
 	// ppc64le:"CALL runtime.dd64tof64"
 	return float64(x)
+}
+
+// A constant quantum and mode must reach the typed intrinsic through both
+// generic API layers. Only the guarded fallback may call the portable helper.
+func QuantizeCent64(x decimal64) decimal64 {
+	// arm64:"UDIV" "CALL internal/decimal.quantize64" -"CALL .*Quantize"
+	// amd64:"DIVQ" "CALL internal/decimal.quantize64" -"CALL .*Quantize"
+	return decimal.Quantize(x, decimal64(0.01))
+}
+func QuantizeCent128(x decimal128) decimal128 {
+	// arm64:"UDIV" "CALL internal/decimal.quantize128" -"CALL .*Quantize"
+	// amd64:"DIVQ" "CALL internal/decimal.quantize128" -"CALL .*Quantize"
+	return decimal.Quantize(x, decimal128(0.01))
+}
+func IntegralEven128(x decimal128) decimal128 {
+	// arm64:"UDIV" "CALL internal/decimal.integral128" -"CALL .*RoundToEven"
+	// amd64:"DIVQ" "CALL internal/decimal.integral128" -"CALL .*RoundToEven"
+	return decimal.RoundToEven(x)
+}
+func IntegralTrunc64(x decimal64) decimal64 {
+	// arm64:"UDIV" "CALL internal/decimal.integral64" -"CALL .*Trunc"
+	// amd64:"DIVQ" "CALL internal/decimal.integral64" -"CALL .*Trunc"
+	return decimal.Trunc(x)
 }
