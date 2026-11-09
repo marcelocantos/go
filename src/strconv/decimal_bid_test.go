@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"math/decimal"
 	"math/rand"
+	"slices"
 	. "strconv"
 	"strings"
 	"testing"
@@ -774,7 +775,15 @@ func TestAppendDecimalCanonicalCapacity(t *testing.T) {
 		for n := 1; n <= width.digits; n++ {
 			coeff := strings.Repeat("1234567890", 4)[:n]
 			c, _ := new(big.Int).SetString(coeff, 10)
-			for _, exp := range []int{width.minExp, -n - 6, -n - 5, -n, 1 - n, -1, 0, 1, 21 - n, 22 - n, width.maxExp} {
+			exponents := []int{width.minExp, -n - 6, -n - 5, -n, 1 - n, -1, 0, 1, 21 - n, 22 - n, width.maxExp}
+			// Every interior point position exercises both digit-copy spans,
+			// including word boundaries and overlapping head/tail stores.
+			for exp := 1 - n; exp < 0; exp++ {
+				if !slices.Contains(exponents, exp) {
+					exponents = append(exponents, exp)
+				}
+			}
+			for _, exp := range exponents {
 				for _, neg := range []bool{false, true} {
 					var x decimal128
 					if width.bits == 64 {

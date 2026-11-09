@@ -116,9 +116,9 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 					dst[start+i+1] = digits[i]
 				}
 			} else {
-				copy(dst[start:], digits[:point])
+				copyDecimalDigits(dst[start:], digits[:point])
 				dst[start+point] = '.'
-				copy(dst[start+point+1:], digits[point:])
+				copyDecimalDigits(dst[start+point+1:], digits[point:])
 			}
 			return dst
 		}
@@ -132,6 +132,28 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 		return appendZero(dst, v.neg, fmt, prec)
 	}
 	return formatDigits(dst, v.neg, v.exp, v.digs[len(v.digs)-v.n:], normalFormat(fmt), prec)
+}
+
+// copyDecimalDigits copies a non-overlapping coefficient span; dst must be at
+// least as long as src. Constant head and tail copies cover medium spans,
+// with identical overlapping stores
+// when the length lies between the two chunk sizes. Smaller and larger spans
+// retain the general copy operation.
+func copyDecimalDigits(dst, src []byte) {
+	const word = 8
+	n := len(src)
+	if n >= word && n <= 4*word {
+		dst = dst[:n]
+		if n <= 2*word {
+			copy(dst[:word], src[:word])
+			copy(dst[n-word:], src[n-word:])
+		} else {
+			copy(dst[:2*word], src[:2*word])
+			copy(dst[n-2*word:], src[n-2*word:])
+		}
+		return
+	}
+	copy(dst, src)
 }
 
 // parseDecimal converts a string to a decimal value of the given bitSize, 64 or
