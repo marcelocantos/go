@@ -762,6 +762,60 @@ func TestFormatDecimalCarryDigits(t *testing.T) {
 	}
 }
 
+// Exercise every coefficient length and canonical notation boundary while
+// appending to empty and prefixed buffers, with growth and spare capacity.
+// Expected digits and placement come from the independent formatter, not
+// another invocation of AppendDecimal with a different buffer size.
+func TestAppendDecimalCanonicalCapacity(t *testing.T) {
+	for _, width := range []struct{ bits, digits, minExp, maxExp int }{
+		{64, bid.Precision64, bid.MinExp64, bid.MaxExp64},
+		{128, bid.Precision128, bid.MinExp128, bid.MaxExp128},
+	} {
+		for n := 1; n <= width.digits; n++ {
+			coeff := strings.Repeat("1234567890", 4)[:n]
+			c, _ := new(big.Int).SetString(coeff, 10)
+			for _, exp := range []int{width.minExp, -n - 6, -n - 5, -n, 1 - n, -1, 0, 1, 21 - n, 22 - n, width.maxExp} {
+				for _, neg := range []bool{false, true} {
+					var x decimal128
+					if width.bits == 64 {
+						bits, _ := bid.Pack64(neg, c.Uint64(), exp)
+						x = decimal128(decimal.BID64frombits(bits))
+					} else {
+						hi := new(big.Int).Rsh(new(big.Int).Set(c), 64).Uint64()
+						bits, _ := bid.Pack128(neg, bid.Uint128{Hi: hi, Lo: c.Uint64()}, exp)
+						x = decimal.BID128frombits(bits.Hi, bits.Lo)
+					}
+					for _, format := range []byte{'e', 'E', 'g', 'G', 'f', '?'} {
+						e := exp + n - 1
+						scientific := format == 'e' || format == 'E' || format != 'f' && (e < -6 || e >= 21 || exp > 0)
+						want := ""
+						if scientific {
+							want = refFormat(neg, coeff, exp, 'e', n-1)
+							if format == 'E' || format == 'G' {
+								want = strings.ReplaceAll(want, "e", "E")
+							}
+						} else {
+							want = refFormat(neg, coeff, exp, 'f', max(-exp, 0))
+						}
+						for _, prefix := range []string{"", "prefix:"} {
+							for _, spare := range []int{0, bid.MaxLen128 - 1, bid.MaxLen128, bid.MaxLen128 + 1, 2 * bid.MaxLen128} {
+								// The byte outside the exposed capacity is a bounds sentinel.
+								buf := []byte(strings.Repeat("~", len(prefix)+spare+1))
+								copy(buf, prefix)
+								dst := buf[: len(prefix) : len(prefix)+spare]
+								got := AppendDecimal(dst, x, format, -1, width.bits)
+								if string(got) != prefix+want || buf[len(buf)-1] != '~' {
+									t.Fatalf("decimal%d %s e%d neg=%v format=%c spare=%d prefix=%q: got %q, want %q; sentinel=%c", width.bits, coeff, exp, neg, format, spare, prefix, got, prefix+want, buf[len(buf)-1])
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 // --- Quantum-preserving format tests ---
 
 func TestFormatDecimal64Quantum(t *testing.T) {

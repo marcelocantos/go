@@ -53,9 +53,8 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 	hi, lo := decimal.BID128bits(d)
 	x := bid.Uint128{Hi: hi, Lo: lo}
 
-	var v finite
-	kind, neg, n, exp := bid.UnpackDigits128(&v.digs, x)
-	v.neg, v.n, v.exp = neg, n, exp
+	var digs [bid.Precision128]byte
+	kind, neg, n, exp := bid.UnpackDigits128(&digs, x)
 	switch kind {
 	case bid.KindNaN:
 		return append(dst, "NaN"...)
@@ -67,8 +66,51 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 	}
 
 	if prec < 0 {
-		return appendCanonical(dst, &v, normalFormat(fmt))
+		// Canonical output keeps all coefficient digits and the quantum. Keep
+		// its layout here so it needs neither a call nor the rounding state.
+		format := normalFormat(fmt)
+		digits := digs[len(digs)-n:]
+		if n == 0 {
+			digits = []byte{'0'}
+		}
+		if neg {
+			dst = append(dst, '-')
+		}
+		switch format {
+		case 'e', 'E':
+			return appendExp(dst, digits, exp, format, -1)
+		case 'f':
+			if n == 0 {
+				exp = min(exp, 0)
+			}
+			return appendFixed(dst, digits, exp, -1)
+		}
+		e := exp + len(digits) - 1
+		if e < canonicalMinExp || e >= canonicalMaxExp || exp > 0 {
+			ef := byte('e')
+			if format == 'G' {
+				ef = 'E'
+			}
+			return appendExp(dst, digits, exp, ef, -1)
+		}
+		if exp == 0 {
+			return append(dst, digits...)
+		}
+		// The canonical fixed form neither rounds nor pads when the point is
+		// inside the coefficient. Reserve the whole result once, then place
+		// the two digit spans without the general formatter's append checks.
+		point := len(digits) + exp
+		if point > 0 && cap(dst)-len(dst) >= len(digits)+1 {
+			start := len(dst)
+			dst = dst[:start+len(digits)+1]
+			copy(dst[start:], digits[:point])
+			dst[start+point] = '.'
+			copy(dst[start+point+1:], digits[point:])
+			return dst
+		}
+		return appendFixed(dst, digits, exp, -1)
 	}
+	v := finite{neg: neg, n: n, exp: exp, digs: &digs}
 	if v.n > 0 {
 		v.round(x, normalFormat(fmt), prec)
 	}
@@ -128,7 +170,7 @@ type finite struct {
 	neg  bool
 	n    int
 	exp  int
-	digs [bid.Precision128]byte
+	digs *[bid.Precision128]byte
 }
 
 // round rounds the value to the precision that format and prec call for:
@@ -170,7 +212,7 @@ func (v *finite) round(x bid.Uint128, format byte, prec int) {
 	quantum, _ := bid.Pack128(false, bid.Uint128{Lo: 1}, drop)
 	q := bid.Quantize128(c, quantum, bid.ToNearestEven)
 
-	_, _, n, qexp := bid.UnpackDigits128(&v.digs, q)
+	_, _, n, qexp := bid.UnpackDigits128(v.digs, q)
 	v.n = n
 	v.exp += qexp
 	if keep > 0 && v.n > keep {
@@ -233,51 +275,6 @@ const (
 	canonicalMinExp = -6
 	canonicalMaxExp = 21
 )
-
-// appendCanonical appends all the digits of v, which keeps its quantum, for a
-// negative precision. A zero has one digit and the exponent of its quantum.
-func appendCanonical(dst []byte, v *finite, format byte) []byte {
-	digits, exp := v.digs[len(v.digs)-v.n:], v.exp
-	if v.n == 0 {
-		digits = []byte{'0'}
-	}
-	if v.neg {
-		dst = append(dst, '-')
-	}
-	switch format {
-	case 'e', 'E':
-		return appendExp(dst, digits, exp, format, -1)
-	case 'f':
-		if v.n == 0 {
-			exp = min(exp, 0)
-		}
-		return appendFixed(dst, digits, exp, -1)
-	}
-	e := exp + len(digits) - 1
-	if e < canonicalMinExp || e >= canonicalMaxExp || exp > 0 {
-		ef := byte('e')
-		if format == 'G' {
-			ef = 'E'
-		}
-		return appendExp(dst, digits, exp, ef, -1)
-	}
-	if exp == 0 {
-		return append(dst, digits...)
-	}
-	// The canonical fixed form neither rounds nor pads when the point is
-	// inside the coefficient. Reserve the whole result once, then place
-	// the two digit spans without the general formatter's append checks.
-	point := len(digits) + exp
-	if point > 0 && cap(dst)-len(dst) >= len(digits)+1 {
-		start := len(dst)
-		dst = dst[:start+len(digits)+1]
-		copy(dst[start:], digits[:point])
-		dst[start+point] = '.'
-		copy(dst[start+point+1:], digits[point:])
-		return dst
-	}
-	return appendFixed(dst, digits, exp, -1)
-}
 
 // formatDigits formats the non-zero value (-1)^neg × digits × 10^exp, where
 // format is one of 'e', 'E', 'f', 'g' and 'G' and prec is not negative. The
