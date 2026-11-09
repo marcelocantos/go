@@ -243,6 +243,28 @@ func unpackWord128(x Uint128) (neg bool, coeff uint64, exp int, ok bool) {
 	return x.Hi&SignMask128Hi != 0, x.Lo, int(x.Hi >> ExpShift128 & ExpMask128), true
 }
 
+// unpackWordCanon64 and unpackWordCanon128 recognize every finite canonical
+// encoding whose coefficient fits uint64, for the word fast paths of the
+// arithmetic: for decimal64 that is every finite canonical encoding, the
+// second form included, whose coefficient is tested against MaxCoeff64 as
+// Unpack64 tests it; for decimal128 it is what unpackWord128 recognizes,
+// because a decimal128 second form is never canonical. The exponent is
+// biased, as unpackWord's, and the other results are unspecified when ok is
+// false. The comparisons keep unpackWord: there the second form measured
+// faster on the general path.
+func unpackWordCanon64(x uint64) (neg bool, coeff uint64, exp int, ok bool) {
+	neg = x&SignMask64 != 0
+	if x&Form2Mask64 != Form2Mask64 {
+		return neg, x & (1<<CoeffBits64 - 1), int(x >> ExpShift64 & ExpMask64), true
+	}
+	coeff = 1<<53 | x&(1<<Form2CoeffBits64-1)
+	return neg, coeff, int(x >> Form2ExpShift64 & ExpMask64), x&SpecialMask64 != SpecialMask64 && coeff <= MaxCoeff64
+}
+
+func unpackWordCanon128(x Uint128) (neg bool, coeff uint64, exp int, ok bool) {
+	return unpackWord128(x)
+}
+
 // packWord64 and packWord128 encode the exact value (-1)^neg × (hi·2^64 +
 // lo) × 10^exp, which a word fast path computed at its preferred exponent,
 // if it fits the format, and report ok = false otherwise, when the caller

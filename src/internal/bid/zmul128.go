@@ -19,7 +19,9 @@ import "math/bits"
 // 2×MinExp128 and 2×MaxExp128); round128 is specified for any exponent, clamps it
 // and folds, pads or overflows the result as the contract says.
 //
-// Two finite operands whose coefficients fit a word take a fast path first:
+// Two finite operands whose coefficients fit a word take a fast path first,
+// and if it refuses them the general path starts from the operands as it
+// decoded them, so that a refusal costs only the attempt:
 // their product is exact in two words, its preferred exponent is the sum of
 // the exponents, and packWord128 encodes it if both fit the format. That is
 // the exact packing exception round128's comment allows, and round128 would
@@ -28,32 +30,40 @@ import "math/bits"
 // product is the exclusive or of the signs either way. A product or
 // exponent outside the format falls through.
 func mul128(x, y coef128, mode Mode) coef128 {
-	if xn, xc, xe, ok := unpackWord128(x); ok {
-		if yn, yc, ye, ok := unpackWord128(y); ok {
-			hi, lo := bits.Mul64(xc, yc)
-			if r, ok := packWord128(xn != yn, hi, lo, xe+ye-2*Bias128); ok {
-				return r
-			}
-		}
+	var yneg, yok bool
+	var yw uint64
+	var ye int
+	xneg, xw, xe, xok := unpackWordCanon128(x)
+	if xok {
+		yneg, yw, ye, yok = unpackWordCanon128(y)
 	}
-	xneg, xc, xe, xok := unpackFirst128(x)
-	yneg, yc, ye, yok := unpackFirst128(y)
-	if !xok || !yok {
-		var xk, yk Kind
-		xk, xneg, xc, xe = unpackRest128(x)
-		yk, yneg, yc, ye = unpackRest128(y)
-		if xk != KindFinite || yk != KindFinite {
-			// A NaN operand gives that NaN, an infinity times a zero of any
-			// exponent (a non-canonical operand reads as a zero) the
-			// canonical NaN, and an infinity times anything else the
-			// infinity of the product's sign.
-			if xk == KindNaN || yk == KindNaN {
-				return nan128(x, y, y)
+	var xc, yc coef128
+	if yok {
+		hi, lo := bits.Mul64(xw, yw)
+		if r, ok := packWord128(xneg != yneg, hi, lo, xe+ye-2*Bias128); ok {
+			return r
+		}
+		xc, xe, yc, ye = cFromU64128(xw), xe-Bias128, cFromU64128(yw), ye-Bias128
+	} else {
+		xneg, xc, xe, xok = unpackFirst128(x)
+		yneg, yc, ye, yok = unpackFirst128(y)
+		if !xok || !yok {
+			var xk, yk Kind
+			xk, xneg, xc, xe = unpackRest128(x)
+			yk, yneg, yc, ye = unpackRest128(y)
+			if xk != KindFinite || yk != KindFinite {
+				// A NaN operand gives that NaN, an infinity times a zero of
+				// any exponent (a non-canonical operand reads as a zero) the
+				// canonical NaN, and an infinity times anything else the
+				// infinity of the product's sign.
+				if xk == KindNaN || yk == KindNaN {
+					return nan128(x, y, y)
+				}
+				if xk == KindFinite && cIsZero128(xc) || yk == KindFinite && cIsZero128(yc) {
+					return cNaN128()
+				}
+				return cInf128(xneg != yneg)
 			}
-			if xk == KindFinite && cIsZero128(xc) || yk == KindFinite && cIsZero128(yc) {
-				return cNaN128()
-			}
-			return cInf128(xneg != yneg)
 		}
 	}
 	neg := xneg != yneg

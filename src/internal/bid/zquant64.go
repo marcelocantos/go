@@ -52,7 +52,8 @@ func roundToIntegral64(x coef64, mode Mode) coef64 {
 // whatever the distance. An exact zero takes the exponent of y.
 //
 // A finite x whose coefficient fits a word, with an exponent at most
-// maxWordGap above that of a finite y, takes a fast path first: the
+// maxWordGap above that of a finite y, takes a fast path first, and if it
+// refuses the general path starts from x as it decoded it: the
 // coefficient scaled to the exponent of y is exact in two words, and
 // packWord64 encodes it if it fits the format, which is the exact packing
 // exception round64's comment allows. The general path computes the same
@@ -60,22 +61,24 @@ func roundToIntegral64(x coef64, mode Mode) coef64 {
 // unchanged, a zero with the sign of x included. A coefficient that does
 // not fit falls through, to the NaN below.
 func quantize64(x, y coef64, mode Mode) coef64 {
-	if xn, xc, xe, ok := unpackWord64(x); ok {
-		if yk, ye := kindExp64(y); yk == KindFinite {
-			if gap := uint(xe - Bias64 - ye); gap <= maxWordGap {
-				hi, lo := bits.Mul64(xc, pow10tab64[gap])
-				if r, ok := packWord64(xn, hi, lo, ye); ok {
-					return r
-				}
+	xneg, xw, xe, xok := unpackWordCanon64(x)
+	yk, ye := kindExp64(y)
+	var xc coef64
+	xk := KindFinite
+	if xok {
+		if gap := uint(xe - Bias64 - ye); gap <= maxWordGap && yk == KindFinite {
+			hi, lo := bits.Mul64(xw, pow10tab64[gap])
+			if r, ok := packWord64(xneg, hi, lo, ye); ok {
+				return r
 			}
 		}
+		xc, xe = cFromU6464(xw), xe-Bias64
+	} else {
+		xneg, xc, xe, xok = unpackFirst64(x)
+		if !xok {
+			xk, xneg, xc, xe = unpackRest64(x)
+		}
 	}
-	xneg, xc, xe, xok := unpackFirst64(x)
-	xk := KindFinite
-	if !xok {
-		xk, xneg, xc, xe = unpackRest64(x)
-	}
-	yk, ye := kindExp64(y)
 	switch {
 	case xk == KindNaN || yk == KindNaN:
 		return nan64(x, y, y)

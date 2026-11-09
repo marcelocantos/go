@@ -36,7 +36,11 @@ const addDigits128 = Precision128 + 3
 // would leave x unchanged where x - ε must land below x in a directed mode.
 //
 // Two finite operands whose coefficients fit a word and whose exponents are
-// at most maxWordGap apart take a fast path first. It computes their exact
+// at most maxWordGap apart take a fast path first, and if it refuses them the
+// general path starts from the operands as the fast path decoded them, so
+// that a refusal costs only the attempt (every decimal64 operand is a word
+// one, and its refusal is a sum of more than Precision128 digits). It
+// computes their exact
 // sum in two words at the smaller exponent, the preferred one, and
 // packWord128 encodes it if it fits the format; a sum that does not fit, which
 // needs rounding, falls through to the general path. That is the exact
@@ -52,56 +56,64 @@ const addDigits128 = Precision128 + 3
 // cancellation the zero of "Sign of a result", negative only in
 // TowardNegative.
 func add128(x, y coef128, mode Mode) coef128 {
-	if xneg, xc, xe, ok := unpackWord128(x); ok {
-		if yneg, yc, ye, ok := unpackWord128(y); ok {
-			if xe < ye {
-				xneg, xc, xe, yneg, yc, ye = yneg, yc, ye, xneg, xc, xe
+	var yneg, yok bool
+	var yw uint64
+	var ye int
+	xneg, xw, xe, xok := unpackWordCanon128(x)
+	if xok {
+		yneg, yw, ye, yok = unpackWordCanon128(y)
+	}
+	var xc, yc coef128
+	if yok {
+		if xe < ye {
+			xneg, xw, xe, yneg, yw, ye = yneg, yw, ye, xneg, xw, xe
+		}
+		if gap := uint(xe - ye); gap <= maxWordGap {
+			hi, lo := bits.Mul64(xw, pow10tab64[gap])
+			neg := xneg
+			if xneg == yneg {
+				var carry uint64
+				lo, carry = bits.Add64(lo, yw, 0)
+				hi += carry
+			} else if hi == 0 && lo < yw {
+				neg, lo = yneg, yw-lo
+			} else {
+				var borrow uint64
+				lo, borrow = bits.Sub64(lo, yw, 0)
+				hi -= borrow
+				if hi|lo == 0 {
+					neg = mode == TowardNegative
+				}
 			}
-			if gap := uint(xe - ye); gap <= maxWordGap {
-				hi, lo := bits.Mul64(xc, pow10tab64[gap])
-				neg := xneg
-				if xneg == yneg {
-					var carry uint64
-					lo, carry = bits.Add64(lo, yc, 0)
-					hi += carry
-				} else if hi == 0 && lo < yc {
-					neg, lo = yneg, yc-lo
-				} else {
-					var borrow uint64
-					lo, borrow = bits.Sub64(lo, yc, 0)
-					hi -= borrow
-					if hi|lo == 0 {
-						neg = mode == TowardNegative
-					}
-				}
-				if r, ok := packWord128(neg, hi, lo, ye-Bias128); ok {
-					return r
-				}
+			if r, ok := packWord128(neg, hi, lo, ye-Bias128); ok {
+				return r
 			}
 		}
-	}
-	xneg, xc, xe, xok := unpackFirst128(x)
-	yneg, yc, ye, yok := unpackFirst128(y)
-	if !xok || !yok {
-		var xk, yk Kind
-		xk, xneg, xc, xe = unpackRest128(x)
-		yk, yneg, yc, ye = unpackRest128(y)
-		if xk != KindFinite || yk != KindFinite {
-			switch {
-			case xk == KindNaN || yk == KindNaN:
-				return nan128(x, y, y)
-			case xk != KindInf:
-				return cInf128(yneg)
-			case yk == KindInf && xneg != yneg:
-				return cNaN128() // the infinities cancel
+		xc, xe, yc, ye = cFromU64128(xw), xe-Bias128, cFromU64128(yw), ye-Bias128
+	} else {
+		xneg, xc, xe, xok = unpackFirst128(x)
+		yneg, yc, ye, yok = unpackFirst128(y)
+		if !xok || !yok {
+			var xk, yk Kind
+			xk, xneg, xc, xe = unpackRest128(x)
+			yk, yneg, yc, ye = unpackRest128(y)
+			if xk != KindFinite || yk != KindFinite {
+				switch {
+				case xk == KindNaN || yk == KindNaN:
+					return nan128(x, y, y)
+				case xk != KindInf:
+					return cInf128(yneg)
+				case yk == KindInf && xneg != yneg:
+					return cNaN128() // the infinities cancel
+				}
+				return cInf128(xneg)
 			}
-			return cInf128(xneg)
+		}
+		if xe < ye {
+			xneg, xc, xe, yneg, yc, ye = yneg, yc, ye, xneg, xc, xe
 		}
 	}
 
-	if xe < ye {
-		xneg, xc, xe, yneg, yc, ye = yneg, yc, ye, xneg, xc, xe
-	}
 	exp, class := ye, classZero
 	// A zero x has nothing to scale: the sum is y exactly, at the preferred
 	// exponent ye, and shifting y would only lose digits of it.

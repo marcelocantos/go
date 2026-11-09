@@ -22,7 +22,9 @@ import "math/bits"
 // 2×MinExpW and 2×MaxExpW); roundW is specified for any exponent, clamps it
 // and folds, pads or overflows the result as the contract says.
 //
-// Two finite operands whose coefficients fit a word take a fast path first:
+// Two finite operands whose coefficients fit a word take a fast path first,
+// and if it refuses them the general path starts from the operands as it
+// decoded them, so that a refusal costs only the attempt:
 // their product is exact in two words, its preferred exponent is the sum of
 // the exponents, and packWordW encodes it if both fit the format. That is
 // the exact packing exception roundW's comment allows, and roundW would
@@ -31,32 +33,40 @@ import "math/bits"
 // product is the exclusive or of the signs either way. A product or
 // exponent outside the format falls through.
 func mulW(x, y coefW, mode Mode) coefW {
-	if xn, xc, xe, ok := unpackWordW(x); ok {
-		if yn, yc, ye, ok := unpackWordW(y); ok {
-			hi, lo := bits.Mul64(xc, yc)
-			if r, ok := packWordW(xn != yn, hi, lo, xe+ye-2*BiasW); ok {
-				return r
-			}
-		}
+	var yneg, yok bool
+	var yw uint64
+	var ye int
+	xneg, xw, xe, xok := unpackWordCanonW(x)
+	if xok {
+		yneg, yw, ye, yok = unpackWordCanonW(y)
 	}
-	xneg, xc, xe, xok := unpackFirstW(x)
-	yneg, yc, ye, yok := unpackFirstW(y)
-	if !xok || !yok {
-		var xk, yk Kind
-		xk, xneg, xc, xe = unpackRestW(x)
-		yk, yneg, yc, ye = unpackRestW(y)
-		if xk != KindFinite || yk != KindFinite {
-			// A NaN operand gives that NaN, an infinity times a zero of any
-			// exponent (a non-canonical operand reads as a zero) the
-			// canonical NaN, and an infinity times anything else the
-			// infinity of the product's sign.
-			if xk == KindNaN || yk == KindNaN {
-				return nanW(x, y, y)
+	var xc, yc coefW
+	if yok {
+		hi, lo := bits.Mul64(xw, yw)
+		if r, ok := packWordW(xneg != yneg, hi, lo, xe+ye-2*BiasW); ok {
+			return r
+		}
+		xc, xe, yc, ye = cFromU64W(xw), xe-BiasW, cFromU64W(yw), ye-BiasW
+	} else {
+		xneg, xc, xe, xok = unpackFirstW(x)
+		yneg, yc, ye, yok = unpackFirstW(y)
+		if !xok || !yok {
+			var xk, yk Kind
+			xk, xneg, xc, xe = unpackRestW(x)
+			yk, yneg, yc, ye = unpackRestW(y)
+			if xk != KindFinite || yk != KindFinite {
+				// A NaN operand gives that NaN, an infinity times a zero of
+				// any exponent (a non-canonical operand reads as a zero) the
+				// canonical NaN, and an infinity times anything else the
+				// infinity of the product's sign.
+				if xk == KindNaN || yk == KindNaN {
+					return nanW(x, y, y)
+				}
+				if xk == KindFinite && cIsZeroW(xc) || yk == KindFinite && cIsZeroW(yc) {
+					return cNaNW()
+				}
+				return cInfW(xneg != yneg)
 			}
-			if xk == KindFinite && cIsZeroW(xc) || yk == KindFinite && cIsZeroW(yc) {
-				return cNaNW()
-			}
-			return cInfW(xneg != yneg)
 		}
 	}
 	neg := xneg != yneg

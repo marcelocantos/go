@@ -174,3 +174,93 @@ func TestSwampedAdd(t *testing.T) {
 		t.Logf("%s: %d swamped cases", f.name, n)
 	}
 }
+
+// TestWordDecodeBounds checks the word decoders at the bounds of what they
+// accept, through every operation that branches on them (add, sub, mul,
+// quantize and, for unpackWord, the comparisons). For unpackWordCanon, a
+// decimal64 word operand is any finite
+// canonical encoding, the second form included, so the second form is taken
+// at its smallest coefficient, at MaxCoeff64 and one past it (non-canonical:
+// a zero), at its largest field, and as the special values the second-form
+// bits also mark. A decimal128 word operand is a first form whose high
+// coefficient word is zero; one bit above it, the largest canonical
+// coefficient, a non-canonical first form and the specials are refused.
+// Each is paired, both ways round, with word operands at gaps of 0, 1, 19
+// and 20 and with itself, in every mode, against the reference.
+func TestWordDecodeBounds(t *testing.T) {
+	var k kernel
+	const form2 = 3 << 61
+	exp64 := func(e int) uint64 { return uint64(e+398) << 51 } // second-form exponent field
+	var raw64 []uint64
+	for _, c := range []uint64{1 << 53, bid.MaxCoeff64 - 1, bid.MaxCoeff64, bid.MaxCoeff64 + 1, 1<<54 - 1} {
+		for _, e := range []int{-398, -20, 0, 369} {
+			for _, sign := range []uint64{0, 1 << 63} {
+				raw64 = append(raw64, sign|form2|exp64(e)|c&(1<<51-1))
+			}
+		}
+	}
+	raw64 = append(raw64, 0x78<<56, 0xf8<<56, 0x7c<<56, 0x7e<<56|5, 0xfc<<56|1)
+	var raw128 []bits
+	exp128 := func(e int) uint64 { return uint64(e+6176) << 49 }
+	for _, c := range []bits{{Hi: 1}, {Hi: 1, Lo: 7}, {Hi: bid.MaxCoeff128Hi, Lo: bid.MaxCoeff128Lo}, {Hi: bid.MaxCoeff128Hi, Lo: bid.MaxCoeff128Lo + 1}, {Hi: bid.CoeffMask128Hi, Lo: ^uint64(0)}} {
+		for _, e := range []int{-6176, -20, 0, 6111} {
+			for _, sign := range []uint64{0, 1 << 63} {
+				raw128 = append(raw128, bits{Hi: sign | exp128(e) | c.Hi, Lo: c.Lo})
+			}
+		}
+	}
+	raw128 = append(raw128, bits{Hi: form2 | exp128(0)>>2}, bits{Hi: 0x78 << 56}, bits{Hi: 0xf8 << 56}, bits{Hi: 0x7c << 56}, bits{Hi: 0x7e<<56 | 3, Lo: 9})
+	for _, f := range []*format{dec64, dec128} {
+		var edge []bits
+		if f == dec64 {
+			for _, x := range raw64 {
+				edge = append(edge, bits{Lo: x})
+			}
+		} else {
+			edge = raw128
+		}
+		n := 0
+		for _, x := range edge {
+			ys := []bits{x}
+			_, _, _, xe := f.unpack(x)
+			for _, g := range []int{0, 1, 19, 20} {
+				for _, c := range []string{"0", "1", "123456", "9999999999999999"} {
+					for _, ye := range []int{xe - g, xe + g} {
+						if y, ok := wordOperand(f, g%2 == 1, c, ye); ok {
+							ys = append(ys, y)
+						}
+					}
+				}
+			}
+			for _, y := range ys {
+				for _, p := range [][2]bits{{x, y}, {y, x}} {
+					a, b := p[0], p[1]
+					for _, m := range allModes {
+						n++
+						if got, want := k.add(f, a, b, m), f.add(a, b, m); got != want {
+							t.Fatalf("%s add(%#x:%#x, %#x:%#x, %s) = %s, want %s", f.name, a.Hi, a.Lo, b.Hi, b.Lo, modeName(m), f.format(got), f.format(want))
+						}
+						if got, want := k.sub(f, a, b, m), f.sub(a, b, m); got != want {
+							t.Fatalf("%s sub(%#x:%#x, %#x:%#x, %s) = %s, want %s", f.name, a.Hi, a.Lo, b.Hi, b.Lo, modeName(m), f.format(got), f.format(want))
+						}
+						if got, want := k.mul(f, a, b, m), f.mul(a, b, m); got != want {
+							t.Fatalf("%s mul(%#x:%#x, %#x:%#x, %s) = %s, want %s", f.name, a.Hi, a.Lo, b.Hi, b.Lo, modeName(m), f.format(got), f.format(want))
+						}
+						if got, want := k.quantize(f, a, b, m), f.quantize(a, b, m); got != want {
+							t.Fatalf("%s quantize(%#x:%#x, %#x:%#x, %s) = %s, want %s", f.name, a.Hi, a.Lo, b.Hi, b.Lo, modeName(m), f.format(got), f.format(want))
+						}
+					}
+					gotC, gotOK := k.compare(f, a, b)
+					wantC, wantOK := f.compare(a, b)
+					if gotC != wantC || gotOK != wantOK {
+						t.Fatalf("%s compare(%#x:%#x, %#x:%#x) = %d %v, want %d %v", f.name, a.Hi, a.Lo, b.Hi, b.Lo, gotC, gotOK, wantC, wantOK)
+					}
+					if got, want := k.less(f, a, b), (reference{}).less(f, a, b); got != want {
+						t.Fatalf("%s less(%#x:%#x, %#x:%#x) = %v, want %v", f.name, a.Hi, a.Lo, b.Hi, b.Lo, got, want)
+					}
+				}
+			}
+		}
+		t.Logf("%s: %d operand pairs × 4 operations", f.name, n)
+	}
+}

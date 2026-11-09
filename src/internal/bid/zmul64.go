@@ -19,7 +19,9 @@ import "math/bits"
 // 2×MinExp64 and 2×MaxExp64); round64 is specified for any exponent, clamps it
 // and folds, pads or overflows the result as the contract says.
 //
-// Two finite operands whose coefficients fit a word take a fast path first:
+// Two finite operands whose coefficients fit a word take a fast path first,
+// and if it refuses them the general path starts from the operands as it
+// decoded them, so that a refusal costs only the attempt:
 // their product is exact in two words, its preferred exponent is the sum of
 // the exponents, and packWord64 encodes it if both fit the format. That is
 // the exact packing exception round64's comment allows, and round64 would
@@ -28,32 +30,40 @@ import "math/bits"
 // product is the exclusive or of the signs either way. A product or
 // exponent outside the format falls through.
 func mul64(x, y coef64, mode Mode) coef64 {
-	if xn, xc, xe, ok := unpackWord64(x); ok {
-		if yn, yc, ye, ok := unpackWord64(y); ok {
-			hi, lo := bits.Mul64(xc, yc)
-			if r, ok := packWord64(xn != yn, hi, lo, xe+ye-2*Bias64); ok {
-				return r
-			}
-		}
+	var yneg, yok bool
+	var yw uint64
+	var ye int
+	xneg, xw, xe, xok := unpackWordCanon64(x)
+	if xok {
+		yneg, yw, ye, yok = unpackWordCanon64(y)
 	}
-	xneg, xc, xe, xok := unpackFirst64(x)
-	yneg, yc, ye, yok := unpackFirst64(y)
-	if !xok || !yok {
-		var xk, yk Kind
-		xk, xneg, xc, xe = unpackRest64(x)
-		yk, yneg, yc, ye = unpackRest64(y)
-		if xk != KindFinite || yk != KindFinite {
-			// A NaN operand gives that NaN, an infinity times a zero of any
-			// exponent (a non-canonical operand reads as a zero) the
-			// canonical NaN, and an infinity times anything else the
-			// infinity of the product's sign.
-			if xk == KindNaN || yk == KindNaN {
-				return nan64(x, y, y)
+	var xc, yc coef64
+	if yok {
+		hi, lo := bits.Mul64(xw, yw)
+		if r, ok := packWord64(xneg != yneg, hi, lo, xe+ye-2*Bias64); ok {
+			return r
+		}
+		xc, xe, yc, ye = cFromU6464(xw), xe-Bias64, cFromU6464(yw), ye-Bias64
+	} else {
+		xneg, xc, xe, xok = unpackFirst64(x)
+		yneg, yc, ye, yok = unpackFirst64(y)
+		if !xok || !yok {
+			var xk, yk Kind
+			xk, xneg, xc, xe = unpackRest64(x)
+			yk, yneg, yc, ye = unpackRest64(y)
+			if xk != KindFinite || yk != KindFinite {
+				// A NaN operand gives that NaN, an infinity times a zero of
+				// any exponent (a non-canonical operand reads as a zero) the
+				// canonical NaN, and an infinity times anything else the
+				// infinity of the product's sign.
+				if xk == KindNaN || yk == KindNaN {
+					return nan64(x, y, y)
+				}
+				if xk == KindFinite && cIsZero64(xc) || yk == KindFinite && cIsZero64(yc) {
+					return cNaN64()
+				}
+				return cInf64(xneg != yneg)
 			}
-			if xk == KindFinite && cIsZero64(xc) || yk == KindFinite && cIsZero64(yc) {
-				return cNaN64()
-			}
-			return cInf64(xneg != yneg)
 		}
 	}
 	neg := xneg != yneg
