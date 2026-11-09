@@ -282,69 +282,75 @@ func scanDecimal(s string, keep int) numeral {
 
 	// Significand: digits with at most one point, at least one digit.
 	var digits, fraction, kept, dropped int
-	point := false
+	var mant Uint128
+	point, sticky := false, false
 	wordKeep := min(keep, u64Digits)
 	// Runs of eight digits go to scanEights, at the three places where a
 	// long run can start: the first digit, the digit after the point, and a
 	// digit beyond keep, and only when eight digits follow, which costs a
-	// load and is checked before the call. The byte loop itself does no
-	// more than it would without them, so short numerals pay nothing.
-	if i+8 <= len(s) && eightDigits(load8(s, i)) {
-		j := i
-		j, kept, r.mant, dropped, r.sticky = scanEights(s, j, kept, keep, wordKeep, r.mant, dropped, r.sticky)
-		digits += j - i
-		i = j
-	}
-	for ; i < len(s); i++ {
-		c := s[i]
-		if c == '.' {
+	// load and is checked before the call. The byte loop leaves itself to
+	// make the call (run) and is entered again after it, so that it holds
+	// no call and keeps its state in registers: short numerals pay only the
+	// checks.
+	run := i+8 <= len(s) && eightDigits(load8(s, i))
+	for {
+		if run {
+			j := i
+			j, kept, mant, dropped, sticky = scanEights(s, j, kept, keep, wordKeep, mant, dropped, sticky)
+			digits += j - i
 			if point {
-				return numeral{}
+				fraction += j - i
 			}
-			point = true
-			if i+9 <= len(s) && eightDigits(load8(s, i+1)) {
-				j := i + 1
-				j, kept, r.mant, dropped, r.sticky = scanEights(s, j, kept, keep, wordKeep, r.mant, dropped, r.sticky)
-				digits += j - i - 1
-				fraction += j - i - 1
-				i = j - 1
-			}
-			continue
+			i, run = j, false
 		}
-		d := c - '0'
-		if d > 9 {
+	bytes:
+		for ; i < len(s); i++ {
+			c := s[i]
+			if c == '.' {
+				if point {
+					return numeral{}
+				}
+				point = true
+				if i+9 <= len(s) && eightDigits(load8(s, i+1)) {
+					i, run = i+1, true
+					break
+				}
+				continue
+			}
+			d := c - '0'
+			if d > 9 {
+				break
+			}
+			digits++
+			if point {
+				fraction++
+			}
+			switch {
+			case kept == 0 && d == 0:
+				// A leading zero.
+			case kept < wordKeep:
+				// At most 19 significant digits are below 10^19 and fit
+				// one word. No carry or high-word multiply is needed.
+				mant.Lo = mant.Lo*10 + uint64(d)
+				kept++
+			case kept < keep:
+				mant, _ = u128Mul64(mant, 10)
+				mant, _ = u128Add(mant, Uint128{Lo: uint64(d)})
+				kept++
+			default:
+				dropped++
+				sticky = sticky || d != 0
+				if i+9 <= len(s) && eightDigits(load8(s, i+1)) {
+					i, run = i+1, true
+					break bytes
+				}
+			}
+		}
+		if !run {
 			break
 		}
-		digits++
-		if point {
-			fraction++
-		}
-		switch {
-		case kept == 0 && d == 0:
-			// A leading zero.
-		case kept < wordKeep:
-			// At most 19 significant digits are below 10^19 and fit
-			// one word. No carry or high-word multiply is needed.
-			r.mant.Lo = r.mant.Lo*10 + uint64(d)
-			kept++
-		case kept < keep:
-			r.mant, _ = u128Mul64(r.mant, 10)
-			r.mant, _ = u128Add(r.mant, Uint128{Lo: uint64(d)})
-			kept++
-		default:
-			dropped++
-			r.sticky = r.sticky || d != 0
-			if i+9 <= len(s) && eightDigits(load8(s, i+1)) {
-				j := i + 1
-				j, kept, r.mant, dropped, r.sticky = scanEights(s, j, kept, keep, wordKeep, r.mant, dropped, r.sticky)
-				digits += j - i - 1
-				if point {
-					fraction += j - i - 1
-				}
-				i = j - 1
-			}
-		}
 	}
+	r.mant, r.sticky = mant, sticky
 	if digits == 0 {
 		return numeral{}
 	}
