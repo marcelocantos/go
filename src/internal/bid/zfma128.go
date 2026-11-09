@@ -48,9 +48,21 @@ const fmaDigits128 = 2*Precision128 + 3
 // operand at the exponent of the smaller, and two zeros are a zero at the
 // preferred exponent; the signs follow "Sign of a result".
 func fma128(x, y, z coef128, mode Mode) coef128 {
-	xk, xneg, xc, xe := Unpack128(x)
-	yk, yneg, yc, ye := Unpack128(y)
-	zk, zneg, zc, ze := Unpack128(z)
+	xneg, xc, xe, xok := unpackFirst128(x)
+	xk := KindFinite
+	if !xok {
+		xk, xneg, xc, xe = unpackRest128(x)
+	}
+	yneg, yc, ye, yok := unpackFirst128(y)
+	yk := KindFinite
+	if !yok {
+		yk, yneg, yc, ye = unpackRest128(y)
+	}
+	zneg, zc, ze, zok := unpackFirst128(z)
+	zk := KindFinite
+	if !zok {
+		zk, zneg, zc, ze = unpackRest128(z)
+	}
 	pneg := xneg != yneg
 	if xk != KindFinite || yk != KindFinite || zk != KindFinite {
 		switch {

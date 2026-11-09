@@ -37,7 +37,11 @@ func max128(x, y coef128) coef128 {
 // the zero Unpack gives. Rounding an exactly representable value changes
 // nothing, so the mode is immaterial.
 func result128(x coef128) coef128 {
-	k, neg, c, e := Unpack128(x)
+	neg, c, e, xok := unpackFirst128(x)
+	k := KindFinite
+	if !xok {
+		k, neg, c, e = unpackRest128(x)
+	}
 	if k == KindInf {
 		return cInf128(neg)
 	}

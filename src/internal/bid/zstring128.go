@@ -53,7 +53,11 @@ func UnpackDigits128(buf *[Precision128]byte, x coef128) (kind Kind, neg bool, n
 // a non-canonical encoding as the zero it denotes, so every bit pattern has
 // a form.
 func append128(dst []byte, x coef128) []byte {
-	kind, neg, c, exp := Unpack128(x)
+	neg, c, exp, xok := unpackFirst128(x)
+	kind := KindFinite
+	if !xok {
+		kind, neg, c, exp = unpackRest128(x)
+	}
 	switch kind {
 	case KindNaN:
 		return append(dst, "NaN"...)

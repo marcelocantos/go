@@ -19,7 +19,11 @@ import "math/bits"
 // takes exponent max(Q(x), 0). A NaN gives that NaN made quiet and an
 // infinity is returned unchanged.
 func roundToIntegral128(x coef128, mode Mode) coef128 {
-	kind, neg, c, exp := Unpack128(x)
+	neg, c, exp, xok := unpackFirst128(x)
+	kind := KindFinite
+	if !xok {
+		kind, neg, c, exp = unpackRest128(x)
+	}
 	switch kind {
 	case KindNaN:
 		return cQuiet128(x)
@@ -64,7 +68,11 @@ func quantize128(x, y coef128, mode Mode) coef128 {
 			}
 		}
 	}
-	xk, xneg, xc, xe := Unpack128(x)
+	xneg, xc, xe, xok := unpackFirst128(x)
+	xk := KindFinite
+	if !xok {
+		xk, xneg, xc, xe = unpackRest128(x)
+	}
 	yk, ye := kindExp128(y)
 	switch {
 	case xk == KindNaN || yk == KindNaN:
@@ -92,7 +100,11 @@ func quantize128(x, y coef128, mode Mode) coef128 {
 // sign with exponent 0. A NaN gives that NaN made quiet and an infinity is
 // returned unchanged.
 func reduce128(x coef128) coef128 {
-	kind, neg, c, exp := Unpack128(x)
+	neg, c, exp, xok := unpackFirst128(x)
+	kind := KindFinite
+	if !xok {
+		kind, neg, c, exp = unpackRest128(x)
+	}
 	switch kind {
 	case KindNaN:
 		return cQuiet128(x)

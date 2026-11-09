@@ -40,7 +40,11 @@ func maxW(x, y coefW) coefW {
 // the zero Unpack gives. Rounding an exactly representable value changes
 // nothing, so the mode is immaterial.
 func resultW(x coefW) coefW {
-	k, neg, c, e := UnpackW(x)
+	neg, c, e, xok := unpackFirstW(x)
+	k := KindFinite
+	if !xok {
+		k, neg, c, e = unpackRestW(x)
+	}
 	if k == KindInf {
 		return cInfW(neg)
 	}

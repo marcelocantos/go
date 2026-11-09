@@ -27,7 +27,11 @@ import "math/bits"
 // takes exponent max(Q(x), 0). A NaN gives that NaN made quiet and an
 // infinity is returned unchanged.
 func roundToIntegralW(x coefW, mode Mode) coefW {
-	kind, neg, c, exp := UnpackW(x)
+	neg, c, exp, xok := unpackFirstW(x)
+	kind := KindFinite
+	if !xok {
+		kind, neg, c, exp = unpackRestW(x)
+	}
 	switch kind {
 	case KindNaN:
 		return cQuietW(x)
@@ -72,7 +76,11 @@ func quantizeW(x, y coefW, mode Mode) coefW {
 			}
 		}
 	}
-	xk, xneg, xc, xe := UnpackW(x)
+	xneg, xc, xe, xok := unpackFirstW(x)
+	xk := KindFinite
+	if !xok {
+		xk, xneg, xc, xe = unpackRestW(x)
+	}
 	yk, ye := kindExpW(y)
 	switch {
 	case xk == KindNaN || yk == KindNaN:
@@ -100,7 +108,11 @@ func quantizeW(x, y coefW, mode Mode) coefW {
 // sign with exponent 0. A NaN gives that NaN made quiet and an infinity is
 // returned unchanged.
 func reduceW(x coefW) coefW {
-	kind, neg, c, exp := UnpackW(x)
+	neg, c, exp, xok := unpackFirstW(x)
+	kind := KindFinite
+	if !xok {
+		kind, neg, c, exp = unpackRestW(x)
+	}
 	switch kind {
 	case KindNaN:
 		return cQuietW(x)

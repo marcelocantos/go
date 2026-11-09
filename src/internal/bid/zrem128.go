@@ -54,8 +54,16 @@ func mod128(x, y coef128) coef128 {
 // at most a coefficient, and e is within the format, so round128 has nothing to
 // round.
 func remainder128(x, y coef128, nearest bool) coef128 {
-	xk, neg, xc, xe := Unpack128(x)
-	yk, _, yc, ye := Unpack128(y)
+	neg, xc, xe, xok := unpackFirst128(x)
+	xk := KindFinite
+	if !xok {
+		xk, neg, xc, xe = unpackRest128(x)
+	}
+	_, yc, ye, yok := unpackFirst128(y)
+	yk := KindFinite
+	if !yok {
+		yk, _, yc, ye = unpackRest128(y)
+	}
 	if xk == KindNaN || yk == KindNaN {
 		return nan128(x, y, y)
 	}

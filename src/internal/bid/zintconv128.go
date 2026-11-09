@@ -39,7 +39,11 @@ func uint64To128(x uint64, mode Mode) coef128 {
 // quotient is at most a coefficient, so adding one cannot carry out of the
 // type, though at decimal128 it may exceed a uint64.
 func intParts128(x coef128, mode Mode) (kind Kind, neg bool, m uint64, big, inexact bool) {
-	kind, neg, c, exp := Unpack128(x)
+	neg, c, exp, xok := unpackFirst128(x)
+	kind = KindFinite
+	if !xok {
+		kind, neg, c, exp = unpackRest128(x)
+	}
 	if kind != KindFinite {
 		return kind, neg, 0, false, false
 	}

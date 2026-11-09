@@ -87,8 +87,16 @@ func quietCmp64(x, y coef64) (c int, ok bool) {
 			return compareWords(xn, xc, xe, yn, yc, ye), true
 		}
 	}
-	xk, xneg, xc, xe := Unpack64(x)
-	yk, yneg, yc, ye := Unpack64(y)
+	xneg, xc, xe, xok := unpackFirst64(x)
+	xk := KindFinite
+	if !xok {
+		xk, xneg, xc, xe = unpackRest64(x)
+	}
+	yneg, yc, ye, yok := unpackFirst64(y)
+	yk := KindFinite
+	if !yok {
+		yk, yneg, yc, ye = unpackRest64(y)
+	}
 	switch {
 	case xk == KindNaN || yk == KindNaN:
 		return 0, false
@@ -141,8 +149,16 @@ func lessEqual64(x, y coef64) bool {
 // values of equal value, zeros included, by exponent. For negative operands
 // everything within the sign reverses. All NaNs of one sign are equal.
 func totalOrder64(x, y coef64) bool {
-	xk, xneg, xc, xe := Unpack64(x)
-	yk, yneg, yc, ye := Unpack64(y)
+	xneg, xc, xe, xok := unpackFirst64(x)
+	xk := KindFinite
+	if !xok {
+		xk, xneg, xc, xe = unpackRest64(x)
+	}
+	yneg, yc, ye, yok := unpackFirst64(y)
+	yk := KindFinite
+	if !yok {
+		yk, yneg, yc, ye = unpackRest64(y)
+	}
 	if xneg != yneg {
 		return xneg
 	}

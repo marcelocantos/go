@@ -48,9 +48,21 @@ const fmaDigits64 = 2*Precision64 + 3
 // operand at the exponent of the smaller, and two zeros are a zero at the
 // preferred exponent; the signs follow "Sign of a result".
 func fma64(x, y, z coef64, mode Mode) coef64 {
-	xk, xneg, xc, xe := Unpack64(x)
-	yk, yneg, yc, ye := Unpack64(y)
-	zk, zneg, zc, ze := Unpack64(z)
+	xneg, xc, xe, xok := unpackFirst64(x)
+	xk := KindFinite
+	if !xok {
+		xk, xneg, xc, xe = unpackRest64(x)
+	}
+	yneg, yc, ye, yok := unpackFirst64(y)
+	yk := KindFinite
+	if !yok {
+		yk, yneg, yc, ye = unpackRest64(y)
+	}
+	zneg, zc, ze, zok := unpackFirst64(z)
+	zk := KindFinite
+	if !zok {
+		zk, zneg, zc, ze = unpackRest64(z)
+	}
 	pneg := xneg != yneg
 	if xk != KindFinite || yk != KindFinite || zk != KindFinite {
 		switch {

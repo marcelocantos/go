@@ -87,8 +87,16 @@ func quietCmp128(x, y coef128) (c int, ok bool) {
 			return compareWords(xn, xc, xe, yn, yc, ye), true
 		}
 	}
-	xk, xneg, xc, xe := Unpack128(x)
-	yk, yneg, yc, ye := Unpack128(y)
+	xneg, xc, xe, xok := unpackFirst128(x)
+	xk := KindFinite
+	if !xok {
+		xk, xneg, xc, xe = unpackRest128(x)
+	}
+	yneg, yc, ye, yok := unpackFirst128(y)
+	yk := KindFinite
+	if !yok {
+		yk, yneg, yc, ye = unpackRest128(y)
+	}
 	switch {
 	case xk == KindNaN || yk == KindNaN:
 		return 0, false
@@ -141,8 +149,16 @@ func lessEqual128(x, y coef128) bool {
 // values of equal value, zeros included, by exponent. For negative operands
 // everything within the sign reverses. All NaNs of one sign are equal.
 func totalOrder128(x, y coef128) bool {
-	xk, xneg, xc, xe := Unpack128(x)
-	yk, yneg, yc, ye := Unpack128(y)
+	xneg, xc, xe, xok := unpackFirst128(x)
+	xk := KindFinite
+	if !xok {
+		xk, xneg, xc, xe = unpackRest128(x)
+	}
+	yneg, yc, ye, yok := unpackFirst128(y)
+	yk := KindFinite
+	if !yok {
+		yk, yneg, yc, ye = unpackRest128(y)
+	}
 	if xneg != yneg {
 		return xneg
 	}

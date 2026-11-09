@@ -78,18 +78,23 @@ func add64(x, y coef64, mode Mode) coef64 {
 			}
 		}
 	}
-	xk, xneg, xc, xe := Unpack64(x)
-	yk, yneg, yc, ye := Unpack64(y)
-	if xk != KindFinite || yk != KindFinite {
-		switch {
-		case xk == KindNaN || yk == KindNaN:
-			return nan64(x, y, y)
-		case xk != KindInf:
-			return cInf64(yneg)
-		case yk == KindInf && xneg != yneg:
-			return cNaN64() // the infinities cancel
+	xneg, xc, xe, xok := unpackFirst64(x)
+	yneg, yc, ye, yok := unpackFirst64(y)
+	if !xok || !yok {
+		var xk, yk Kind
+		xk, xneg, xc, xe = unpackRest64(x)
+		yk, yneg, yc, ye = unpackRest64(y)
+		if xk != KindFinite || yk != KindFinite {
+			switch {
+			case xk == KindNaN || yk == KindNaN:
+				return nan64(x, y, y)
+			case xk != KindInf:
+				return cInf64(yneg)
+			case yk == KindInf && xneg != yneg:
+				return cNaN64() // the infinities cancel
+			}
+			return cInf64(xneg)
 		}
-		return cInf64(xneg)
 	}
 
 	if xe < ye {

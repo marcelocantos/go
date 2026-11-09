@@ -37,7 +37,11 @@ func max64(x, y coef64) coef64 {
 // the zero Unpack gives. Rounding an exactly representable value changes
 // nothing, so the mode is immaterial.
 func result64(x coef64) coef64 {
-	k, neg, c, e := Unpack64(x)
+	neg, c, e, xok := unpackFirst64(x)
+	k := KindFinite
+	if !xok {
+		k, neg, c, e = unpackRest64(x)
+	}
 	if k == KindInf {
 		return cInf64(neg)
 	}

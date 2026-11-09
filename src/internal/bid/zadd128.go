@@ -78,18 +78,23 @@ func add128(x, y coef128, mode Mode) coef128 {
 			}
 		}
 	}
-	xk, xneg, xc, xe := Unpack128(x)
-	yk, yneg, yc, ye := Unpack128(y)
-	if xk != KindFinite || yk != KindFinite {
-		switch {
-		case xk == KindNaN || yk == KindNaN:
-			return nan128(x, y, y)
-		case xk != KindInf:
-			return cInf128(yneg)
-		case yk == KindInf && xneg != yneg:
-			return cNaN128() // the infinities cancel
+	xneg, xc, xe, xok := unpackFirst128(x)
+	yneg, yc, ye, yok := unpackFirst128(y)
+	if !xok || !yok {
+		var xk, yk Kind
+		xk, xneg, xc, xe = unpackRest128(x)
+		yk, yneg, yc, ye = unpackRest128(y)
+		if xk != KindFinite || yk != KindFinite {
+			switch {
+			case xk == KindNaN || yk == KindNaN:
+				return nan128(x, y, y)
+			case xk != KindInf:
+				return cInf128(yneg)
+			case yk == KindInf && xneg != yneg:
+				return cNaN128() // the infinities cancel
+			}
+			return cInf128(xneg)
 		}
-		return cInf128(xneg)
 	}
 
 	if xe < ye {

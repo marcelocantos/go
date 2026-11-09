@@ -53,7 +53,11 @@ func UnpackDigits64(buf *[Precision64]byte, x coef64) (kind Kind, neg bool, n, e
 // a non-canonical encoding as the zero it denotes, so every bit pattern has
 // a form.
 func append64(dst []byte, x coef64) []byte {
-	kind, neg, c, exp := Unpack64(x)
+	neg, c, exp, xok := unpackFirst64(x)
+	kind := KindFinite
+	if !xok {
+		kind, neg, c, exp = unpackRest64(x)
+	}
 	switch kind {
 	case KindNaN:
 		return append(dst, "NaN"...)

@@ -129,15 +129,64 @@ const (
 // infinity or a NaN, coeff and exp are zero; neg is the sign bit, which
 // for a NaN carries no meaning.
 func Unpack64(x uint64) (kind Kind, neg bool, coeff uint64, exp int) {
-	neg = x>>63 != 0
-	if x>>59&0xF == 0xF {
-		if x>>58&1 == 0 {
+	if neg, coeff, exp, ok := unpackFirst64(x); ok {
+		return KindFinite, neg, coeff, exp
+	}
+	return unpackRest64(x)
+}
+
+// Unpack128 is Unpack64 for decimal128.
+func Unpack128(x Uint128) (kind Kind, neg bool, coeff Uint128, exp int) {
+	if neg, coeff, exp, ok := unpackFirst128(x); ok {
+		return KindFinite, neg, coeff, exp
+	}
+	return unpackRest128(x)
+}
+
+// Unpack64 and Unpack128 cannot inline: a call returning four results
+// costs nearly the whole inlining budget by itself. They are therefore
+// split into unpackFirst64 and unpackFirst128, which decode the common
+// case and inline, and unpackRest64 and unpackRest128, which decode the
+// rest and are calls. An operation that unpacks on its hot path calls the
+// two halves itself.
+//
+// unpackFirst64 and unpackFirst128 decode a finite first-form encoding whose
+// coefficient is canonical by its form alone, which Unpack would return
+// as it is, and report ok = false for every other encoding. A decimal64
+// first-form coefficient is below 2^53, which is below MaxCoeff64; a
+// decimal128 one is canonical whenever its high word is below that of
+// MaxCoeff128, which leaves out only the coefficients from
+// MaxCoeff128Hi × 2^64 up. An exponent field of the first form is below
+// 3 × 2^(ExpBits-2) and therefore always in range.
+func unpackFirst64(x uint64) (neg bool, coeff uint64, exp int, ok bool) {
+	if x&Form2Mask64 == Form2Mask64 {
+		return
+	}
+	return x&SignMask64 != 0, x & (1<<CoeffBits64 - 1), int(x>>ExpShift64&ExpMask64) - Bias64, true
+}
+
+func unpackFirst128(x Uint128) (neg bool, coeff Uint128, exp int, ok bool) {
+	t := x.Hi
+	if t&Form2Mask128Hi == Form2Mask128Hi || t&CoeffMask128Hi >= MaxCoeff128Hi {
+		return
+	}
+	return t&SignMask128Hi != 0, Uint128{Hi: t & CoeffMask128Hi, Lo: x.Lo}, int(t>>ExpShift128&ExpMask128) - Bias128, true
+}
+
+// unpackRest64 is Unpack64 for every encoding, written for those that
+// unpackFirst64 does not decode: the second form and the special values.
+//
+//go:noinline
+func unpackRest64(x uint64) (kind Kind, neg bool, coeff uint64, exp int) {
+	neg = x&SignMask64 != 0
+	if x&SpecialMask64 == SpecialMask64 {
+		if x&NaNBit64 == 0 {
 			return KindInf, neg, 0, 0
 		}
 		return KindNaN, neg, 0, 0
 	}
 	var biased uint64
-	if x>>61&3 == 3 {
+	if x&Form2Mask64 == Form2Mask64 {
 		biased = x >> Form2ExpShift64 & ExpMask64
 		coeff = 1<<53 | x&(1<<Form2CoeffBits64-1)
 	} else {
@@ -150,12 +199,14 @@ func Unpack64(x uint64) (kind Kind, neg bool, coeff uint64, exp int) {
 	return KindFinite, neg, coeff, int(biased) - Bias64
 }
 
-// Unpack128 is Unpack64 for decimal128.
-func Unpack128(x Uint128) (kind Kind, neg bool, coeff Uint128, exp int) {
+// unpackRest128 is Unpack128 for every encoding, written for those that
+// unpackFirst128 does not decode: the largest first-form coefficients,
+// canonical or not, the second form and the special values.
+//
+//go:noinline
+func unpackRest128(x Uint128) (kind Kind, neg bool, coeff Uint128, exp int) {
 	t := x.Hi
 	neg = t>>63 != 0
-	// Every canonical finite decimal128 uses the first form. Test that
-	// form once before the special and non-canonical second forms.
 	if t&Form2Mask128Hi != Form2Mask128Hi {
 		coeff = Uint128{Hi: t & CoeffMask128Hi, Lo: x.Lo}
 		if u128GtMaxCoeff(coeff) {

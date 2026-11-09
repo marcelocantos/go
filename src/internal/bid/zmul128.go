@@ -34,22 +34,27 @@ func mul128(x, y coef128, mode Mode) coef128 {
 			}
 		}
 	}
-	xk, xneg, xc, xe := Unpack128(x)
-	yk, yneg, yc, ye := Unpack128(y)
-	neg := xneg != yneg
-	if xk != KindFinite || yk != KindFinite {
-		// A NaN operand gives that NaN, an infinity times a zero of any
-		// exponent (a non-canonical operand reads as a zero) the canonical
-		// NaN, and an infinity times anything else the infinity of the
-		// product's sign.
-		if xk == KindNaN || yk == KindNaN {
-			return nan128(x, y, y)
+	xneg, xc, xe, xok := unpackFirst128(x)
+	yneg, yc, ye, yok := unpackFirst128(y)
+	if !xok || !yok {
+		var xk, yk Kind
+		xk, xneg, xc, xe = unpackRest128(x)
+		yk, yneg, yc, ye = unpackRest128(y)
+		if xk != KindFinite || yk != KindFinite {
+			// A NaN operand gives that NaN, an infinity times a zero of any
+			// exponent (a non-canonical operand reads as a zero) the
+			// canonical NaN, and an infinity times anything else the
+			// infinity of the product's sign.
+			if xk == KindNaN || yk == KindNaN {
+				return nan128(x, y, y)
+			}
+			if xk == KindFinite && cIsZero128(xc) || yk == KindFinite && cIsZero128(yc) {
+				return cNaN128()
+			}
+			return cInf128(xneg != yneg)
 		}
-		if xk == KindFinite && cIsZero128(xc) || yk == KindFinite && cIsZero128(yc) {
-			return cNaN128()
-		}
-		return cInf128(neg)
 	}
+	neg := xneg != yneg
 	r, _ := round128(neg, cMulFull128(xc, yc), xe+ye, classZero, mode, MinExp128)
 	return r
 }

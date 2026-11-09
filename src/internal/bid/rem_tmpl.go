@@ -57,8 +57,16 @@ func modW(x, y coefW) coefW {
 // at most a coefficient, and e is within the format, so roundW has nothing to
 // round.
 func remainderW(x, y coefW, nearest bool) coefW {
-	xk, neg, xc, xe := UnpackW(x)
-	yk, _, yc, ye := UnpackW(y)
+	neg, xc, xe, xok := unpackFirstW(x)
+	xk := KindFinite
+	if !xok {
+		xk, neg, xc, xe = unpackRestW(x)
+	}
+	_, yc, ye, yok := unpackFirstW(y)
+	yk := KindFinite
+	if !yok {
+		yk, _, yc, ye = unpackRestW(y)
+	}
 	if xk == KindNaN || yk == KindNaN {
 		return nanW(x, y, y)
 	}

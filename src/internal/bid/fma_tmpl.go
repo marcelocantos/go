@@ -51,9 +51,21 @@ const fmaDigitsW = 2*PrecisionW + 3
 // operand at the exponent of the smaller, and two zeros are a zero at the
 // preferred exponent; the signs follow "Sign of a result".
 func fmaW(x, y, z coefW, mode Mode) coefW {
-	xk, xneg, xc, xe := UnpackW(x)
-	yk, yneg, yc, ye := UnpackW(y)
-	zk, zneg, zc, ze := UnpackW(z)
+	xneg, xc, xe, xok := unpackFirstW(x)
+	xk := KindFinite
+	if !xok {
+		xk, xneg, xc, xe = unpackRestW(x)
+	}
+	yneg, yc, ye, yok := unpackFirstW(y)
+	yk := KindFinite
+	if !yok {
+		yk, yneg, yc, ye = unpackRestW(y)
+	}
+	zneg, zc, ze, zok := unpackFirstW(z)
+	zk := KindFinite
+	if !zok {
+		zk, zneg, zc, ze = unpackRestW(z)
+	}
 	pneg := xneg != yneg
 	if xk != KindFinite || yk != KindFinite || zk != KindFinite {
 		switch {

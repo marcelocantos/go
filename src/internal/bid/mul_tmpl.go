@@ -39,22 +39,27 @@ func mulW(x, y coefW, mode Mode) coefW {
 			}
 		}
 	}
-	xk, xneg, xc, xe := UnpackW(x)
-	yk, yneg, yc, ye := UnpackW(y)
-	neg := xneg != yneg
-	if xk != KindFinite || yk != KindFinite {
-		// A NaN operand gives that NaN, an infinity times a zero of any
-		// exponent (a non-canonical operand reads as a zero) the canonical
-		// NaN, and an infinity times anything else the infinity of the
-		// product's sign.
-		if xk == KindNaN || yk == KindNaN {
-			return nanW(x, y, y)
+	xneg, xc, xe, xok := unpackFirstW(x)
+	yneg, yc, ye, yok := unpackFirstW(y)
+	if !xok || !yok {
+		var xk, yk Kind
+		xk, xneg, xc, xe = unpackRestW(x)
+		yk, yneg, yc, ye = unpackRestW(y)
+		if xk != KindFinite || yk != KindFinite {
+			// A NaN operand gives that NaN, an infinity times a zero of any
+			// exponent (a non-canonical operand reads as a zero) the
+			// canonical NaN, and an infinity times anything else the
+			// infinity of the product's sign.
+			if xk == KindNaN || yk == KindNaN {
+				return nanW(x, y, y)
+			}
+			if xk == KindFinite && cIsZeroW(xc) || yk == KindFinite && cIsZeroW(yc) {
+				return cNaNW()
+			}
+			return cInfW(xneg != yneg)
 		}
-		if xk == KindFinite && cIsZeroW(xc) || yk == KindFinite && cIsZeroW(yc) {
-			return cNaNW()
-		}
-		return cInfW(neg)
 	}
+	neg := xneg != yneg
 	r, _ := roundW(neg, cMulFullW(xc, yc), xe+ye, classZero, mode, MinExpW)
 	return r
 }

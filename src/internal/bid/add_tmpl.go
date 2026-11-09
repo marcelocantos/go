@@ -82,18 +82,23 @@ func addW(x, y coefW, mode Mode) coefW {
 			}
 		}
 	}
-	xk, xneg, xc, xe := UnpackW(x)
-	yk, yneg, yc, ye := UnpackW(y)
-	if xk != KindFinite || yk != KindFinite {
-		switch {
-		case xk == KindNaN || yk == KindNaN:
-			return nanW(x, y, y)
-		case xk != KindInf:
-			return cInfW(yneg)
-		case yk == KindInf && xneg != yneg:
-			return cNaNW() // the infinities cancel
+	xneg, xc, xe, xok := unpackFirstW(x)
+	yneg, yc, ye, yok := unpackFirstW(y)
+	if !xok || !yok {
+		var xk, yk Kind
+		xk, xneg, xc, xe = unpackRestW(x)
+		yk, yneg, yc, ye = unpackRestW(y)
+		if xk != KindFinite || yk != KindFinite {
+			switch {
+			case xk == KindNaN || yk == KindNaN:
+				return nanW(x, y, y)
+			case xk != KindInf:
+				return cInfW(yneg)
+			case yk == KindInf && xneg != yneg:
+				return cNaNW() // the infinities cancel
+			}
+			return cInfW(xneg)
 		}
-		return cInfW(xneg)
 	}
 
 	if xe < ye {

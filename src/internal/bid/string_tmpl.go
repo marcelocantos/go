@@ -65,7 +65,11 @@ func UnpackDigitsW(buf *[PrecisionW]byte, x coefW) (kind Kind, neg bool, n, exp 
 // a non-canonical encoding as the zero it denotes, so every bit pattern has
 // a form.
 func appendW(dst []byte, x coefW) []byte {
-	kind, neg, c, exp := UnpackW(x)
+	neg, c, exp, xok := unpackFirstW(x)
+	kind := KindFinite
+	if !xok {
+		kind, neg, c, exp = unpackRestW(x)
+	}
 	switch kind {
 	case KindNaN:
 		return append(dst, "NaN"...)

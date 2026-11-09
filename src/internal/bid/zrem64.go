@@ -54,8 +54,16 @@ func mod64(x, y coef64) coef64 {
 // at most a coefficient, and e is within the format, so round64 has nothing to
 // round.
 func remainder64(x, y coef64, nearest bool) coef64 {
-	xk, neg, xc, xe := Unpack64(x)
-	yk, _, yc, ye := Unpack64(y)
+	neg, xc, xe, xok := unpackFirst64(x)
+	xk := KindFinite
+	if !xok {
+		xk, neg, xc, xe = unpackRest64(x)
+	}
+	_, yc, ye, yok := unpackFirst64(y)
+	yk := KindFinite
+	if !yok {
+		yk, _, yc, ye = unpackRest64(y)
+	}
 	if xk == KindNaN || yk == KindNaN {
 		return nan64(x, y, y)
 	}

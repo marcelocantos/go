@@ -34,22 +34,27 @@ func mul64(x, y coef64, mode Mode) coef64 {
 			}
 		}
 	}
-	xk, xneg, xc, xe := Unpack64(x)
-	yk, yneg, yc, ye := Unpack64(y)
-	neg := xneg != yneg
-	if xk != KindFinite || yk != KindFinite {
-		// A NaN operand gives that NaN, an infinity times a zero of any
-		// exponent (a non-canonical operand reads as a zero) the canonical
-		// NaN, and an infinity times anything else the infinity of the
-		// product's sign.
-		if xk == KindNaN || yk == KindNaN {
-			return nan64(x, y, y)
+	xneg, xc, xe, xok := unpackFirst64(x)
+	yneg, yc, ye, yok := unpackFirst64(y)
+	if !xok || !yok {
+		var xk, yk Kind
+		xk, xneg, xc, xe = unpackRest64(x)
+		yk, yneg, yc, ye = unpackRest64(y)
+		if xk != KindFinite || yk != KindFinite {
+			// A NaN operand gives that NaN, an infinity times a zero of any
+			// exponent (a non-canonical operand reads as a zero) the
+			// canonical NaN, and an infinity times anything else the
+			// infinity of the product's sign.
+			if xk == KindNaN || yk == KindNaN {
+				return nan64(x, y, y)
+			}
+			if xk == KindFinite && cIsZero64(xc) || yk == KindFinite && cIsZero64(yc) {
+				return cNaN64()
+			}
+			return cInf64(xneg != yneg)
 		}
-		if xk == KindFinite && cIsZero64(xc) || yk == KindFinite && cIsZero64(yc) {
-			return cNaN64()
-		}
-		return cInf64(neg)
 	}
+	neg := xneg != yneg
 	r, _ := round64(neg, cMulFull64(xc, yc), xe+ye, classZero, mode, MinExp64)
 	return r
 }

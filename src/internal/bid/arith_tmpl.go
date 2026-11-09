@@ -98,8 +98,16 @@ func quietCmpW(x, y coefW) (c int, ok bool) {
 			return compareWords(xn, xc, xe, yn, yc, ye), true
 		}
 	}
-	xk, xneg, xc, xe := UnpackW(x)
-	yk, yneg, yc, ye := UnpackW(y)
+	xneg, xc, xe, xok := unpackFirstW(x)
+	xk := KindFinite
+	if !xok {
+		xk, xneg, xc, xe = unpackRestW(x)
+	}
+	yneg, yc, ye, yok := unpackFirstW(y)
+	yk := KindFinite
+	if !yok {
+		yk, yneg, yc, ye = unpackRestW(y)
+	}
 	switch {
 	case xk == KindNaN || yk == KindNaN:
 		return 0, false
@@ -152,8 +160,16 @@ func lessEqualW(x, y coefW) bool {
 // values of equal value, zeros included, by exponent. For negative operands
 // everything within the sign reverses. All NaNs of one sign are equal.
 func totalOrderW(x, y coefW) bool {
-	xk, xneg, xc, xe := UnpackW(x)
-	yk, yneg, yc, ye := UnpackW(y)
+	xneg, xc, xe, xok := unpackFirstW(x)
+	xk := KindFinite
+	if !xok {
+		xk, xneg, xc, xe = unpackRestW(x)
+	}
+	yneg, yc, ye, yok := unpackFirstW(y)
+	yk := KindFinite
+	if !yok {
+		yk, yneg, yc, ye = unpackRestW(y)
+	}
 	if xneg != yneg {
 		return xneg
 	}

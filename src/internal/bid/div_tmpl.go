@@ -63,8 +63,16 @@ package bid
 // smaller of k and PrecisionW+1, which keeps every power of ten within the
 // coefficient table.
 func divW(x, y coefW, mode Mode) coefW {
-	xk, xneg, xc, xe := UnpackW(x)
-	yk, yneg, yc, ye := UnpackW(y)
+	xneg, xc, xe, xok := unpackFirstW(x)
+	xk := KindFinite
+	if !xok {
+		xk, xneg, xc, xe = unpackRestW(x)
+	}
+	yneg, yc, ye, yok := unpackFirstW(y)
+	yk := KindFinite
+	if !yok {
+		yk, yneg, yc, ye = unpackRestW(y)
+	}
 	neg := xneg != yneg
 	switch {
 	case xk == KindNaN || yk == KindNaN:

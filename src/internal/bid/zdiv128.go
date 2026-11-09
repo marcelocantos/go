@@ -52,8 +52,16 @@ package bid
 // smaller of k and Precision128+1, which keeps every power of ten within the
 // coefficient table.
 func div128(x, y coef128, mode Mode) coef128 {
-	xk, xneg, xc, xe := Unpack128(x)
-	yk, yneg, yc, ye := Unpack128(y)
+	xneg, xc, xe, xok := unpackFirst128(x)
+	xk := KindFinite
+	if !xok {
+		xk, xneg, xc, xe = unpackRest128(x)
+	}
+	yneg, yc, ye, yok := unpackFirst128(y)
+	yk := KindFinite
+	if !yok {
+		yk, yneg, yc, ye = unpackRest128(y)
+	}
 	neg := xneg != yneg
 	switch {
 	case xk == KindNaN || yk == KindNaN:

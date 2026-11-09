@@ -5,6 +5,7 @@
 package bid_test
 
 import (
+	"internal/bid"
 	"math/big"
 	"testing"
 )
@@ -87,5 +88,38 @@ func TestWordFastPaths(t *testing.T) {
 			}
 		}
 		t.Logf("%s: %d operand pairs × 4 operations", f.name, n)
+	}
+}
+
+// TestUnpackSplit checks Unpack64 and Unpack128 against the reference at the
+// bound that divides their inlined first-form half from the call to the
+// rest: for decimal128 a high coefficient word just below, at and above
+// that of MaxCoeff128, with low words around MaxCoeff128's; for decimal64
+// the two forms around 2^53 and MaxCoeff64. Every sign, a spread of
+// exponent fields and both special values are included.
+func TestUnpackSplit(t *testing.T) {
+	var k kernel
+	check := func(f *format, x bits) {
+		t.Helper()
+		kk, kneg, kc, ke := k.unpack(f, x)
+		rk, rneg, rc, re := f.unpack(x)
+		want := fromUint128(kc)
+		if kk != rk || kneg != rneg || want.Cmp(rc) != 0 || ke != re {
+			t.Fatalf("%s Unpack(%#x:%#x) = %v %v %v %d, reference %v %v %v %d", f.name, x.Hi, x.Lo, kk, kneg, want, ke, rk, rneg, rc, re)
+		}
+	}
+	for _, top := range []uint64{0, 1, 0x2000, 0x2fff, 0x3000, 0x3fff, 0x7800, 0x7c00, 0x7e00} {
+		for _, sign := range []uint64{0, 1 << 63} {
+			for _, hi := range []uint64{0, bid.MaxCoeff128Hi - 1, bid.MaxCoeff128Hi, bid.MaxCoeff128Hi + 1, bid.CoeffMask128Hi} {
+				for _, lo := range []uint64{0, 1, bid.MaxCoeff128Lo - 1, bid.MaxCoeff128Lo, bid.MaxCoeff128Lo + 1, ^uint64(0)} {
+					check(dec128, bits{Hi: sign | top<<49 | hi, Lo: lo})
+				}
+			}
+			for _, c := range []uint64{0, 1, 1<<53 - 1, 1 << 53, bid.MaxCoeff64, bid.MaxCoeff64 + 1, 1<<53 - 1 | 1<<51} {
+				x := sign | top<<53 | c&(1<<53-1)
+				check(dec64, bits{Lo: x})
+				check(dec64, bits{Lo: x | 3<<61})
+			}
+		}
 	}
 }

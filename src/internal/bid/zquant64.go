@@ -19,7 +19,11 @@ import "math/bits"
 // takes exponent max(Q(x), 0). A NaN gives that NaN made quiet and an
 // infinity is returned unchanged.
 func roundToIntegral64(x coef64, mode Mode) coef64 {
-	kind, neg, c, exp := Unpack64(x)
+	neg, c, exp, xok := unpackFirst64(x)
+	kind := KindFinite
+	if !xok {
+		kind, neg, c, exp = unpackRest64(x)
+	}
 	switch kind {
 	case KindNaN:
 		return cQuiet64(x)
@@ -64,7 +68,11 @@ func quantize64(x, y coef64, mode Mode) coef64 {
 			}
 		}
 	}
-	xk, xneg, xc, xe := Unpack64(x)
+	xneg, xc, xe, xok := unpackFirst64(x)
+	xk := KindFinite
+	if !xok {
+		xk, xneg, xc, xe = unpackRest64(x)
+	}
 	yk, ye := kindExp64(y)
 	switch {
 	case xk == KindNaN || yk == KindNaN:
@@ -92,7 +100,11 @@ func quantize64(x, y coef64, mode Mode) coef64 {
 // sign with exponent 0. A NaN gives that NaN made quiet and an infinity is
 // returned unchanged.
 func reduce64(x coef64) coef64 {
-	kind, neg, c, exp := Unpack64(x)
+	neg, c, exp, xok := unpackFirst64(x)
+	kind := KindFinite
+	if !xok {
+		kind, neg, c, exp = unpackRest64(x)
+	}
 	switch kind {
 	case KindNaN:
 		return cQuiet64(x)

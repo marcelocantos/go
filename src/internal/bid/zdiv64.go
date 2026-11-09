@@ -52,8 +52,16 @@ package bid
 // smaller of k and Precision64+1, which keeps every power of ten within the
 // coefficient table.
 func div64(x, y coef64, mode Mode) coef64 {
-	xk, xneg, xc, xe := Unpack64(x)
-	yk, yneg, yc, ye := Unpack64(y)
+	xneg, xc, xe, xok := unpackFirst64(x)
+	xk := KindFinite
+	if !xok {
+		xk, xneg, xc, xe = unpackRest64(x)
+	}
+	yneg, yc, ye, yok := unpackFirst64(y)
+	yk := KindFinite
+	if !yok {
+		yk, yneg, yc, ye = unpackRest64(y)
+	}
 	neg := xneg != yneg
 	switch {
 	case xk == KindNaN || yk == KindNaN:
