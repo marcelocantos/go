@@ -3383,13 +3383,13 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 		}
 
 		if n.X.Type().IsDecimal() && !ir.DecimalDPD() {
-			// Test the original operand order, before OGT/OGE are reversed.
-			// Unlike ir.IsZero (zero storage), this recognizes zero literals
-			// with any quantum, such as 0.00.
-			if n.X.Op() == ir.OLITERAL && constant.Sign(n.X.Val()) == 0 {
+			// Inspect already evaluated SSA values, before OGT/OGE are
+			// reversed. This also recognizes simple locals initialized to
+			// zero, at any quantum, without assuming anything about loads.
+			if bidConstZero(a) {
 				return s.bidCompareZero(n.Op(), b, true)
 			}
-			if n.Y.Op() == ir.OLITERAL && constant.Sign(n.Y.Val()) == 0 {
+			if bidConstZero(b) {
 				return s.bidCompareZero(n.Op(), a, false)
 			}
 		}

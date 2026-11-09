@@ -16,17 +16,41 @@ import (
 // constant-zero comparison path, including a zero with another quantum.
 //
 //go:noinline
-func opZero64(x decimal64) [12]bool {
-	return [12]bool{x == 0, x != 0, 0.00 == x, 0.00 != x,
+func opZero64(x decimal64) [16]bool {
+	z := decimal64(0.00)
+	return [16]bool{x == 0, x != 0, 0.00 == x, 0.00 != x,
 		x < 0, x <= 0, x > 0, x >= 0,
-		0.00 < x, 0.00 <= x, 0.00 > x, 0.00 >= x}
+		0.00 < x, 0.00 <= x, 0.00 > x, 0.00 >= x,
+		x < z, x <= z, z < x, z <= x}
 }
 
 //go:noinline
-func opZero128(x decimal128) [12]bool {
-	return [12]bool{x == 0, x != 0, 0.00 == x, 0.00 != x,
+func opZero128(x decimal128) [16]bool {
+	z := decimal128(0.00)
+	return [16]bool{x == 0, x != 0, 0.00 == x, 0.00 != x,
 		x < 0, x <= 0, x > 0, x >= 0,
-		0.00 < x, 0.00 <= x, 0.00 > x, 0.00 >= x}
+		0.00 < x, 0.00 <= x, 0.00 > x, 0.00 >= x,
+		x < z, x <= z, z < x, z <= x}
+}
+
+// A join must not keep the zero fact from only one predecessor.
+//
+//go:noinline
+func opMergedZero64(x decimal64, replace bool) bool {
+	z := decimal64(0.00)
+	if replace {
+		z = 1
+	}
+	return x < z
+}
+
+//go:noinline
+func opMergedZero128(x decimal128, replace bool) bool {
+	z := decimal128(0.00)
+	if replace {
+		z = 1
+	}
+	return x < z
 }
 
 // TestOperatorZero compares the compiled predicates to the independent
@@ -39,10 +63,11 @@ func TestOperatorZero(t *testing.T) {
 		zero := v.kind == finite && v.coeff.Sign() == 0
 		negative := v.kind != notANumber && !zero && v.neg
 		positive := v.kind != notANumber && !zero && !v.neg
-		want := [12]bool{zero, !zero, zero, !zero,
+		want := [16]bool{zero, !zero, zero, !zero,
 			negative, negative || zero, positive, positive || zero,
-			positive, positive || zero, negative, negative || zero}
-		var got [12]bool
+			positive, positive || zero, negative, negative || zero,
+			negative, negative || zero, positive, positive || zero}
+		var got [16]bool
 		if f == dec64 {
 			got = opZero64(d64(x))
 		} else {
@@ -50,6 +75,18 @@ func TestOperatorZero(t *testing.T) {
 		}
 		if got != want {
 			t.Fatalf("%s zero comparison of %x: got %v, want %v", f.name, x, got, want)
+		}
+		one := bits{Lo: bid.Zero64 | 1}
+		var merged [2]bool
+		if f == dec64 {
+			merged = [2]bool{opMergedZero64(d64(x), false), opMergedZero64(d64(x), true)}
+		} else {
+			one = bits{Hi: bid.Zero128Hi, Lo: 1}
+			merged = [2]bool{opMergedZero128(d128(x), false), opMergedZero128(d128(x), true)}
+		}
+		c, ordered := f.compare(x, one)
+		if want := [2]bool{negative, ordered && c < 0}; merged != want {
+			t.Fatalf("%s merged zero comparison of %x: got %v, want %v", f.name, x, merged, want)
 		}
 	}
 	for prefix := uint64(0); prefix < 1<<16; prefix++ {

@@ -136,6 +136,20 @@ func GreaterEqualZero128(x decimal128) bool {
 	return x >= 0
 }
 
+func LocalZero64(x decimal64) bool {
+	var zero decimal64
+	// arm64:-"CALL"
+	// amd64:-"CALL"
+	return x < zero
+}
+
+func LocalZero128(x decimal128) bool {
+	zero := decimal128(0.00)
+	// arm64:-"CALL"
+	// amd64:-"CALL"
+	return zero <= x
+}
+
 func Widen(x decimal64) decimal128 {
 	// ppc64le:"DCTQPQ" -"CALL"
 	return decimal128(x)

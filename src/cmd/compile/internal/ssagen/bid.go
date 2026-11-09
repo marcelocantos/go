@@ -14,6 +14,28 @@ import (
 	"cmd/compile/internal/types"
 )
 
+// bidConstZero recognizes exact constant storage at SSA construction time.
+// Copies preserve bits; loads, phis and unresolved forward references remain
+// unknown. Decode the storage XOR before checking numeric zero, including
+// noncanonical encodings. The caller has excluded DPD targets.
+func bidConstZero(x *ssa.Value) bool {
+	kind := x.Type.Kind()
+	for x.Op == ssaop.OpCopy {
+		x = x.Args[0]
+	}
+	if kind == types.TDECIMAL64 {
+		if x.Op == ssaop.OpConst64D || x.Op == ssaop.OpConst64 {
+			return bid.IsZero64(uint64(x.AuxInt) ^ bid.Zero64)
+		}
+	} else if kind == types.TDECIMAL128 && x.Op == ssaop.OpDecimal128Make {
+		lo, hi := x.Args[0], x.Args[1]
+		if lo.Op == ssaop.OpConst64 && hi.Op == ssaop.OpConst64 {
+			return bid.IsZero128(bid.Uint128{Hi: uint64(hi.AuxInt) ^ bid.Zero128Hi, Lo: uint64(lo.AuxInt)})
+		}
+	}
+	return false
+}
+
 // bidIsZero compares a BID-native decimal with zero using integer SSA.
 // Every finite noncanonical encoding also denotes zero. In particular,
 // decimal128's second finite form always has an oversized coefficient;
