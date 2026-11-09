@@ -118,25 +118,29 @@ func add64(x, y coef64, mode Mode) coef64 {
 		// further instead, to 10^Precision64, if the gap leaves f below 1/10
 		// there too, and the difference is 10^Precision64 - 1 and 1 - 10f;
 		// otherwise it takes the general path.
-		if !cIsZero64(yc) {
-			m, dy := Precision64-cDigits64(xc), cDigits64(yc)
-			if gap-m > dy {
-				p, class := cMulPow1064(xc, m), classBelowHalf
-				if xneg != yneg {
-					class = classAboveHalf
-					if cCmp64(p, cPow1064(Precision64-1)) == 0 {
-						m++
-						p = cPow1064(Precision64)
-					}
-					p, _ = cSub64(p, cPow1064(0))
+		//
+		// The test needs no digit count of y: a non-zero y has fewer than
+		// gap - m digits exactly when it is below 10^s with s = gap - m - 1,
+		// which holds for no y when s <= 0 and for every y when s >=
+		// Precision64, since y < 10^Precision64.
+		dx := cDigits64(xc)
+		m := Precision64 - dx
+		if s := gap - m - 1; s > 0 && !cIsZero64(yc) && (s >= Precision64 || cCmp64(yc, cPow1064(s)) < 0) {
+			p, class := cMulPow1064(xc, m), classBelowHalf
+			if xneg != yneg {
+				class = classAboveHalf
+				if cCmp64(p, cPow1064(Precision64-1)) == 0 {
+					m, s = m+1, s-1
+					p = cPow1064(Precision64)
 				}
-				if gap-m > dy {
-					r, _ := round64(xneg, wide64{Lo: p}, xe-m, class, mode, MinExp64)
-					return r
-				}
+				p, _ = cSub64(p, cPow1064(0))
+			}
+			if s > 0 && (s >= Precision64 || cCmp64(yc, cPow1064(s)) < 0) {
+				r, _ := round64(xneg, wide64{Lo: p}, xe-m, class, mode, MinExp64)
+				return r
 			}
 		}
-		k := min(gap, addDigits64-cDigits64(xc))
+		k := min(gap, addDigits64-dx)
 		xc = cMulPow1064(xc, k)
 		if k < gap {
 			exp = xe - k

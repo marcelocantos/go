@@ -120,25 +120,29 @@ func addW(x, y coefW, mode Mode) coefW {
 		// further instead, to 10^PrecisionW, if the gap leaves f below 1/10
 		// there too, and the difference is 10^PrecisionW - 1 and 1 - 10f;
 		// otherwise it takes the general path.
-		if !cIsZeroW(yc) {
-			m, dy := PrecisionW-cDigitsW(xc), cDigitsW(yc)
-			if gap-m > dy {
-				p, class := cMulPow10W(xc, m), classBelowHalf
-				if xneg != yneg {
-					class = classAboveHalf
-					if cCmpW(p, cPow10W(PrecisionW-1)) == 0 {
-						m++
-						p = cPow10W(PrecisionW)
-					}
-					p, _ = cSubW(p, cPow10W(0))
+		//
+		// The test needs no digit count of y: a non-zero y has fewer than
+		// gap - m digits exactly when it is below 10^s with s = gap - m - 1,
+		// which holds for no y when s <= 0 and for every y when s >=
+		// PrecisionW, since y < 10^PrecisionW.
+		dx := cDigitsW(xc)
+		m := PrecisionW - dx
+		if s := gap - m - 1; s > 0 && !cIsZeroW(yc) && (s >= PrecisionW || cCmpW(yc, cPow10W(s)) < 0) {
+			p, class := cMulPow10W(xc, m), classBelowHalf
+			if xneg != yneg {
+				class = classAboveHalf
+				if cCmpW(p, cPow10W(PrecisionW-1)) == 0 {
+					m, s = m+1, s-1
+					p = cPow10W(PrecisionW)
 				}
-				if gap-m > dy {
-					r, _ := roundW(xneg, wideW{Lo: p}, xe-m, class, mode, MinExpW)
-					return r
-				}
+				p, _ = cSubW(p, cPow10W(0))
+			}
+			if s > 0 && (s >= PrecisionW || cCmpW(yc, cPow10W(s)) < 0) {
+				r, _ := roundW(xneg, wideW{Lo: p}, xe-m, class, mode, MinExpW)
+				return r
 			}
 		}
-		k := min(gap, addDigitsW-cDigitsW(xc))
+		k := min(gap, addDigitsW-dx)
 		xc = cMulPow10W(xc, k)
 		if k < gap {
 			exp = xe - k

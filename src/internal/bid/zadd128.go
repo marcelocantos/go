@@ -118,25 +118,29 @@ func add128(x, y coef128, mode Mode) coef128 {
 		// further instead, to 10^Precision128, if the gap leaves f below 1/10
 		// there too, and the difference is 10^Precision128 - 1 and 1 - 10f;
 		// otherwise it takes the general path.
-		if !cIsZero128(yc) {
-			m, dy := Precision128-cDigits128(xc), cDigits128(yc)
-			if gap-m > dy {
-				p, class := cMulPow10128(xc, m), classBelowHalf
-				if xneg != yneg {
-					class = classAboveHalf
-					if cCmp128(p, cPow10128(Precision128-1)) == 0 {
-						m++
-						p = cPow10128(Precision128)
-					}
-					p, _ = cSub128(p, cPow10128(0))
+		//
+		// The test needs no digit count of y: a non-zero y has fewer than
+		// gap - m digits exactly when it is below 10^s with s = gap - m - 1,
+		// which holds for no y when s <= 0 and for every y when s >=
+		// Precision128, since y < 10^Precision128.
+		dx := cDigits128(xc)
+		m := Precision128 - dx
+		if s := gap - m - 1; s > 0 && !cIsZero128(yc) && (s >= Precision128 || cCmp128(yc, cPow10128(s)) < 0) {
+			p, class := cMulPow10128(xc, m), classBelowHalf
+			if xneg != yneg {
+				class = classAboveHalf
+				if cCmp128(p, cPow10128(Precision128-1)) == 0 {
+					m, s = m+1, s-1
+					p = cPow10128(Precision128)
 				}
-				if gap-m > dy {
-					r, _ := round128(xneg, wide128{Lo: p}, xe-m, class, mode, MinExp128)
-					return r
-				}
+				p, _ = cSub128(p, cPow10128(0))
+			}
+			if s > 0 && (s >= Precision128 || cCmp128(yc, cPow10128(s)) < 0) {
+				r, _ := round128(xneg, wide128{Lo: p}, xe-m, class, mode, MinExp128)
+				return r
 			}
 		}
-		k := min(gap, addDigits128-cDigits128(xc))
+		k := min(gap, addDigits128-dx)
 		xc = cMulPow10128(xc, k)
 		if k < gap {
 			exp = xe - k
