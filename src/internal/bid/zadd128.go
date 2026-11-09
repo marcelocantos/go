@@ -6,6 +6,8 @@
 
 package bid
 
+import "math/bits"
+
 // addDigits128 is the number of digits add128 scales a coefficient up to. Two
 // bounds fix it. The sum of two operands aligned this way must fit the
 // coefficient type, so no addition needs the wide type: 10^19 + 10^16 and
@@ -30,7 +32,52 @@ const addDigits128 = Precision128 + 3
 // A difference with such a fraction is hi - (lo + f), and it reaches round128
 // as the integer hi - (lo + 1) and the fraction 1 - f. Dropping f instead
 // would leave x unchanged where x - ε must land below x in a directed mode.
+//
+// Two finite operands whose coefficients fit a word and whose exponents are
+// at most maxWordGap apart take a fast path first. It computes their exact
+// sum in two words at the smaller exponent, the preferred one, and
+// packWord128 encodes it if it fits the format; a sum that does not fit, which
+// needs rounding, falls through to the general path. That is the exact
+// packing exception round128's comment allows, and the general path gives the
+// same encoding. It scales the operand with the larger exponent by
+// k = min(gap, addDigits128 - digits) places and shifts the other only if
+// k < gap; then the scaled operand has at least addDigits128 = Precision128+3
+// digits and the other is below 10^Precision128, so the sum or difference has
+// more than Precision128 digits and does not fit. When k = gap the general sum
+// is this one, exact, at the same exponent, and round128 packs it unchanged.
+// The sign follows the general path too: that of the operands when they
+// agree, that of the larger magnitude when they differ, and for an exact
+// cancellation the zero of "Sign of a result", negative only in
+// TowardNegative.
 func add128(x, y coef128, mode Mode) coef128 {
+	if xneg, xc, xe, ok := unpackWord128(x); ok {
+		if yneg, yc, ye, ok := unpackWord128(y); ok {
+			if xe < ye {
+				xneg, xc, xe, yneg, yc, ye = yneg, yc, ye, xneg, xc, xe
+			}
+			if gap := uint(xe - ye); gap <= maxWordGap {
+				hi, lo := bits.Mul64(xc, pow10tab64[gap])
+				neg := xneg
+				if xneg == yneg {
+					var carry uint64
+					lo, carry = bits.Add64(lo, yc, 0)
+					hi += carry
+				} else if hi == 0 && lo < yc {
+					neg, lo = yneg, yc-lo
+				} else {
+					var borrow uint64
+					lo, borrow = bits.Sub64(lo, yc, 0)
+					hi -= borrow
+					if hi|lo == 0 {
+						neg = mode == TowardNegative
+					}
+				}
+				if r, ok := packWord128(neg, hi, lo, ye-Bias128); ok {
+					return r
+				}
+			}
+		}
+	}
 	xk, xneg, xc, xe := Unpack128(x)
 	yk, yneg, yc, ye := Unpack128(y)
 	if xk != KindFinite || yk != KindFinite {

@@ -6,6 +6,8 @@
 
 package bid
 
+import "math/bits"
+
 // roundToIntegral128 rounds the decimal x to an integral value in mode. The
 // result exponent is max(Q(x), 0) whether or not a fraction was discarded
 // (see "Exponent of a result"), which is exactly what roundFinite128 produces with
@@ -42,7 +44,26 @@ func roundToIntegral128(x coef128, mode Mode) coef128 {
 // digits, so rounding up cannot carry out of the coefficient, and
 // an x so small that every digit is dropped rounds to zero or to one unit,
 // whatever the distance. An exact zero takes the exponent of y.
+//
+// A finite x whose coefficient fits a word, with an exponent at most
+// maxWordGap above that of a finite y, takes a fast path first: the
+// coefficient scaled to the exponent of y is exact in two words, and
+// packWord128 encodes it if it fits the format, which is the exact packing
+// exception round128's comment allows. The general path computes the same
+// scaled coefficient and roundFinite128, with nothing to drop, encodes it
+// unchanged, a zero with the sign of x included. A coefficient that does
+// not fit falls through, to the NaN below.
 func quantize128(x, y coef128, mode Mode) coef128 {
+	if xn, xc, xe, ok := unpackWord128(x); ok {
+		if yk, ye := kindExp128(y); yk == KindFinite {
+			if gap := uint(xe - Bias128 - ye); gap <= maxWordGap {
+				hi, lo := bits.Mul64(xc, pow10tab64[gap])
+				if r, ok := packWord128(xn, hi, lo, ye); ok {
+					return r
+				}
+			}
+		}
+	}
 	xk, xneg, xc, xe := Unpack128(x)
 	yk, ye := kindExp128(y)
 	switch {

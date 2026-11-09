@@ -11,6 +11,8 @@
 // identifier with a capital W unless it is meant to be replaced.
 package bid
 
+import "math/bits"
+
 // mulW returns x × y rounded in mode. The special values follow "NaN and
 // infinity operands" and "Sign of a result"; a finite product is computed
 // exactly in the double-width type, whose digits roundW reduces with a sticky
@@ -19,7 +21,24 @@ package bid
 // the exponents, which can lie far outside the format (the extremes are
 // 2×MinExpW and 2×MaxExpW); roundW is specified for any exponent, clamps it
 // and folds, pads or overflows the result as the contract says.
+//
+// Two finite operands whose coefficients fit a word take a fast path first:
+// their product is exact in two words, its preferred exponent is the sum of
+// the exponents, and packWordW encodes it if both fit the format. That is
+// the exact packing exception roundW's comment allows, and roundW would
+// encode the same value unchanged: a product of at most PrecisionW digits at
+// an exponent within the format is exact there, and the sign of a zero
+// product is the exclusive or of the signs either way. A product or
+// exponent outside the format falls through.
 func mulW(x, y coefW, mode Mode) coefW {
+	if xn, xc, xe, ok := unpackWordW(x); ok {
+		if yn, yc, ye, ok := unpackWordW(y); ok {
+			hi, lo := bits.Mul64(xc, yc)
+			if r, ok := packWordW(xn != yn, hi, lo, xe+ye-2*BiasW); ok {
+				return r
+			}
+		}
+	}
 	xk, xneg, xc, xe := UnpackW(x)
 	yk, yneg, yc, ye := UnpackW(y)
 	neg := xneg != yneg

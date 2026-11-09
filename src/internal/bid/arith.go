@@ -260,3 +260,9 @@ func compareWords(xneg bool, xc uint64, xe int, yneg bool, yc uint64, ye int) in
 	}
 	return 0
 }
+
+// maxWordGap is the largest exponent gap the word fast paths align across:
+// pow10tab64 holds 10^0 through 10^19. A word coefficient scaled by 10^19 is
+// below 2^64 × 10^19 and, with a word added, below (2^64-1)(10^19+1) < 2^128,
+// so the aligned value always fits the two words that bits.Mul64 returns.
+const maxWordGap = uint(len(pow10tab64) - 1)

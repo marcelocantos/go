@@ -6,6 +6,8 @@
 
 package bid
 
+import "math/bits"
+
 // mul128 returns x × y rounded in mode. The special values follow "NaN and
 // infinity operands" and "Sign of a result"; a finite product is computed
 // exactly in the double-width type, whose digits round128 reduces with a sticky
@@ -14,7 +16,24 @@ package bid
 // the exponents, which can lie far outside the format (the extremes are
 // 2×MinExp128 and 2×MaxExp128); round128 is specified for any exponent, clamps it
 // and folds, pads or overflows the result as the contract says.
+//
+// Two finite operands whose coefficients fit a word take a fast path first:
+// their product is exact in two words, its preferred exponent is the sum of
+// the exponents, and packWord128 encodes it if both fit the format. That is
+// the exact packing exception round128's comment allows, and round128 would
+// encode the same value unchanged: a product of at most Precision128 digits at
+// an exponent within the format is exact there, and the sign of a zero
+// product is the exclusive or of the signs either way. A product or
+// exponent outside the format falls through.
 func mul128(x, y coef128, mode Mode) coef128 {
+	if xn, xc, xe, ok := unpackWord128(x); ok {
+		if yn, yc, ye, ok := unpackWord128(y); ok {
+			hi, lo := bits.Mul64(xc, yc)
+			if r, ok := packWord128(xn != yn, hi, lo, xe+ye-2*Bias128); ok {
+				return r
+			}
+		}
+	}
 	xk, xneg, xc, xe := Unpack128(x)
 	yk, yneg, yc, ye := Unpack128(y)
 	neg := xneg != yneg

@@ -192,6 +192,38 @@ func unpackWord128(x Uint128) (neg bool, coeff uint64, exp int, ok bool) {
 	return x.Hi&SignMask128Hi != 0, x.Lo, int(x.Hi >> ExpShift128 & ExpMask128), true
 }
 
+// packWord64 and packWord128 encode the exact value (-1)^neg × (hi·2^64 +
+// lo) × 10^exp, which a word fast path computed at its preferred exponent,
+// if it fits the format, and report ok = false otherwise, when the caller
+// takes its general path. They are the exact packing exception of the word
+// fast paths (see roundW in arith_tmpl.go): the rounding routine would
+// encode the value unchanged, and nothing is rounded here.
+// TestRoundIsTheOnlyPacker lists their callers.
+func packWord64(neg bool, hi, lo uint64, exp int) (uint64, bool) {
+	if hi != 0 || lo > MaxCoeff64 || uint(exp-MinExp64) > MaxExp64-MinExp64 {
+		return 0, false
+	}
+	x := uint64(exp+Bias64)<<ExpShift64 | lo
+	if lo >= 1<<CoeffBits64 {
+		x = Form2Mask64 | uint64(exp+Bias64)<<Form2ExpShift64 | lo&(1<<Form2CoeffBits64-1)
+	}
+	if neg {
+		x |= SignMask64
+	}
+	return x, true
+}
+
+func packWord128(neg bool, hi, lo uint64, exp int) (Uint128, bool) {
+	if (hi > MaxCoeff128Hi || hi == MaxCoeff128Hi && lo > MaxCoeff128Lo) || uint(exp-MinExp128) > MaxExp128-MinExp128 {
+		return Uint128{}, false
+	}
+	hi |= uint64(exp+Bias128) << ExpShift128
+	if neg {
+		hi |= SignMask128Hi
+	}
+	return Uint128{Hi: hi, Lo: lo}, true
+}
+
 // kindExp64 and kindExp128 decode only the fields that quantum operations
 // use. A coefficient, canonical or otherwise, cannot change these fields.
 // Keeping that work separate lets these small decoders inline into callers

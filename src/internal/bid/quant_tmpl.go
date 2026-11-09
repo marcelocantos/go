@@ -14,6 +14,8 @@
 // why they need no second rounding routine.
 package bid
 
+import "math/bits"
+
 // roundToIntegralW rounds the decimal x to an integral value in mode. The
 // result exponent is max(Q(x), 0) whether or not a fraction was discarded
 // (see "Exponent of a result"), which is exactly what roundFiniteW produces with
@@ -50,7 +52,26 @@ func roundToIntegralW(x coefW, mode Mode) coefW {
 // digits, so rounding up cannot carry out of the coefficient, and
 // an x so small that every digit is dropped rounds to zero or to one unit,
 // whatever the distance. An exact zero takes the exponent of y.
+//
+// A finite x whose coefficient fits a word, with an exponent at most
+// maxWordGap above that of a finite y, takes a fast path first: the
+// coefficient scaled to the exponent of y is exact in two words, and
+// packWordW encodes it if it fits the format, which is the exact packing
+// exception roundW's comment allows. The general path computes the same
+// scaled coefficient and roundFiniteW, with nothing to drop, encodes it
+// unchanged, a zero with the sign of x included. A coefficient that does
+// not fit falls through, to the NaN below.
 func quantizeW(x, y coefW, mode Mode) coefW {
+	if xn, xc, xe, ok := unpackWordW(x); ok {
+		if yk, ye := kindExpW(y); yk == KindFinite {
+			if gap := uint(xe - BiasW - ye); gap <= maxWordGap {
+				hi, lo := bits.Mul64(xc, pow10tab64[gap])
+				if r, ok := packWordW(xn, hi, lo, ye); ok {
+					return r
+				}
+			}
+		}
+	}
 	xk, xneg, xc, xe := UnpackW(x)
 	yk, ye := kindExpW(y)
 	switch {

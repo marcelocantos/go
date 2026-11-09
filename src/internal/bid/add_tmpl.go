@@ -10,6 +10,8 @@
 // its rules.
 package bid
 
+import "math/bits"
+
 // addDigitsW is the number of digits addW scales a coefficient up to. Two
 // bounds fix it. The sum of two operands aligned this way must fit the
 // coefficient type, so no addition needs the wide type: 10^19 + 10^16 and
@@ -34,7 +36,52 @@ const addDigitsW = PrecisionW + 3
 // A difference with such a fraction is hi - (lo + f), and it reaches roundW
 // as the integer hi - (lo + 1) and the fraction 1 - f. Dropping f instead
 // would leave x unchanged where x - ε must land below x in a directed mode.
+//
+// Two finite operands whose coefficients fit a word and whose exponents are
+// at most maxWordGap apart take a fast path first. It computes their exact
+// sum in two words at the smaller exponent, the preferred one, and
+// packWordW encodes it if it fits the format; a sum that does not fit, which
+// needs rounding, falls through to the general path. That is the exact
+// packing exception roundW's comment allows, and the general path gives the
+// same encoding. It scales the operand with the larger exponent by
+// k = min(gap, addDigitsW - digits) places and shifts the other only if
+// k < gap; then the scaled operand has at least addDigitsW = PrecisionW+3
+// digits and the other is below 10^PrecisionW, so the sum or difference has
+// more than PrecisionW digits and does not fit. When k = gap the general sum
+// is this one, exact, at the same exponent, and roundW packs it unchanged.
+// The sign follows the general path too: that of the operands when they
+// agree, that of the larger magnitude when they differ, and for an exact
+// cancellation the zero of "Sign of a result", negative only in
+// TowardNegative.
 func addW(x, y coefW, mode Mode) coefW {
+	if xneg, xc, xe, ok := unpackWordW(x); ok {
+		if yneg, yc, ye, ok := unpackWordW(y); ok {
+			if xe < ye {
+				xneg, xc, xe, yneg, yc, ye = yneg, yc, ye, xneg, xc, xe
+			}
+			if gap := uint(xe - ye); gap <= maxWordGap {
+				hi, lo := bits.Mul64(xc, pow10tab64[gap])
+				neg := xneg
+				if xneg == yneg {
+					var carry uint64
+					lo, carry = bits.Add64(lo, yc, 0)
+					hi += carry
+				} else if hi == 0 && lo < yc {
+					neg, lo = yneg, yc-lo
+				} else {
+					var borrow uint64
+					lo, borrow = bits.Sub64(lo, yc, 0)
+					hi -= borrow
+					if hi|lo == 0 {
+						neg = mode == TowardNegative
+					}
+				}
+				if r, ok := packWordW(neg, hi, lo, ye-BiasW); ok {
+					return r
+				}
+			}
+		}
+	}
 	xk, xneg, xc, xe := UnpackW(x)
 	yk, yneg, yc, ye := UnpackW(y)
 	if xk != KindFinite || yk != KindFinite {
