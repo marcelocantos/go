@@ -1799,6 +1799,24 @@
 // refuses a second call, 11 to 16 percent on the mixed rows, so they, Min and
 // Max call quietCmpSlowW directly.
 //
+// # No assembly
+//
+// The package is pure Go, and was measured against assembly before staying
+// so (darwin/arm64, Apple M4 Max, 2026-11-10). On arm64 the compiler emits
+// u128Mul as the 8 MUL and UMULH a 128×128-bit product needs and 8 additions
+// and moves where hand-written code needs 6, with no spills; the reciprocal
+// division divPow10Recip128 builds a frame only for its bounds panic. A
+// hand-written u128Mul (ABI0, so its arguments pass on the stack, and never
+// inlined) measured 5.07 ns a product against 3.79 for the inlined Go, and
+// the high half of the product, the 256-bit reciprocal step of u256DivPow10,
+// 4.71 against 3.50 in throughput and 5.38 against 2.10 when each step
+// feeds the next: the call costs more than the two instructions it saves,
+// and no kernel row can gain the 10% that would justify it. On amd64 the
+// compiler emits MULQ and the moves its fixed registers need (37
+// instructions for u128Mul); built with GOAMD64=v3 it emits MULX, and
+// u128Mul takes 24 and divPow10Recip128 83 instead of 100, with no
+// assembly.
+//
 // # Dependencies
 //
 // The files that cmd/dist compiles for the compiler bootstrap import only
