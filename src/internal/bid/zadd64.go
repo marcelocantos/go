@@ -26,7 +26,37 @@ import "math/bits"
 // once, with no shift of the smaller.
 const addDigits64 = len(pow10tab64) - 1
 
-// add64 returns x + y rounded in mode.
+// add64 returns x + y rounded in mode. Word operands of one sign and one
+// exponent are added inline by addSameQuantum64, and every other operand
+// takes addSlow64; see "Inline fast paths" in the package documentation.
+func add64(x, y coef64, mode Mode) coef64 {
+	if r, ok := addSameQuantum64(x, y); ok {
+		return r
+	}
+	return addSlow64(x, y, mode)
+}
+
+// sub64 returns x - y rounded in mode. Word operands of one sign and one
+// exponent are subtracted inline by subSameQuantum64, and every other operand
+// takes subSlow64.
+func sub64(x, y coef64, mode Mode) coef64 {
+	if r, ok := subSameQuantum64(x, y); ok {
+		return r
+	}
+	return subSlow64(x, y, mode)
+}
+
+// subSlow64 returns x - y rounded in mode: addSlow64(x, -y, mode), except that
+// a NaN y is not negated, so that the result for it is y made quiet with its
+// own sign (see "NaN results" in the package documentation).
+func subSlow64(x, y coef64, mode Mode) coef64 {
+	if !IsNaN64(y) {
+		y = Neg64(y)
+	}
+	return addSlow64(x, y, mode)
+}
+
+// addSlow64 returns x + y rounded in mode.
 //
 // The operand with the larger exponent is scaled up to the exponent of the
 // other if that takes it to addDigits64 digits or fewer, and then the sum is
@@ -61,7 +91,7 @@ const addDigits64 = len(pow10tab64) - 1
 // agree, that of the larger magnitude when they differ, and for an exact
 // cancellation the zero of "Sign of a result", negative only in
 // TowardNegative.
-func add64(x, y coef64, mode Mode) coef64 {
+func addSlow64(x, y coef64, mode Mode) coef64 {
 	var yneg, yok bool
 	var yw uint64
 	var ye int

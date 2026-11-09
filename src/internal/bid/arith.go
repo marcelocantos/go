@@ -34,18 +34,12 @@ func Add128(x, y Uint128, mode Mode) Uint128 {
 // negated: the result for it is y made quiet, with the sign of y (see
 // "NaN results" in the package documentation).
 func Sub64(x, y uint64, mode Mode) uint64 {
-	if y&(SpecialMask64|NaNBit64) != SpecialMask64|NaNBit64 {
-		y ^= SignMask64
-	}
-	return add64(x, y, mode)
+	return sub64(x, y, mode)
 }
 
 // Sub128 is Sub64 for decimal128.
 func Sub128(x, y Uint128, mode Mode) Uint128 {
-	if y.Hi&(SpecialMask128Hi|NaNBit128Hi) != SpecialMask128Hi|NaNBit128Hi {
-		y.Hi ^= SignMask128Hi
-	}
-	return add128(x, y, mode)
+	return sub128(x, y, mode)
 }
 
 // Mul64 returns x × y rounded in mode (IEEE 754-2019 clause 5.4.1,

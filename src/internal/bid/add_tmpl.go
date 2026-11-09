@@ -28,7 +28,37 @@ import "math/bits"
 // once, with no shift of the smaller.
 const addDigitsW = len(pow10tabW) - 1
 
-// addW returns x + y rounded in mode.
+// addW returns x + y rounded in mode. Word operands of one sign and one
+// exponent are added inline by addSameQuantumW, and every other operand
+// takes addSlowW; see "Inline fast paths" in the package documentation.
+func addW(x, y coefW, mode Mode) coefW {
+	if r, ok := addSameQuantumW(x, y); ok {
+		return r
+	}
+	return addSlowW(x, y, mode)
+}
+
+// subW returns x - y rounded in mode. Word operands of one sign and one
+// exponent are subtracted inline by subSameQuantumW, and every other operand
+// takes subSlowW.
+func subW(x, y coefW, mode Mode) coefW {
+	if r, ok := subSameQuantumW(x, y); ok {
+		return r
+	}
+	return subSlowW(x, y, mode)
+}
+
+// subSlowW returns x - y rounded in mode: addSlowW(x, -y, mode), except that
+// a NaN y is not negated, so that the result for it is y made quiet with its
+// own sign (see "NaN results" in the package documentation).
+func subSlowW(x, y coefW, mode Mode) coefW {
+	if !IsNaNW(y) {
+		y = NegW(y)
+	}
+	return addSlowW(x, y, mode)
+}
+
+// addSlowW returns x + y rounded in mode.
 //
 // The operand with the larger exponent is scaled up to the exponent of the
 // other if that takes it to addDigitsW digits or fewer, and then the sum is
@@ -63,7 +93,7 @@ const addDigitsW = len(pow10tabW) - 1
 // agree, that of the larger magnitude when they differ, and for an exact
 // cancellation the zero of "Sign of a result", negative only in
 // TowardNegative.
-func addW(x, y coefW, mode Mode) coefW {
+func addSlowW(x, y coefW, mode Mode) coefW {
 	var yneg, yok bool
 	var yw uint64
 	var ye int

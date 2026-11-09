@@ -42,7 +42,18 @@ func roundToIntegralW(x coefW, mode Mode) coefW {
 	return r
 }
 
-// quantizeW returns x with the exponent of y, rounded in mode, or the
+// quantizeW returns x with the exponent of y, rounded in mode. A word x
+// with the exponent of y is x itself, decided inline by quantizeSameW, and
+// every other operand takes quantizeSlowW; see "Inline fast paths" in the
+// package documentation.
+func quantizeW(x, y coefW, mode Mode) coefW {
+	if quantizeSameW(x, y) {
+		return x
+	}
+	return quantizeSlowW(x, y, mode)
+}
+
+// quantizeSlowW returns x with the exponent of y, rounded in mode, or the
 // canonical NaN when the coefficient at that exponent has more than
 // PrecisionW digits. The exponent of y is in range, so a finite result
 // never needs its exponent adjusted.
@@ -66,7 +77,7 @@ func roundToIntegralW(x coefW, mode Mode) coefW {
 // scaled coefficient and roundFiniteW, with nothing to drop, encodes it
 // unchanged, a zero with the sign of x included. A coefficient that does
 // not fit falls through, to the NaN below.
-func quantizeW(x, y coefW, mode Mode) coefW {
+func quantizeSlowW(x, y coefW, mode Mode) coefW {
 	xneg, xw, xe, xok := unpackWordCanonW(x)
 	yk, ye := kindExpW(y)
 	var xc coefW

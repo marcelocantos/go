@@ -36,7 +36,18 @@ func roundToIntegral64(x coef64, mode Mode) coef64 {
 	return r
 }
 
-// quantize64 returns x with the exponent of y, rounded in mode, or the
+// quantize64 returns x with the exponent of y, rounded in mode. A word x
+// with the exponent of y is x itself, decided inline by quantizeSame64, and
+// every other operand takes quantizeSlow64; see "Inline fast paths" in the
+// package documentation.
+func quantize64(x, y coef64, mode Mode) coef64 {
+	if quantizeSame64(x, y) {
+		return x
+	}
+	return quantizeSlow64(x, y, mode)
+}
+
+// quantizeSlow64 returns x with the exponent of y, rounded in mode, or the
 // canonical NaN when the coefficient at that exponent has more than
 // Precision64 digits. The exponent of y is in range, so a finite result
 // never needs its exponent adjusted.
@@ -60,7 +71,7 @@ func roundToIntegral64(x coef64, mode Mode) coef64 {
 // scaled coefficient and roundFinite64, with nothing to drop, encodes it
 // unchanged, a zero with the sign of x included. A coefficient that does
 // not fit falls through, to the NaN below.
-func quantize64(x, y coef64, mode Mode) coef64 {
+func quantizeSlow64(x, y coef64, mode Mode) coef64 {
 	xneg, xw, xe, xok := unpackWordCanon64(x)
 	yk, ye := kindExp64(y)
 	var xc coef64

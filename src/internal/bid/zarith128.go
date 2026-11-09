@@ -81,9 +81,15 @@ func nan128(x, y, z coef128) coef128 {
 	return cQuiet128(z)
 }
 
-// quietCmp128 returns the ordering of x and y as -1, 0 or +1 with ok = true,
-// or 0 and ok = false when either is a NaN.
-func quietCmp128(x, y coef128) (c int, ok bool) {
+// quietCmpSlow128 returns the ordering of x and y as -1, 0 or +1 with ok =
+// true, or 0 and ok = false when either is a NaN. It is the general path of
+// equal128, less128 and lessEqual128, which compare word operands of one sign and
+// one exponent inline by their keys from sameQuantumKeys128 (see "Inline fast
+// paths" in the package documentation), and the whole of Compare128, min128 and
+// max128, where such a front would not pay: Compare64 and Compare128 miss the
+// inlining budget with it, and out of line it costs every operand it refuses
+// a second call.
+func quietCmpSlow128(x, y coef128) (c int, ok bool) {
 	if xn, xc, xe, ok := unpackWord128(x); ok {
 		if yn, yc, ye, ok := unpackWord128(y); ok {
 			return compareWords(xn, xc, xe, yn, yc, ye), true
@@ -128,19 +134,28 @@ func quietCmp128(x, y coef128) (c int, ok bool) {
 
 // equal128 reports whether x == y by value; it is false if either is a NaN.
 func equal128(x, y coef128) bool {
-	c, ok := quietCmp128(x, y)
+	if kx, ky, ok := sameQuantumKeys128(x, y); ok {
+		return kx == ky
+	}
+	c, ok := quietCmpSlow128(x, y)
 	return ok && c == 0
 }
 
 // less128 reports whether x < y; it is false if either is a NaN.
 func less128(x, y coef128) bool {
-	c, ok := quietCmp128(x, y)
+	if kx, ky, ok := sameQuantumKeys128(x, y); ok {
+		return kx < ky
+	}
+	c, ok := quietCmpSlow128(x, y)
 	return ok && c < 0
 }
 
 // lessEqual128 reports whether x <= y; it is false if either is a NaN.
 func lessEqual128(x, y coef128) bool {
-	c, ok := quietCmp128(x, y)
+	if kx, ky, ok := sameQuantumKeys128(x, y); ok {
+		return kx <= ky
+	}
+	c, ok := quietCmpSlow128(x, y)
 	return ok && c <= 0
 }
 

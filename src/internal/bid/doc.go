@@ -1766,6 +1766,39 @@
 //     that grew a width-independent cost; fix that, do not special-case the
 //     width.
 //
+// # Inline fast paths
+//
+// The money cases of addition, subtraction, multiplication, quantize and the
+// comparisons, word operands of one quantum, cost little more than the call
+// that reaches them, so they are decided in front of the call. Each such
+// operation is generated as a small function, addW, subW, mulW, quantizeW,
+// equalW, lessW and lessEqualW, that asks an encoding-level
+// helper in encoding.go (addSameQuantumW, subSameQuantumW, mulShortW,
+// quantizeSameW and sameQuantumKeysW) whether it can decide the operands
+// from their bits, and otherwise calls the general path, named with the
+// suffix Slow (addSlowW, ...). The helpers decide only exact results, which
+// they encode exactly as the general path does; each states its bounds and
+// why the general path gives the same bits, TestInlineBounds checks each
+// bound from both sides and TestInlinePaths compares every decided result
+// with the general path's over a pool of operands around the bounds.
+//
+// The compiler charges a call to a function of this package whose name ends
+// in Slow64 or Slow128 as a cheap call, as it does runtime.heapBits.next's
+// call to nextArena, so that the front, and the one-line exported wrapper
+// around it, fit the inlining budget: a full call would cost 57 of its 80.
+// The exported Add, Sub, Mul, Quantize, Equal, Less and LessEqual functions
+// of both widths inline into their callers; their inline costs, under
+// -gcflags=-m=2, are between 33 (Quantize64) and 78 (Mul128), and
+// cmd/compile's TestIntendedInlining fails if one of them stops inlining.
+// The general paths keep their own word fast paths, so an operand pair the
+// front refuses costs the front's test and nothing else. A front must stay
+// small: what does not fit beside the call, such as the word fast path of
+// addition at another exponent (cost 316), stays on the general path, and an
+// operation whose front does not fit has none. Compare64 and Compare128 with
+// a front would cost 88 and 92; out of line, the front costs every operand it
+// refuses a second call, 11 to 16 percent on the mixed rows, so they, Min and
+// Max call quietCmpSlowW directly.
+//
 // # Dependencies
 //
 // The files that cmd/dist compiles for the compiler bootstrap import only

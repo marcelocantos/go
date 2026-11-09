@@ -106,6 +106,30 @@ var (
 	U256Sub         = u256Sub
 )
 
+// The inline fast paths and the general paths behind them.
+var (
+	AddSameQuantum128  = addSameQuantum128
+	AddSameQuantum64   = addSameQuantum64
+	AddSlow128         = addSlow128
+	AddSlow64          = addSlow64
+	MulShort128        = mulShort128
+	MulShort64         = mulShort64
+	MulSlow128         = mulSlow128
+	MulSlow64          = mulSlow64
+	QuantizeSame128    = quantizeSame128
+	QuantizeSame64     = quantizeSame64
+	QuantizeSlow128    = quantizeSlow128
+	QuantizeSlow64     = quantizeSlow64
+	QuietCmpSlow128    = quietCmpSlow128
+	QuietCmpSlow64     = quietCmpSlow64
+	SameQuantumKeys128 = sameQuantumKeys128
+	SameQuantumKeys64  = sameQuantumKeys64
+	SubSameQuantum128  = subSameQuantum128
+	SubSameQuantum64   = subSameQuantum64
+	SubSlow128         = subSlow128
+	SubSlow64          = subSlow64
+)
+
 // Recip10tab64 and Recip10tab128 return entry k of the reciprocal tables.
 func Recip10tab64(k int) (m uint64, s uint) {
 	return recip10tab64[k].m, uint(recip10tab64[k].s)

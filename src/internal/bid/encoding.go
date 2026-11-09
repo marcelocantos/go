@@ -4,6 +4,8 @@
 
 package bid
 
+import "math/bits"
+
 // notImplemented is the panic value of every operation that has been
 // declared but not yet implemented. It is temporary: when the package is
 // complete no function panics on any input.
@@ -295,6 +297,107 @@ func packWord128(neg bool, hi, lo uint64, exp int) (Uint128, bool) {
 		hi |= SignMask128Hi
 	}
 	return Uint128{Hi: hi, Lo: lo}, true
+}
+
+// The inline paths. The functions below decide, from the bits alone, the
+// operations of money arithmetic whose result is exact and needs no
+// decoding: operands of one quantum whose coefficients fit a word. The
+// arithmetic templates call them in front of the general paths, and they are
+// small enough that the front and its call to the general path inline into
+// every caller (see "Inline fast paths" in the package documentation). Each
+// reports ok = false for every operand it does not decide, and then the
+// general path gives the result; where it decides, the general path gives the
+// same encoding, as each says. TestRoundIsTheOnlyPacker lists their callers.
+//
+// They recognize a word operand by bit 62 clear, which is a first-form finite
+// encoding with a biased exponent below 2^(ExpBits-1), together with a zero
+// high coefficient field for decimal128. That leaves the largest exponents,
+// above 2^(ExpBits-1) - Bias (113 for decimal64, 2015 for decimal128), to the
+// general path, and saves a test of the second form.
+const inlineWordBit = 1 << 62
+
+// addSameQuantum64 and addSameQuantum128 return x + y for word operands of
+// one sign and one exponent: the sum, if its coefficient fits the first form
+// (always, for decimal128: two words sum below 2^65), with that sign and
+// exponent, the preferred one. The general path computes the same exact sum
+// at the same exponent in its word fast path and packWord encodes it the same
+// way, a first-form coefficient below 2^53 for decimal64.
+func addSameQuantum64(x, y uint64) (uint64, bool) {
+	s := x + y&(1<<CoeffBits64-1)
+	return s, ((x^y)|(s^x))>>ExpShift64|x&inlineWordBit == 0
+}
+
+func addSameQuantum128(x, y Uint128) (Uint128, bool) {
+	lo, carry := bits.Add64(x.Lo, y.Lo, 0)
+	return Uint128{Hi: x.Hi + carry, Lo: lo}, (x.Hi^y.Hi)|x.Hi&(CoeffMask128Hi|inlineWordBit) == 0
+}
+
+// subSameQuantum64 and subSameQuantum128 return x - y for word operands of
+// one sign and one exponent whose coefficients differ: the difference of the
+// coefficients, with the sign of x if its coefficient is the larger and the
+// other sign if not, at that exponent, the preferred one. The general path
+// adds x to y negated, operands of opposite signs, and its word fast path
+// gives the same coefficient, sign and exponent, which packWord encodes the
+// same way. Equal coefficients cancel to a zero whose sign depends on the
+// mode, and are left to the general path.
+func subSameQuantum64(x, y uint64) (uint64, bool) {
+	const m = 1<<CoeffBits64 - 1
+	d, borrow := bits.Sub64(x&m, y&m, 0)
+	return x&^m ^ borrow<<63 | (d ^ -borrow + borrow), ((x^y)|x&inlineWordBit)>>ExpShift64|(d-1)&^d>>63 == 0
+}
+
+func subSameQuantum128(x, y Uint128) (Uint128, bool) {
+	d, borrow := bits.Sub64(x.Lo, y.Lo, 0)
+	return Uint128{Hi: x.Hi ^ borrow<<63, Lo: d ^ -borrow + borrow}, (x.Hi^y.Hi)|x.Hi&(CoeffMask128Hi|inlineWordBit)|(d-1)&^d>>63 == 0
+}
+
+// mulShort64 and mulShort128 return x × y for word operands whose product is
+// below 2^53 (decimal64) or 2^96 (decimal128) at a biased exponent below
+// 2^(ExpBits-1), which is then exact and in the first form: the general
+// path's word fast path computes the same product at the same preferred
+// exponent, the sum of the exponents, and packWord encodes it the same way.
+// The sign is the exclusive or of the signs, a zero product's included. The
+// biased exponent of the product is xe + ye - Bias, which the unsigned
+// comparison also refuses when it is negative.
+func mulShort64(x, y uint64) (uint64, bool) {
+	const m = 1<<CoeffBits64 - 1
+	hi, lo := bits.Mul64(x&m, y&m)
+	t := x&^m + y&^m - Bias64<<ExpShift64
+	return t | lo, (x|y|t&^SignMask64)&inlineWordBit|hi|lo>>CoeffBits64 == 0
+}
+
+func mulShort128(x, y Uint128) (Uint128, bool) {
+	hi, lo := bits.Mul64(x.Lo, y.Lo)
+	t := x.Hi + y.Hi - Bias128<<ExpShift128
+	return Uint128{Hi: t | hi, Lo: lo}, (x.Hi|y.Hi)&(CoeffMask128Hi|inlineWordBit)|(t&^SignMask128Hi)&inlineWordBit|hi>>32 == 0
+}
+
+// quantizeSame64 and quantizeSame128 report whether x is a word operand with
+// the exponent of y, whose bits then agree with those of x from bit 62 down
+// to the exponent field, so that y is finite too. Quantizing x to y gives x
+// itself: the general path's word fast path scales the coefficient by 10^0
+// and packWord encodes the same bits.
+func quantizeSame64(x, y uint64) bool {
+	return ((x^y)&^SignMask64|x&inlineWordBit)>>ExpShift64 == 0
+}
+
+func quantizeSame128(x, y Uint128) bool {
+	return (x.Hi^y.Hi)&^SignMask128Hi>>ExpShift128|x.Hi&(CoeffMask128Hi|inlineWordBit) == 0
+}
+
+// sameQuantumKeys64 and sameQuantumKeys128 report whether x and y are word
+// operands of one sign and one exponent, and return keys for them, words
+// whose unsigned order is the order of the values: the coefficients, with
+// every bit inverted for negative operands, which reverses their order. Zeros
+// of one sign have equal keys, and are equal on the general path too.
+func sameQuantumKeys64(x, y uint64) (kx, ky uint64, ok bool) {
+	m := -(x >> 63)
+	return x ^ m, y ^ m, ((x^y)|x&inlineWordBit)>>ExpShift64 == 0
+}
+
+func sameQuantumKeys128(x, y Uint128) (kx, ky uint64, ok bool) {
+	m := -(x.Hi >> 63)
+	return x.Lo ^ m, y.Lo ^ m, (x.Hi^y.Hi)|x.Hi&(CoeffMask128Hi|inlineWordBit) == 0
 }
 
 // kindExp64 and kindExp128 decode only the fields that quantum operations

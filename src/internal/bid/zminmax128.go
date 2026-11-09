@@ -10,7 +10,7 @@ package bid
 
 // min128 is Min128: see "Minimum and maximum" in the package documentation.
 func min128(x, y coef128) coef128 {
-	c, ok := quietCmp128(x, y)
+	c, ok := quietCmpSlow128(x, y)
 	switch {
 	case !ok:
 		return nan128(x, y, y)
@@ -24,7 +24,7 @@ func min128(x, y coef128) coef128 {
 
 // max128 is Max128: see "Minimum and maximum" in the package documentation.
 func max128(x, y coef128) coef128 {
-	c, ok := quietCmp128(x, y)
+	c, ok := quietCmpSlow128(x, y)
 	switch {
 	case !ok:
 		return nan128(x, y, y)

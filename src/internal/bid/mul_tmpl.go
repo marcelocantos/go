@@ -13,7 +13,17 @@ package bid
 
 import "math/bits"
 
-// mulW returns x × y rounded in mode. The special values follow "NaN and
+// mulW returns x × y rounded in mode. Word operands with a short product
+// are multiplied inline by mulShortW, and every other operand takes
+// mulSlowW; see "Inline fast paths" in the package documentation.
+func mulW(x, y coefW, mode Mode) coefW {
+	if r, ok := mulShortW(x, y); ok {
+		return r
+	}
+	return mulSlowW(x, y, mode)
+}
+
+// mulSlowW returns x × y rounded in mode. The special values follow "NaN and
 // infinity operands" and "Sign of a result"; a finite product is computed
 // exactly in the double-width type, whose digits roundW reduces with a sticky
 // class of everything it drops, so the product is rounded once and nothing
@@ -32,7 +42,7 @@ import "math/bits"
 // an exponent within the format is exact there, and the sign of a zero
 // product is the exclusive or of the signs either way. A product or
 // exponent outside the format falls through.
-func mulW(x, y coefW, mode Mode) coefW {
+func mulSlowW(x, y coefW, mode Mode) coefW {
 	var yneg, yok bool
 	var yw uint64
 	var ye int

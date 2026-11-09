@@ -19,9 +19,33 @@ func add64(x, y coef64, mode Mode) coef64 {
 	return *new(coef64)
 }
 
+func sub64(x, y coef64, mode Mode) coef64 {
+	return *new(coef64)
+}
+
+func subSlow64(x, y coef64, mode Mode) coef64 {
+	return *new(coef64)
+}
+
+func addSlow64(x, y coef64, mode Mode) coef64 {
+	return *new(coef64)
+}
+
 const addDigits128 = len(pow10tab128) - 1
 
 func add128(x, y coef128, mode Mode) coef128 {
+	return *new(coef128)
+}
+
+func sub128(x, y coef128, mode Mode) coef128 {
+	return *new(coef128)
+}
+
+func subSlow128(x, y coef128, mode Mode) coef128 {
+	return *new(coef128)
+}
+
+func addSlow128(x, y coef128, mode Mode) coef128 {
 	return *new(coef128)
 }
 
@@ -37,7 +61,7 @@ func nan64(x, y, z coef64) coef64 {
 	return *new(coef64)
 }
 
-func quietCmp64(x, y coef64) (c int, ok bool) {
+func quietCmpSlow64(x, y coef64) (c int, ok bool) {
 	return *new(int), *new(bool)
 }
 
@@ -93,7 +117,7 @@ func nan128(x, y, z coef128) coef128 {
 	return *new(coef128)
 }
 
-func quietCmp128(x, y coef128) (c int, ok bool) {
+func quietCmpSlow128(x, y coef128) (c int, ok bool) {
 	return *new(int), *new(bool)
 }
 
@@ -241,7 +265,15 @@ func mul64(x, y coef64, mode Mode) coef64 {
 	return *new(coef64)
 }
 
+func mulSlow64(x, y coef64, mode Mode) coef64 {
+	return *new(coef64)
+}
+
 func mul128(x, y coef128, mode Mode) coef128 {
+	return *new(coef128)
+}
+
+func mulSlow128(x, y coef128, mode Mode) coef128 {
 	return *new(coef128)
 }
 
@@ -269,6 +301,10 @@ func quantize64(x, y coef64, mode Mode) coef64 {
 	return *new(coef64)
 }
 
+func quantizeSlow64(x, y coef64, mode Mode) coef64 {
+	return *new(coef64)
+}
+
 func reduce64(x coef64) coef64 {
 	return *new(coef64)
 }
@@ -286,6 +322,10 @@ func roundToIntegral128(x coef128, mode Mode) coef128 {
 }
 
 func quantize128(x, y coef128, mode Mode) coef128 {
+	return *new(coef128)
+}
+
+func quantizeSlow128(x, y coef128, mode Mode) coef128 {
 	return *new(coef128)
 }
 

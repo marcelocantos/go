@@ -11,7 +11,7 @@ package bid
 
 // minW is MinW: see "Minimum and maximum" in the package documentation.
 func minW(x, y coefW) coefW {
-	c, ok := quietCmpW(x, y)
+	c, ok := quietCmpSlowW(x, y)
 	switch {
 	case !ok:
 		return nanW(x, y, y)
@@ -25,7 +25,7 @@ func minW(x, y coefW) coefW {
 
 // maxW is MaxW: see "Minimum and maximum" in the package documentation.
 func maxW(x, y coefW) coefW {
-	c, ok := quietCmpW(x, y)
+	c, ok := quietCmpSlowW(x, y)
 	switch {
 	case !ok:
 		return nanW(x, y, y)

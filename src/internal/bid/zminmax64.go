@@ -10,7 +10,7 @@ package bid
 
 // min64 is Min64: see "Minimum and maximum" in the package documentation.
 func min64(x, y coef64) coef64 {
-	c, ok := quietCmp64(x, y)
+	c, ok := quietCmpSlow64(x, y)
 	switch {
 	case !ok:
 		return nan64(x, y, y)
@@ -24,7 +24,7 @@ func min64(x, y coef64) coef64 {
 
 // max64 is Max64: see "Minimum and maximum" in the package documentation.
 func max64(x, y coef64) coef64 {
-	c, ok := quietCmp64(x, y)
+	c, ok := quietCmpSlow64(x, y)
 	switch {
 	case !ok:
 		return nan64(x, y, y)

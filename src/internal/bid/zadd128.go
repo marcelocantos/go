@@ -26,7 +26,37 @@ import "math/bits"
 // once, with no shift of the smaller.
 const addDigits128 = len(pow10tab128) - 1
 
-// add128 returns x + y rounded in mode.
+// add128 returns x + y rounded in mode. Word operands of one sign and one
+// exponent are added inline by addSameQuantum128, and every other operand
+// takes addSlow128; see "Inline fast paths" in the package documentation.
+func add128(x, y coef128, mode Mode) coef128 {
+	if r, ok := addSameQuantum128(x, y); ok {
+		return r
+	}
+	return addSlow128(x, y, mode)
+}
+
+// sub128 returns x - y rounded in mode. Word operands of one sign and one
+// exponent are subtracted inline by subSameQuantum128, and every other operand
+// takes subSlow128.
+func sub128(x, y coef128, mode Mode) coef128 {
+	if r, ok := subSameQuantum128(x, y); ok {
+		return r
+	}
+	return subSlow128(x, y, mode)
+}
+
+// subSlow128 returns x - y rounded in mode: addSlow128(x, -y, mode), except that
+// a NaN y is not negated, so that the result for it is y made quiet with its
+// own sign (see "NaN results" in the package documentation).
+func subSlow128(x, y coef128, mode Mode) coef128 {
+	if !IsNaN128(y) {
+		y = Neg128(y)
+	}
+	return addSlow128(x, y, mode)
+}
+
+// addSlow128 returns x + y rounded in mode.
 //
 // The operand with the larger exponent is scaled up to the exponent of the
 // other if that takes it to addDigits128 digits or fewer, and then the sum is
@@ -61,7 +91,7 @@ const addDigits128 = len(pow10tab128) - 1
 // agree, that of the larger magnitude when they differ, and for an exact
 // cancellation the zero of "Sign of a result", negative only in
 // TowardNegative.
-func add128(x, y coef128, mode Mode) coef128 {
+func addSlow128(x, y coef128, mode Mode) coef128 {
 	var yneg, yok bool
 	var yw uint64
 	var ye int

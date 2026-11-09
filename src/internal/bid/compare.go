@@ -49,12 +49,12 @@ func LessEqual128(x, y Uint128) bool {
 // signaling variants of the standard differ only in the exception they
 // raise, which this package does not expose.
 func Compare64(x, y uint64) (c int, ok bool) {
-	return quietCmp64(x, y)
+	return quietCmpSlow64(x, y)
 }
 
 // Compare128 is Compare64 for decimal128.
 func Compare128(x, y Uint128) (c int, ok bool) {
-	return quietCmp128(x, y)
+	return quietCmpSlow128(x, y)
 }
 
 // TotalOrder64 reports whether x precedes or equals y in the total order of

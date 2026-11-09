@@ -274,11 +274,25 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 	// word fast paths of addition, multiplication and quantize: see the
 	// comments of those functions and the end of roundW's.
 	wordPackers := map[string]bool{
-		"addW": true, "add64": true, "add128": true,
-		"mulW": true, "mul64": true, "mul128": true,
-		"quantizeW": true, "quantize64": true, "quantize128": true,
+		"addSlowW": true, "addSlow64": true, "addSlow128": true,
+		"mulSlowW": true, "mulSlow64": true, "mulSlow128": true,
+		"quantizeSlowW": true, "quantizeSlow64": true, "quantizeSlow128": true,
 	}
 	wordEncoder := map[string]bool{"packWord64": true, "packWord128": true, "packWordW": true}
+	// Callers of the inline encoders, which encode the exact results of the
+	// inline paths of addition, subtraction and multiplication in front of
+	// the general paths: see "Inline fast paths" in the package
+	// documentation.
+	inlinePackers := map[string]bool{
+		"addW": true, "add64": true, "add128": true,
+		"subW": true, "sub64": true, "sub128": true,
+		"mulW": true, "mul64": true, "mul128": true,
+	}
+	inlineEncoder := map[string]bool{
+		"addSameQuantum64": true, "addSameQuantum128": true, "addSameQuantumW": true,
+		"subSameQuantum64": true, "subSameQuantum128": true, "subSameQuantumW": true,
+		"mulShort64": true, "mulShort128": true, "mulShortW": true,
+	}
 	rawEncoder := map[string]bool{"Pack64": true, "Pack128": true, "PackW": true}
 	checkedEncoder := map[string]bool{"packW": true, "pack64": true, "pack128": true}
 	layout := map[string]bool{
@@ -332,6 +346,8 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 					}
 					switch {
 					case rawEncoder[id.Name] && !rawPackers[caller]:
+						violations = append(violations, fset.Position(n.Pos()).String()+": "+caller+" calls "+id.Name)
+					case inlineEncoder[id.Name] && !inlinePackers[caller]:
 						violations = append(violations, fset.Position(n.Pos()).String()+": "+caller+" calls "+id.Name)
 					case wordEncoder[id.Name] && !wordPackers[caller]:
 						violations = append(violations, fset.Position(n.Pos()).String()+": "+caller+" calls "+id.Name)

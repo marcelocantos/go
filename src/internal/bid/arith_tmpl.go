@@ -90,9 +90,15 @@ func nanW(x, y, z coefW) coefW {
 	return cQuietW(z)
 }
 
-// quietCmpW returns the ordering of x and y as -1, 0 or +1 with ok = true,
-// or 0 and ok = false when either is a NaN.
-func quietCmpW(x, y coefW) (c int, ok bool) {
+// quietCmpSlowW returns the ordering of x and y as -1, 0 or +1 with ok =
+// true, or 0 and ok = false when either is a NaN. It is the general path of
+// equalW, lessW and lessEqualW, which compare word operands of one sign and
+// one exponent inline by their keys from sameQuantumKeysW (see "Inline fast
+// paths" in the package documentation), and the whole of CompareW, minW and
+// maxW, where such a front would not pay: Compare64 and Compare128 miss the
+// inlining budget with it, and out of line it costs every operand it refuses
+// a second call.
+func quietCmpSlowW(x, y coefW) (c int, ok bool) {
 	if xn, xc, xe, ok := unpackWordW(x); ok {
 		if yn, yc, ye, ok := unpackWordW(y); ok {
 			return compareWords(xn, xc, xe, yn, yc, ye), true
@@ -137,19 +143,28 @@ func quietCmpW(x, y coefW) (c int, ok bool) {
 
 // equalW reports whether x == y by value; it is false if either is a NaN.
 func equalW(x, y coefW) bool {
-	c, ok := quietCmpW(x, y)
+	if kx, ky, ok := sameQuantumKeysW(x, y); ok {
+		return kx == ky
+	}
+	c, ok := quietCmpSlowW(x, y)
 	return ok && c == 0
 }
 
 // lessW reports whether x < y; it is false if either is a NaN.
 func lessW(x, y coefW) bool {
-	c, ok := quietCmpW(x, y)
+	if kx, ky, ok := sameQuantumKeysW(x, y); ok {
+		return kx < ky
+	}
+	c, ok := quietCmpSlowW(x, y)
 	return ok && c < 0
 }
 
 // lessEqualW reports whether x <= y; it is false if either is a NaN.
 func lessEqualW(x, y coefW) bool {
-	c, ok := quietCmpW(x, y)
+	if kx, ky, ok := sameQuantumKeysW(x, y); ok {
+		return kx <= ky
+	}
+	c, ok := quietCmpSlowW(x, y)
 	return ok && c <= 0
 }
 
