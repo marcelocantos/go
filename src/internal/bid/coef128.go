@@ -105,13 +105,13 @@ func cReduce128(p wide128, k int) (q coef128, sticky bool) {
 
 // cLenFull128 returns the number of decimal digits of p: 0 for zero. The
 // method is that of cDigits64, with a table of the 78 powers of ten below
-// 2^256.
+// 2^256, except that the comparison with the table is the borrow of
+// p - 10^t, which needs no branch: the comparison is data-dependent, and
+// as a branch it mispredicted often enough to cost about as much again.
 func cLenFull128(p wide128) int {
 	t := u256Len(p) * 1233 >> 12
-	if u256Lt(p, pow10tab256[t]) {
-		return t
-	}
-	return t + 1
+	_, borrow := u256Sub(p, pow10tab256[t])
+	return t + 1 - int(borrow)
 }
 
 // cAddFull128 returns a + b modulo 2^256 and whether the sum carried out of
