@@ -702,3 +702,86 @@ func TestComparisonsPropertiesLong(t *testing.T) {
 		})
 	}
 }
+
+// TestCompareWords covers the word coefficient bounds and exponent gaps used
+// by the fast comparison, against the independent big.Int reference.
+func TestCompareWords(t *testing.T) {
+	for _, f := range both {
+		check := func(x, y bits) {
+			t.Helper()
+			want, ordered := f.compare(x, y)
+			got, ok := (kernel{}).compare(f, x, y)
+			if got != want || ok != ordered || (kernel{}).equal(f, x, y) != (ordered && want == 0) ||
+				(kernel{}).less(f, x, y) != (ordered && want < 0) || (kernel{}).lessEqual(f, x, y) != (ordered && want <= 0) {
+				t.Fatalf("%s word comparison (%x, %x): got (%d, %t), want (%d, %t)", f.name, x, y, got, ok, want, ordered)
+			}
+		}
+		word := func(c uint64, exp int, neg bool) bits {
+			return f.encode(value{kind: finite, neg: neg, coeff: new(big.Int).SetUint64(c), exp: exp})
+		}
+		coeffs := []uint64{0, 1, 9, 10, 1<<53 - 1, 1 << 53, bid.MaxCoeff64}
+		if f == dec128 {
+			coeffs = append(coeffs, 1<<63, 10000000000000000000, ^uint64(0))
+		}
+		for _, gap := range []int{0, 1, 15, 16, 18, 19, 20, 21, f.maxExp - f.minExp} {
+			for _, xe := range []int{f.minExp, min(0, f.maxExp-gap), f.maxExp - gap} {
+				for _, xc := range coeffs {
+					for _, yc := range coeffs {
+						for signs := range 4 {
+							x, y := word(xc, xe, signs&1 != 0), word(yc, xe+gap, signs&2 != 0)
+							check(x, y)
+							check(y, x)
+						}
+					}
+				}
+			}
+		}
+		r := rand.New(rand.NewPCG(*seedFlag, streamSeed("compare-words-"+f.name)))
+		for i := range numCases() {
+			xc, yc := r.Uint64(), r.Uint64()
+			if f == dec64 {
+				xc %= bid.MaxCoeff64 + 1
+				yc %= bid.MaxCoeff64 + 1
+			}
+			xe := f.minExp + r.IntN(f.maxExp-f.minExp+1)
+			ye := f.minExp + r.IntN(f.maxExp-f.minExp+1)
+			if i&1 == 0 {
+				ye = min(f.maxExp, xe+r.IntN(22))
+			}
+			check(word(xc, xe, r.IntN(2) != 0), word(yc, ye, r.IntN(2) != 0))
+		}
+	}
+}
+
+// These paired-operand probes complement the broad mixed kernel rows. The
+// fallback values deliberately include second-form decimal64 coefficients
+// and wide decimal128 coefficients, together with exceptional operands.
+func BenchmarkCompareWords(b *testing.B) {
+	for _, f := range both {
+		wide := "9999999999999999"
+		if f == dec128 {
+			wide = "9999999999999999999999999999999999"
+		}
+		for _, c := range []struct {
+			name string
+			x, y [4]opnd
+		}{
+			{"sameQuantum", [4]opnd{fin("12345", -2), nfin("42", -2), fin("0", 0), nfin("0", 0)},
+				[4]opnd{fin("42", -2), nfin("12345", -2), fin("1", 0), fin("0", 0)}},
+			{"nearby", [4]opnd{fin("12345", -2), nfin("42", -2), fin("1", 0), fin("9", 19)},
+				[4]opnd{fin("42", -3), nfin("12345", -4), fin("999999", -5), fin("1", 0)}},
+			{"far", [4]opnd{fin("1", 20), fin("1", f.maxExp), nfin("1", 20), fin("0", f.maxExp)},
+				[4]opnd{fin("9", 0), fin("1", f.minExp), nfin("9", 0), fin("1", 0)}},
+			{"fallback", [4]opnd{fin(wide, -2), nfin(wide, -2), cNaN, cInf},
+				[4]opnd{fin(wide, -3), fin(wide, -2), fin("1", 0), cInf}},
+		} {
+			var xs, ys [4]bits
+			for i := range xs {
+				xs[i], ys[i] = c.x[i].bits(f), c.y[i].bits(f)
+			}
+			b.Run(f.name+"/"+c.name, func(b *testing.B) {
+				loop2(b, xs[:], ys[:], func(x, y bits) int { c, _ := (kernel{}).compare(f, x, y); return c })
+			})
+		}
+	}
+}

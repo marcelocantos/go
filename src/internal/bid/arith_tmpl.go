@@ -93,6 +93,11 @@ func nanW(x, y, z coefW) coefW {
 // quietCmpW returns the ordering of x and y as -1, 0 or +1 with ok = true,
 // or 0 and ok = false when either is a NaN.
 func quietCmpW(x, y coefW) (c int, ok bool) {
+	if xn, xc, xe, ok := unpackWordW(x); ok {
+		if yn, yc, ye, ok := unpackWordW(y); ok {
+			return compareWords(xn, xc, xe, yn, yc, ye), true
+		}
+	}
 	xk, xneg, xc, xe := UnpackW(x)
 	yk, yneg, yc, ye := UnpackW(y)
 	switch {

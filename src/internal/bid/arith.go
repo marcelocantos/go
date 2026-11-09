@@ -4,6 +4,8 @@
 
 package bid
 
+import "math/bits"
+
 //go:generate go run gen_arith.go
 
 // The arithmetic operations of IEEE 754-2019 clause 5.4.1 and the
@@ -211,4 +213,50 @@ func Max64(x, y uint64) uint64 {
 // Max128 is Max64 for decimal128.
 func Max128(x, y Uint128) Uint128 {
 	return max128(x, y)
+}
+
+// compareWords compares finite values with uint64 coefficients. Signs of
+// zeros are irrelevant. For nonzero coefficients, an exponent gap of at least
+// len(pow10tab64) decides magnitude because 10^20 exceeds every uint64. Smaller
+// gaps need one exact 64-by-64 product; a nonzero high word exceeds the other
+// coefficient. Exponents come from the bounded fields of unpackWord64/128.
+// No digit count, general division or rounding is needed.
+func compareWords(xneg bool, xc uint64, xe int, yneg bool, yc uint64, ye int) int {
+	xneg = xneg && xc != 0
+	yneg = yneg && yc != 0
+	if xneg != yneg {
+		if xneg {
+			return -1
+		}
+		return 1
+	}
+	direction := 1
+	if xneg {
+		direction = -1
+	}
+	if xc != 0 && yc != 0 {
+		gap := xe - ye
+		if gap < 0 {
+			xc, yc = yc, xc
+			gap = -gap
+			direction = -direction
+		}
+		if gap >= len(pow10tab64) {
+			return direction
+		}
+		if gap != 0 {
+			hi, lo := bits.Mul64(xc, pow10tab64[gap])
+			if hi != 0 {
+				return direction
+			}
+			xc = lo
+		}
+	}
+	if xc < yc {
+		return -direction
+	}
+	if xc > yc {
+		return direction
+	}
+	return 0
 }

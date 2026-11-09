@@ -82,6 +82,11 @@ func nan128(x, y, z coef128) coef128 {
 // quietCmp128 returns the ordering of x and y as -1, 0 or +1 with ok = true,
 // or 0 and ok = false when either is a NaN.
 func quietCmp128(x, y coef128) (c int, ok bool) {
+	if xn, xc, xe, ok := unpackWord128(x); ok {
+		if yn, yc, ye, ok := unpackWord128(y); ok {
+			return compareWords(xn, xc, xe, yn, yc, ye), true
+		}
+	}
 	xk, xneg, xc, xe := Unpack128(x)
 	yk, yneg, yc, ye := Unpack128(y)
 	switch {

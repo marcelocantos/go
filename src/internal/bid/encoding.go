@@ -173,6 +173,25 @@ func Unpack128(x Uint128) (kind Kind, neg bool, coeff Uint128, exp int) {
 	return KindFinite, neg, Uint128{}, int(t>>Form2ExpShift128&ExpMask128) - Bias128
 }
 
+// unpackWord64 and unpackWord128 recognize first-form finite encodings whose
+// coefficients fit uint64. Such coefficients are canonical: below 2^53 for
+// decimal64 and below 2^64 for decimal128. The returned exponent is biased;
+// callers compare exponents from the same width, so the bias cancels.
+// Other encodings return ok = false and need the general decoder.
+func unpackWord64(x uint64) (neg bool, coeff uint64, exp int, ok bool) {
+	if x&Form2Mask64 == Form2Mask64 {
+		return
+	}
+	return x&SignMask64 != 0, x & (1<<CoeffBits64 - 1), int(x >> ExpShift64 & ExpMask64), true
+}
+
+func unpackWord128(x Uint128) (neg bool, coeff uint64, exp int, ok bool) {
+	if x.Hi&CoeffMask128Hi != 0 || x.Hi&Form2Mask128Hi == Form2Mask128Hi {
+		return
+	}
+	return x.Hi&SignMask128Hi != 0, x.Lo, int(x.Hi >> ExpShift128 & ExpMask128), true
+}
+
 // kindExp64 and kindExp128 decode only the fields that quantum operations
 // use. A coefficient, canonical or otherwise, cannot change these fields.
 // Keeping that work separate lets these small decoders inline into callers

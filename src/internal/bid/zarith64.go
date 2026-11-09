@@ -82,6 +82,11 @@ func nan64(x, y, z coef64) coef64 {
 // quietCmp64 returns the ordering of x and y as -1, 0 or +1 with ok = true,
 // or 0 and ok = false when either is a NaN.
 func quietCmp64(x, y coef64) (c int, ok bool) {
+	if xn, xc, xe, ok := unpackWord64(x); ok {
+		if yn, yc, ye, ok := unpackWord64(y); ok {
+			return compareWords(xn, xc, xe, yn, yc, ye), true
+		}
+	}
 	xk, xneg, xc, xe := Unpack64(x)
 	yk, yneg, yc, ye := Unpack64(y)
 	switch {
