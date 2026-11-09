@@ -31,6 +31,10 @@ func addSlow64(x, y coef64, mode Mode) coef64 {
 	return *new(coef64)
 }
 
+func roundFace64(neg bool, q coef64, exp int, class digitClass, mode Mode) coef64 {
+	return *new(coef64)
+}
+
 const addDigits128 = len(pow10tab128) - 1
 
 func add128(x, y coef128, mode Mode) coef128 {
@@ -46,6 +50,10 @@ func subSlow128(x, y coef128, mode Mode) coef128 {
 }
 
 func addSlow128(x, y coef128, mode Mode) coef128 {
+	return *new(coef128)
+}
+
+func roundFace128(neg bool, q coef128, exp int, class digitClass, mode Mode) coef128 {
 	return *new(coef128)
 }
 

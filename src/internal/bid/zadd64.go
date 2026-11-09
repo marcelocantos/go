@@ -158,8 +158,8 @@ func addSlow64(x, y coef64, mode Mode) coef64 {
 		// X; if the gap exceeds m by more than the digits of a non-zero y,
 		// y is a fraction f of one unit of X with 0 < f < 1/10, and the sum
 		// is X + f or (X - 1) + (1 - f). Their classes are then known, below
-		// a half and above it, so round64 may take them at face value with a
-		// coefficient of Precision64 digits (see its comment): it drops no
+		// a half and above it, and roundFace64 rounds them at face value with
+		// a coefficient of Precision64 digits (see its comment): it drops no
 		// digit and divides nothing. X - 1 keeps Precision64 digits unless X
 		// is 10^(Precision64-1), whose difference would need padding, which a
 		// face-value class does not survive. That X is taken one place
@@ -184,8 +184,7 @@ func addSlow64(x, y coef64, mode Mode) coef64 {
 				p, _ = cSub64(p, cPow1064(0))
 			}
 			if s > 0 && (s >= Precision64 || cCmp64(yc, cPow1064(s)) < 0) {
-				r, _ := round64(xneg, wide64{Lo: p}, xe-m, class, mode, MinExp64)
-				return r
+				return roundFace64(xneg, p, xe-m, class, mode)
 			}
 		}
 		k := min(gap, addDigits64-dx)
@@ -219,4 +218,42 @@ func addSlow64(x, y coef64, mode Mode) coef64 {
 	}
 	r, _ := round64(neg, wide64{Lo: sum}, exp, class, mode, MinExp64)
 	return r
+}
+
+// roundFace64 returns (-1)^neg × (q + f) × 10^exp rounded in mode, for the
+// swamped addend of addSlow64, its only caller: q has exactly Precision64
+// digits, 10^(Precision64-1) <= q <= cMax64(), and f is a fraction whose
+// class, classBelowHalf or classAboveHalf, is known at face value. It is
+// the face-value exception to the rule that every rounded result passes
+// through round64; see "Face-value rounding" in the package documentation.
+//
+// Why it gives round64's bits. addSlow64 calls it with exp = xe - m (or
+// xe - m - 1 for the padded power of ten), where xe <= MaxExp64 is the
+// larger operand's exponent and ye = exp - s - 1 >= MinExp64 the smaller's,
+// s > 0, so MinExp64 < exp <= MaxExp64: exp is at or above the floor
+// MinExp64, and the adjusted exponent exp + Precision64 - 1 is at least
+// Emin64, so the value is not tiny and nothing underflows. q has Precision64
+// digits, so round64's place of the result is exp itself: it pads nothing,
+// discards no digit of q, and its class is the caller's. Its decision is
+// then roundUp(class, mode, neg, odd(q)), the one row of the five-mode
+// table this function takes; class is never classHalf, so the tie rule is
+// never reached. An increment of cMax64() carries to 10^Precision64, which
+// round64 encodes as 10^(Precision64-1) one place up, and that place above
+// MaxExp64 overflows to overflow64's result. Every other step of round64 (the
+// clamp, the digit count, the shift) leaves such a value unchanged.
+// TestRoundFaceValue drives every bound here in every mode against the
+// reference, TestSwampedAdd the classes around the swamping gap, and the
+// oracle's far regime reaches it in every mode.
+func roundFace64(neg bool, q coef64, exp int, class digitClass, mode Mode) coef64 {
+	if roundUp(class, mode, neg, cOdd64(q)) {
+		q = cInc64(q)
+		if cGtMax64(q) {
+			q, exp = cPow1064(Precision64-1), exp+1
+			if exp > MaxExp64 {
+				r, _ := overflow64(neg, mode)
+				return r
+			}
+		}
+	}
+	return pack64(neg, q, exp)
 }

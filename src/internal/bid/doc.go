@@ -1799,6 +1799,32 @@
 // refuses a second call, 11 to 16 percent on the mixed rows, so they, Min and
 // Max call quietCmpSlowW directly.
 //
+// # Face-value rounding
+//
+// Every rounded result passes through roundW, with one named exception:
+// roundFaceW, which rounds the swamped addend of addSlowW and has no other
+// caller. Its input is a coefficient q of exactly PrecisionW digits at an
+// exponent inside the format and not tiny, plus a fraction below one unit
+// whose class addSlowW knows exactly, below a half or above it. On such an
+// input roundW pads nothing, discards no digit and keeps the exponent, so
+// its whole decision is one row of the five-mode table, roundUp(class,
+// mode, sign, odd(q)), and an increment of the largest coefficient carries
+// to 10^(PrecisionW-1) one place up, overflowing above MaxExpW. roundFaceW
+// is those steps and nothing else; it calls roundUp and packW and
+// overflowW as roundW does, so the table, the encoding and the overflow
+// results are shared, not copied. Its comment proves the bounds of its
+// input from addSlowW's. It exists because roundW's clamp, digit count and
+// shift, all of which leave such an input unchanged, cost more than the
+// rounding itself on far additions, and a test for this input inside
+// roundW measured 2 to 7 percent on the other inexact roundings (Round and
+// the binary conversions, 2026-11-10).
+// TestRoundFaceValue drives it at every bound (the carry, the overflow of
+// the carry at MaxExpW, the padded power of ten of a difference) in every
+// mode against the reference, TestSwampedAdd at the classes around the
+// swamping gap, and the oracle's operand generator reaches it in every
+// mode and both classes. TestRoundIsTheOnlyPacker allows it to call packW
+// and allows only addSlowW to call it.
+//
 // # No assembly
 //
 // The package is pure Go, and was measured against assembly before staying

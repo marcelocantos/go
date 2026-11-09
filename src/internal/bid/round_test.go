@@ -255,7 +255,9 @@ func FuzzRound128(f *testing.F) {
 // instantiations; and the field layout constants that would let a function
 // assemble an encoding by hand are referenced only in encoding.go. The
 // exact fast paths that roundW's comment enumerates are the allowlist
-// here; a new one is added to both or the test fails.
+// here; a new one is added to both or the test fails. So is roundFaceW,
+// the face-value rounding of a swamped addend, and addSlowW, its only
+// caller.
 func TestRoundIsTheOnlyPacker(t *testing.T) {
 	// Callers of the raw encoder.
 	// Widen, the DPD decoders and the 128-bit integer conversions are exact
@@ -264,12 +266,20 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 		"BIDFromDPD64": true, "BIDFromDPD128": true,
 		"Int64To128": true, "Uint64To128": true}
 	// Callers of packW, the checked encoder: the rounding routine, its
-	// overflow result (no exact fast path uses the checked encoder).
+	// overflow result and the face-value rounding of a swamped addend (no
+	// exact fast path uses the checked encoder).
 	checkedPackers := map[string]bool{
 		"roundW": true, "round64": true, "round128": true,
 		"roundFiniteW": true, "roundFinite64": true, "roundFinite128": true,
 		"overflowW": true, "overflow64": true, "overflow128": true,
+		"roundFaceW": true, "roundFace64": true, "roundFace128": true,
 	}
+	// The face-value rounding is the one exception to roundW as the
+	// rounding routine, and its proof holds only for the swamped addend of
+	// addSlowW: see roundFaceW and "Face-value rounding" in the package
+	// documentation. It has that one caller.
+	faceRounder := map[string]bool{"roundFaceW": true, "roundFace64": true, "roundFace128": true}
+	faceCallers := map[string]bool{"addSlowW": true, "addSlow64": true, "addSlow128": true}
 	// Callers of the word packers, which encode the exact results of the
 	// word fast paths of addition, multiplication and quantize: see the
 	// comments of those functions and the end of roundW's.
@@ -352,6 +362,8 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 					case wordEncoder[id.Name] && !wordPackers[caller]:
 						violations = append(violations, fset.Position(n.Pos()).String()+": "+caller+" calls "+id.Name)
 					case checkedEncoder[id.Name] && !checkedPackers[caller]:
+						violations = append(violations, fset.Position(n.Pos()).String()+": "+caller+" calls "+id.Name)
+					case faceRounder[id.Name] && !faceCallers[caller]:
 						violations = append(violations, fset.Position(n.Pos()).String()+": "+caller+" calls "+id.Name)
 					}
 				case *ast.Ident:

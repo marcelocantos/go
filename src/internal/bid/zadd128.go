@@ -158,8 +158,8 @@ func addSlow128(x, y coef128, mode Mode) coef128 {
 		// X; if the gap exceeds m by more than the digits of a non-zero y,
 		// y is a fraction f of one unit of X with 0 < f < 1/10, and the sum
 		// is X + f or (X - 1) + (1 - f). Their classes are then known, below
-		// a half and above it, so round128 may take them at face value with a
-		// coefficient of Precision128 digits (see its comment): it drops no
+		// a half and above it, and roundFace128 rounds them at face value with
+		// a coefficient of Precision128 digits (see its comment): it drops no
 		// digit and divides nothing. X - 1 keeps Precision128 digits unless X
 		// is 10^(Precision128-1), whose difference would need padding, which a
 		// face-value class does not survive. That X is taken one place
@@ -184,8 +184,7 @@ func addSlow128(x, y coef128, mode Mode) coef128 {
 				p, _ = cSub128(p, cPow10128(0))
 			}
 			if s > 0 && (s >= Precision128 || cCmp128(yc, cPow10128(s)) < 0) {
-				r, _ := round128(xneg, wide128{Lo: p}, xe-m, class, mode, MinExp128)
-				return r
+				return roundFace128(xneg, p, xe-m, class, mode)
 			}
 		}
 		k := min(gap, addDigits128-dx)
@@ -219,4 +218,42 @@ func addSlow128(x, y coef128, mode Mode) coef128 {
 	}
 	r, _ := round128(neg, wide128{Lo: sum}, exp, class, mode, MinExp128)
 	return r
+}
+
+// roundFace128 returns (-1)^neg × (q + f) × 10^exp rounded in mode, for the
+// swamped addend of addSlow128, its only caller: q has exactly Precision128
+// digits, 10^(Precision128-1) <= q <= cMax128(), and f is a fraction whose
+// class, classBelowHalf or classAboveHalf, is known at face value. It is
+// the face-value exception to the rule that every rounded result passes
+// through round128; see "Face-value rounding" in the package documentation.
+//
+// Why it gives round128's bits. addSlow128 calls it with exp = xe - m (or
+// xe - m - 1 for the padded power of ten), where xe <= MaxExp128 is the
+// larger operand's exponent and ye = exp - s - 1 >= MinExp128 the smaller's,
+// s > 0, so MinExp128 < exp <= MaxExp128: exp is at or above the floor
+// MinExp128, and the adjusted exponent exp + Precision128 - 1 is at least
+// Emin128, so the value is not tiny and nothing underflows. q has Precision128
+// digits, so round128's place of the result is exp itself: it pads nothing,
+// discards no digit of q, and its class is the caller's. Its decision is
+// then roundUp(class, mode, neg, odd(q)), the one row of the five-mode
+// table this function takes; class is never classHalf, so the tie rule is
+// never reached. An increment of cMax128() carries to 10^Precision128, which
+// round128 encodes as 10^(Precision128-1) one place up, and that place above
+// MaxExp128 overflows to overflow128's result. Every other step of round128 (the
+// clamp, the digit count, the shift) leaves such a value unchanged.
+// TestRoundFaceValue drives every bound here in every mode against the
+// reference, TestSwampedAdd the classes around the swamping gap, and the
+// oracle's far regime reaches it in every mode.
+func roundFace128(neg bool, q coef128, exp int, class digitClass, mode Mode) coef128 {
+	if roundUp(class, mode, neg, cOdd128(q)) {
+		q = cInc128(q)
+		if cGtMax128(q) {
+			q, exp = cPow10128(Precision128-1), exp+1
+			if exp > MaxExp128 {
+				r, _ := overflow128(neg, mode)
+				return r
+			}
+		}
+	}
+	return pack128(neg, q, exp)
 }

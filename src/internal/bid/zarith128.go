@@ -283,11 +283,14 @@ func roundFinite128(neg bool, c coef128, exp int, mode Mode, floor int) (coef128
 
 // round128 is the general rounding routine of the package. Together with
 // its bounded-coefficient helper roundFinite128, it is the only way an
-// operation produces a rounded result under each of the five modes. Every rule of
-// "Exponent of a result", "Overflow", "Underflow and subnormal results"
-// and "Sign of a result" (for zeros) in the package documentation is
-// implemented by these routines and nowhere else. The width-independent
-// direction decision is roundUp in round.go.
+// operation produces a rounded result under each of the five modes, but
+// for the face-value rounding of add128's swamped addend, roundFace128 in
+// add_tmpl.go (see "Face-value rounding" in the package documentation),
+// which takes the one step of this routine that such an input reaches.
+// Every rule of "Exponent of a result", "Overflow", "Underflow and
+// subnormal results" and "Sign of a result" (for zeros) in the package
+// documentation is implemented by these routines and nowhere else. The
+// width-independent direction decision is roundUp in round.go.
 //
 // The input is the exact value
 //
@@ -324,13 +327,14 @@ func roundFinite128(neg bool, c coef128, exp int, mode Mode, floor int) (coef128
 //     which is how Round128's sticky bit means "p + ε for an arbitrarily
 //     small ε > 0" ("Rounding from exact parts"). Among the operations
 //     only add128 does, for an operand so far below the other that it is a
-//     fraction f of one unit with 0 < f < 1/10: it passes p with exactly
+//     fraction f of one unit with 0 < f < 1/10: it rounds p with exactly
 //     Precision128 digits, so that nothing is padded, and the class that f
-//     or 1 - f truly has, classBelowHalf or classAboveHalf. Every other
-//     operation keeps a round digit. A p of zero
-//     with a non-zero class is a value below 10^exp, and a caller meaning
-//     "arbitrarily small" passes exp <= MinExp128 with it, as roundParts128
-//     does, so that it rounds at MinExp128.
+//     or 1 - f truly has, classBelowHalf or classAboveHalf, through
+//     roundFace128, which gives this routine's result for that input. Every
+//     other operation keeps a round digit. A p of zero with a non-zero
+//     class is a value below 10^exp, and a caller meaning "arbitrarily
+//     small" passes exp <= MinExp128 with it, as roundParts128 does, so that it
+//     rounds at MinExp128.
 //
 // The result exponent x is exp for an exact value, raised when p has more
 // than Precision128 digits, when exp is below floor, or when exp is above

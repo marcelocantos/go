@@ -160,8 +160,8 @@ func addSlowW(x, y coefW, mode Mode) coefW {
 		// X; if the gap exceeds m by more than the digits of a non-zero y,
 		// y is a fraction f of one unit of X with 0 < f < 1/10, and the sum
 		// is X + f or (X - 1) + (1 - f). Their classes are then known, below
-		// a half and above it, so roundW may take them at face value with a
-		// coefficient of PrecisionW digits (see its comment): it drops no
+		// a half and above it, and roundFaceW rounds them at face value with
+		// a coefficient of PrecisionW digits (see its comment): it drops no
 		// digit and divides nothing. X - 1 keeps PrecisionW digits unless X
 		// is 10^(PrecisionW-1), whose difference would need padding, which a
 		// face-value class does not survive. That X is taken one place
@@ -186,8 +186,7 @@ func addSlowW(x, y coefW, mode Mode) coefW {
 				p, _ = cSubW(p, cPow10W(0))
 			}
 			if s > 0 && (s >= PrecisionW || cCmpW(yc, cPow10W(s)) < 0) {
-				r, _ := roundW(xneg, wideW{Lo: p}, xe-m, class, mode, MinExpW)
-				return r
+				return roundFaceW(xneg, p, xe-m, class, mode)
 			}
 		}
 		k := min(gap, addDigitsW-dx)
@@ -221,4 +220,42 @@ func addSlowW(x, y coefW, mode Mode) coefW {
 	}
 	r, _ := roundW(neg, wideW{Lo: sum}, exp, class, mode, MinExpW)
 	return r
+}
+
+// roundFaceW returns (-1)^neg × (q + f) × 10^exp rounded in mode, for the
+// swamped addend of addSlowW, its only caller: q has exactly PrecisionW
+// digits, 10^(PrecisionW-1) <= q <= cMaxW(), and f is a fraction whose
+// class, classBelowHalf or classAboveHalf, is known at face value. It is
+// the face-value exception to the rule that every rounded result passes
+// through roundW; see "Face-value rounding" in the package documentation.
+//
+// Why it gives roundW's bits. addSlowW calls it with exp = xe - m (or
+// xe - m - 1 for the padded power of ten), where xe <= MaxExpW is the
+// larger operand's exponent and ye = exp - s - 1 >= MinExpW the smaller's,
+// s > 0, so MinExpW < exp <= MaxExpW: exp is at or above the floor
+// MinExpW, and the adjusted exponent exp + PrecisionW - 1 is at least
+// EminW, so the value is not tiny and nothing underflows. q has PrecisionW
+// digits, so roundW's place of the result is exp itself: it pads nothing,
+// discards no digit of q, and its class is the caller's. Its decision is
+// then roundUp(class, mode, neg, odd(q)), the one row of the five-mode
+// table this function takes; class is never classHalf, so the tie rule is
+// never reached. An increment of cMaxW() carries to 10^PrecisionW, which
+// roundW encodes as 10^(PrecisionW-1) one place up, and that place above
+// MaxExpW overflows to overflowW's result. Every other step of roundW (the
+// clamp, the digit count, the shift) leaves such a value unchanged.
+// TestRoundFaceValue drives every bound here in every mode against the
+// reference, TestSwampedAdd the classes around the swamping gap, and the
+// oracle's far regime reaches it in every mode.
+func roundFaceW(neg bool, q coefW, exp int, class digitClass, mode Mode) coefW {
+	if roundUp(class, mode, neg, cOddW(q)) {
+		q = cIncW(q)
+		if cGtMaxW(q) {
+			q, exp = cPow10W(PrecisionW-1), exp+1
+			if exp > MaxExpW {
+				r, _ := overflowW(neg, mode)
+				return r
+			}
+		}
+	}
+	return packW(neg, q, exp)
 }
