@@ -136,3 +136,12 @@ var (
 	DivPow10Recip128   = divPow10Recip128
 	RecipTrunc10tab128 = recipTrunc10tab128
 )
+
+// The binary-to-decimal fast path (fromfloat_fast.go).
+var (
+	DivPow5Fast = divPow5Fast
+	MulPow5Fast = mulPow5Fast
+	Pow5DivTab  = pow5DivTab
+	Pow5Len     = pow5Len
+	Pow5MulTab  = pow5MulTab
+)

@@ -61,13 +61,21 @@ func fromFloat128(kind Kind, neg bool, m uint64, e int, mode Mode) coef128 {
 		// bits.Len64(m) + e > 128, so e >= 76, and k = t - Precision128 with
 		// t <= log10(2^(53+e)) < 0.302 × (53 + e), which is below e + 16
 		// for every e >= 0 and so below e + Precision128.
+		// divPow5Fast (fromfloat_fast.go) proves the quotient or refuses it.
 		k := -s
-		var x floatNat
-		x.setShl(m, e-k)
-		if x.divPow5(k) {
-			class = classBelowHalf
+		if fq, sticky, ok := divPow5Fast(m, e-k, k); ok {
+			q = fq
+			if sticky {
+				class = classBelowHalf
+			}
+		} else {
+			var x floatNat
+			x.setShl(m, e-k)
+			if x.divPow5(k) {
+				class = classBelowHalf
+			}
+			q = x.lo128()
 		}
-		q = x.lo128()
 		exp = k
 	case -e <= s:
 		// v = m × 5^(-e) × 10^e exactly, and m × 5^(-e) <= v × 10^s fits a
@@ -82,9 +90,14 @@ func fromFloat128(kind Kind, neg bool, m uint64, e int, mode Mode) coef128 {
 	default:
 		// v × 10^s = m × 5^s / 2^r with r > 0 and an odd numerator: not an
 		// integer, so the sticky bit is set and q is the exact quotient.
-		var x floatNat
-		x.setMulPow5(m, s)
-		q = x.shr128(-e - s)
+		// mulPow5Fast (fromfloat_fast.go) proves the quotient or refuses it.
+		if fq, ok := mulPow5Fast(m, s, -e-s); ok {
+			q = fq
+		} else {
+			var x floatNat
+			x.setMulPow5(m, s)
+			q = x.shr128(-e - s)
+		}
 		exp = -s
 		class = classBelowHalf
 	}

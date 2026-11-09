@@ -68,6 +68,12 @@ import "math/bits"
 // largest at the ends of the binary range. The ns/op for both are in
 // BenchmarkFloatTo.
 //
+// In front of both inexact cases sits a fast path (fromfloat_fast.go): one
+// multiply by a 128-bit approximation of 5^s or 5^-k from a table, whose
+// quotient is used only when an interval argument proves it equal to the
+// exact one, and the exact computation above otherwise. It changes the cost
+// of a conversion, never its result.
+//
 // # Why the tie and sticky decisions are exact
 //
 // Every quantity above is an integer computed in full: no value is
