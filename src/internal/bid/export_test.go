@@ -114,6 +114,10 @@ func Recip10tab128(k int) (m Uint128, s uint) {
 	return recip10tab128[k].m, uint(recip10tab128[k].s)
 }
 
+// RecipTrunc10tab128 returns ⌊(2^128 - 1) / 10^k⌋ from entry k of the
+// 128-bit reciprocal table, the reciprocal of divPow10Recip128.
+func RecipTrunc10tab128(k int) Uint128 { return recip10tab128[k].t }
+
 // Methods.
 
 func (c DigitClass) WithSticky(sticky bool) DigitClass { return c.withSticky(sticky) }
@@ -132,10 +136,7 @@ func (x *FloatNat) Len() int { return x.n }
 func (x *FloatNat) Words() []uint64 { return x.w[:] }
 
 // The reciprocal division by powers of ten (recip128.go).
-var (
-	DivPow10Recip128   = divPow10Recip128
-	RecipTrunc10tab128 = recipTrunc10tab128
-)
+var DivPow10Recip128 = divPow10Recip128
 
 // The binary-to-decimal fast path (fromfloat_fast.go).
 var (

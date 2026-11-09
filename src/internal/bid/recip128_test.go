@@ -15,21 +15,6 @@ import (
 // math/big. The oracle's powers of ten and reciprocals come from big.Int,
 // not from the package's tables.
 
-// TestRecip128Table recomputes the reciprocal tables.
-func TestRecip128Table(t *testing.T) {
-	top := new(big.Int).Lsh(big.NewInt(1), 128)
-	top.Sub(top, big.NewInt(1))
-	if len(bid.RecipTrunc10tab128) != len(bid.Pow10tab128) {
-		t.Fatalf("len(bid.RecipTrunc10tab128) = %d, want %d", len(bid.RecipTrunc10tab128), len(bid.Pow10tab128))
-	}
-	for k := range bid.RecipTrunc10tab128 {
-		want := new(big.Int).Quo(top, bigPow10(k))
-		if got := bigOf(bid.RecipTrunc10tab128[k]); got.Cmp(want) != 0 {
-			t.Errorf("bid.RecipTrunc10tab128[%d] = %#x, want %#x", k, got, want)
-		}
-	}
-}
-
 // recip128Inputs returns, for the power 10^k, the values the reciprocal
 // division is most likely to get wrong: each side of multiples j·10^k for
 // small, random and extreme j, the ends of the type and of the coefficient

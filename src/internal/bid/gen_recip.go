@@ -4,14 +4,15 @@
 
 //go:build ignore
 
-// gen_recip.go writes reciptab.go: the reciprocals and inverses of powers of
-// ten and five used by the division-free digit arithmetic of recip128.go and
+// gen_recip.go writes reciptab.go: the inverses of powers of five used by
+// the exact division of recip128.go, and the powers of five of
 // the binary-to-decimal fast path of fromfloat_fast.go. Run it from this
 // directory with
 //
 //	go run gen_recip.go
 //
-// TestRecip128Table, TestDivExactPow10 and TestPow5Approx recompute the
+// The reciprocals of powers of ten are in zpow10.go, written by gen_arith.go.
+// TestDivExactPow10 and TestPow5Approx recompute the
 // tables, or check every entry through its results, with math/big.
 package main
 
@@ -55,13 +56,6 @@ package bid
 	pow := func(base, k int) *big.Int {
 		return new(big.Int).Exp(big.NewInt(int64(base)), big.NewInt(int64(k)), nil)
 	}
-
-	b.WriteString("// recipTrunc10tab128[k] is ⌊(2^128 - 1) / 10^k⌋; see divPow10Recip128.\n")
-	fmt.Fprintf(&b, "var recipTrunc10tab128 = [%d]Uint128{\n", pow10Max+1)
-	for k := 0; k <= pow10Max; k++ {
-		fmt.Fprintf(&b, "\t%s, // %d\n", word(new(big.Int).Quo(top, pow(10, k))), k)
-	}
-	b.WriteString("}\n\n")
 
 	b.WriteString("// divExact5tab128[k] is the inverse of 5^k modulo 2^128 and ⌊(2^128 - 1) /\n")
 	b.WriteString("// 5^k⌋; see divExactPow10Recip128.\n")

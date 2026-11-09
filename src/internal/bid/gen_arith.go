@@ -149,19 +149,21 @@ package bid
 	// The reciprocals of the powers of ten, as recip.go defines them: for
 	// a width of n bits and 10^k with ℓ = bitlen(10^k) - 1, the shift is
 	// s = max(ℓ - recipSlack, 0) and the multiplier m = ⌊2^(n+s) / 10^k⌋.
-	// 10^0 has no reciprocal below 2^n, and its entry stays zero.
+	// 10^0 has no such reciprocal below 2^n, and its m and s stay zero.
+	// The 128-bit entries also hold t = ⌊(2^128 - 1) / 10^k⌋, the
+	// reciprocal of divPow10Recip128 in recip128.go, for every k from 0.
 	const recipSlack = 6
-	recip := func(name, typ string, bits uint, entry func(m *big.Int, s uint) string) {
+	recip := func(name, typ string, bits uint, entry func(m *big.Int, s uint, p *big.Int) string) {
 		limit := new(big.Int).Lsh(big.NewInt(1), bits)
 		var lines []string
 		for p := big.NewInt(1); p.Cmp(limit) < 0; p = new(big.Int).Mul(p, big.NewInt(10)) {
 			if p.Cmp(big.NewInt(1)) == 0 {
-				lines = append(lines, "{}")
+				lines = append(lines, entry(nil, 0, p))
 				continue
 			}
 			s := uint(max(p.BitLen()-1-recipSlack, 0))
 			m := new(big.Int).Quo(new(big.Int).Lsh(big.NewInt(1), bits+s), p)
-			lines = append(lines, entry(m, s))
+			lines = append(lines, entry(m, s, p))
 		}
 		fmt.Fprintf(&sb, "\n// %s[k] is the reciprocal of 10^k (see %s), for k in [1, %d].\nvar %s = [%d]%s{\n", name, typ, len(lines)-1, name, len(lines), typ)
 		for _, l := range lines {
@@ -169,12 +171,20 @@ package bid
 		}
 		sb.WriteString("}\n")
 	}
-	recip("recip10tab64", "recip64", 64, func(m *big.Int, s uint) string {
+	recip("recip10tab64", "recip64", 64, func(m *big.Int, s uint, p *big.Int) string {
+		if m == nil {
+			return "{}"
+		}
 		return fmt.Sprintf("{m: %#016x, s: %d}", words(m)[0], s)
 	})
-	recip("recip10tab128", "recip128", 128, func(m *big.Int, s uint) string {
+	recip("recip10tab128", "recip128", 128, func(m *big.Int, s uint, p *big.Int) string {
+		top := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 128), big.NewInt(1))
+		t := words(new(big.Int).Quo(top, p))
+		if m == nil {
+			return fmt.Sprintf("{t: Uint128{Hi: %#016x, Lo: %#016x}}", t[1], t[0])
+		}
 		w := words(m)
-		return fmt.Sprintf("{m: Uint128{Hi: %#016x, Lo: %#016x}, s: %d}", w[1], w[0], s)
+		return fmt.Sprintf("{m: Uint128{Hi: %#016x, Lo: %#016x}, t: Uint128{Hi: %#016x, Lo: %#016x}, s: %d}", w[1], w[0], t[1], t[0], s)
 	})
 	return sb.String()
 }

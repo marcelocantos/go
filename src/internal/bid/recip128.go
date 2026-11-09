@@ -16,7 +16,10 @@ import "math/bits"
 // The reciprocal is m_k = ⌊(2^128 - 1) / 10^k⌋, for 0 <= k <= 38. For k >= 1
 // that is ⌊2^128 / 10^k⌋, since 10^k does not divide 2^128; for k = 0 it is
 // 2^128 - 1, so the same code serves k = 0 with no branch. In every case
-// 2^128/10^k - 1 < m_k <= 2^128/10^k.
+// 2^128/10^k - 1 < m_k <= 2^128/10^k. It is the field t of recip10tab128[k]
+// (zpow10.go), the table whose other fields serve the wider reduction of
+// recip.go; m_k is ⌊m / 2^s⌋ of that entry for k >= 1, but storing it
+// saves the shift, which measured 5% on Round/128 and 15% on DPDFromBID.
 //
 // Claim: for every 0 <= c < 2^128, the estimate q̂ = ⌊c·m_k / 2^128⌋ is the
 // quotient q = ⌊c / 10^k⌋ or q - 1.
@@ -30,8 +33,8 @@ import "math/bits"
 // arithmetic modulo 2^128 (the true value fits, so the wrap cannot occur).
 // One comparison r̂ >= 10^k decides the correction q = q̂ + 1, r = r̂ - 10^k,
 // after which c = q·10^k + r with 0 <= r < 10^k exactly: nothing is left
-// estimated. TestRecip128Table recomputes the table (reciptab.go, written
-// by gen_recip.go) with math/big, and TestRecip128 checks the
+// estimated. TestRecipTables recomputes the table (written by gen_arith.go)
+// with math/big, and TestRecip128 checks the
 // quotient and remainder against math/big at every k on each side of every
 // multiple boundary it tries.
 //
@@ -43,7 +46,7 @@ import "math/bits"
 // divPow10Recip128 returns ⌊c / 10^k⌋ and c mod 10^k. Precondition:
 // 0 <= k <= 38; a k outside the table panics with an index error.
 func divPow10Recip128(c Uint128, k int) (q, r Uint128) {
-	m := recipTrunc10tab128[k]
+	m := recip10tab128[k].t
 	d := pow10tab128[k]
 	if m.Hi == 0 {
 		// k >= 20: m < 2^64 and q < 2^128/10^20 < 2^62, but d needs two

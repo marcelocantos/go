@@ -56,6 +56,15 @@ func TestRecipTables(t *testing.T) {
 			}
 		}
 	}
+	// The plain reciprocal of recip128.go, ⌊(2^128 - 1) / 10^k⌋, from k = 0.
+	top := new(big.Int).Lsh(bigOne, 128)
+	top.Sub(top, bigOne)
+	for k := range len(bid.Pow10tab128) {
+		want := new(big.Int).Quo(top, bigPow10(k))
+		if got := bigOf(bid.RecipTrunc10tab128(k)); got.Cmp(want) != 0 {
+			t.Errorf("t of the 128-bit reciprocal of 10^%d = %#x, want %#x", k, got, want)
+		}
+	}
 }
 
 // recipValues returns the dividends that TestRecipDivPow10 tries for a

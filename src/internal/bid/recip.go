@@ -13,7 +13,8 @@ import "math/bits"
 // which is a single instruction only on amd64 and a software loop
 // elsewhere. A division by a constant is instead a multiplication by its
 // reciprocal and a shift, and there are only 19 and 38 constants. The
-// tables recip10tab64 and recip10tab128 in zpow10.go hold them; gen_arith.go
+// tables recip10tab64 and recip10tab128 in zpow10.go hold them (the 128-bit
+// entries also hold the plainer reciprocal of recip128.go); gen_arith.go
 // computes them with math/big, and TestRecipTables recomputes them.
 //
 // The method, for an n-bit word (n = 64 or 128) and d = 10^k, k >= 1. Let
@@ -54,6 +55,7 @@ type recip64 struct {
 
 type recip128 struct {
 	m Uint128
+	t Uint128 // ⌊(2^128 - 1) / 10^k⌋, for divPow10Recip128 (recip128.go)
 	s uint8
 }
 
