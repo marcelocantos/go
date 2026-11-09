@@ -89,6 +89,7 @@ var (
 	U128Len         = u128Len
 	U128Lt          = u128Lt
 	U128Mul         = u128Mul
+	U128MulFits     = u128MulFits
 	U128Mul64       = u128Mul64
 	U128Shl         = u128Shl
 	U128Shr         = u128Shr

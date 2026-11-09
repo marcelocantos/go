@@ -132,6 +132,25 @@ func u128Mul(a, b Uint128) Uint256 {
 	return r
 }
 
+// u128MulFits returns a × b and true when the product is below 2^128, and
+// false otherwise. A product below 2^128 has a factor below 2^64 (two
+// factors of 2^64 or more make at least 2^128), so after ordering the
+// factors it is a.Lo × b, two word products: a.Lo·b.Lo + a.Lo·b.Hi·2^64,
+// which fits exactly when the high word of a.Lo·b.Hi and the carry into
+// it are zero.
+func u128MulFits(a, b Uint128) (Uint128, bool) {
+	if a.Hi != 0 {
+		if b.Hi != 0 {
+			return Uint128{}, false
+		}
+		a, b = b, a
+	}
+	h0, l0 := bits.Mul64(a.Lo, b.Lo)
+	h1, l1 := bits.Mul64(a.Lo, b.Hi)
+	hi, c := bits.Add64(h0, l1, 0)
+	return Uint128{Hi: hi, Lo: l0}, h1|c == 0
+}
+
 // u128Div64 returns the quotient and remainder of a / d. The quotient is a
 // full 128 bits: a / d < 2^128 always, so there is no precondition beyond
 // d != 0. It panics with an integer divide error if d is zero.

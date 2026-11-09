@@ -62,11 +62,11 @@ func cDigits128(c coef128) int {
 // cMulPow10128 returns c × 10^k. Precondition: 0 <= k <= 38 and the product
 // fits 128 bits; a product that does not panics rather than wrap.
 func cMulPow10128(c coef128, k int) coef128 {
-	p := u128Mul(c, pow10tab128[k])
-	if p.Hi != (Uint128{}) {
+	p, ok := u128MulFits(c, pow10tab128[k])
+	if !ok {
 		panic("internal/bid: coefficient overflow")
 	}
-	return p.Lo
+	return p
 }
 
 // cDivPow10128 returns the quotient and remainder of c / 10^k, so that
@@ -213,11 +213,11 @@ func cScale128(c coef128, k int) (r coef128, overflow bool) {
 	if k >= len(pow10tab128) {
 		return coef128{}, c != coef128{}
 	}
-	w := u128Mul(c, pow10tab128[k])
-	if w.Hi != (Uint128{}) {
+	w, ok := u128MulFits(c, pow10tab128[k])
+	if !ok {
 		return coef128{}, true
 	}
-	return w.Lo, false
+	return w, false
 }
 
 // cScaleFull128 is cScale128 for a 256-bit value. If both factors exceed
