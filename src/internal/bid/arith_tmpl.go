@@ -432,9 +432,12 @@ func roundW(neg bool, p wideW, exp int, class digitClass, mode Mode, floor int) 
 	// digit, and tiny whether v is below 10^EminW. For p = 0, v is below
 	// 10^exp, which is what a = exp - 1 says. A p whose high half is zero,
 	// which every sum is, has the digits of its low half, counted in the
-	// coefficient type by a helper that inlines.
+	// coefficient type by a helper that inlines, and is reduced below by
+	// cShiftW, which cReduceClassW would call for it after a test of its
+	// own.
 	var d int
-	if cIsZeroW(p.Hi) {
+	narrow := cIsZeroW(p.Hi)
+	if narrow {
 		d = cDigitsW(p.Lo)
 	} else {
 		d = cLenFullW(p)
@@ -451,7 +454,11 @@ func roundW(neg bool, p wideW, exp int, class digitClass, mode Mode, floor int) 
 	var q coefW
 	if s < 0 {
 		var dropped digitClass
-		q, dropped = cReduceClassW(p, -s)
+		if narrow {
+			q, dropped = cShiftW(p.Lo, -s)
+		} else {
+			q, dropped = cReduceClassW(p, -s)
+		}
 		class = dropped.withSticky(class != classZero)
 	} else {
 		q = cLoW(p)

@@ -423,9 +423,12 @@ func round128(neg bool, p wide128, exp int, class digitClass, mode Mode, floor i
 	// digit, and tiny whether v is below 10^Emin128. For p = 0, v is below
 	// 10^exp, which is what a = exp - 1 says. A p whose high half is zero,
 	// which every sum is, has the digits of its low half, counted in the
-	// coefficient type by a helper that inlines.
+	// coefficient type by a helper that inlines, and is reduced below by
+	// cShift128, which cReduceClass128 would call for it after a test of its
+	// own.
 	var d int
-	if cIsZero128(p.Hi) {
+	narrow := cIsZero128(p.Hi)
+	if narrow {
 		d = cDigits128(p.Lo)
 	} else {
 		d = cLenFull128(p)
@@ -442,7 +445,11 @@ func round128(neg bool, p wide128, exp int, class digitClass, mode Mode, floor i
 	var q coef128
 	if s < 0 {
 		var dropped digitClass
-		q, dropped = cReduceClass128(p, -s)
+		if narrow {
+			q, dropped = cShift128(p.Lo, -s)
+		} else {
+			q, dropped = cReduceClass128(p, -s)
+		}
 		class = dropped.withSticky(class != classZero)
 	} else {
 		q = cLo128(p)

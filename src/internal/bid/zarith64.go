@@ -423,9 +423,12 @@ func round64(neg bool, p wide64, exp int, class digitClass, mode Mode, floor int
 	// digit, and tiny whether v is below 10^Emin64. For p = 0, v is below
 	// 10^exp, which is what a = exp - 1 says. A p whose high half is zero,
 	// which every sum is, has the digits of its low half, counted in the
-	// coefficient type by a helper that inlines.
+	// coefficient type by a helper that inlines, and is reduced below by
+	// cShift64, which cReduceClass64 would call for it after a test of its
+	// own.
 	var d int
-	if cIsZero64(p.Hi) {
+	narrow := cIsZero64(p.Hi)
+	if narrow {
 		d = cDigits64(p.Lo)
 	} else {
 		d = cLenFull64(p)
@@ -442,7 +445,11 @@ func round64(neg bool, p wide64, exp int, class digitClass, mode Mode, floor int
 	var q coef64
 	if s < 0 {
 		var dropped digitClass
-		q, dropped = cReduceClass64(p, -s)
+		if narrow {
+			q, dropped = cShift64(p.Lo, -s)
+		} else {
+			q, dropped = cReduceClass64(p, -s)
+		}
 		class = dropped.withSticky(class != classZero)
 	} else {
 		q = cLo64(p)
