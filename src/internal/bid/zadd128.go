@@ -104,6 +104,36 @@ func add128(x, y coef128, mode Mode) coef128 {
 	// A zero x has nothing to scale: the sum is y exactly, at the preferred
 	// exponent ye, and shifting y would only lose digits of it.
 	if gap := xe - ye; gap > 0 && !cIsZero128(xc) {
+		// A swamped y. Scaled by m places, x has exactly Precision128 digits
+		// X; if the gap exceeds m by more than the digits of a non-zero y,
+		// y is a fraction f of one unit of X with 0 < f < 1/10, and the sum
+		// is X + f or (X - 1) + (1 - f). Their classes are then known, below
+		// a half and above it, so round128 may take them at face value with a
+		// coefficient of Precision128 digits (see its comment): it drops no
+		// digit and divides nothing. X - 1 keeps Precision128 digits unless X
+		// is 10^(Precision128-1), whose difference would need padding, which a
+		// face-value class does not survive. That X is taken one place
+		// further instead, to 10^Precision128, if the gap leaves f below 1/10
+		// there too, and the difference is 10^Precision128 - 1 and 1 - 10f;
+		// otherwise it takes the general path.
+		if !cIsZero128(yc) {
+			m, dy := Precision128-cDigits128(xc), cDigits128(yc)
+			if gap-m > dy {
+				p, class := cMulPow10128(xc, m), classBelowHalf
+				if xneg != yneg {
+					class = classAboveHalf
+					if cCmp128(p, cPow10128(Precision128-1)) == 0 {
+						m++
+						p = cPow10128(Precision128)
+					}
+					p, _ = cSub128(p, cPow10128(0))
+				}
+				if gap-m > dy {
+					r, _ := round128(xneg, wide128{Lo: p}, xe-m, class, mode, MinExp128)
+					return r
+				}
+			}
+		}
 		k := min(gap, addDigits128-cDigits128(xc))
 		xc = cMulPow10128(xc, k)
 		if k < gap {

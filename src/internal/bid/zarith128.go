@@ -299,10 +299,14 @@ func roundFinite128(neg bool, c coef128, exp int, mode Mode, floor int) (coef128
 //   - If class is not classZero and p has Precision128 digits or fewer, no
 //     digit of p is discarded and class alone decides the rounding, taken
 //     at face value: classHalf is a tie and classAboveHalf rounds up in the
-//     nearest modes. Only roundParts128 passes such a class, and it passes
-//     classBelowHalf, which is how Round128's sticky bit means "p + ε for an
-//     arbitrarily small ε > 0" ("Rounding from exact parts"); an operation
-//     never does, since every operation keeps a round digit. A p of zero
+//     nearest modes. roundParts128 passes such a class, classBelowHalf,
+//     which is how Round128's sticky bit means "p + ε for an arbitrarily
+//     small ε > 0" ("Rounding from exact parts"). Among the operations
+//     only add128 does, for an operand so far below the other that it is a
+//     fraction f of one unit with 0 < f < 1/10: it passes p with exactly
+//     Precision128 digits, so that nothing is padded, and the class that f
+//     or 1 - f truly has, classBelowHalf or classAboveHalf. Every other
+//     operation keeps a round digit. A p of zero
 //     with a non-zero class is a value below 10^exp, and a caller meaning
 //     "arbitrarily small" passes exp <= MinExp128 with it, as roundParts128
 //     does, so that it rounds at MinExp128.

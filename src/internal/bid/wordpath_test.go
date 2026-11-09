@@ -7,11 +7,12 @@ package bid_test
 import (
 	"internal/bid"
 	"math/big"
+	"strings"
 	"testing"
 )
 
-// The word fast paths of addition, multiplication and quantize at their
-// bounds. Each fast path states
+// The word fast paths of addition, multiplication and quantize, and the
+// swamped-operand path of addition, at their bounds. Each fast path states
 // a bound in its comment; the operands here sit on both sides of it, in
 // both widths and in every mode, and the reference model decides every
 // result bit, quantum and sign of zero included.
@@ -121,5 +122,55 @@ func TestUnpackSplit(t *testing.T) {
 				check(dec64, bits{Lo: x | 3<<61})
 			}
 		}
+	}
+}
+
+// TestSwampedAdd checks the swamped-operand path of addition at its bound:
+// with x scaled by m places to exactly Precision digits, y is swamped when
+// the gap exceeds m by more than the digits of y. The gaps here put that
+// excess at the digits of y minus one, at them, one more and far beyond, for
+// coefficients of x that are powers of ten (whose difference takes one more
+// place, or the general path) and that are not, in both widths, both signs
+// of y and every mode.
+func TestSwampedAdd(t *testing.T) {
+	var k kernel
+	for _, f := range []*format{dec64, dec128} {
+		p := f.prec
+		pow := func(n int) string { return new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(n)), nil).String() }
+		nines := func(n int) string { return strings.Repeat("9", n) }
+		xcs := []string{"1", "5", "123456789", pow(p - 1), pow(p - 1)[:p-1] + "1", nines(p), nines(p - 1)}
+		ycs := []string{"1", "5", "49", "50", "51", "123456789", pow(p - 1), nines(p)}
+		n := 0
+		for _, xc := range xcs {
+			dx := len(xc)
+			m := p - dx
+			for _, yc := range ycs {
+				dy := len(yc)
+				for _, excess := range []int{dy - 1, dy, dy + 1, dy + 2, dy + 40} {
+					gap := m + excess
+					for _, xe := range []int{0, f.maxExp, f.minExp + gap} {
+						x, ok := wordOperand(f, false, xc, xe)
+						if !ok {
+							continue
+						}
+						for _, neg := range []bool{false, true} {
+							y, ok := wordOperand(f, neg, yc, xe-gap)
+							if !ok {
+								continue
+							}
+							for _, m := range allModes {
+								n++
+								for _, pair := range [][2]bits{{x, y}, {y, x}, {k.neg(f, x), k.neg(f, y)}} {
+									if got, want := k.add(f, pair[0], pair[1], m), f.add(pair[0], pair[1], m); got != want {
+										t.Fatalf("%s add(%s, %s, %s) = %s, want %s", f.name, f.format(pair[0]), f.format(pair[1]), modeName(m), f.format(got), f.format(want))
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		t.Logf("%s: %d swamped cases", f.name, n)
 	}
 }

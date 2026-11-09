@@ -108,6 +108,36 @@ func addW(x, y coefW, mode Mode) coefW {
 	// A zero x has nothing to scale: the sum is y exactly, at the preferred
 	// exponent ye, and shifting y would only lose digits of it.
 	if gap := xe - ye; gap > 0 && !cIsZeroW(xc) {
+		// A swamped y. Scaled by m places, x has exactly PrecisionW digits
+		// X; if the gap exceeds m by more than the digits of a non-zero y,
+		// y is a fraction f of one unit of X with 0 < f < 1/10, and the sum
+		// is X + f or (X - 1) + (1 - f). Their classes are then known, below
+		// a half and above it, so roundW may take them at face value with a
+		// coefficient of PrecisionW digits (see its comment): it drops no
+		// digit and divides nothing. X - 1 keeps PrecisionW digits unless X
+		// is 10^(PrecisionW-1), whose difference would need padding, which a
+		// face-value class does not survive. That X is taken one place
+		// further instead, to 10^PrecisionW, if the gap leaves f below 1/10
+		// there too, and the difference is 10^PrecisionW - 1 and 1 - 10f;
+		// otherwise it takes the general path.
+		if !cIsZeroW(yc) {
+			m, dy := PrecisionW-cDigitsW(xc), cDigitsW(yc)
+			if gap-m > dy {
+				p, class := cMulPow10W(xc, m), classBelowHalf
+				if xneg != yneg {
+					class = classAboveHalf
+					if cCmpW(p, cPow10W(PrecisionW-1)) == 0 {
+						m++
+						p = cPow10W(PrecisionW)
+					}
+					p, _ = cSubW(p, cPow10W(0))
+				}
+				if gap-m > dy {
+					r, _ := roundW(xneg, wideW{Lo: p}, xe-m, class, mode, MinExpW)
+					return r
+				}
+			}
+		}
 		k := min(gap, addDigitsW-cDigitsW(xc))
 		xc = cMulPow10W(xc, k)
 		if k < gap {
