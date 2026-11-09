@@ -4,14 +4,26 @@
 
 //go:build !amd64 && !arm64
 
-// The decimal128 comparisons on targets where the compiler calls the runtime
+// The decimal128 operators on targets where the compiler calls the runtime
 // for every operand (or, on linux/ppc64le, uses the hardware): the kernel's
-// inline front decides word operands of one quantum here. decimal128_inline.go
-// has the targets whose compiler decides those itself.
+// inline fronts decide the money cases here. decimal128_inline.go has the
+// targets whose compiler decides those itself.
 
 package runtime
 
 import "internal/bid"
+
+func dadd128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
+	return to128(bid.Add128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven))
+}
+
+func dsub128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
+	return to128(bid.Sub128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven))
+}
+
+func dmul128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
+	return to128(bid.Mul128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven))
+}
 
 func deq128(xhi, xlo, yhi, ylo uint64) bool {
 	return bid.Equal128(from128(xhi, xlo), from128(yhi, ylo))

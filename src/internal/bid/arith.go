@@ -53,6 +53,27 @@ func Mul128(x, y Uint128, mode Mode) Uint128 {
 	return mul128(x, y, mode)
 }
 
+// AddSlow128, SubSlow128 and MulSlow128 are Add128, Sub128 and Mul128
+// without the inline front of each (see "Inline fast paths" in the package
+// documentation), for a caller that has already decided the operands the
+// front decides: the runtime on targets where the compiler lowers the
+// decimal128 operators to integer fast paths, which accept every operand
+// pair that addSameQuantum128, subSameQuantum128 and mulShort128 accept.
+// The general paths take every operand, those included, so the result is
+// the same for every caller; only the cost of a test that cannot succeed is
+// left out.
+func AddSlow128(x, y Uint128, mode Mode) Uint128 {
+	return addSlow128(x, y, mode)
+}
+
+func SubSlow128(x, y Uint128, mode Mode) Uint128 {
+	return subSlow128(x, y, mode)
+}
+
+func MulSlow128(x, y Uint128, mode Mode) Uint128 {
+	return mulSlow128(x, y, mode)
+}
+
 // Div64 returns x / y rounded in mode (IEEE 754-2019 clause 5.4.1,
 // division), including the signed infinity for a finite non-zero x and a
 // zero y (clause 7.3).

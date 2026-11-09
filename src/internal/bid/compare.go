@@ -43,6 +43,25 @@ func LessEqual128(x, y Uint128) bool {
 	return lessEqual128(x, y)
 }
 
+// EqualSlow128, LessSlow128 and LessEqualSlow128 are Equal128, Less128 and
+// LessEqual128 without the inline front of each, for the runtime where the
+// compiler has already compared the operands that sameQuantumKeys128
+// accepts (word operands of one sign and one exponent); see AddSlow128.
+func EqualSlow128(x, y Uint128) bool {
+	c, ok := quietCmpSlow128(x, y)
+	return ok && c == 0
+}
+
+func LessSlow128(x, y Uint128) bool {
+	c, ok := quietCmpSlow128(x, y)
+	return ok && c < 0
+}
+
+func LessEqualSlow128(x, y Uint128) bool {
+	c, ok := quietCmpSlow128(x, y)
+	return ok && c <= 0
+}
+
 // Compare64 returns the ordering of x and y as -1, 0 or +1 with ok = true,
 // or 0 with ok = false when they are unordered because at least one is a
 // NaN (IEEE 754-2019 clause 5.11). Compare64 is the quiet comparison; the

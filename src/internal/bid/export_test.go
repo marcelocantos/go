@@ -110,11 +110,9 @@ var (
 var (
 	AddSameQuantum128  = addSameQuantum128
 	AddSameQuantum64   = addSameQuantum64
-	AddSlow128         = addSlow128
 	AddSlow64          = addSlow64
 	MulShort128        = mulShort128
 	MulShort64         = mulShort64
-	MulSlow128         = mulSlow128
 	MulSlow64          = mulSlow64
 	QuantizeSame128    = quantizeSame128
 	QuantizeSame64     = quantizeSame64
@@ -126,7 +124,6 @@ var (
 	SameQuantumKeys64  = sameQuantumKeys64
 	SubSameQuantum128  = subSameQuantum128
 	SubSameQuantum64   = subSameQuantum64
-	SubSlow128         = subSlow128
 	SubSlow64          = subSlow64
 )
 

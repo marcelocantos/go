@@ -437,6 +437,17 @@ func benchRowList() benchRows {
 		func(x, y bits) int { c, _ := bid.Compare128(x, y); return c },
 		func(x, y float64) int { return cmp.Compare(x, y) })
 	reg2(&rs, "TotalOrder", "mixed", mixed, bid.TotalOrder64, bid.TotalOrder128, (func(x, y float64) bool)(nil))
+
+	// The general paths without their inline fronts, which the runtime calls
+	// on the targets whose compiler decides the fronts' operands itself. On
+	// the same operands as the fronted rows above, so the difference between
+	// a pair of rows is the cost of the front.
+	reg2(&rs, "AddSlow", "mixed", bo.addMix, (func(x, y uint64) uint64)(nil), func(x, y bits) bits { return bid.AddSlow128(x, y, rne) }, (func(x, y float64) float64)(nil))
+	reg2(&rs, "SubSlow", "mixed", bo.addMix, (func(x, y uint64) uint64)(nil), func(x, y bits) bits { return bid.SubSlow128(x, y, rne) }, (func(x, y float64) float64)(nil))
+	reg2(&rs, "MulSlow", "mixed", mixed, (func(x, y uint64) uint64)(nil), func(x, y bits) bits { return bid.MulSlow128(x, y, rne) }, (func(x, y float64) float64)(nil))
+	reg2(&rs, "EqualSlow", "mixed", mixed, (func(x, y uint64) bool)(nil), bid.EqualSlow128, (func(x, y float64) bool)(nil))
+	reg2(&rs, "LessSlow", "mixed", mixed, (func(x, y uint64) bool)(nil), bid.LessSlow128, (func(x, y float64) bool)(nil))
+	reg2(&rs, "LessEqualSlow", "mixed", mixed, (func(x, y uint64) bool)(nil), bid.LessEqualSlow128, (func(x, y float64) bool)(nil))
 	reg1(&rs, "Key", "mixed", mixed, bid.Key64, bid.Key128, (func(float64) uint64)(nil))
 
 	// Encoding.

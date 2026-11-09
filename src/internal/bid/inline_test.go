@@ -184,6 +184,9 @@ func TestInlinePaths(t *testing.T) {
 				if bid.Equal128(x, y) != (ok && c == 0) || bid.Less128(x, y) != (ok && c < 0) || bid.LessEqual128(x, y) != (ok && c <= 0) {
 					t.Fatalf("Equal128, Less128 or LessEqual128(%#x, %#x) disagrees with the general path's %d, %v", x, y, c, ok)
 				}
+				if bid.EqualSlow128(x, y) != (ok && c == 0) || bid.LessSlow128(x, y) != (ok && c < 0) || bid.LessEqualSlow128(x, y) != (ok && c <= 0) {
+					t.Fatalf("EqualSlow128, LessSlow128 or LessEqualSlow128(%#x, %#x) disagrees with the general path's %d, %v", x, y, c, ok)
+				}
 				kx, ky, kok := bid.SameQuantumKeys128(x, y)
 				if kok {
 					kc := 0

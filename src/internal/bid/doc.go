@@ -1799,13 +1799,12 @@
 // refuses a second call, 11 to 16 percent on the mixed rows, so they, Min and
 // Max call quietCmpSlowW directly.
 //
-// The compiler's own fast path for the decimal128 comparisons on amd64 and
-// arm64 accepts every operand pair that the comparison fronts accept, so the
-// runtime there compares the operands it is given with Compare128, which has
-// no front (runtime/decimal128_inline.go). Its + - and * keep the fronts of
-// Add128, Sub128 and Mul128: calling addSlowW and the others directly would
-// take exported names, and each exported name a BenchmarkKernel row and a
-// retaken baseline.
+// The compiler's own integer fast paths for the decimal128 operators on
+// amd64 and arm64 accept every operand pair that these fronts accept, so the
+// runtime there calls AddSlow128, SubSlow128, MulSlow128, EqualSlow128,
+// LessSlow128 and LessEqualSlow128, the general paths without the front, and
+// does not test the operands a second time (runtime/decimal128_inline.go).
+// The general paths take every operand, so no result depends on that.
 //
 // # Face-value rounding
 //

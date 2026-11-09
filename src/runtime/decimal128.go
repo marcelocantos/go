@@ -4,8 +4,8 @@
 
 // Soft-decimal entry points for decimal128; see decimal64.go. A decimal128
 // passes as the two uint64 halves of its BID bit pattern, high first. The
-// comparisons, which the compiler also decides inline on some targets, are
-// in decimal128_inline.go and decimal128_call.go.
+// operators that the compiler also lowers to integer fast paths, + - * and
+// the comparisons, are in decimal128_inline.go and decimal128_call.go.
 
 package runtime
 
@@ -13,21 +13,6 @@ import (
 	"internal/bid"
 	"unsafe"
 )
-
-func dadd128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
-	z := bid.Add128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven)
-	return to128(z)
-}
-
-func dsub128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
-	z := bid.Sub128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven)
-	return to128(z)
-}
-
-func dmul128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
-	z := bid.Mul128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven)
-	return to128(z)
-}
 
 func ddiv128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
 	z := bid.Div128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven)

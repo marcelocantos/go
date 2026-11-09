@@ -4,31 +4,40 @@
 
 //go:build amd64 || arm64
 
-// The decimal128 comparisons on the targets where the compiler compares word
-// operands itself (bidCompare in cmd/compile/internal/ssagen) and calls
-// these only for the operands it refuses: wider coefficients and the special
-// values. Its fast path accepts every pair that internal/bid's inline front
-// for Equal128, Less128 and LessEqual128 accepts (word operands of one sign
-// and one exponent), so these call Compare128, the general comparison, which
-// has no front, instead of testing the operands a second time. The result
-// does not depend on that: Compare128 takes every operand. decimal128_call.go
-// has the other targets.
+// The decimal128 operators that the compiler lowers to integer fast paths on
+// these targets (bidAddSub128, bidMul128 and bidCompare in
+// cmd/compile/internal/ssagen). The compiler calls these functions only for
+// operands its fast paths refuse, and those accept every operand that
+// internal/bid's inline fronts accept, so these call the kernel's general
+// paths directly instead of testing the operands a second time. The general
+// paths take every operand, so the result does not depend on that: a target
+// listed here whose compiler decided nothing would still compute correctly,
+// only more slowly. decimal128_call.go has the other targets.
 
 package runtime
 
 import "internal/bid"
 
+func dadd128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
+	return to128(bid.AddSlow128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven))
+}
+
+func dsub128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
+	return to128(bid.SubSlow128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven))
+}
+
+func dmul128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
+	return to128(bid.MulSlow128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven))
+}
+
 func deq128(xhi, xlo, yhi, ylo uint64) bool {
-	c, ok := bid.Compare128(from128(xhi, xlo), from128(yhi, ylo))
-	return ok && c == 0
+	return bid.EqualSlow128(from128(xhi, xlo), from128(yhi, ylo))
 }
 
 func dlt128(xhi, xlo, yhi, ylo uint64) bool {
-	c, ok := bid.Compare128(from128(xhi, xlo), from128(yhi, ylo))
-	return ok && c < 0
+	return bid.LessSlow128(from128(xhi, xlo), from128(yhi, ylo))
 }
 
 func dle128(xhi, xlo, yhi, ylo uint64) bool {
-	c, ok := bid.Compare128(from128(xhi, xlo), from128(yhi, ylo))
-	return ok && c <= 0
+	return bid.LessEqualSlow128(from128(xhi, xlo), from128(yhi, ylo))
 }
