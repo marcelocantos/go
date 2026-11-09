@@ -158,3 +158,18 @@ func divPow5Fast(m uint64, j, k int) (q Uint128, sticky, ok bool) {
 // pow5Exact is the largest k for which 5^k can divide a float64 significand:
 // 5^22 < 2^53 < 5^23.
 const pow5Exact = 22
+
+// mulPow5Exact returns m × 5^s, which must fit 128 bits; a product that does
+// not panics rather than truncates. It serves the exact case of the
+// conversion, where it does: there 5^s <= m × 5^s < 2^128, so s <= 55 and
+// pow5MulTab[s] is 5^s itself, and the product is one 64-by-128 multiply.
+func mulPow5Exact(m uint64, s int) Uint128 {
+	if pow5Len(s) > 128 {
+		panic(errQuotientOverflow)
+	}
+	p, hi := u128Mul64(pow5MulTab[s], m)
+	if hi != 0 {
+		panic(errQuotientOverflow)
+	}
+	return p
+}

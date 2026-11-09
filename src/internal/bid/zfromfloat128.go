@@ -83,9 +83,7 @@ func fromFloat128(kind Kind, neg bool, m uint64, e int, mode Mode) coef128 {
 		// exponent e is the one closest to the preferred exponent 0 among
 		// the exact value's encodings, and round128 drops digits only when
 		// there are more than Precision128 of them.
-		var x floatNat
-		x.setMulPow5(m, -e)
-		q = x.lo128()
+		q = mulPow5Exact(m, -e)
 		exp = e
 	default:
 		// v × 10^s = m × 5^s / 2^r with r > 0 and an odd numerator: not an
