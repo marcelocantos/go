@@ -103,9 +103,23 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 		if point > 0 && cap(dst)-len(dst) >= len(digits)+1 {
 			start := len(dst)
 			dst = dst[:start+len(digits)+1]
-			copy(dst[start:], digits[:point])
-			dst[start+point] = '.'
-			copy(dst[start+point+1:], digits[point:])
+			// Small spans cost less to place directly than to dispatch two
+			// variable-size copies. The ARM64 length sweep crosses over at
+			// ten digits; retain bulk copying above the measured short range.
+			const directDigits = 9
+			if len(digits) <= directDigits {
+				for i := 0; i < point; i++ {
+					dst[start+i] = digits[i]
+				}
+				dst[start+point] = '.'
+				for i := point; i < len(digits); i++ {
+					dst[start+i+1] = digits[i]
+				}
+			} else {
+				copy(dst[start:], digits[:point])
+				dst[start+point] = '.'
+				copy(dst[start+point+1:], digits[point:])
+			}
 			return dst
 		}
 		return appendFixed(dst, digits, exp, -1)
