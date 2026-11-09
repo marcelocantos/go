@@ -80,7 +80,7 @@ func reduce128(x coef128) coef128 {
 	}
 	if cIsZero128(c) {
 		exp = 0
-	} else if q, r := cDivPow10128(c, 1); cIsZero128(r) && exp < MaxExp128 {
+	} else if q, ok := cDivExactPow10128(c, 1); ok && exp < MaxExp128 {
 		// Strip the trailing zeros by binary search on their number, as key128
 		// does, but never past MaxExp128. The number to strip, n, is at most
 		// Precision128-1, below twice the first step, and each step takes a
@@ -95,7 +95,7 @@ func reduce128(x coef128) coef128 {
 			if exp+step > MaxExp128 {
 				continue
 			}
-			if q, r := cDivPow10128(c, step); cIsZero128(r) {
+			if q, ok := cDivExactPow10128(c, step); ok {
 				c, exp = q, exp+step
 			}
 		}

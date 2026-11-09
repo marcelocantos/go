@@ -80,7 +80,7 @@ func reduce64(x coef64) coef64 {
 	}
 	if cIsZero64(c) {
 		exp = 0
-	} else if q, r := cDivPow1064(c, 1); cIsZero64(r) && exp < MaxExp64 {
+	} else if q, ok := cDivExactPow1064(c, 1); ok && exp < MaxExp64 {
 		// Strip the trailing zeros by binary search on their number, as key64
 		// does, but never past MaxExp64. The number to strip, n, is at most
 		// Precision64-1, below twice the first step, and each step takes a
@@ -95,7 +95,7 @@ func reduce64(x coef64) coef64 {
 			if exp+step > MaxExp64 {
 				continue
 			}
-			if q, r := cDivPow1064(c, step); cIsZero64(r) {
+			if q, ok := cDivExactPow1064(c, step); ok {
 				c, exp = q, exp+step
 			}
 		}

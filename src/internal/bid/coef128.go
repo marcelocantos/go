@@ -153,6 +153,12 @@ func cShift128(c coef128, k int) (q coef128, class digitClass) {
 	return q, class128(r, u128Shr(d, 1))
 }
 
+// cDivExactPow10128 returns c / 10^k and true when 10^k divides c, and false
+// otherwise. Any k >= 0 is allowed; recip128.go gives the method.
+func cDivExactPow10128(c coef128, k int) (q coef128, ok bool) {
+	return divExactPow10Recip128(c, k)
+}
+
 // cShiftFull128 is cShift128 for a 256-bit value.
 //
 // Only 10^k up to k = 38 has a 128-bit divisor, so a larger k first removes

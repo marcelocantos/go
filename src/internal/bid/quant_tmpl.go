@@ -88,7 +88,7 @@ func reduceW(x coefW) coefW {
 	}
 	if cIsZeroW(c) {
 		exp = 0
-	} else if q, r := cDivPow10W(c, 1); cIsZeroW(r) && exp < MaxExpW {
+	} else if q, ok := cDivExactPow10W(c, 1); ok && exp < MaxExpW {
 		// Strip the trailing zeros by binary search on their number, as keyW
 		// does, but never past MaxExpW. The number to strip, n, is at most
 		// PrecisionW-1, below twice the first step, and each step takes a
@@ -103,7 +103,7 @@ func reduceW(x coefW) coefW {
 			if exp+step > MaxExpW {
 				continue
 			}
-			if q, r := cDivPow10W(c, step); cIsZeroW(r) {
+			if q, ok := cDivExactPow10W(c, step); ok {
 				c, exp = q, exp+step
 			}
 		}

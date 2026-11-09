@@ -201,8 +201,8 @@ func key64(x coef64) (kind Kind, neg bool, c coef64, exp int) {
 	// number: at most Precision64-1 of them, so steps of the powers of two
 	// from the largest one not above Precision64 down to 1 can remove any
 	// count. Most coefficients have none, which one division settles.
-	q, r := cDivPow1064(c, 1)
-	if !cIsZero64(r) {
+	q, ok := cDivExactPow1064(c, 1)
+	if !ok {
 		return kind, neg, c, exp
 	}
 	c, exp = q, exp+1
@@ -211,7 +211,7 @@ func key64(x coef64) (kind Kind, neg bool, c coef64, exp int) {
 		step *= 2
 	}
 	for ; step > 0; step /= 2 {
-		if q, r := cDivPow1064(c, step); cIsZero64(r) {
+		if q, ok := cDivExactPow1064(c, step); ok {
 			c, exp = q, exp+step
 		}
 	}

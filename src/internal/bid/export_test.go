@@ -145,3 +145,9 @@ var (
 	Pow5Len     = pow5Len
 	Pow5MulTab  = pow5MulTab
 )
+
+// Exact division by a power of ten (recip128.go).
+var (
+	CDivExactPow10128 = cDivExactPow10128
+	CDivExactPow1064  = cDivExactPow1064
+)

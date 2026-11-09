@@ -30,7 +30,8 @@ import "math/bits"
 // arithmetic modulo 2^128 (the true value fits, so the wrap cannot occur).
 // One comparison r̂ >= 10^k decides the correction q = q̂ + 1, r = r̂ - 10^k,
 // after which c = q·10^k + r with 0 <= r < 10^k exactly: nothing is left
-// estimated. TestRecip128 recomputes the table with math/big and checks the
+// estimated. TestRecip128Table recomputes the table (reciptab.go, written
+// by gen_recip.go) with math/big, and TestRecip128 checks the
 // quotient and remainder against math/big at every k on each side of every
 // multiple boundary it tries.
 //
@@ -89,46 +90,31 @@ func divPow10Recip128(c Uint128, k int) (q, r Uint128) {
 	return q, Uint128{Lo: rlo}
 }
 
-// recipTrunc10tab128[k] is ⌊(2^128 - 1) / 10^k⌋; see divPow10Recip128.
-// TestRecip128 recomputes it.
-var recipTrunc10tab128 = [...]Uint128{
-	{0xffffffffffffffff, 0xffffffffffffffff},
-	{0x1999999999999999, 0x9999999999999999},
-	{0x028f5c28f5c28f5c, 0x28f5c28f5c28f5c2},
-	{0x004189374bc6a7ef, 0x9db22d0e56041893},
-	{0x00068db8bac710cb, 0x295e9e1b089a0275},
-	{0x0000a7c5ac471b47, 0x84230fcf80dc3372},
-	{0x000010c6f7a0b5ed, 0x8d36b4c7f3493858},
-	{0x000001ad7f29abca, 0xf485787a6520ec08},
-	{0x0000002af31dc461, 0x1873bf3f70834acd},
-	{0x000000044b82fa09, 0xb5a52cb98b405447},
-	{0x000000006df37f67, 0x5ef6eadf5ab9a207},
-	{0x000000000afebff0, 0xbcb24aafef78f69a},
-	{0x0000000001197998, 0x12dea11197f27f0f},
-	{0x00000000001c25c2, 0x68497681c2650cb4},
-	{0x000000000002d093, 0x70d42573603d4e12},
-	{0x000000000000480e, 0xbe7b9d58566c87ce},
-	{0x0000000000000734, 0xaca5f6226f0ada61},
-	{0x00000000000000b8, 0x77aa3236a4b44909},
-	{0x0000000000000012, 0x725dd1d243aba0e7},
-	{0x0000000000000001, 0xd83c94fb6d2ac34a},
-	{0x0000000000000000, 0x2f394219248446ba},
-	{0x0000000000000000, 0x04b8ed0283a6d3df},
-	{0x0000000000000000, 0x0078e480405d7b96},
-	{0x0000000000000000, 0x000c16d9a0095928},
-	{0x0000000000000000, 0x0001357c299a88ea},
-	{0x0000000000000000, 0x00001ef2d0f5da7d},
-	{0x0000000000000000, 0x00000318481895d9},
-	{0x0000000000000000, 0x0000004f3a68dbc8},
-	{0x0000000000000000, 0x00000007ec3daf94},
-	{0x0000000000000000, 0x00000000cad2f7f5},
-	{0x0000000000000000, 0x0000000014484bfe},
-	{0x0000000000000000, 0x0000000002073acc},
-	{0x0000000000000000, 0x000000000033ec47},
-	{0x0000000000000000, 0x000000000005313a},
-	{0x0000000000000000, 0x00000000000084ec},
-	{0x0000000000000000, 0x0000000000000d4a},
-	{0x0000000000000000, 0x0000000000000154},
-	{0x0000000000000000, 0x0000000000000022},
-	{0x0000000000000000, 0x0000000000000003},
+// Exact division by a power of ten. A coefficient divides by 10^k = 2^k × 5^k
+// exactly when its low k bits are zero and n = c / 2^k divides by 5^k, and
+// for an odd d the second test needs no division. Multiplication by the
+// inverse I of d modulo 2^N is a bijection of [0, 2^N), and it maps each
+// multiple j·d below 2^N to j, so it maps the multiples onto [0, L] with
+// L = ⌊(2^N - 1) / d⌋ and, being a bijection, nothing else there. Hence d
+// divides n exactly when n·I mod 2^N <= L, and then n·I mod 2^N is n / d.
+// TestDivExactPow10 recomputes the tables and checks the division at every
+// k against math/big.
+
+// A divExact5x128 holds, for 5^k, its inverse modulo 2^128 and the limit L.
+type divExact5x128 struct{ inv, lim Uint128 }
+
+// divExactPow10Recip128 returns c / 10^k and true if 10^k divides c, and
+// false otherwise. Any k >= 0 is allowed.
+func divExactPow10Recip128(c Uint128, k int) (q Uint128, ok bool) {
+	if k >= len(divExact5tab128) {
+		return Uint128{}, c == Uint128{} // 10^k > 2^128 > c
+	}
+	n := u128Shr(c, uint(k))
+	if u128Shl(n, uint(k)) != c {
+		return Uint128{}, false
+	}
+	t := &divExact5tab128[k]
+	hi, lo := bits.Mul64(n.Lo, t.inv.Lo)
+	q = Uint128{Hi: hi + n.Lo*t.inv.Hi + n.Hi*t.inv.Lo, Lo: lo}
+	return q, !u128Lt(t.lim, q)
 }

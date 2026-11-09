@@ -201,8 +201,8 @@ func key128(x coef128) (kind Kind, neg bool, c coef128, exp int) {
 	// number: at most Precision128-1 of them, so steps of the powers of two
 	// from the largest one not above Precision128 down to 1 can remove any
 	// count. Most coefficients have none, which one division settles.
-	q, r := cDivPow10128(c, 1)
-	if !cIsZero128(r) {
+	q, ok := cDivExactPow10128(c, 1)
+	if !ok {
 		return kind, neg, c, exp
 	}
 	c, exp = q, exp+1
@@ -211,7 +211,7 @@ func key128(x coef128) (kind Kind, neg bool, c coef128, exp int) {
 		step *= 2
 	}
 	for ; step > 0; step /= 2 {
-		if q, r := cDivPow10128(c, step); cIsZero128(r) {
+		if q, ok := cDivExactPow10128(c, step); ok {
 			c, exp = q, exp+step
 		}
 	}

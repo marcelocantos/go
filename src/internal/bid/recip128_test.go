@@ -110,3 +110,64 @@ func TestRecip128(t *testing.T) {
 		}
 	}
 }
+
+// TestDivExactPow10 checks cDivExactPow10128 and cDivExactPow1064 against
+// math/big at every k of their tables and beyond, at exact multiples j·10^k
+// and one either side, at multiples of 2^k and 5^k that are not multiples
+// of 10^k (where one half of the test passes and the other must not), at
+// the ends of each type and at random. The tables themselves are checked
+// through the results: a wrong inverse or limit fails the multiples or the
+// near misses.
+func TestDivExactPow10(t *testing.T) {
+	rng := rand.New(rand.NewSource(3))
+	limit := new(big.Int).Lsh(big.NewInt(1), 128)
+	for k := range 42 {
+		p := bigPow10(k)
+		var cs []*big.Int
+		add := func(b *big.Int) {
+			if b.Sign() >= 0 && b.Cmp(limit) < 0 {
+				cs = append(cs, b)
+			}
+		}
+		around := func(b *big.Int) {
+			for d := int64(-1); d <= 1; d++ {
+				add(new(big.Int).Add(b, big.NewInt(d)))
+			}
+		}
+		for _, f := range []*big.Int{p,
+			new(big.Int).Lsh(big.NewInt(1), uint(k)),
+			new(big.Int).Exp(big.NewInt(5), big.NewInt(int64(k)), nil)} {
+			if f.Cmp(limit) >= 0 {
+				continue
+			}
+			jmax := new(big.Int).Quo(new(big.Int).Sub(limit, big.NewInt(1)), f)
+			js := []*big.Int{big.NewInt(1), big.NewInt(2), big.NewInt(3), jmax}
+			for range 200 {
+				js = append(js, new(big.Int).Add(new(big.Int).Rand(rng, jmax), big.NewInt(1)))
+			}
+			for _, j := range js {
+				around(new(big.Int).Mul(j, f))
+			}
+		}
+		around(new(big.Int).Sub(limit, big.NewInt(1)))
+		around(bigPow10(34))
+		add(new(big.Int))
+		for range 2000 {
+			add(new(big.Int).Rand(rng, limit))
+		}
+		for _, c := range cs {
+			bq, br := new(big.Int).QuoRem(c, p, new(big.Int))
+			wantOK := br.Sign() == 0
+			q, ok := bid.CDivExactPow10128(from128(c), k)
+			if ok != wantOK || ok && bigOf(q).Cmp(bq) != 0 {
+				t.Fatalf("cDivExactPow10128(%#x, %d) = %#x, %v, want %#x, %v", c, k, bigOf(q), ok, bq, wantOK)
+			}
+			if c.BitLen() <= 64 && k < len(bid.Pow10tab64) {
+				q, ok := bid.CDivExactPow1064(c.Uint64(), k)
+				if ok != wantOK || ok && q != bq.Uint64() {
+					t.Fatalf("cDivExactPow1064(%#x, %d) = %#x, %v, want %#x, %v", c, k, q, ok, bq, wantOK)
+				}
+			}
+		}
+	}
+}

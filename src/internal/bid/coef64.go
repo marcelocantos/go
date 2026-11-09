@@ -165,6 +165,14 @@ func cShift64(c coef64, k int) (q coef64, class digitClass) {
 	return q, class64(c-q*d, d>>1)
 }
 
+// cDivExactPow1064 returns c / 10^k and true when 10^k divides c, and false
+// otherwise. Precondition: 0 <= k <= 19. The division is the hardware's: the
+// inverse method of cDivExactPow10128 measured slower for a word.
+func cDivExactPow1064(c coef64, k int) (q coef64, ok bool) {
+	p := pow10tab64[k]
+	return c / p, c%p == 0
+}
+
 // cShiftFull64 is cShift64 for a double-width value, which may keep a
 // quotient too large for a coefficient.
 func cShiftFull64(p wide64, k int) (q wide64, class digitClass) {

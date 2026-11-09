@@ -212,8 +212,8 @@ func keyW(x coefW) (kind Kind, neg bool, c coefW, exp int) {
 	// number: at most PrecisionW-1 of them, so steps of the powers of two
 	// from the largest one not above PrecisionW down to 1 can remove any
 	// count. Most coefficients have none, which one division settles.
-	q, r := cDivPow10W(c, 1)
-	if !cIsZeroW(r) {
+	q, ok := cDivExactPow10W(c, 1)
+	if !ok {
 		return kind, neg, c, exp
 	}
 	c, exp = q, exp+1
@@ -222,7 +222,7 @@ func keyW(x coefW) (kind Kind, neg bool, c coefW, exp int) {
 		step *= 2
 	}
 	for ; step > 0; step /= 2 {
-		if q, r := cDivPow10W(c, step); cIsZeroW(r) {
+		if q, ok := cDivExactPow10W(c, step); ok {
 			c, exp = q, exp+step
 		}
 	}
