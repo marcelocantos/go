@@ -519,6 +519,17 @@ opSwitch:
 						// implemented in the escape analysis phase.
 						cheap = true
 					}
+				case "internal/bid":
+					// The general path of a decimal operation whose
+					// exported entry point inlines a fast path in front of
+					// it, as runtime.heapBits.next does with nextArena: the
+					// call is the cold side of the fast path, and charging
+					// it as a full call would keep the fast path out of
+					// every caller. See "Inline fast paths" in
+					// internal/bid's package documentation.
+					if strings.HasSuffix(fn, "Slow64") || strings.HasSuffix(fn, "Slow128") {
+						cheap = true
+					}
 				case "internal/runtime/sys":
 					switch fn {
 					case "GetCallerPC", "GetCallerSP":
