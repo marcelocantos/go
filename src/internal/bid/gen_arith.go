@@ -6,7 +6,7 @@
 
 // Gen_arith writes the generated files of package bid: zNAME64.go and
 // zNAME128.go from each template NAME_tmpl.go, zpow10.go, the powers of
-// ten that the coefficient vocabulary indexes, and zdpd.go, the declet
+// ten that the coefficient vocabulary indexes and their reciprocals, and zdpd.go, the declet
 // tables of the DPD conversions. It is run by the
 // go:generate directive in arith.go from the package directory, and by
 // TestGenerated with -out set to a scratch directory to check that the
@@ -111,8 +111,9 @@ func pow10Source() string {
 	sb.WriteString(`
 package bid
 
-// The powers of ten below 2^64, 2^128 and 2^256, indexed by the exponent.
-// They are initialised statically: there is no run-time work, which keeps
+// The powers of ten below 2^64, 2^128 and 2^256, indexed by the exponent,
+// and the reciprocals of those below 2^64 and 2^128 that recip.go divides
+// by. They are initialised statically: there is no run-time work, which keeps
 // the package usable from the runtime.
 `)
 	mask := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 64), big.NewInt(1))
@@ -143,6 +144,37 @@ package bid
 	table("pow10tab256", "Uint256", 256, func(v *big.Int) string {
 		w := words(v)
 		return fmt.Sprintf("{Hi: Uint128{Hi: %#016x, Lo: %#016x}, Lo: Uint128{Hi: %#016x, Lo: %#016x}}", w[3], w[2], w[1], w[0])
+	})
+
+	// The reciprocals of the powers of ten, as recip.go defines them: for
+	// a width of n bits and 10^k with ℓ = bitlen(10^k) - 1, the shift is
+	// s = max(ℓ - recipSlack, 0) and the multiplier m = ⌊2^(n+s) / 10^k⌋.
+	// 10^0 has no reciprocal below 2^n, and its entry stays zero.
+	const recipSlack = 6
+	recip := func(name, typ string, bits uint, entry func(m *big.Int, s uint) string) {
+		limit := new(big.Int).Lsh(big.NewInt(1), bits)
+		var lines []string
+		for p := big.NewInt(1); p.Cmp(limit) < 0; p = new(big.Int).Mul(p, big.NewInt(10)) {
+			if p.Cmp(big.NewInt(1)) == 0 {
+				lines = append(lines, "{}")
+				continue
+			}
+			s := uint(max(p.BitLen()-1-recipSlack, 0))
+			m := new(big.Int).Quo(new(big.Int).Lsh(big.NewInt(1), bits+s), p)
+			lines = append(lines, entry(m, s))
+		}
+		fmt.Fprintf(&sb, "\n// %s[k] is the reciprocal of 10^k (see %s), for k in [1, %d].\nvar %s = [%d]%s{\n", name, typ, len(lines)-1, name, len(lines), typ)
+		for _, l := range lines {
+			sb.WriteString("\t" + l + ",\n")
+		}
+		sb.WriteString("}\n")
+	}
+	recip("recip10tab64", "recip64", 64, func(m *big.Int, s uint) string {
+		return fmt.Sprintf("{m: %#016x, s: %d}", words(m)[0], s)
+	})
+	recip("recip10tab128", "recip128", 128, func(m *big.Int, s uint) string {
+		w := words(m)
+		return fmt.Sprintf("{m: Uint128{Hi: %#016x, Lo: %#016x}, s: %d}", w[1], w[0], s)
 	})
 	return sb.String()
 }

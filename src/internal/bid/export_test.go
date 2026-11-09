@@ -79,6 +79,7 @@ var (
 	Digits128       = digits128
 	Log10Pow2       = log10Pow2
 	Pow5            = pow5
+	DivPow10Recip64 = divPow10Recip64
 	U128Add         = u128Add
 	U128Cmp         = u128Cmp
 	U128Div         = u128Div
@@ -95,12 +96,22 @@ var (
 	U256Cmp         = u256Cmp
 	U256Div128      = u256Div128
 	U256DivMod128   = u256DivMod128
+	U256DivPow10    = u256DivPow10
 	U256Len         = u256Len
 	U256Lt          = u256Lt
 	U256Shl         = u256Shl
 	U256Shr         = u256Shr
 	U256Sub         = u256Sub
 )
+
+// Recip10tab64 and Recip10tab128 return entry k of the reciprocal tables.
+func Recip10tab64(k int) (m uint64, s uint) {
+	return recip10tab64[k].m, uint(recip10tab64[k].s)
+}
+
+func Recip10tab128(k int) (m Uint128, s uint) {
+	return recip10tab128[k].m, uint(recip10tab128[k].s)
+}
 
 // Methods.
 

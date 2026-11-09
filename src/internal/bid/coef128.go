@@ -72,6 +72,9 @@ func cMulPow10128(c coef128, k int) coef128 {
 // cDivPow10128 returns the quotient and remainder of c / 10^k, so that
 // c = q × 10^k + r with 0 <= r < 10^k. Precondition: 0 <= k <= 38.
 func cDivPow10128(c coef128, k int) (q, r coef128) {
+	if q, r, ok := u256DivPow10(wide128{Lo: c}, k); ok {
+		return q, r
+	}
 	return u128Div(c, pow10tab128[k])
 }
 
@@ -149,7 +152,10 @@ func cShift128(c coef128, k int) (q coef128, class digitClass) {
 		return coef128{}, classBelowHalf
 	}
 	d := pow10tab128[k]
-	q, r := u128Div(c, d)
+	q, r, ok := u256DivPow10(wide128{Lo: c}, k)
+	if !ok {
+		q, r = u128Div(c, d) // k <= 2 and a quotient of 121 bits or more
+	}
 	return q, class128(r, u128Shr(d, 1))
 }
 
@@ -178,6 +184,11 @@ func cShiftFull128(p wide128, k int) (q wide128, class digitClass) {
 		k -= maxStep
 	}
 	d := pow10tab128[k]
+	if ql, r, ok := u256DivPow10(p, k); ok {
+		// The quotient has at most 120 bits, which holds for every
+		// quotient that the rounding routine keeps (see recip.go).
+		return wide128{Lo: ql}, class128(r, u128Shr(d, 1)).withSticky(sticky)
+	}
 	q, r := u256DivMod128(p, d)
 	return q, class128(r, u128Shr(d, 1)).withSticky(sticky)
 }

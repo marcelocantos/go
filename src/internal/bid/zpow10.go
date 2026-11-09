@@ -6,8 +6,9 @@
 
 package bid
 
-// The powers of ten below 2^64, 2^128 and 2^256, indexed by the exponent.
-// They are initialised statically: there is no run-time work, which keeps
+// The powers of ten below 2^64, 2^128 and 2^256, indexed by the exponent,
+// and the reciprocals of those below 2^64 and 2^128 that recip.go divides
+// by. They are initialised statically: there is no run-time work, which keeps
 // the package usable from the runtime.
 
 // pow10tab64[k] is 10^k, for k in [0, 19].
@@ -157,4 +158,71 @@ var pow10tab256 = [78]Uint256{
 	{Hi: Uint128{Hi: 0x0235fadd81c2822b, Lo: 0xb3f07877973d50f2}, Lo: Uint128{Hi: 0x8bf22a31be8ee800, Lo: 0x0000000000000000}},
 	{Hi: Uint128{Hi: 0x161bcca7119915b5, Lo: 0x0764b4abe8652979}, Lo: Uint128{Hi: 0x7775a5f171951000, Lo: 0x0000000000000000}},
 	{Hi: Uint128{Hi: 0xdd15fe86affad912, Lo: 0x49ef0eb713f39ebe}, Lo: Uint128{Hi: 0xaa987b6e6fd2a000, Lo: 0x0000000000000000}},
+}
+
+// recip10tab64[k] is the reciprocal of 10^k (see recip64), for k in [1, 19].
+var recip10tab64 = [20]recip64{
+	{},
+	{m: 0x1999999999999999, s: 0},
+	{m: 0x028f5c28f5c28f5c, s: 0},
+	{m: 0x020c49ba5e353f7c, s: 3},
+	{m: 0x0346dc5d63886594, s: 7},
+	{m: 0x029f16b11c6d1e10, s: 10},
+	{m: 0x0218def416bdb1a6, s: 13},
+	{m: 0x035afe535795e90a, s: 17},
+	{m: 0x02af31dc4611873b, s: 20},
+	{m: 0x0225c17d04dad296, s: 23},
+	{m: 0x036f9bfb3af7b756, s: 27},
+	{m: 0x02bfaffc2f2c92ab, s: 30},
+	{m: 0x0232f33025bd4223, s: 33},
+	{m: 0x0384b84d092ed038, s: 37},
+	{m: 0x02d09370d4257360, s: 40},
+	{m: 0x024075f3dceac2b3, s: 43},
+	{m: 0x039a5652fb113785, s: 47},
+	{m: 0x02e1dea8c8da92d1, s: 50},
+	{m: 0x024e4bba3a487574, s: 53},
+	{m: 0x03b07929f6da5586, s: 57},
+}
+
+// recip10tab128[k] is the reciprocal of 10^k (see recip128), for k in [1, 38].
+var recip10tab128 = [39]recip128{
+	{},
+	{m: Uint128{Hi: 0x1999999999999999, Lo: 0x9999999999999999}, s: 0},
+	{m: Uint128{Hi: 0x028f5c28f5c28f5c, Lo: 0x28f5c28f5c28f5c2}, s: 0},
+	{m: Uint128{Hi: 0x020c49ba5e353f7c, Lo: 0xed916872b020c49b}, s: 3},
+	{m: Uint128{Hi: 0x0346dc5d63886594, Lo: 0xaf4f0d844d013a92}, s: 7},
+	{m: Uint128{Hi: 0x029f16b11c6d1e10, Lo: 0x8c3f3e0370cdc875}, s: 10},
+	{m: Uint128{Hi: 0x0218def416bdb1a6, Lo: 0xd698fe69270b06c4}, s: 13},
+	{m: Uint128{Hi: 0x035afe535795e90a, Lo: 0xf0f4ca41d811a46d}, s: 17},
+	{m: Uint128{Hi: 0x02af31dc4611873b, Lo: 0xf3f70834acdae9f0}, s: 20},
+	{m: Uint128{Hi: 0x0225c17d04dad296, Lo: 0x5cc5a02a23e254c0}, s: 23},
+	{m: Uint128{Hi: 0x036f9bfb3af7b756, Lo: 0xfad5cd10396a2134}, s: 27},
+	{m: Uint128{Hi: 0x02bfaffc2f2c92ab, Lo: 0xfbde3da69454e75d}, s: 30},
+	{m: Uint128{Hi: 0x0232f33025bd4223, Lo: 0x2fe4fe1edd10b917}, s: 33},
+	{m: Uint128{Hi: 0x0384b84d092ed038, Lo: 0x4ca19697c81ac1be}, s: 37},
+	{m: Uint128{Hi: 0x02d09370d4257360, Lo: 0x3d4e1213067bce32}, s: 40},
+	{m: Uint128{Hi: 0x024075f3dceac2b3, Lo: 0x643e74dc052fd828}, s: 43},
+	{m: Uint128{Hi: 0x039a5652fb113785, Lo: 0x6d30baf9a1e626a6}, s: 47},
+	{m: Uint128{Hi: 0x02e1dea8c8da92d1, Lo: 0x2426fbfae7eb521f}, s: 50},
+	{m: Uint128{Hi: 0x024e4bba3a487574, Lo: 0x1cebfcc8b9890e7f}, s: 53},
+	{m: Uint128{Hi: 0x03b07929f6da5586, Lo: 0x94acc7a78f41b0cb}, s: 57},
+	{m: Uint128{Hi: 0x02f394219248446b, Lo: 0xaa23d2ec729af3d6}, s: 60},
+	{m: Uint128{Hi: 0x025c768141d369ef, Lo: 0xbb4fdbf05baf2978}, s: 63},
+	{m: Uint128{Hi: 0x03c7240202ebdcb2, Lo: 0xc54c931a2c4b758c}, s: 67},
+	{m: Uint128{Hi: 0x0305b66802564a28, Lo: 0x9dd6dc14f03c5e0a}, s: 70},
+	{m: Uint128{Hi: 0x026af8533511d4ed, Lo: 0x4b1249aa59c9e4d5}, s: 73},
+	{m: Uint128{Hi: 0x03de5a1ebb4fbb15, Lo: 0x44ea0f76f60fd488}, s: 77},
+	{m: Uint128{Hi: 0x0318481895d96277, Lo: 0x6a54d92bf80caa06}, s: 80},
+	{m: Uint128{Hi: 0x0279d346de4781f9, Lo: 0x21dd7a89933d54d1}, s: 83},
+	{m: Uint128{Hi: 0x03f61ed7ca0c0328, Lo: 0x362f2a75b862214f}, s: 87},
+	{m: Uint128{Hi: 0x032b4bdfd4d668ec, Lo: 0xf825bb91604e810c}, s: 90},
+	{m: Uint128{Hi: 0x0289097fdd7853f0, Lo: 0xc684960de6a5340a}, s: 93},
+	{m: Uint128{Hi: 0x02073accb12d0ff3, Lo: 0xd203ab3e521dc33b}, s: 96},
+	{m: Uint128{Hi: 0x033ec47ab514e652, Lo: 0xe99f7863b696052b}, s: 100},
+	{m: Uint128{Hi: 0x02989d2ef743eb75, Lo: 0x87b2c6b62bab3756}, s: 103},
+	{m: Uint128{Hi: 0x0213b0f25f69892a, Lo: 0xd2f56bc4efbc2c44}, s: 106},
+	{m: Uint128{Hi: 0x0352b4b6ff0f41de, Lo: 0x1e55793b192d13a1}, s: 110},
+	{m: Uint128{Hi: 0x02a8909265a5ce4b, Lo: 0x4b77942f475742e7}, s: 113},
+	{m: Uint128{Hi: 0x022073a8515171d5, Lo: 0xd5f9435905df68b9}, s: 116},
+	{m: Uint128{Hi: 0x03671f73b54f1c89, Lo: 0x565b9ef4d6324128}, s: 120},
 }

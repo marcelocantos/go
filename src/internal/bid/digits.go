@@ -160,6 +160,11 @@ func reduceClass64(p Uint128, k int) (q uint64, class digitClass) {
 		q = p.Lo / d
 		return q, class64(p.Lo-q*d, d>>1)
 	}
+	if q, r, ok := divPow10Recip64(p, k); ok {
+		// Every quotient that the rounding routine keeps has at most 16
+		// digits, below the 2^56 that the reciprocal needs (see recip.go).
+		return q, class64(r, d>>1)
+	}
 	if p.Hi >= d {
 		panic(errQuotientOverflow)
 	}
