@@ -20,7 +20,10 @@ func mul128(x, y coef128, mode Mode) coef128 {
 	return mulSlow128(x, y, mode)
 }
 
-// mulSlow128 returns x × y rounded in mode. The special values follow "NaN and
+// mulLong128 returns x × y rounded in mode, for every operand: mulSlow128,
+// which mul128 above and the compiler call, is mulLong64 for decimal64 and
+// takes most products of a two-word coefficient itself for decimal128
+// (mul128.go). The special values follow "NaN and
 // infinity operands" and "Sign of a result"; a finite product is computed
 // exactly in the double-width type, whose digits round128 reduces with a sticky
 // class of everything it drops, so the product is rounded once and nothing
@@ -43,7 +46,7 @@ func mul128(x, y coef128, mode Mode) coef128 {
 // The compiler calls the decimal128 instantiation of this function
 // directly, so its parameters and results are a contract with it: see the
 // end of "Inline fast paths" in the package documentation.
-func mulSlow128(x, y coef128, mode Mode) coef128 {
+func mulLong128(x, y coef128, mode Mode) coef128 {
 	var yneg, yok bool
 	var yw uint64
 	var ye int

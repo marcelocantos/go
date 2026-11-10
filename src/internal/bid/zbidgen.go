@@ -281,7 +281,7 @@ func mul64(x, y coef64, mode Mode) coef64 {
 	return *new(coef64)
 }
 
-func mulSlow64(x, y coef64, mode Mode) coef64 {
+func mulLong64(x, y coef64, mode Mode) coef64 {
 	return *new(coef64)
 }
 
@@ -289,7 +289,7 @@ func mul128(x, y coef128, mode Mode) coef128 {
 	return *new(coef128)
 }
 
-func mulSlow128(x, y coef128, mode Mode) coef128 {
+func mulLong128(x, y coef128, mode Mode) coef128 {
 	return *new(coef128)
 }
 
