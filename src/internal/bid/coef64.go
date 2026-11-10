@@ -309,6 +309,12 @@ func cInf64(neg bool) coef64 {
 	return Inf64
 }
 
+// cWords64 returns c as the two words that packWord64 encodes, most
+// significant first: the high word of a coefficient is always zero.
+func cWords64(c coef64) (hi, lo uint64) {
+	return 0, c
+}
+
 // cFromU6464 returns the coefficient with the value m.
 func cFromU6464(m uint64) coef64 {
 	return m

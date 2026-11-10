@@ -386,6 +386,12 @@ func cFromU64128(m uint64) coef128 {
 	return Uint128{Lo: m}
 }
 
+// cWords128 returns c as the two words that packWord128 encodes, most
+// significant first.
+func cWords128(c coef128) (hi, lo uint64) {
+	return c.Hi, c.Lo
+}
+
 // cToU64128 returns the value of c as a uint64, and whether it fits one.
 func cToU64128(c coef128) (m uint64, ok bool) {
 	return c.Lo, c.Hi == 0

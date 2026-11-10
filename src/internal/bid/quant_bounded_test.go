@@ -79,3 +79,50 @@ func BenchmarkQuantizeCases(b *testing.B) {
 		})
 	}
 }
+
+// TestQuantizeWordScale drives the word fast path of quantizeSlowW at its
+// bounds against the reference: word coefficients of x up to the largest
+// word and one past it, scaled to the exponent of y across gaps on both
+// sides of the word table (19, 20), of the format's precision, of the
+// coefficient table (38, 39) and far beyond it, including the gaps at which
+// the scaled coefficient first exceeds the precision (the NaN), both signs,
+// a zero x at every gap, y a NaN and an infinity, and every mode.
+func TestQuantizeWordScale(t *testing.T) {
+	var k kernel
+	for _, f := range []*format{dec64, dec128} {
+		var xcs []string
+		for _, c := range []string{"0", "1", "9", "123456", "999999999999999", "9999999999999999", "10000000000000000", "9999999999999999999", "10000000000000000000", "18446744073709551615", "18446744073709551616"} {
+			n, _ := new(big.Int).SetString(c, 10)
+			if n.Cmp(f.maxCoeff) <= 0 {
+				xcs = append(xcs, c)
+			}
+		}
+		gaps := []int{-1, 0, 1, 2, 14, 15, 16, 17, 18, 19, 20, 21, 24, 25, 33, 34, 35, 38, 39, 40, 100, f.maxExp - f.minExp}
+		n := 0
+		for _, xc := range xcs {
+			for _, xe := range []int{f.minExp, -2, 0, f.maxExp} {
+				for _, neg := range []bool{false, true} {
+					x, ok := wordOperand(f, neg, xc, xe)
+					if !ok {
+						continue
+					}
+					ys := []bits{f.encode(nan), f.encode(value{kind: infinite})}
+					for _, g := range gaps {
+						if y, ok := wordOperand(f, false, "1", xe-g); ok {
+							ys = append(ys, y)
+						}
+					}
+					for _, y := range ys {
+						for _, m := range allModes {
+							n++
+							if got, want := k.quantize(f, x, y, m), f.quantize(x, y, m); got != want {
+								t.Fatalf("%s quantize(%s, %s, %s) = %s, want %s", f.name, f.format(x), f.format(y), modeName(m), f.format(got), f.format(want))
+							}
+						}
+					}
+				}
+			}
+		}
+		t.Logf("%s: %d cases", f.name, n)
+	}
+}
