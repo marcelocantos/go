@@ -273,6 +273,80 @@ func oldDiv3by2(u2, u1, u0, v1, v0 uint64) (q, r1, r0 uint64) {
 	return q, r1, r0
 }
 
+// TestRecipTab recomputes the table of first approximations.
+func TestRecipTab(t *testing.T) {
+	for i, got := range bid.RecipTab {
+		if want := uint16((1<<19 - 3<<8) / (256 + i)); got != want {
+			t.Errorf("recipTab[%d] = %d, want %d", i, got, want)
+		}
+	}
+}
+
+// TestReciprocalNewton compares the word reciprocal that divides nothing,
+// and the one the target selects, with the division that defines them,
+// bits.Div64(^d, ^0, d): at the least and the greatest divisor of every
+// table entry and their neighbours, at the divisors around every power of
+// two below the top bit, and on random divisors.
+func TestReciprocalNewton(t *testing.T) {
+	check := func(d uint64) {
+		d |= 1 << 63
+		want, _ := mbits.Div64(^d, ^uint64(0), d)
+		if got := bid.ReciprocalNewton(d); got != want {
+			t.Fatalf("reciprocalNewton(%#x) = %#x, want %#x", d, got, want)
+		}
+		if got := bid.Reciprocal2by1(d); got != want {
+			t.Fatalf("reciprocal2by1(%#x) = %#x, want %#x", d, got, want)
+		}
+	}
+	for d9 := uint64(256); d9 < 512; d9++ {
+		lo, hi := d9<<55, d9<<55|(1<<55-1)
+		for _, d := range []uint64{lo, lo + 1, lo + 2, hi - 2, hi - 1, hi, lo | 1<<24, lo | (1<<24 - 1), lo | 1<<54, hi &^ (1<<24 - 1)} {
+			check(d)
+		}
+	}
+	for b := uint(0); b < 63; b++ {
+		for _, delta := range []uint64{0, 1, ^uint64(0)} {
+			check(1<<63 | (1<<b + delta))
+			check(^(1<<b + delta))
+		}
+	}
+	rng := rand.New(rand.NewPCG(2011, 0x3231))
+	for range 2_000_000 {
+		check(rng.Uint64())
+		// Few set bits and few clear bits reach the carries random words miss.
+		check(rng.Uint64() & rng.Uint64() & rng.Uint64())
+		check(rng.Uint64() | rng.Uint64() | rng.Uint64())
+	}
+}
+
+// TestDiv2by1 compares the reciprocal division of two words by one with
+// bits.Div64, on normalised divisors at their bounds and at random, with
+// high words at zero, just below the divisor and at random.
+func TestDiv2by1(t *testing.T) {
+	check := func(u1, u0, d uint64) {
+		d |= 1 << 63
+		u1 %= d
+		wq, wr := mbits.Div64(u1, u0, d)
+		if q, r := bid.Div2by1(u1, u0, d, bid.Reciprocal2by1(d)); q != wq || r != wr {
+			t.Fatalf("div2by1(%#x, %#x, %#x) = %#x, %#x; want %#x, %#x", u1, u0, d, q, r, wq, wr)
+		}
+	}
+	edges := []uint64{0, 1, 2, 1<<32 - 1, 1 << 32, 1<<63 - 1, 1 << 63, 1<<63 + 1, 1<<64 - 2, 1<<64 - 1}
+	for _, d := range edges {
+		for _, u1 := range edges {
+			for _, u0 := range edges {
+				check(u1, u0, d)
+				check(d-1, u0, d) // the largest high word
+			}
+		}
+	}
+	rng := rand.New(rand.NewPCG(2011, 0x3232))
+	for range 2_000_000 {
+		check(rng.Uint64(), rng.Uint64(), rng.Uint64())
+		check(rng.Uint64(), rng.Uint64()&rng.Uint64()&rng.Uint64(), rng.Uint64()|rng.Uint64())
+	}
+}
+
 // TestReciprocal3by2 compares the two-word reciprocal with math/big.
 func TestReciprocal3by2(t *testing.T) {
 	two192 := new(big.Int).Lsh(bigOne, 192)

@@ -64,7 +64,7 @@ func nanWithPayload64(p coef64, signaling bool) coef64 {
 		}
 		c = q
 	}
-	if cCmp64(c, cPow1064(Precision64-1)) >= 0 {
+	if !cLt64(c, cPow1064(Precision64-1)) {
 		return plusZero
 	}
 	return cNaNPayload64(c, signaling)

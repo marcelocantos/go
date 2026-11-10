@@ -86,10 +86,10 @@ func remainder64(x, y coef64, nearest bool) coef64 {
 	}
 
 	r, odd := xc, false
-	if k > 0 || cCmp64(xc, Y) >= 0 {
+	if k > 0 || !cLt64(xc, Y) {
 		m, _ := cAdd64(Y, Y)
 		r = remScaled64(xc, k, m)
-		if cCmp64(r, Y) >= 0 {
+		if !cLt64(r, Y) {
 			r, _ = cSub64(r, Y)
 			odd = true
 		}

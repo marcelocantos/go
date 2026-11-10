@@ -40,12 +40,16 @@ package bid
 //
 // An inexact quotient inside the exponent range of roundFace128's proof
 // (MinExp128 < exp <= MaxExp128, adjusted exponent at least Emin128) is rounded
-// at face value from that class: the one row of the rounding table, with
-// the carry of the largest coefficient one place up. This is the second
-// use of the face-value exception, after the swamped addend of addSlow128
-// ("Face-value rounding" in the package documentation): it saves the
-// reduction of a longer quotient by a reciprocal division and its digit
-// count, which were a third of a division. Nearer the exponent limits the
+// at face value: the one row of the rounding table, with the carry of the
+// largest coefficient one place up. This is the second use of the
+// face-value exception, after the swamped addend of addSlow128 ("Face-value
+// rounding" in the package documentation): it saves the reduction of a
+// longer quotient by a reciprocal division and its digit count, which were
+// a third of a division. In the two nearest modes the row is not even
+// looked up: the dividend is biased by half the divisor and the quotient
+// comes out rounded, with the exact quotient and the tie told apart by the
+// biased remainder (the code below, and the same section). A directed mode
+// takes the class of the remainder, rem against yc - rem. Nearer the exponent limits the
 // result may be subnormal, clamped or overflowing, which only round128
 // decides, so one more division step supplies a round digit and a sticky
 // bit, and round128 rounds q × 10 + d at exponent xe - ye - k - 1 as it
@@ -113,38 +117,69 @@ func div128(x, y coef128, mode Mode) coef128 {
 	dy := cDigits128(yc)
 	k, q, class := dy-1, xc, classZero
 	first := 1 // the likely count of zeros to strip from an exact quotient
-	if cCmp128(yc, cPow10128(k)) != 0 {
+	if !cEq128(yc, cPow10128(k)) {
 		// Scale so that q has exactly Precision128 digits: xc × 10^k / yc
 		// lies in [10^(dx+k-dy-1), 10^(dx+k-dy+1)) and reaches 10^(dx+k-dy)
 		// exactly when the leading ratio does, xc × 10^(dy-dx) >= yc, a
 		// comparison of two values of dy or dx digits, which fit.
+		//
+		// Which coefficient is the longer is a property of the operands'
+		// kind and stays a branch; whether the ratio reaches one is in
+		// their leading digits, as good as random, and is a borrow
+		// (cLt128), not a branch.
 		dx := cDigits128(xc)
-		lead := 0
+		a, b := xc, yc
 		if dx <= dy {
-			if cCmp128(cMulPow10128(xc, dy-dx), yc) >= 0 {
-				lead = 1
-			}
-		} else if cCmp128(xc, cMulPow10128(yc, dx-dy)) >= 0 {
-			lead = 1
+			a = cMulPow10128(xc, dy-dx)
+		} else {
+			b = cMulPow10128(yc, dx-dy)
+		}
+		lead := 1
+		if cLt128(a, b) {
+			lead = 0
 		}
 		k = Precision128 - dx + dy - lead
+		n := cMulPow10Full128(xc, k)
+		exp := xe - ye - k
+		face := MinExp128 < exp && exp <= MaxExp128 && exp+Precision128-1 >= Emin128
 		var rem coef128
-		q, rem = cDivFull128(cMulPow10Full128(xc, k), yc)
-		if !cIsZero128(rem) {
-			// An inexact quotient: the remainder places the true value
-			// between q and q + 1 at exponent xe - ye - k, and its class is
-			// exact: rem against yc - rem. Within the exponent range that
-			// roundFace128's proof names, that is the whole rounding
-			// decision, taken at face value; nearer the limits round128
-			// takes the usual round digit and sticky bit, found by one
-			// more division step.
-			class = classAboveHalf
-			if other, _ := cSub128(yc, rem); cCmp128(rem, other) < 0 {
-				class = classBelowHalf
-			} else if cCmp128(rem, other) == 0 {
-				class = classHalf
+		if face && mode != TowardZero && mode != TowardPositive && mode != TowardNegative {
+			// To nearest, inside the exponent range of roundFace128's proof:
+			// the dividend is biased by half the divisor, and the quotient
+			// of n + ⌊yc/2⌋ by yc is the quotient of n by yc rounded to
+			// nearest with ties up, because the bias carries into the next
+			// unit exactly when the fraction is a half or more. Its
+			// remainder says the rest: it is ⌊yc/2⌋ exactly when yc divides
+			// n, the exact quotient, which goes on to the preferred
+			// exponent below; and it is zero with an even yc exactly on a
+			// tie, where ties to even takes the even neighbour, the one
+			// below. Nothing here waits for a comparison of the remainder
+			// with the half or branches on the direction, which is as good
+			// as random: the two tests are rare and the carry is packFace128's.
+			half := cHalf128(yc)
+			nb, _ := cAddFull128(n, wide128{Lo: half})
+			var rb coef128
+			q, rb = cDivFull128(nb, yc)
+			if !cEq128(rb, half) {
+				if cIsZero128(rb) && !cOdd128(yc) && mode != ToNearestAway {
+					q = cEven128(q)
+				}
+				return packFace128(neg, q, exp, mode)
 			}
-			if exp := xe - ye - k; MinExp128 < exp && exp <= MaxExp128 && exp+Precision128-1 >= Emin128 {
+		} else {
+			q, rem = cDivFull128(n, yc)
+		}
+		if !cIsZero128(rem) {
+			// An inexact quotient in a directed mode or near the exponent
+			// limits: the remainder places the true value between q and
+			// q + 1 at exponent xe - ye - k, and its class is exact: rem
+			// against yc - rem. Within the exponent range that roundFace128's
+			// proof names, that is the whole rounding decision, taken at
+			// face value; nearer the limits round128 takes the usual round
+			// digit and sticky bit, found by one more division step.
+			other, _ := cSub128(yc, rem)
+			class = cClass128(rem, other)
+			if face {
 				return roundFace128(neg, q, exp, class, mode)
 			}
 			d, rem2 := cDivFull128(wide128{Lo: cMulPow10128(rem, 1)}, yc)

@@ -40,12 +40,16 @@ package bid
 //
 // An inexact quotient inside the exponent range of roundFace64's proof
 // (MinExp64 < exp <= MaxExp64, adjusted exponent at least Emin64) is rounded
-// at face value from that class: the one row of the rounding table, with
-// the carry of the largest coefficient one place up. This is the second
-// use of the face-value exception, after the swamped addend of addSlow64
-// ("Face-value rounding" in the package documentation): it saves the
-// reduction of a longer quotient by a reciprocal division and its digit
-// count, which were a third of a division. Nearer the exponent limits the
+// at face value: the one row of the rounding table, with the carry of the
+// largest coefficient one place up. This is the second use of the
+// face-value exception, after the swamped addend of addSlow64 ("Face-value
+// rounding" in the package documentation): it saves the reduction of a
+// longer quotient by a reciprocal division and its digit count, which were
+// a third of a division. In the two nearest modes the row is not even
+// looked up: the dividend is biased by half the divisor and the quotient
+// comes out rounded, with the exact quotient and the tie told apart by the
+// biased remainder (the code below, and the same section). A directed mode
+// takes the class of the remainder, rem against yc - rem. Nearer the exponent limits the
 // result may be subnormal, clamped or overflowing, which only round64
 // decides, so one more division step supplies a round digit and a sticky
 // bit, and round64 rounds q × 10 + d at exponent xe - ye - k - 1 as it
@@ -113,38 +117,69 @@ func div64(x, y coef64, mode Mode) coef64 {
 	dy := cDigits64(yc)
 	k, q, class := dy-1, xc, classZero
 	first := 1 // the likely count of zeros to strip from an exact quotient
-	if cCmp64(yc, cPow1064(k)) != 0 {
+	if !cEq64(yc, cPow1064(k)) {
 		// Scale so that q has exactly Precision64 digits: xc × 10^k / yc
 		// lies in [10^(dx+k-dy-1), 10^(dx+k-dy+1)) and reaches 10^(dx+k-dy)
 		// exactly when the leading ratio does, xc × 10^(dy-dx) >= yc, a
 		// comparison of two values of dy or dx digits, which fit.
+		//
+		// Which coefficient is the longer is a property of the operands'
+		// kind and stays a branch; whether the ratio reaches one is in
+		// their leading digits, as good as random, and is a borrow
+		// (cLt64), not a branch.
 		dx := cDigits64(xc)
-		lead := 0
+		a, b := xc, yc
 		if dx <= dy {
-			if cCmp64(cMulPow1064(xc, dy-dx), yc) >= 0 {
-				lead = 1
-			}
-		} else if cCmp64(xc, cMulPow1064(yc, dx-dy)) >= 0 {
-			lead = 1
+			a = cMulPow1064(xc, dy-dx)
+		} else {
+			b = cMulPow1064(yc, dx-dy)
+		}
+		lead := 1
+		if cLt64(a, b) {
+			lead = 0
 		}
 		k = Precision64 - dx + dy - lead
+		n := cMulPow10Full64(xc, k)
+		exp := xe - ye - k
+		face := MinExp64 < exp && exp <= MaxExp64 && exp+Precision64-1 >= Emin64
 		var rem coef64
-		q, rem = cDivFull64(cMulPow10Full64(xc, k), yc)
-		if !cIsZero64(rem) {
-			// An inexact quotient: the remainder places the true value
-			// between q and q + 1 at exponent xe - ye - k, and its class is
-			// exact: rem against yc - rem. Within the exponent range that
-			// roundFace64's proof names, that is the whole rounding
-			// decision, taken at face value; nearer the limits round64
-			// takes the usual round digit and sticky bit, found by one
-			// more division step.
-			class = classAboveHalf
-			if other, _ := cSub64(yc, rem); cCmp64(rem, other) < 0 {
-				class = classBelowHalf
-			} else if cCmp64(rem, other) == 0 {
-				class = classHalf
+		if face && mode != TowardZero && mode != TowardPositive && mode != TowardNegative {
+			// To nearest, inside the exponent range of roundFace64's proof:
+			// the dividend is biased by half the divisor, and the quotient
+			// of n + ⌊yc/2⌋ by yc is the quotient of n by yc rounded to
+			// nearest with ties up, because the bias carries into the next
+			// unit exactly when the fraction is a half or more. Its
+			// remainder says the rest: it is ⌊yc/2⌋ exactly when yc divides
+			// n, the exact quotient, which goes on to the preferred
+			// exponent below; and it is zero with an even yc exactly on a
+			// tie, where ties to even takes the even neighbour, the one
+			// below. Nothing here waits for a comparison of the remainder
+			// with the half or branches on the direction, which is as good
+			// as random: the two tests are rare and the carry is packFace64's.
+			half := cHalf64(yc)
+			nb, _ := cAddFull64(n, wide64{Lo: half})
+			var rb coef64
+			q, rb = cDivFull64(nb, yc)
+			if !cEq64(rb, half) {
+				if cIsZero64(rb) && !cOdd64(yc) && mode != ToNearestAway {
+					q = cEven64(q)
+				}
+				return packFace64(neg, q, exp, mode)
 			}
-			if exp := xe - ye - k; MinExp64 < exp && exp <= MaxExp64 && exp+Precision64-1 >= Emin64 {
+		} else {
+			q, rem = cDivFull64(n, yc)
+		}
+		if !cIsZero64(rem) {
+			// An inexact quotient in a directed mode or near the exponent
+			// limits: the remainder places the true value between q and
+			// q + 1 at exponent xe - ye - k, and its class is exact: rem
+			// against yc - rem. Within the exponent range that roundFace64's
+			// proof names, that is the whole rounding decision, taken at
+			// face value; nearer the limits round64 takes the usual round
+			// digit and sticky bit, found by one more division step.
+			other, _ := cSub64(yc, rem)
+			class = cClass64(rem, other)
+			if face {
 				return roundFace64(neg, q, exp, class, mode)
 			}
 			d, rem2 := cDivFull64(wide64{Lo: cMulPow1064(rem, 1)}, yc)

@@ -110,6 +110,142 @@ func TestDivReproducers(t *testing.T) {
 	}
 }
 
+// TestDivNearest drives the quotient that divW rounds to nearest by biasing
+// its dividend with half the divisor, at the places where that can go
+// wrong, in every mode against the reference:
+//
+//   - ties, a fraction of exactly a half, with odd and even quotients below
+//     them: an odd dividend over a power of two whose exact quotient has
+//     Precision+1 digits. The biased remainder is zero and the divisor even.
+//   - a fraction one quarter either side of the tie: the same with
+//     Precision+2 digits.
+//   - an odd divisor whose biased remainder is zero, a fraction just above
+//     the half that must round up and must not be taken for a tie: small odd
+//     divisors, where one dividend in y is such a case.
+//   - exact quotients, whose biased remainder is the half itself.
+//   - the quotients nearest below a power of ten: 99…98 over 99…99.
+//
+// The test classifies each case itself, with math/big, and fails if a
+// class is missing, so that the families keep reaching what they are for.
+func TestDivNearest(t *testing.T) {
+	var k kernel
+	for _, f := range both {
+		p := f.prec
+		rng := rand.New(rand.NewPCG(*seedFlag, streamSeed("divnearest-"+f.name)))
+		counts := map[string]int{}
+		check := func(xc, yc *big.Int) {
+			if xc.Sign() == 0 || yc.Sign() == 0 || xc.Cmp(f.maxCoeff) > 0 || yc.Cmp(f.maxCoeff) > 0 {
+				return
+			}
+			// Classify: scale x so that the quotient has p digits.
+			n, q, r := new(big.Int).Set(xc), new(big.Int), new(big.Int)
+			for q.QuoRem(n, yc, r); digits(q) < p; q.QuoRem(n, yc, r) {
+				n.Mul(n, big.NewInt(10))
+			}
+			if digits(q) == p {
+				twice := new(big.Int).Lsh(r, 1)
+				biased := new(big.Int).Add(n, new(big.Int).Rsh(yc, 1))
+				biased.Mod(biased, yc)
+				switch c := twice.Cmp(yc); {
+				case r.Sign() == 0:
+					counts["exact"]++
+				case c == 0 && q.Bit(0) == 0:
+					counts["tie, even below"]++
+				case c == 0:
+					counts["tie, odd below"]++
+				case biased.Sign() == 0:
+					counts["odd divisor, biased remainder zero"]++
+				case c < 0:
+					counts["below half"]++
+				default:
+					counts["above half"]++
+				}
+				if c := twice.Cmp(yc); c >= 0 && digits(new(big.Int).Add(q, big.NewInt(1))) > p {
+					counts["carry"]++
+				}
+			}
+			for _, e := range []int{0, -3} {
+				for _, neg := range []bool{false, true} {
+					x := f.encode(value{kind: finite, neg: neg, coeff: xc, exp: e})
+					y := f.encode(value{kind: finite, coeff: yc, exp: 0})
+					for _, m := range allModes {
+						if got, want := k.div(f, x, y, m), f.div(x, y, m); got != want {
+							t.Fatalf("%s div(%s, %s, %s) = %s, want %s", f.name, f.format(x), f.format(y), modeName(m), f.format(got), f.format(want))
+						}
+					}
+				}
+			}
+		}
+		// Odd dividends over powers of two: the exact quotient is x × 5^a
+		// with a places, so its last digit is 5 and it has p+1 digits for
+		// a tie and p+2 for a quarter either side.
+		for a := 1; a <= 3*p; a++ {
+			yc := new(big.Int).Lsh(big.NewInt(1), uint(a))
+			five := new(big.Int).Exp(big.NewInt(5), big.NewInt(int64(a)), nil)
+			for _, extra := range []int{1, 2} {
+				dx := p + extra - digits(five)
+				for _, d := range []int{dx, dx + 1} {
+					if d < 1 || d > p {
+						continue
+					}
+					for range 40 {
+						xc := randDigits(rng, d)
+						xc.SetBit(xc, 0, 1)
+						check(xc, yc)
+						check(xc, new(big.Int).Mul(yc, big.NewInt(5))) // an even divisor that is not a power of two
+					}
+				}
+			}
+		}
+		// Small divisors, odd and even, under every small dividend.
+		for y := int64(2); y <= 200; y++ {
+			for x := int64(1); x <= 120; x++ {
+				check(big.NewInt(x), big.NewInt(y))
+			}
+		}
+		// Random odd divisors of every length under dividends chosen for a
+		// zero biased remainder where one exists nearby.
+		for dy := 1; dy <= p; dy++ {
+			for range 60 {
+				yc := randDigits(rng, dy)
+				yc.SetBit(yc, 0, 1)
+				xc := randDigits(rng, 1+rng.IntN(p))
+				check(xc, yc)
+				check(new(big.Int).Mul(yc, big.NewInt(int64(1+rng.IntN(1000)))), yc) // exact
+			}
+		}
+		// The quotients nearest below a power of ten: a dividend just
+		// under the largest coefficient over that coefficient. None rounds
+		// up out of the top digit, and no quotient of two coefficients
+		// can: 99…9 and a half or more needs a dividend within y/2 of
+		// y × 10^Precision after scaling by k places, a multiple of 10^k
+		// that close only if 10^k is below y/2, which the scaling excludes.
+		// The count stays to say so if that ever changes.
+		for _, delta := range []int64{1, 2, 3, 7} {
+			check(new(big.Int).Sub(f.maxCoeff, big.NewInt(delta)), f.maxCoeff)
+		}
+		if counts["carry"] != 0 {
+			t.Errorf("%s: %d quotients carried out of the largest coefficient; none can", f.name, counts["carry"])
+		}
+		for _, class := range []string{"exact", "tie, even below", "tie, odd below", "odd divisor, biased remainder zero", "below half", "above half"} {
+			if counts[class] == 0 {
+				t.Errorf("%s: no case of class %q", f.name, class)
+			}
+		}
+		t.Logf("%s: %v", f.name, counts)
+	}
+}
+
+// randDigits returns a random integer of exactly d decimal digits.
+func randDigits(r *rand.Rand, d int) *big.Int {
+	n := big.NewInt(int64(1 + r.IntN(9)))
+	for i := 1; i < d; i++ {
+		n.Mul(n, big.NewInt(10))
+		n.Add(n, big.NewInt(int64(r.IntN(10))))
+	}
+	return n
+}
+
 // TestDivExactQuotients stresses the preferred-exponent path with
 // quotients known to be exact: q and y are drawn, x = q × y, and the
 // exponents are drawn across the format. Every case is checked against the

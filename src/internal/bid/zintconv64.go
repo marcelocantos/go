@@ -60,9 +60,7 @@ func intParts64(x coef64, mode Mode) (kind Kind, neg bool, m uint64, big, inexac
 	q, class := cShift64(c, -exp)
 	if class != classZero {
 		inexact = true
-		if roundUp(class, mode, neg, cOdd64(q)) {
-			q = cInc64(q)
-		}
+		q = cAddU6464(q, roundInc(class, mode, neg, cOdd64(q)))
 	}
 	m, fits := cToU6464(q)
 	if !fits {

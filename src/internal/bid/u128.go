@@ -38,27 +38,20 @@ func u128Sub(a, b Uint128) (diff Uint128, borrow uint64) {
 
 // u128Cmp returns -1, 0 or +1 as a is less than, equal to or greater than b.
 func u128Cmp(a, b Uint128) int {
-	if a.Hi != b.Hi {
-		if a.Hi < b.Hi {
-			return -1
-		}
-		return 1
-	}
-	if a.Lo != b.Lo {
-		if a.Lo < b.Lo {
-			return -1
-		}
-		return 1
-	}
-	return 0
+	// The two borrows, of a - b and of b - a: operands with no pattern
+	// make a branch on either word a coin toss, and this has none.
+	_, lt := bits.Sub64(a.Lo, b.Lo, 0)
+	_, lt = bits.Sub64(a.Hi, b.Hi, lt)
+	_, gt := bits.Sub64(b.Lo, a.Lo, 0)
+	_, gt = bits.Sub64(b.Hi, a.Hi, gt)
+	return int(gt) - int(lt)
 }
 
-// u128Lt reports whether a < b.
+// u128Lt reports whether a < b: the borrow of a - b, without a branch.
 func u128Lt(a, b Uint128) bool {
-	if a.Hi != b.Hi {
-		return a.Hi < b.Hi
-	}
-	return a.Lo < b.Lo
+	_, c := bits.Sub64(a.Lo, b.Lo, 0)
+	_, c = bits.Sub64(a.Hi, b.Hi, c)
+	return c != 0
 }
 
 // u128Or returns a | b.

@@ -266,9 +266,13 @@ func roundFinite128(neg bool, c coef128, exp int, mode Mode, floor int) (coef128
 		// from Round128 cannot overflow. Such a far shift discards all digits.
 		shift := floor - max(exp, floor-maxWideDigits)
 		c, class = cShift128(c, shift)
-		if class != classZero && roundUp(class, mode, neg, cOdd128(c)) {
-			c = cInc128(c)
+		// The increment is added, not branched on (roundInc), and an
+		// exact shift, for which roundInc is not defined, adds zero.
+		inc := roundInc(class, mode, neg, cOdd128(c))
+		if class == classZero {
+			inc = 0
 		}
+		c = cAddU64128(c, inc)
 		exp = floor
 	}
 	return pack128(neg, c, exp), class
@@ -283,7 +287,7 @@ func roundFinite128(neg bool, c coef128, exp int, mode Mode, floor int) (coef128
 // Every rule of "Exponent of a result", "Overflow", "Underflow and
 // subnormal results" and "Sign of a result" (for zeros) in the package
 // documentation is implemented by these routines and nowhere else. The
-// width-independent direction decision is roundUp in round.go.
+// width-independent direction decision is roundInc in round.go.
 //
 // The input is the exact value
 //
@@ -470,11 +474,9 @@ func round128(neg bool, p wide128, exp int, class digitClass, mode Mode, floor i
 	if s > 0 {
 		q = cMulPow10128(q, s)
 	}
-	if roundUp(class, mode, neg, cOdd128(q)) {
-		q = cInc128(q)
-		if cGtMax128(q) {
-			q, x = cPow10128(Precision128-1), x+1
-		}
+	q = cAddU64128(q, roundInc(class, mode, neg, cOdd128(q)))
+	if cGtMax128(q) {
+		q, x = cPow10128(Precision128-1), x+1
 	}
 	if x > MaxExp128 {
 		return overflow128(neg, mode)

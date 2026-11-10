@@ -83,45 +83,171 @@ func u256Shr(a Uint256, n uint) Uint256 {
 	}
 }
 
-// The division by a two-word divisor uses the method of Möller and
-// Granlund, "Improved division by invariant integers" (IEEE Transactions on
+// Division by an arbitrary divisor uses the method of Möller and Granlund,
+// "Improved division by invariant integers" (IEEE Transactions on
 // Computers 60(2), 2011): each quotient word is estimated by multiplying by
 // a reciprocal of the normalised divisor, computed once per divisor and
 // shared by both quotient words of u256Div128, instead of by a 128-by-64
-// division per word. The reciprocal itself takes one bits.Div64.
+// division per word.
 //
-// Measured on arm64 (Apple M4 Max), where bits.Div64 is software: the
-// two-word division is about 16% faster this way. A one-word divisor still
-// uses two bits.Div64, which measured faster than a reciprocal and two
-// Möller–Granlund 2/1 steps, and computing the reciprocal without any
-// division (their Algorithm 3, Newton steps from a 9-bit approximation)
-// measured slower than the one bits.Div64.
+// A division is a chain: the digit counts, the scaling, the reciprocal, two
+// quotient words and the rounding each wait for the one before, and on
+// arm64 (Apple M4 Max) a decimal128 division takes about as long as that
+// chain, with little overlap between one division and the next. Two things
+// follow, and both were measured (2026-11-10; "Operands without a pattern"
+// and "Division" in the package documentation have the figures).
+//
+// First, a branch on the operands' digits is not free even when it is
+// predicted. The corrections of these algorithms depend on low bits of the
+// operands: the first correction of the two-word reciprocal applies for
+// more than half of all divisors, and that of a quotient word about half
+// the time. On operands with no pattern they mispredict, and each
+// misprediction discards the division after it as well. They are written
+// as carries, borrows and masks.
+//
+// Second, where bits.Div64 is not an instruction it is a routine of two
+// hardware divisions and two correction loops whose trips depend on the
+// operand. The reciprocal of a word is computed without it, by a table and
+// Newton steps (reciprocalNewton), and a one-word divisor takes two
+// reciprocal steps instead of two bits.Div64. On amd64, where bits.Div64 is
+// the 128-by-64 division instruction, it computes the reciprocal and
+// divides by a one-word divisor directly (div64Native).
+
+// reciprocal2by1 returns ⌊(2^128 - 1) / d⌋ - 2^64, the reciprocal of the
+// normalised word d (its top bit set) that div2by1 multiplies by and that
+// reciprocalExtend extends: by the division instruction where there is
+// one, and by reciprocalNewton elsewhere.
+func reciprocal2by1(d uint64) uint64 {
+	if div64Native {
+		v, _ := bits.Div64(^d, ^uint64(0), d)
+		return v
+	}
+	return reciprocalNewton(d)
+}
+
+// recipTab holds ⌊(2^19 - 3×2^8) / d9⌋ for d9 from 256 to 511, the first
+// approximation of reciprocal2by1 from the top nine bits of a normalised
+// divisor (Möller and Granlund, Algorithm 3, step 1). The values have 11
+// bits. TestRecipTab recomputes them.
+var recipTab = [256]uint16{
+	2045, 2037, 2029, 2021, 2013, 2005, 1998, 1990, 1983, 1975, 1968, 1960,
+	1953, 1946, 1938, 1931, 1924, 1917, 1910, 1903, 1896, 1889, 1883, 1876,
+	1869, 1863, 1856, 1849, 1843, 1836, 1830, 1824, 1817, 1811, 1805, 1799,
+	1792, 1786, 1780, 1774, 1768, 1762, 1756, 1750, 1745, 1739, 1733, 1727,
+	1722, 1716, 1710, 1705, 1699, 1694, 1688, 1683, 1677, 1672, 1667, 1661,
+	1656, 1651, 1646, 1641, 1636, 1630, 1625, 1620, 1615, 1610, 1605, 1600,
+	1596, 1591, 1586, 1581, 1576, 1572, 1567, 1562, 1558, 1553, 1548, 1544,
+	1539, 1535, 1530, 1526, 1521, 1517, 1513, 1508, 1504, 1500, 1495, 1491,
+	1487, 1483, 1478, 1474, 1470, 1466, 1462, 1458, 1454, 1450, 1446, 1442,
+	1438, 1434, 1430, 1426, 1422, 1418, 1414, 1411, 1407, 1403, 1399, 1396,
+	1392, 1388, 1384, 1381, 1377, 1374, 1370, 1366, 1363, 1359, 1356, 1352,
+	1349, 1345, 1342, 1338, 1335, 1332, 1328, 1325, 1322, 1318, 1315, 1312,
+	1308, 1305, 1302, 1299, 1295, 1292, 1289, 1286, 1283, 1280, 1276, 1273,
+	1270, 1267, 1264, 1261, 1258, 1255, 1252, 1249, 1246, 1243, 1240, 1237,
+	1234, 1231, 1228, 1226, 1223, 1220, 1217, 1214, 1211, 1209, 1206, 1203,
+	1200, 1197, 1195, 1192, 1189, 1187, 1184, 1181, 1179, 1176, 1173, 1171,
+	1168, 1165, 1163, 1160, 1158, 1155, 1153, 1150, 1148, 1145, 1143, 1140,
+	1138, 1135, 1133, 1130, 1128, 1125, 1123, 1121, 1118, 1116, 1113, 1111,
+	1109, 1106, 1104, 1102, 1099, 1097, 1095, 1092, 1090, 1088, 1086, 1083,
+	1081, 1079, 1077, 1074, 1072, 1070, 1068, 1066, 1064, 1061, 1059, 1057,
+	1055, 1053, 1051, 1049, 1047, 1044, 1042, 1040, 1038, 1036, 1034, 1032,
+	1030, 1028, 1026, 1024,
+}
+
+// reciprocalNewton returns ⌊(2^128 - 1) / d⌋ - 2^64 for a normalised word
+// d (its top bit set), as reciprocal2by1 does (Möller and Granlund,
+// Algorithm 3). It is that quotient computed without a division: a table gives 11 bits from the top
+// nine of d, and Newton steps on the leading 40 bits, on 63 and on all 64
+// double them to 21, 34 and 64, the last with an exact correction. With
+// d9, d40 and d63 the top 9 and 40 bits of d (the latter plus one) and
+// ⌈d / 2⌉:
+//
+//	v0 = recipTab[d9]
+//	v1 = 2^11 v0 - ⌊v0^2 d40 / 2^40⌋ - 1
+//	v2 = 2^13 v1 + ⌊v1 (2^60 - v1 d40) / 2^47⌋
+//	e  = 2^96 - v2 d63 + ⌊v2 / 2⌋ (d mod 2)
+//	v3 = 2^31 v2 + ⌊v2 e / 2^65⌋            (modulo 2^64)
+//	v4 = v3 - ⌊(v3 + 2^64 + 1) d / 2^64⌋    (modulo 2^64)
+//
+// and v4 is the result. Every product fits the words shown in the code;
+// the paper proves the bounds. The same value is bits.Div64(^d, ^0, d),
+// and TestReciprocalNewton compares the two on every boundary of the table
+// and on random divisors, on every target.
+func reciprocalNewton(d uint64) uint64 {
+	d0 := d & 1
+	d40 := d>>24 + 1
+	d63 := d>>1 + d0
+	v0 := uint64(recipTab[d>>55-256])
+	v1 := v0<<11 - v0*v0*d40>>40 - 1
+	v2 := v1<<13 + v1*(1<<60-v1*d40)>>47
+	e := (v2>>1)&-d0 - v2*d63 // modulo 2^64, where 2^96 is zero
+	h, _ := bits.Mul64(v2, e)
+	v3 := v2<<31 + h>>1
+	h, l := bits.Mul64(v3, d)
+	_, c := bits.Add64(l, d, 0)
+	return v3 - (h + d + c)
+}
 
 // reciprocal3by2 returns ⌊(2^192 - 1) / (d1, d0)⌋ - 2^64, the reciprocal
-// of the normalised two-word divisor (d1, d0) that div3by2 multiplies by,
-// from the reciprocal ⌊(2^128 - 1) / d1⌋ - 2^64 of d1 alone, which is the
-// quotient of (2^128 - 1) - d1 × 2^64 by d1 (Möller and Granlund,
-// Algorithm 6).
+// of the normalised two-word divisor (d1, d0) that div3by2 multiplies by.
 func reciprocal3by2(d1, d0 uint64) uint64 {
-	v, _ := bits.Div64(^d1, ^uint64(0), d1)
-	p := d1*v + d0
-	if p < d0 { // the addition carried
-		v--
-		if p >= d1 {
-			v--
-			p -= d1
-		}
-		p -= d1
-	}
+	return reciprocalExtend(reciprocal2by1(d1), d1, d0)
+}
+
+// reciprocalExtend returns reciprocal3by2(d1, d0) from v, the reciprocal
+// of d1 alone (Möller and Granlund, Algorithm 6). The algorithm corrects
+// v twice: a decrement when an addition carries, and one more when what
+// is left still reaches the divisor. The first carry happens for more
+// than half of all divisors, so the corrections are carries and borrows,
+// not branches; and the product v d0 that the second correction needs is
+// started from the uncorrected v and adjusted by the multiples of d0 the
+// first correction took off, so that it does not wait for it.
+func reciprocalExtend(v, d1, d0 uint64) uint64 {
+	// p = d1 v + d0. If the addition carried: v--, and once more with
+	// p -= d1 if p >= d1; then p -= d1.
+	p, c := bits.Add64(d1*v, d0, 0)
+	_, lt := bits.Sub64(p, d1, 0)
+	x := c &^ lt // carried and p >= d1
+	// (t1, t0) = (v - c - x) d0.
 	t1, t0 := bits.Mul64(v, d0)
-	p += t1
-	if p < t1 { // the addition carried
-		v--
-		if p > d1 || p == d1 && t0 >= d0 {
-			v--
-		}
+	var b uint64
+	t0, b = bits.Sub64(t0, d0&-c, 0)
+	t1 -= b
+	t0, b = bits.Sub64(t0, d0&-x, 0)
+	t1 -= b
+	v -= c + x
+	p -= d1&-c + d1&-x
+	// p += t1. If that carried: v--, and once more if (p, t0) >= (d1, d0).
+	p, c = bits.Add64(p, t1, 0)
+	_, lt = bits.Sub64(t0, d0, 0)
+	_, lt = bits.Sub64(p, d1, lt)
+	return v - c - c&^lt
+}
+
+// div2by1 divides the two-word number (u1, u0) by the normalised word d,
+// whose reciprocal v is reciprocal2by1(d), and returns the one-word
+// quotient and the remainder (Möller and Granlund, Algorithm 4).
+// Precondition, not checked: u1 < d.
+//
+// The candidate quotient is the high word of v u1 + (u1, u0), plus one;
+// the remainder against it, modulo 2^64, exceeds the fraction word q0
+// exactly when the candidate is one too large, which on operands with no
+// pattern is a coin toss and is corrected by a mask. A last, rare step
+// corrects a remainder still at or above the divisor.
+func div2by1(u1, u0, d, v uint64) (q, r uint64) {
+	q, q0 := bits.Mul64(v, u1)
+	q0, c := bits.Add64(q0, u0, 0)
+	q += u1 + c + 1
+	r = u0 - q*d
+	_, gt := bits.Sub64(q0, r, 0) // 1 when r > q0
+	m := -gt
+	q += m
+	r += d & m
+	if r >= d {
+		q++
+		r -= d
 	}
-	return v
+	return q, r
 }
 
 // div3by2 divides the three-word number (u2, u1, u0) by the two-word number
@@ -150,12 +276,15 @@ func div3by2(u2, u1, u0, d1, d0, v uint64) (q, r1, r0 uint64) {
 	r1, _ = bits.Sub64(r1, t1, b)
 	r0, b = bits.Sub64(r0, d0, 0)
 	r1, _ = bits.Sub64(r1, d1, b)
-	q++
-	if r1 >= q0 {
-		q--
-		r0, c = bits.Add64(r0, d0, 0)
-		r1, _ = bits.Add64(r1, d1, c)
-	}
+	// The candidate q + 1 is right or one too large, as r1 compares with
+	// the fraction word, and on operands with no pattern that is a coin
+	// toss: the correction is a mask, not a branch (the paper says as
+	// much). m is all ones when r1 >= q0.
+	_, lt := bits.Sub64(r1, q0, 0)
+	m := lt - 1
+	q += 1 + m
+	r0, c = bits.Add64(r0, d0&m, 0)
+	r1, _ = bits.Add64(r1, d1&m, c)
 	if r1 > d1 || r1 == d1 && r0 >= d0 {
 		q++
 		r0, b = bits.Sub64(r0, d0, 0)
@@ -164,27 +293,30 @@ func div3by2(u2, u1, u0, d1, d0, v uint64) (q, r1, r0 uint64) {
 	return q, r1, r0
 }
 
-// div3by2Knuth is div3by2 without a reciprocal: one step of Knuth's
-// Algorithm D (TAOCP vol. 2, 4.3.1) with a two-word divisor. Preconditions,
-// not checked: d1 has its top bit set, and u2 < d1, which u256Div128's one
-// caller meets because there u2 < 2^s <= 2^63 for its shift s <= 63. The
-// quotient word is estimated from the top words alone, as
-// q̂ = ⌊(u2·2^64 + u1) / d1⌋; because d1 is normalised the estimate is never
-// too small and at most 2 too large. It is multiplied back and subtracted,
-// and while that borrows the divisor is added back and q̂ decremented, at
-// most twice.
-func div3by2Knuth(u2, u1, u0, d1, d0 uint64) (q, r1, r0 uint64) {
-	q, _ = bits.Div64(u2, u1, d1)
+// div3by2Lead is div3by2 from the reciprocal v of d1 alone: one step of
+// Knuth's Algorithm D (TAOCP vol. 2, 4.3.1) with a two-word divisor, its
+// estimate taken by div2by1 instead of a division. Preconditions, not
+// checked: d1 has its top bit set, and u2 < d1. The quotient word is
+// estimated from the top words alone, as q̂ = ⌊(u2·2^64 + u1) / d1⌋;
+// because d1 is normalised the estimate is never too small and at most 2
+// too large. The low divisor word is multiplied back and subtracted, and
+// while that borrows the divisor is added back and q̂ decremented, at most
+// twice.
+//
+// The estimate exceeds the quotient by about q̂ d0 / (d1 2^64), so it is
+// right but for a few times in a thousand when q̂ is below 2^55, and wrong
+// about one time in three when q̂ is a full word. u256Div128 uses this
+// step where the quotient word is small: the leading word of a decimal
+// quotient, which has under 50 bits, and there it needs only the
+// reciprocal of d1, which is ready before reciprocalExtend's.
+func div3by2Lead(u2, u1, u0, d1, d0, v uint64) (q, r1, r0 uint64) {
+	q, rt := div2by1(u2, u1, d1, v)
 
-	// (r2, r1, r0) = (u2, u1, u0) - q × (d1, d0), modulo 2^192.
-	h0, p0 := bits.Mul64(q, d0)
-	h1, p1 := bits.Mul64(q, d1)
-	var c, b uint64
-	p1, c = bits.Add64(p1, h0, 0)
-	p2 := h1 + c // q × d < 2^192, so this cannot overflow
-	r0, b = bits.Sub64(u0, p0, 0)
-	r1, b = bits.Sub64(u1, p1, b)
-	r2, b := bits.Sub64(u2, p2, b)
+	// (r1, r0) = (rt, u0) - q × d0, with a borrow out of the top.
+	h, l := bits.Mul64(q, d0)
+	var b, c uint64
+	r0, b = bits.Sub64(u0, l, 0)
+	r1, b = bits.Sub64(rt, h, b)
 
 	// A borrow means q̂ was too large and the difference wrapped negative.
 	// Add the divisor back; the difference is non-negative again exactly
@@ -193,7 +325,6 @@ func div3by2Knuth(u2, u1, u0, d1, d0 uint64) (q, r1, r0 uint64) {
 		q--
 		r0, c = bits.Add64(r0, d0, 0)
 		r1, c = bits.Add64(r1, d1, c)
-		r2, c = bits.Add64(r2, 0, c)
 		b ^= c
 	}
 	return q, r1, r0
@@ -215,12 +346,24 @@ func u256Div128(n Uint256, d Uint128) (q, r Uint128, ok bool) {
 	}
 	if d.Hi == 0 {
 		// n.Hi < d.Lo < 2^64, so n.Hi.Hi is zero and two word divisions
-		// suffice. bits.Div64 needs its high word below the divisor,
-		// which the precondition gives at each step.
+		// suffice: each step's high word is below the divisor, the first
+		// by the precondition and the second as a remainder. They are
+		// the division instruction where there is one, and elsewhere two
+		// steps by the reciprocal of the normalised divisor; the shift
+		// cannot lose bits, because n.Hi.Lo < d.Lo.
+		if div64Native {
+			var r64 uint64
+			q.Hi, r64 = bits.Div64(n.Hi.Lo, n.Lo.Hi, d.Lo)
+			q.Lo, r64 = bits.Div64(r64, n.Lo.Lo, d.Lo)
+			return q, Uint128{Lo: r64}, true
+		}
+		s := uint(bits.LeadingZeros64(d.Lo))
+		dn := d.Lo << s
+		v := reciprocal2by1(dn)
 		var r64 uint64
-		q.Hi, r64 = bits.Div64(n.Hi.Lo, n.Lo.Hi, d.Lo)
-		q.Lo, r64 = bits.Div64(r64, n.Lo.Lo, d.Lo)
-		return q, Uint128{Lo: r64}, true
+		q.Hi, r64 = div2by1(n.Hi.Lo<<s|n.Lo.Hi>>(64-s), n.Lo.Hi<<s|n.Lo.Lo>>(64-s), dn, v)
+		q.Lo, r64 = div2by1(r64, n.Lo.Lo<<s, dn, v)
+		return q, Uint128{Lo: r64 >> s}, true
 	}
 
 	// Normalise: shift d left until its top bit is set, and n by the same
@@ -238,16 +381,28 @@ func u256Div128(n Uint256, d Uint128) (q, r Uint128, ok bool) {
 	// Two quotient words, high first. The first step's precondition
 	// (w3, w2) < (v1, v0) is n.Hi < d after the shift; the second's is that
 	// the remainder of the first is below the divisor.
+	//
 	// A dividend below 2^128 has a high quotient word of zero, because
-	// d >= 2^64, and only the low word to find. One word does not repay
-	// the reciprocal: Knuth's estimate from one bits.Div64 is cheaper.
+	// d >= 2^64, and only the low word to find, by the step that needs the
+	// reciprocal of v1 alone. Otherwise the low word takes the two-word
+	// reciprocal, and so does the high word unless it is small: w3 below
+	// 2^55 bounds it below 2^56, and then the step from the reciprocal of
+	// v1 is right but for a few times in a thousand and does not wait for
+	// the two-word reciprocal, which is extended beside it. The high word
+	// of a decimal quotient is always that small (under 50 bits for 34
+	// digits); the test is on the operands' magnitude, not their digits.
+	v := reciprocal2by1(v1)
 	var r1, r0 uint64
 	if n.Hi == (Uint128{}) {
-		q.Lo, r1, r0 = div3by2Knuth(w2, w1, w0, v1, v0)
+		q.Lo, r1, r0 = div3by2Lead(w2, w1, w0, v1, v0, v)
 	} else {
-		v := reciprocal3by2(v1, v0)
-		q.Hi, r1, r0 = div3by2(w3, w2, w1, v1, v0, v)
-		q.Lo, r1, r0 = div3by2(r1, r0, w0, v1, v0, v)
+		vv := reciprocalExtend(v, v1, v0)
+		if w3>>55 == 0 {
+			q.Hi, r1, r0 = div3by2Lead(w3, w2, w1, v1, v0, v)
+		} else {
+			q.Hi, r1, r0 = div3by2(w3, w2, w1, v1, v0, vv)
+		}
+		q.Lo, r1, r0 = div3by2(r1, r0, w0, v1, v0, vv)
 	}
 
 	// Undo the normalisation of the remainder.

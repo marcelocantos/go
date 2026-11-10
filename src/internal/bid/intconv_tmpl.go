@@ -66,9 +66,7 @@ func intPartsW(x coefW, mode Mode) (kind Kind, neg bool, m uint64, big, inexact 
 	q, class := cShiftW(c, -exp)
 	if class != classZero {
 		inexact = true
-		if roundUp(class, mode, neg, cOddW(q)) {
-			q = cIncW(q)
-		}
+		q = cAddU64W(q, roundInc(class, mode, neg, cOddW(q)))
 	}
 	m, fits := cToU64W(q)
 	if !fits {

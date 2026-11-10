@@ -49,12 +49,16 @@ package bid
 //
 // An inexact quotient inside the exponent range of roundFaceW's proof
 // (MinExpW < exp <= MaxExpW, adjusted exponent at least EminW) is rounded
-// at face value from that class: the one row of the rounding table, with
-// the carry of the largest coefficient one place up. This is the second
-// use of the face-value exception, after the swamped addend of addSlowW
-// ("Face-value rounding" in the package documentation): it saves the
-// reduction of a longer quotient by a reciprocal division and its digit
-// count, which were a third of a division. Nearer the exponent limits the
+// at face value: the one row of the rounding table, with the carry of the
+// largest coefficient one place up. This is the second use of the
+// face-value exception, after the swamped addend of addSlowW ("Face-value
+// rounding" in the package documentation): it saves the reduction of a
+// longer quotient by a reciprocal division and its digit count, which were
+// a third of a division. In the two nearest modes the row is not even
+// looked up: the dividend is biased by half the divisor and the quotient
+// comes out rounded, with the exact quotient and the tie told apart by the
+// biased remainder (the code below, and the same section). A directed mode
+// takes the class of the remainder, rem against yc - rem. Nearer the exponent limits the
 // result may be subnormal, clamped or overflowing, which only roundW
 // decides, so one more division step supplies a round digit and a sticky
 // bit, and roundW rounds q × 10 + d at exponent xe - ye - k - 1 as it
@@ -122,38 +126,69 @@ func divW(x, y coefW, mode Mode) coefW {
 	dy := cDigitsW(yc)
 	k, q, class := dy-1, xc, classZero
 	first := 1 // the likely count of zeros to strip from an exact quotient
-	if cCmpW(yc, cPow10W(k)) != 0 {
+	if !cEqW(yc, cPow10W(k)) {
 		// Scale so that q has exactly PrecisionW digits: xc × 10^k / yc
 		// lies in [10^(dx+k-dy-1), 10^(dx+k-dy+1)) and reaches 10^(dx+k-dy)
 		// exactly when the leading ratio does, xc × 10^(dy-dx) >= yc, a
 		// comparison of two values of dy or dx digits, which fit.
+		//
+		// Which coefficient is the longer is a property of the operands'
+		// kind and stays a branch; whether the ratio reaches one is in
+		// their leading digits, as good as random, and is a borrow
+		// (cLtW), not a branch.
 		dx := cDigitsW(xc)
-		lead := 0
+		a, b := xc, yc
 		if dx <= dy {
-			if cCmpW(cMulPow10W(xc, dy-dx), yc) >= 0 {
-				lead = 1
-			}
-		} else if cCmpW(xc, cMulPow10W(yc, dx-dy)) >= 0 {
-			lead = 1
+			a = cMulPow10W(xc, dy-dx)
+		} else {
+			b = cMulPow10W(yc, dx-dy)
+		}
+		lead := 1
+		if cLtW(a, b) {
+			lead = 0
 		}
 		k = PrecisionW - dx + dy - lead
+		n := cMulPow10FullW(xc, k)
+		exp := xe - ye - k
+		face := MinExpW < exp && exp <= MaxExpW && exp+PrecisionW-1 >= EminW
 		var rem coefW
-		q, rem = cDivFullW(cMulPow10FullW(xc, k), yc)
-		if !cIsZeroW(rem) {
-			// An inexact quotient: the remainder places the true value
-			// between q and q + 1 at exponent xe - ye - k, and its class is
-			// exact: rem against yc - rem. Within the exponent range that
-			// roundFaceW's proof names, that is the whole rounding
-			// decision, taken at face value; nearer the limits roundW
-			// takes the usual round digit and sticky bit, found by one
-			// more division step.
-			class = classAboveHalf
-			if other, _ := cSubW(yc, rem); cCmpW(rem, other) < 0 {
-				class = classBelowHalf
-			} else if cCmpW(rem, other) == 0 {
-				class = classHalf
+		if face && mode != TowardZero && mode != TowardPositive && mode != TowardNegative {
+			// To nearest, inside the exponent range of roundFaceW's proof:
+			// the dividend is biased by half the divisor, and the quotient
+			// of n + ⌊yc/2⌋ by yc is the quotient of n by yc rounded to
+			// nearest with ties up, because the bias carries into the next
+			// unit exactly when the fraction is a half or more. Its
+			// remainder says the rest: it is ⌊yc/2⌋ exactly when yc divides
+			// n, the exact quotient, which goes on to the preferred
+			// exponent below; and it is zero with an even yc exactly on a
+			// tie, where ties to even takes the even neighbour, the one
+			// below. Nothing here waits for a comparison of the remainder
+			// with the half or branches on the direction, which is as good
+			// as random: the two tests are rare and the carry is packFaceW's.
+			half := cHalfW(yc)
+			nb, _ := cAddFullW(n, wideW{Lo: half})
+			var rb coefW
+			q, rb = cDivFullW(nb, yc)
+			if !cEqW(rb, half) {
+				if cIsZeroW(rb) && !cOddW(yc) && mode != ToNearestAway {
+					q = cEvenW(q)
+				}
+				return packFaceW(neg, q, exp, mode)
 			}
-			if exp := xe - ye - k; MinExpW < exp && exp <= MaxExpW && exp+PrecisionW-1 >= EminW {
+		} else {
+			q, rem = cDivFullW(n, yc)
+		}
+		if !cIsZeroW(rem) {
+			// An inexact quotient in a directed mode or near the exponent
+			// limits: the remainder places the true value between q and
+			// q + 1 at exponent xe - ye - k, and its class is exact: rem
+			// against yc - rem. Within the exponent range that roundFaceW's
+			// proof names, that is the whole rounding decision, taken at
+			// face value; nearer the limits roundW takes the usual round
+			// digit and sticky bit, found by one more division step.
+			other, _ := cSubW(yc, rem)
+			class = cClassW(rem, other)
+			if face {
 				return roundFaceW(neg, q, exp, class, mode)
 			}
 			d, rem2 := cDivFullW(wideW{Lo: cMulPow10W(rem, 1)}, yc)

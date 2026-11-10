@@ -173,17 +173,25 @@ func addSlow64(x, y coef64, mode Mode) coef64 {
 		// Precision64, since y < 10^Precision64.
 		dx := cDigits64(xc)
 		m := Precision64 - dx
-		if s := gap - m - 1; s > 0 && !cIsZero64(yc) && (s >= Precision64 || cCmp64(yc, cPow1064(s)) < 0) {
+		if s := gap - m - 1; s > 0 && !cIsZero64(yc) && (s >= Precision64 || cLt64(yc, cPow1064(s))) {
 			p, class := cMulPow1064(xc, m), classBelowHalf
+			near := p // X: what both classes round to in a nearest mode
 			if xneg != yneg {
 				class = classAboveHalf
-				if cCmp64(p, cPow1064(Precision64-1)) == 0 {
+				if cEq64(p, cPow1064(Precision64-1)) {
 					m, s = m+1, s-1
 					p = cPow1064(Precision64)
+					near = p
 				}
 				p, _ = cSub64(p, cPow1064(0))
 			}
-			if s > 0 && (s >= Precision64 || cCmp64(yc, cPow1064(s)) < 0) {
+			if s > 0 && (s >= Precision64 || cLt64(yc, cPow1064(s))) {
+				// To nearest there is nothing to decide: X + f rounds
+				// down to X and (X - 1) + (1 - f) up to X, whatever the
+				// parity, and 10^Precision64 is packFace64's carry.
+				if mode != TowardZero && mode != TowardPositive && mode != TowardNegative {
+					return packFace64(xneg, near, xe-m, mode)
+				}
 				return roundFace64(xneg, p, xe-m, class, mode)
 			}
 		}
@@ -210,7 +218,7 @@ func addSlow64(x, y coef64, mode Mode) coef64 {
 			if c != classZero {
 				q, c = cInc64(q), c.complement()
 			}
-			if p, _ = cSub64(p, q); cCmp64(p, cPow1064(Precision64-1)) >= 0 {
+			if p, _ = cSub64(p, q); !cLt64(p, cPow1064(Precision64-1)) {
 				if c != classZero {
 					return roundFace64(xneg, p, xe-m, c, mode)
 				}
@@ -270,10 +278,10 @@ func addSlow64(x, y coef64, mode Mode) coef64 {
 // floor MinExp64 and the value is not tiny: nothing underflows.
 // q has Precision64 digits, so round64's place of the result is exp itself:
 // it pads nothing, discards no digit of q, and its class is the caller's.
-// Its decision is then roundUp(class, mode, neg, odd(q)), the one row of
+// Its decision is then roundInc(class, mode, neg, odd(q)), the one row of
 // the five-mode table this function takes, ties included: a swamped
-// addend's class is never classHalf, the others' may be, and roundUp
-// decides a tie as round64 would. The class is never classZero: roundUp
+// addend's class is never classHalf, the others' may be, and roundInc
+// decides a tie as round64 would. The class is never classZero: roundInc
 // takes an inexact value, and an exact one goes to round64. An increment of
 // cMax64() carries to 10^Precision64, which
 // round64 encodes as 10^(Precision64-1) one place up, and that place above
@@ -284,14 +292,22 @@ func addSlow64(x, y coef64, mode Mode) coef64 {
 // TestAlignedAdd the aligned addend's classes, carries and cancellations,
 // and the oracle's far and general regimes reach it in every mode.
 func roundFace64(neg bool, q coef64, exp int, class digitClass, mode Mode) coef64 {
-	if roundUp(class, mode, neg, cOdd64(q)) {
-		q = cInc64(q)
-		if cGtMax64(q) {
-			q, exp = cPow1064(Precision64-1), exp+1
-			if exp > MaxExp64 {
-				r, _ := overflow64(neg, mode)
-				return r
-			}
+	// The increment is added, not branched on (roundInc); the carry out
+	// of the largest coefficient is the branch, and it is rare.
+	return packFace64(neg, cAddU6464(q, roundInc(class, mode, neg, cOdd64(q))), exp, mode)
+}
+
+// packFace64 returns (-1)^neg × q × 10^exp for a q that roundFace64 has
+// rounded, or that div64 has by biasing its dividend: Precision64 digits, or
+// 10^Precision64 when the rounding carried out of the largest coefficient,
+// which is 10^(Precision64-1) one place up, and above MaxExp64 overflow64's
+// result. The carry is the one branch of a face-value rounding, and rare.
+func packFace64(neg bool, q coef64, exp int, mode Mode) coef64 {
+	if cGtMax64(q) {
+		q, exp = cPow1064(Precision64-1), exp+1
+		if exp > MaxExp64 {
+			r, _ := overflow64(neg, mode)
+			return r
 		}
 	}
 	return pack64(neg, q, exp)

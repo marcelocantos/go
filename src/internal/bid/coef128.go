@@ -29,6 +29,21 @@ func cCmp128(a, b coef128) int {
 	return u128Cmp(a, b)
 }
 
+// cLt128 reports whether a < b, without a branch (u128Lt).
+func cLt128(a, b coef128) bool {
+	return u128Lt(a, b)
+}
+
+// cEq128 reports whether a == b.
+func cEq128(a, b coef128) bool {
+	return a == b
+}
+
+// cClass128 is cClass64 for a 128-bit fraction.
+func cClass128(r, rest coef128) digitClass {
+	return class128(r, rest)
+}
+
 // cAdd128 returns a + b modulo 2^128 and whether the sum carried out of the
 // type, in which case the true sum is 2^128 + sum.
 func cAdd128(a, b coef128) (sum coef128, carry bool) {
@@ -52,11 +67,15 @@ func cOdd128(c coef128) bool {
 // cDigits64 for the method; here the table has 39 entries, 10^0 to 10^38,
 // the powers of ten below 2^128.
 func cDigits128(c coef128) int {
+	// The estimate is one short unless c is below 10^t, and that is the
+	// borrow of c - 10^t: no branch, which for coefficients of one length
+	// would be taken about half the time. The branch in u128Len, on the
+	// magnitude, stays: operands of one kind take it one way.
 	t := u128Len(c) * 1233 >> 12
-	if u128Lt(c, pow10tab128[t]) {
-		return t
-	}
-	return t + 1
+	p := &pow10tab128[t]
+	_, b := bits.Sub64(c.Lo, p.Lo, 0)
+	_, b = bits.Sub64(c.Hi, p.Hi, b)
+	return t + 1 - int(b)
 }
 
 // cMulPow10128 returns c × 10^k. Precondition: 0 <= k <= 38 and the product
@@ -359,6 +378,22 @@ func cLo128(p wide128) coef128 {
 		panic(errQuotientOverflow)
 	}
 	return p.Lo
+}
+
+// cHalf128 returns ⌊c / 2⌋.
+func cHalf128(c coef128) coef128 {
+	return coef128{Hi: c.Hi >> 1, Lo: c.Lo>>1 | c.Hi<<63}
+}
+
+// cEven128 returns c with its low bit clear: c itself if even, c - 1 if odd.
+func cEven128(c coef128) coef128 {
+	return coef128{Hi: c.Hi, Lo: c.Lo &^ 1}
+}
+
+// cAddU64128 returns c + u modulo 2^128.
+func cAddU64128(c coef128, u uint64) coef128 {
+	lo, carry := bits.Add64(c.Lo, u, 0)
+	return coef128{Hi: c.Hi + carry, Lo: lo}
 }
 
 // cInc128 returns c + 1. Precondition: c is below the largest value of the

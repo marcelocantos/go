@@ -121,29 +121,25 @@ func (c digitClass) complement() digitClass {
 // 10^k >> 1. The test for zero comes first because at k = 0 half is also
 // zero, and an empty tail is not a tie.
 func class64(r, half uint64) digitClass {
-	switch {
-	case r == 0:
-		return classZero
-	case r < half:
-		return classBelowHalf
-	case r == half:
-		return classHalf
-	}
-	return classAboveHalf
+	// classHalf, one less if r is below the half and one more if above,
+	// by the borrows of the two differences; and zero for a zero r, by a
+	// mask. The class of a remainder is as good as random, so nothing
+	// here is a branch.
+	_, lt := bits.Sub64(r, half, 0)
+	_, gt := bits.Sub64(half, r, 0)
+	nz := (r | -r) >> 63
+	return digitClass((uint64(classHalf) + gt - lt) & -nz)
 }
 
 // class128 is class64 for a 128-bit remainder.
 func class128(r, half Uint128) digitClass {
-	if r == (Uint128{}) {
-		return classZero
-	}
-	switch c := u128Cmp(r, half); {
-	case c < 0:
-		return classBelowHalf
-	case c == 0:
-		return classHalf
-	}
-	return classAboveHalf
+	_, lt := bits.Sub64(r.Lo, half.Lo, 0)
+	_, lt = bits.Sub64(r.Hi, half.Hi, lt)
+	_, gt := bits.Sub64(half.Lo, r.Lo, 0)
+	_, gt = bits.Sub64(half.Hi, r.Hi, gt)
+	w := r.Hi | r.Lo
+	nz := (w | -w) >> 63
+	return digitClass((uint64(classHalf) + gt - lt) & -nz)
 }
 
 // reduceClass64 is cReduceClass64, out of line because a 128-by-64 division

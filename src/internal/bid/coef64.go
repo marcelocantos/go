@@ -48,6 +48,23 @@ func cCmp64(a, b coef64) int {
 	return 0
 }
 
+// cLt64 reports whether a < b.
+func cLt64(a, b coef64) bool {
+	return a < b
+}
+
+// cEq64 reports whether a == b.
+func cEq64(a, b coef64) bool {
+	return a == b
+}
+
+// cClass64 returns the class of the fraction r / (r + rest), for a
+// non-zero r: classBelowHalf, classHalf or classAboveHalf as r is below,
+// equal to or above rest. It is class64, whose half is rest here.
+func cClass64(r, rest coef64) digitClass {
+	return class64(r, rest)
+}
+
 // cAdd64 returns a + b modulo 2^64 and whether the sum carried out of the
 // type, in which case the true sum is 2^64 + sum.
 func cAdd64(a, b coef64) (sum coef64, carry bool) {
@@ -124,9 +141,15 @@ func cReduce64(p wide64, k int) (q coef64, sticky bool) {
 	return q, r != 0
 }
 
-// cLenFull64 returns the number of decimal digits of p: 0 for zero.
+// cLenFull64 returns the number of decimal digits of p: 0 for zero. It is
+// cDigits128, whose body is repeated here because a call to it would not
+// inline: see its comment.
 func cLenFull64(p wide64) int {
-	return cDigits128(p)
+	t := u128Len(p) * 1233 >> 12
+	q := &pow10tab128[t]
+	_, b := bits.Sub64(p.Lo, q.Lo, 0)
+	_, b = bits.Sub64(p.Hi, q.Hi, b)
+	return t + 1 - int(b)
 }
 
 // cAddFull64 returns a + b modulo 2^128 and whether the sum carried out of
@@ -288,6 +311,21 @@ func cLo64(p wide64) coef64 {
 		panic(errQuotientOverflow)
 	}
 	return p.Lo
+}
+
+// cHalf64 returns ⌊c / 2⌋.
+func cHalf64(c coef64) coef64 {
+	return c >> 1
+}
+
+// cEven64 returns c with its low bit clear: c itself if even, c - 1 if odd.
+func cEven64(c coef64) coef64 {
+	return c &^ 1
+}
+
+// cAddU6464 returns c + u modulo 2^64.
+func cAddU6464(c coef64, u uint64) coef64 {
+	return c + u
 }
 
 // cInc64 returns c + 1. Precondition: c is below the largest value of the

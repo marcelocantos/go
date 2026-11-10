@@ -87,10 +87,10 @@ func remainderW(x, y coefW, nearest bool) coefW {
 	}
 
 	r, odd := xc, false
-	if k > 0 || cCmpW(xc, Y) >= 0 {
+	if k > 0 || !cLtW(xc, Y) {
 		m, _ := cAddW(Y, Y)
 		r = remScaledW(xc, k, m)
-		if cCmpW(r, Y) >= 0 {
+		if !cLtW(r, Y) {
 			r, _ = cSubW(r, Y)
 			odd = true
 		}

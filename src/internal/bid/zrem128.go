@@ -86,10 +86,10 @@ func remainder128(x, y coef128, nearest bool) coef128 {
 	}
 
 	r, odd := xc, false
-	if k > 0 || cCmp128(xc, Y) >= 0 {
+	if k > 0 || !cLt128(xc, Y) {
 		m, _ := cAdd128(Y, Y)
 		r = remScaled128(xc, k, m)
-		if cCmp128(r, Y) >= 0 {
+		if !cLt128(r, Y) {
 			r, _ = cSub128(r, Y)
 			odd = true
 		}

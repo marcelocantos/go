@@ -175,17 +175,25 @@ func addSlowW(x, y coefW, mode Mode) coefW {
 		// PrecisionW, since y < 10^PrecisionW.
 		dx := cDigitsW(xc)
 		m := PrecisionW - dx
-		if s := gap - m - 1; s > 0 && !cIsZeroW(yc) && (s >= PrecisionW || cCmpW(yc, cPow10W(s)) < 0) {
+		if s := gap - m - 1; s > 0 && !cIsZeroW(yc) && (s >= PrecisionW || cLtW(yc, cPow10W(s))) {
 			p, class := cMulPow10W(xc, m), classBelowHalf
+			near := p // X: what both classes round to in a nearest mode
 			if xneg != yneg {
 				class = classAboveHalf
-				if cCmpW(p, cPow10W(PrecisionW-1)) == 0 {
+				if cEqW(p, cPow10W(PrecisionW-1)) {
 					m, s = m+1, s-1
 					p = cPow10W(PrecisionW)
+					near = p
 				}
 				p, _ = cSubW(p, cPow10W(0))
 			}
-			if s > 0 && (s >= PrecisionW || cCmpW(yc, cPow10W(s)) < 0) {
+			if s > 0 && (s >= PrecisionW || cLtW(yc, cPow10W(s))) {
+				// To nearest there is nothing to decide: X + f rounds
+				// down to X and (X - 1) + (1 - f) up to X, whatever the
+				// parity, and 10^PrecisionW is packFaceW's carry.
+				if mode != TowardZero && mode != TowardPositive && mode != TowardNegative {
+					return packFaceW(xneg, near, xe-m, mode)
+				}
 				return roundFaceW(xneg, p, xe-m, class, mode)
 			}
 		}
@@ -212,7 +220,7 @@ func addSlowW(x, y coefW, mode Mode) coefW {
 			if c != classZero {
 				q, c = cIncW(q), c.complement()
 			}
-			if p, _ = cSubW(p, q); cCmpW(p, cPow10W(PrecisionW-1)) >= 0 {
+			if p, _ = cSubW(p, q); !cLtW(p, cPow10W(PrecisionW-1)) {
 				if c != classZero {
 					return roundFaceW(xneg, p, xe-m, c, mode)
 				}
@@ -272,10 +280,10 @@ func addSlowW(x, y coefW, mode Mode) coefW {
 // floor MinExpW and the value is not tiny: nothing underflows.
 // q has PrecisionW digits, so roundW's place of the result is exp itself:
 // it pads nothing, discards no digit of q, and its class is the caller's.
-// Its decision is then roundUp(class, mode, neg, odd(q)), the one row of
+// Its decision is then roundInc(class, mode, neg, odd(q)), the one row of
 // the five-mode table this function takes, ties included: a swamped
-// addend's class is never classHalf, the others' may be, and roundUp
-// decides a tie as roundW would. The class is never classZero: roundUp
+// addend's class is never classHalf, the others' may be, and roundInc
+// decides a tie as roundW would. The class is never classZero: roundInc
 // takes an inexact value, and an exact one goes to roundW. An increment of
 // cMaxW() carries to 10^PrecisionW, which
 // roundW encodes as 10^(PrecisionW-1) one place up, and that place above
@@ -286,14 +294,22 @@ func addSlowW(x, y coefW, mode Mode) coefW {
 // TestAlignedAdd the aligned addend's classes, carries and cancellations,
 // and the oracle's far and general regimes reach it in every mode.
 func roundFaceW(neg bool, q coefW, exp int, class digitClass, mode Mode) coefW {
-	if roundUp(class, mode, neg, cOddW(q)) {
-		q = cIncW(q)
-		if cGtMaxW(q) {
-			q, exp = cPow10W(PrecisionW-1), exp+1
-			if exp > MaxExpW {
-				r, _ := overflowW(neg, mode)
-				return r
-			}
+	// The increment is added, not branched on (roundInc); the carry out
+	// of the largest coefficient is the branch, and it is rare.
+	return packFaceW(neg, cAddU64W(q, roundInc(class, mode, neg, cOddW(q))), exp, mode)
+}
+
+// packFaceW returns (-1)^neg × q × 10^exp for a q that roundFaceW has
+// rounded, or that divW has by biasing its dividend: PrecisionW digits, or
+// 10^PrecisionW when the rounding carried out of the largest coefficient,
+// which is 10^(PrecisionW-1) one place up, and above MaxExpW overflowW's
+// result. The carry is the one branch of a face-value rounding, and rare.
+func packFaceW(neg bool, q coefW, exp int, mode Mode) coefW {
+	if cGtMaxW(q) {
+		q, exp = cPow10W(PrecisionW-1), exp+1
+		if exp > MaxExpW {
+			r, _ := overflowW(neg, mode)
+			return r
 		}
 	}
 	return packW(neg, q, exp)

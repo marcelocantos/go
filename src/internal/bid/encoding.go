@@ -564,7 +564,7 @@ func IsSubnormal128(x Uint128) bool {
 	if k != KindFinite || (c.Hi|c.Lo) == 0 {
 		return false
 	}
-	return digits128(c)-1+exp < Emin128
+	return cDigits128(c)-1+exp < Emin128
 }
 
 // IsCanonical64 reports whether x is a canonical encoding (IEEE 754-2019

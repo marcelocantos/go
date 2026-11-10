@@ -1818,12 +1818,12 @@
 // and for a quotient, from the remainder against the divisor, a half as
 // well. On such an
 // input roundW pads nothing, discards no digit and keeps the exponent, so
-// its whole decision is one row of the five-mode table, roundUp(class,
+// its whole decision is one row of the five-mode table, roundInc(class,
 // mode, sign, odd(q)), and an increment of the largest coefficient carries
 // to 10^(PrecisionW-1) one place up, overflowing above MaxExpW. roundFaceW
-// is those steps and nothing else; it calls roundUp and packW and
-// overflowW as roundW does, so the table, the encoding and the overflow
-// results are shared, not copied. Its comment proves the bounds of its
+// is those steps and nothing else; it adds roundInc and encodes through
+// packFaceW, which calls packW and overflowW as roundW does, so the table,
+// the encoding and the overflow results are shared, not copied. Its comment proves the bounds of its
 // input from addSlowW's. It exists because roundW's clamp, digit count and
 // shift, all of which leave such an input unchanged, cost more than the
 // rounding itself on far additions, and a test for this input inside
@@ -1845,15 +1845,120 @@
 // (TestAlignedAdd). Before this path the general alignment scaled x past
 // PrecisionW digits and roundW divided a second time to bring the sum
 // back; the one shift measured 16 percent on additions and subtractions
-// of full-precision operands (2026-11-10). Division scales its dividend so that the quotient
-// has exactly PrecisionW digits (the leading ratio of the coefficients
-// decides between two scale counts) and takes the class of the remainder
-// against the divisor; results near the exponent limits, which may be
-// subnormal, clamped or overflowing, take one more division step and go
-// through roundW with a round digit as before (divW's comment). The
-// oracle's division regimes and the published suites' division cases
-// cover both routes. TestRoundIsTheOnlyPacker allows roundFaceW to call packW and
-// allows only addSlowW and divW to call it.
+// of full-precision operands (2026-11-10). Division scales its dividend so
+// that the quotient has exactly PrecisionW digits (the leading ratio of
+// the coefficients decides between two scale counts). In the two nearest
+// modes it then rounds without a class at all: the dividend is biased by
+// half the divisor, ⌊yc/2⌋, and the quotient of the biased dividend is the
+// quotient rounded to nearest with ties up, since the bias carries into
+// the next unit exactly when the fraction is a half or more. The biased
+// remainder tells the two cases that are not that: it equals ⌊yc/2⌋
+// exactly when the division is exact, which goes on to the preferred
+// exponent, and it is zero under an even divisor exactly on a tie, where
+// ties to even takes the neighbour below. Both tests are rare, and the
+// result is encoded by packFaceW, whose carry no quotient of two
+// coefficients reaches (TestDivNearest shows why and checks it). A
+// directed mode takes the class of the remainder against the divisor and
+// roundFaceW; results near the exponent limits, which may be subnormal,
+// clamped or overflowing, take one more division step and go through
+// roundW with a round digit as before (divW's comment). The oracle's
+// division regimes and the published suites' division cases cover the
+// routes, and TestDivNearest the ties, the fractions next to them, the
+// zero biased remainder of an odd divisor, and the exact quotients, in
+// every mode. A swamped addend needs no decision at all in a nearest
+// mode: x + f rounds down to x and (x - 1) + (1 - f) up to it, so
+// addSlowW encodes x scaled to full precision through packFaceW.
+// TestRoundIsTheOnlyPacker allows packFaceW to call packW, only
+// roundFaceW, divW and addSlowW to call packFaceW, and only addSlowW and
+// divW to call roundFaceW.
+//
+// # Operands without a pattern
+//
+// A benchmark that repeats a few operands, or walks a pool of them in
+// order, trains the branch predictor on those operands: every branch on
+// their digits is predicted, and the rows read as if it always were. On
+// operands drawn in an order the predictor cannot learn, each branch that
+// depends on the digits is a coin toss, and a misprediction late in an
+// operation also discards whatever the processor had begun of the next.
+// The cost is not small. Measured on decimal128 operators over pools of
+// 4096 random operand pairs (Apple M4 Max, 2026-11-10, net of the loop),
+// walked in order against drawn at random, before this section's changes:
+//
+//	34 digits, exponents 1 to 12 apart   walked   drawn
+//	  x + y                                16.0    21.8 ns
+//	  x * y                                20.3    21.5
+//	  x / y                                26.6    47.5
+//	money amounts, two places
+//	  x / y                                23.0    34.2
+//
+// and the side-by-side harness, whose sets are four variants of one pair,
+// showed 12 ns for the addition and 18 for the division of 34-digit
+// operands. A table of predictable operands understates what real data
+// costs, here by a factor of up to three.
+//
+// So the kernel distinguishes two kinds of decision. What an operation
+// decides from the kind of its operands (how many words a coefficient has,
+// whether the exponents are far apart, whether a value is special) is the
+// same from one call to the next in a program that computes with one kind
+// of data, and stays a branch: a predicted branch lets what follows start
+// before the test resolves. What it decides from the digits themselves is
+// not predictable and is computed, not branched on:
+//
+//   - The direction of a rounding. roundInc returns the increment as a
+//     number, which roundW, roundFiniteW, roundFaceW and the integer
+//     conversions add; the carry out of the largest coefficient is the
+//     branch, and it is rare.
+//   - The class of a remainder against a half (class64, class128): two
+//     borrows and a mask.
+//   - Whether a coefficient reaches the next power of ten, the second half
+//     of a digit count (cDigits128): the borrow of c - 10^t.
+//   - An order of two coefficients (u128Lt, u128Cmp, cLtW): borrows.
+//   - The corrections of the division's quotient words and of its
+//     reciprocal ("Division").
+//
+// The same operators after these changes, drawn at random: 13.3 ns for
+// the addition, 14.4 for the multiplication, 21.7 for the division of
+// 34-digit operands and 20.2 for the division of money amounts. The
+// benchmark loops draw their operands this way under -bid.shuffle, and the
+// rows named shuffled always do.
+//
+// The price is paid by the predictable case, where a predicted branch
+// costs nothing and its replacement costs the time to compute the answer.
+// Addition and multiplication gain there too (the harness rows fall 5
+// percent), because their branches were late and their replacements
+// short. Division does not: it is a chain in which each step waits for
+// the one before, and its harness rows rise from 17.4 to about 20 ns for
+// 34-digit operands and from 14.0 to about 17 for money amounts, against
+// 47.5 to 21.7 and 34.2 to 20.2 on operands without a pattern. The trade
+// was taken: operands are not four variants of one pair.
+//
+// # Division
+//
+// The 256-by-128 division at the centre of a decimal128 division
+// (u256Div128) follows Möller and Granlund's division by a reciprocal, and
+// u256.go states the method. Three things in it follow from the section
+// above.
+//
+// The reciprocal of the divisor's leading word is computed without a
+// division where the target has no instruction for one. bits.Div64 is
+// then a routine of two hardware divisions and two loops of corrections
+// whose trips depend on the operand: alone, it takes 5.6 ns on one divisor
+// repeated and 11.6 on divisors without a pattern, and the table and
+// Newton steps of reciprocalNewton 5.9 and 6.7. On amd64 bits.Div64 is the
+// division instruction and is used.
+//
+// The corrections are carries and masks. The first correction of the
+// two-word reciprocal applies to more than half of all divisors, and that
+// of a quotient word about half the time. The product that the
+// reciprocal's second correction needs is started before the first has
+// finished, and adjusted for it.
+//
+// The leading quotient word does not wait for the two-word reciprocal. A
+// decimal128 quotient has 34 digits, under 113 bits, so its leading word
+// has under 50, and an estimate from the leading word of the divisor
+// alone is then exact but for a few times in a thousand (div3by2Lead).
+// The two-word reciprocal is extended beside that step and serves the
+// second word, which needs it.
 //
 // # Short numerals
 //

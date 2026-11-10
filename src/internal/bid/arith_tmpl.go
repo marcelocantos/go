@@ -275,9 +275,13 @@ func roundFiniteW(neg bool, c coefW, exp int, mode Mode, floor int) (coefW, digi
 		// from RoundW cannot overflow. Such a far shift discards all digits.
 		shift := floor - max(exp, floor-maxWideDigits)
 		c, class = cShiftW(c, shift)
-		if class != classZero && roundUp(class, mode, neg, cOddW(c)) {
-			c = cIncW(c)
+		// The increment is added, not branched on (roundInc), and an
+		// exact shift, for which roundInc is not defined, adds zero.
+		inc := roundInc(class, mode, neg, cOddW(c))
+		if class == classZero {
+			inc = 0
 		}
+		c = cAddU64W(c, inc)
 		exp = floor
 	}
 	return packW(neg, c, exp), class
@@ -292,7 +296,7 @@ func roundFiniteW(neg bool, c coefW, exp int, mode Mode, floor int) (coefW, digi
 // Every rule of "Exponent of a result", "Overflow", "Underflow and
 // subnormal results" and "Sign of a result" (for zeros) in the package
 // documentation is implemented by these routines and nowhere else. The
-// width-independent direction decision is roundUp in round.go.
+// width-independent direction decision is roundInc in round.go.
 //
 // The input is the exact value
 //
@@ -479,11 +483,9 @@ func roundW(neg bool, p wideW, exp int, class digitClass, mode Mode, floor int) 
 	if s > 0 {
 		q = cMulPow10W(q, s)
 	}
-	if roundUp(class, mode, neg, cOddW(q)) {
-		q = cIncW(q)
-		if cGtMaxW(q) {
-			q, x = cPow10W(PrecisionW-1), x+1
-		}
+	q = cAddU64W(q, roundInc(class, mode, neg, cOddW(q)))
+	if cGtMaxW(q) {
+		q, x = cPow10W(PrecisionW-1), x+1
 	}
 	if x > MaxExpW {
 		return overflowW(neg, mode)

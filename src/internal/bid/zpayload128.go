@@ -64,7 +64,7 @@ func nanWithPayload128(p coef128, signaling bool) coef128 {
 		}
 		c = q
 	}
-	if cCmp128(c, cPow10128(Precision128-1)) >= 0 {
+	if !cLt128(c, cPow10128(Precision128-1)) {
 		return plusZero
 	}
 	return cNaNPayload128(c, signaling)

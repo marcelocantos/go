@@ -173,17 +173,25 @@ func addSlow128(x, y coef128, mode Mode) coef128 {
 		// Precision128, since y < 10^Precision128.
 		dx := cDigits128(xc)
 		m := Precision128 - dx
-		if s := gap - m - 1; s > 0 && !cIsZero128(yc) && (s >= Precision128 || cCmp128(yc, cPow10128(s)) < 0) {
+		if s := gap - m - 1; s > 0 && !cIsZero128(yc) && (s >= Precision128 || cLt128(yc, cPow10128(s))) {
 			p, class := cMulPow10128(xc, m), classBelowHalf
+			near := p // X: what both classes round to in a nearest mode
 			if xneg != yneg {
 				class = classAboveHalf
-				if cCmp128(p, cPow10128(Precision128-1)) == 0 {
+				if cEq128(p, cPow10128(Precision128-1)) {
 					m, s = m+1, s-1
 					p = cPow10128(Precision128)
+					near = p
 				}
 				p, _ = cSub128(p, cPow10128(0))
 			}
-			if s > 0 && (s >= Precision128 || cCmp128(yc, cPow10128(s)) < 0) {
+			if s > 0 && (s >= Precision128 || cLt128(yc, cPow10128(s))) {
+				// To nearest there is nothing to decide: X + f rounds
+				// down to X and (X - 1) + (1 - f) up to X, whatever the
+				// parity, and 10^Precision128 is packFace128's carry.
+				if mode != TowardZero && mode != TowardPositive && mode != TowardNegative {
+					return packFace128(xneg, near, xe-m, mode)
+				}
 				return roundFace128(xneg, p, xe-m, class, mode)
 			}
 		}
@@ -210,7 +218,7 @@ func addSlow128(x, y coef128, mode Mode) coef128 {
 			if c != classZero {
 				q, c = cInc128(q), c.complement()
 			}
-			if p, _ = cSub128(p, q); cCmp128(p, cPow10128(Precision128-1)) >= 0 {
+			if p, _ = cSub128(p, q); !cLt128(p, cPow10128(Precision128-1)) {
 				if c != classZero {
 					return roundFace128(xneg, p, xe-m, c, mode)
 				}
@@ -270,10 +278,10 @@ func addSlow128(x, y coef128, mode Mode) coef128 {
 // floor MinExp128 and the value is not tiny: nothing underflows.
 // q has Precision128 digits, so round128's place of the result is exp itself:
 // it pads nothing, discards no digit of q, and its class is the caller's.
-// Its decision is then roundUp(class, mode, neg, odd(q)), the one row of
+// Its decision is then roundInc(class, mode, neg, odd(q)), the one row of
 // the five-mode table this function takes, ties included: a swamped
-// addend's class is never classHalf, the others' may be, and roundUp
-// decides a tie as round128 would. The class is never classZero: roundUp
+// addend's class is never classHalf, the others' may be, and roundInc
+// decides a tie as round128 would. The class is never classZero: roundInc
 // takes an inexact value, and an exact one goes to round128. An increment of
 // cMax128() carries to 10^Precision128, which
 // round128 encodes as 10^(Precision128-1) one place up, and that place above
@@ -284,14 +292,22 @@ func addSlow128(x, y coef128, mode Mode) coef128 {
 // TestAlignedAdd the aligned addend's classes, carries and cancellations,
 // and the oracle's far and general regimes reach it in every mode.
 func roundFace128(neg bool, q coef128, exp int, class digitClass, mode Mode) coef128 {
-	if roundUp(class, mode, neg, cOdd128(q)) {
-		q = cInc128(q)
-		if cGtMax128(q) {
-			q, exp = cPow10128(Precision128-1), exp+1
-			if exp > MaxExp128 {
-				r, _ := overflow128(neg, mode)
-				return r
-			}
+	// The increment is added, not branched on (roundInc); the carry out
+	// of the largest coefficient is the branch, and it is rare.
+	return packFace128(neg, cAddU64128(q, roundInc(class, mode, neg, cOdd128(q))), exp, mode)
+}
+
+// packFace128 returns (-1)^neg × q × 10^exp for a q that roundFace128 has
+// rounded, or that div128 has by biasing its dividend: Precision128 digits, or
+// 10^Precision128 when the rounding carried out of the largest coefficient,
+// which is 10^(Precision128-1) one place up, and above MaxExp128 overflow128's
+// result. The carry is the one branch of a face-value rounding, and rare.
+func packFace128(neg bool, q coef128, exp int, mode Mode) coef128 {
+	if cGtMax128(q) {
+		q, exp = cPow10128(Precision128-1), exp+1
+		if exp > MaxExp128 {
+			r, _ := overflow128(neg, mode)
+			return r
 		}
 	}
 	return pack128(neg, q, exp)
