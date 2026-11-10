@@ -9,61 +9,27 @@
 package bid
 
 // magCmp64 compares the magnitudes of two non-zero finite values, returning
-// -1, 0 or +1. The values are decided by adjusted exponent first: a value
-// whose leading digit lies in a higher decimal place is the larger, whatever
-// the coefficients, so values whose exponents differ by thousands of places
-// are compared without scaling anything. Only when the adjusted exponents
-// are equal are the coefficients aligned, and then the coefficient with the
-// larger exponent has fewer digits than the other by exactly the difference
-// of the exponents; scaling it up gives it the digit count of the other,
-// which is at most Precision64, so the product cannot overflow and the
-// difference of the exponents is below the table of powers of ten.
+// -1, 0 or +1. The coefficient with the larger exponent is scaled by the
+// difference of the exponents, which aligns the two at the smaller exponent,
+// and the aligned coefficients compare. If the scaled coefficient does not
+// fit the coefficient type that value is the larger: it is then at least 2^64
+// (2^128 for decimal128), above every coefficient; and beyond the table of
+// powers it does not fit for any non-zero coefficient, so no multiply is
+// needed there. One multiply and one comparison decide every pair, with no
+// digit count, however far apart the exponents are.
 //
 // Precondition: xc and yc are non-zero and at most MaxCoeff64.
 func magCmp64(xc coef64, xe int, yc coef64, ye int) int {
-	if xe == ye {
-		return cCmp64(xc, yc)
+	c, gap := 1, xe-ye
+	if gap < 0 {
+		xc, yc, c, gap = yc, xc, -1, -gap
 	}
-	// xa and ya are one more than the adjusted exponents.
-	xa, ya := cDigits64(xc)+xe, cDigits64(yc)+ye
-	switch {
-	case xa < ya:
-		return -1
-	case xa > ya:
-		return 1
-	case xe > ye:
-		return cCmp64(cMulPow1064(xc, xe-ye), yc)
+	if gap < len(pow10tab64) {
+		if s, overflow := cScaleTab64(xc, gap); !overflow {
+			return c * cCmp64(s, yc)
+		}
 	}
-	return cCmp64(xc, cMulPow1064(yc, ye-xe))
-}
-
-// finiteCmp64 compares two finite values, returning -1, 0 or +1: a zero of
-// either sign is below every positive value and above every negative one,
-// and equal to every zero.
-func finiteCmp64(xneg bool, xc coef64, xe int, yneg bool, yc coef64, ye int) int {
-	xz, yz := cIsZero64(xc), cIsZero64(yc)
-	switch {
-	case xz && yz:
-		return 0
-	case xz:
-		if yneg {
-			return 1
-		}
-		return -1
-	case yz:
-		if xneg {
-			return -1
-		}
-		return 1
-	case xneg != yneg:
-		if xneg {
-			return -1
-		}
-		return 1
-	case xneg:
-		return -magCmp64(xc, xe, yc, ye)
-	}
-	return magCmp64(xc, xe, yc, ye)
+	return c
 }
 
 // nan64 returns the NaN result of an operation whose operands x, y and z,
@@ -109,7 +75,34 @@ func quietCmpSlow64(x, y coef64) (c int, ok bool) {
 	case xk == KindNaN || yk == KindNaN:
 		return 0, false
 	case xk == KindFinite && yk == KindFinite:
-		return finiteCmp64(xneg, xc, xe, yneg, yc, ye), true
+		// A zero of either sign is below every positive value, above every
+		// negative one and equal to every zero; then the signs decide, and
+		// within one sign the magnitudes, reversed for negative values.
+		xz, yz := cIsZero64(xc), cIsZero64(yc)
+		switch {
+		case xz && yz:
+			return 0, true
+		case xz:
+			if yneg {
+				return 1, true
+			}
+			return -1, true
+		case yz:
+			if xneg {
+				return -1, true
+			}
+			return 1, true
+		case xneg != yneg:
+			if xneg {
+				return -1, true
+			}
+			return 1, true
+		}
+		c = magCmp64(xc, xe, yc, ye)
+		if xneg {
+			c = -c
+		}
+		return c, true
 	case xk == KindInf && yk == KindInf:
 		// Two infinities: equal if of one sign, else the negative is the lesser.
 		if xneg == yneg {

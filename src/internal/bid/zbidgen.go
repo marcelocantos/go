@@ -61,10 +61,6 @@ func magCmp64(xc coef64, xe int, yc coef64, ye int) int {
 	return *new(int)
 }
 
-func finiteCmp64(xneg bool, xc coef64, xe int, yneg bool, yc coef64, ye int) int {
-	return *new(int)
-}
-
 func nan64(x, y, z coef64) coef64 {
 	return *new(coef64)
 }
@@ -114,10 +110,6 @@ func roundParts64(neg bool, p wide64, exp int, sticky bool, mode Mode) (coef64, 
 }
 
 func magCmp128(xc coef128, xe int, yc coef128, ye int) int {
-	return *new(int)
-}
-
-func finiteCmp128(xneg bool, xc coef128, xe int, yneg bool, yc coef128, ye int) int {
 	return *new(int)
 }
 

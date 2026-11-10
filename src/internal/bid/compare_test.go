@@ -848,3 +848,69 @@ func TestKeyUnpackSplit(t *testing.T) {
 		}
 	}
 }
+
+// TestMagnitudeCompareBounds drives magCmpW, the magnitude comparison of
+// two finite values at different exponents, at its bound: the coefficient
+// with the larger exponent is scaled by the gap and compared, and a scaled
+// coefficient that overflows the coefficient type is the larger. The gaps
+// put the scaled coefficient on both sides of 2^64 and 2^128 and of the
+// table of powers of ten, against coefficients of the other operand that
+// are smaller, equal and larger than the scaled one where it fits, in both
+// orders, both signs, through the comparisons, Compare and TotalOrder,
+// against the reference.
+func TestMagnitudeCompareBounds(t *testing.T) {
+	var k kernel
+	for _, f := range []*format{dec64, dec128} {
+		var xcs []*big.Int
+		for _, s := range []string{"1", "9", "4294967295", "4294967296", "9999999999999999", "10000000000000000", "9999999999999999999", "10000000000000000000", "18446744073709551615", "18446744073709551616", "340282366920938463463374607431768211455"} {
+			c, _ := new(big.Int).SetString(s, 10)
+			if c.Cmp(f.maxCoeff) <= 0 {
+				xcs = append(xcs, c)
+			}
+		}
+		xcs = append(xcs, pow10(f.prec-1), new(big.Int).Sub(pow10(f.prec), bigOne))
+		gaps := []int{0, 1, 2, 4, 5, 18, 19, 20, 21, 37, 38, 39, 40, 77, 78, 100, f.maxExp - f.minExp}
+		n := 0
+		for _, xc := range xcs {
+			for _, g := range gaps {
+				for _, xe := range []int{0, f.maxExp, f.minExp + g} {
+					ye := xe - g
+					if xe > f.maxExp || ye < f.minExp {
+						continue
+					}
+					scaled := new(big.Int).Mul(xc, pow10(g))
+					ycs := []*big.Int{bigOne, xc, pow10(f.prec - 1), new(big.Int).Sub(pow10(f.prec), bigOne)}
+					for _, d := range []int64{-1, 0, 1} {
+						if c := new(big.Int).Add(scaled, big.NewInt(d)); c.Sign() >= 0 && c.Cmp(f.maxCoeff) <= 0 {
+							ycs = append(ycs, c)
+						}
+					}
+					for _, yc := range ycs {
+						for _, xneg := range []bool{false, true} {
+							for _, yneg := range []bool{false, true} {
+								x := f.encode(value{kind: finite, neg: xneg, coeff: xc, exp: xe})
+								y := f.encode(value{kind: finite, neg: yneg, coeff: yc, exp: ye})
+								for _, p := range [][2]bits{{x, y}, {y, x}} {
+									n++
+									a, b := p[0], p[1]
+									gc, gok := k.compare(f, a, b)
+									wc, wok := f.compare(a, b)
+									if gc != wc || gok != wok {
+										t.Fatalf("%s compare(%s, %s) = %d %v, want %d %v", f.name, f.format(a), f.format(b), gc, gok, wc, wok)
+									}
+									if got, want := k.less(f, a, b), (reference{}).less(f, a, b); got != want {
+										t.Fatalf("%s less(%s, %s) = %v, want %v", f.name, f.format(a), f.format(b), got, want)
+									}
+									if got, want := k.totalOrder(f, a, b), f.totalOrder(a, b); got != want {
+										t.Fatalf("%s totalOrder(%s, %s) = %v, want %v", f.name, f.format(a), f.format(b), got, want)
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		t.Logf("%s: %d ordered pairs", f.name, n)
+	}
+}

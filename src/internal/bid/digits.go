@@ -23,6 +23,7 @@ import "math/bits"
 //	cShiftFullW(p wideW, k int) (q wideW, class digitClass)
 //	cReduceClassW(p wideW, k int) (q coefW, class digitClass)
 //	cScaleW(c coefW, k int) (r coefW, overflow bool)
+//	cScaleTabW(c coefW, k int) (r coefW, overflow bool)
 //	cScaleFullW(p wideW, k int) (r wideW, overflow bool)
 //
 // cShift64, cShift128 and cShiftFull128 are the 64-, 128- and 256-bit forms
@@ -61,7 +62,9 @@ import "math/bits"
 // cScaleW multiplies by 10^k and reports overflow instead of wrapping. On
 // overflow r is zero, so no wrapped value can be mistaken for a result. Zero
 // scales to zero for every k >= 0; any other value overflows for every k
-// beyond the table.
+// beyond the table. cScaleTabW is cScaleW for a k within the table, 0 <= k
+// < len(pow10tabW), and inlines at both widths, which cScaleW does not at
+// 128 bits; a caller on a hot path tests the bound itself and calls it.
 
 // A digitClass classifies the part of a value discarded by a shift: the
 // remainder r of a division by 10^k, compared with 10^k / 2.

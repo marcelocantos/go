@@ -224,11 +224,27 @@ func cScale128(c coef128, k int) (r coef128, overflow bool) {
 	if k >= len(pow10tab128) {
 		return coef128{}, c != coef128{}
 	}
-	w, ok := u128MulFits(c, pow10tab128[k])
-	if !ok {
-		return coef128{}, true
+	return cScaleTab128(c, k)
+}
+
+// cScaleTab128 is cScale128 for a k within the table of powers, 0 <= k <= 38,
+// which inlines (cScale128's test of the table bound puts it over the
+// budget). It is u128MulFits written out, as cMulPow10128 is: a product
+// that fits 128 bits has a factor below 2^64, which is taken as a, and the
+// product is a.Lo times both words of b. If both factors have a high word
+// the product is at least 2^128, which a.Hi reports after the swap.
+func cScaleTab128(a coef128, k int) (r coef128, overflow bool) {
+	b := pow10tab128[k]
+	if a.Hi != 0 {
+		a, b = b, a
 	}
-	return w, false
+	h0, lo := bits.Mul64(a.Lo, b.Lo)
+	h1, l1 := bits.Mul64(a.Lo, b.Hi)
+	hi, carry := bits.Add64(h0, l1, 0)
+	if a.Hi|h1|carry != 0 {
+		return r, true
+	}
+	return coef128{Hi: hi, Lo: lo}, false
 }
 
 // cScaleFull128 is cScale128 for a 256-bit value. If both factors exceed

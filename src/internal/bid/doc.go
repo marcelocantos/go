@@ -1732,8 +1732,8 @@
 //     cDivPow10W(c, k) (q, r coefW), cGtMaxW,
 //     cPow10W(k), cMulFullW(a, b) wideW, cReduceW(p wideW, k) (q coefW,
 //     sticky bool) and cLenFullW(p wideW) int, with the decimal-digit
-//     primitives cShiftW, cShiftFullW, cReduceClassW, cScaleW and cScaleFullW
-//     (digits.go says what a caller may assume of them) and the rounding
+//     primitives cShiftW, cShiftFullW, cReduceClassW, cScaleW, cScaleTabW and
+//     cScaleFullW (digits.go says what a caller may assume of them) and the rounding
 //     routine's cLoW(p wideW) coefW, cIncW, cMaxW() and cInfW(neg), the
 //     division's cMulPow10FullW(c, k) wideW (a coefficient scaled into the
 //     double width), cDivFullW(n wideW, d coefW) (q, r coefW) (the 128-by-64

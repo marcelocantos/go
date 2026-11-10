@@ -192,6 +192,11 @@ func cScale64(c coef64, k int) (r coef64, overflow bool) {
 	if k >= len(pow10tab64) {
 		return 0, c != 0
 	}
+	return cScaleTab64(c, k)
+}
+
+// cScaleTab64 is cScale64 for a k within the table of powers, 0 <= k <= 19.
+func cScaleTab64(c coef64, k int) (r coef64, overflow bool) {
 	hi, lo := bits.Mul64(c, pow10tab64[k])
 	if hi != 0 {
 		return 0, true
