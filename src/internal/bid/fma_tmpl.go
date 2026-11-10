@@ -133,12 +133,14 @@ func fmaW(x, y, z coefW, mode Mode) coefW {
 		// A product that is itself a value of the format, a coefficient of
 		// at most PrecisionW digits at an exponent in range, is exact,
 		// and then x × y + z rounded once is the sum of that value and z:
-		// addSlowW, with its one shift and its face-value rounding, where
+		// addLongW, with its one shift and its face-value rounding, where
 		// the general path below scales the product to fmaDigitsW digits
 		// and divides a double-width sum back. The words of the product
 		// encode by the exact packing exception, as the sum above does.
 		if p, ok := packWordW(pneg, phi, plo, pe-BiasW); ok {
-			return addSlowW(p, z, mode)
+			// Both are of one word here, which addLongW takes first;
+			// addSlowW's own path is for coefficients of two.
+			return addLongW(p, z, mode)
 		}
 		a, aneg, ae = cFromU128W(Uint128{Hi: phi, Lo: plo}), pneg, pe-BiasW
 		zc, bneg, be = cFromU64W(zw), zneg, ze-BiasW
