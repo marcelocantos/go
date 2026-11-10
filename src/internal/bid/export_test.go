@@ -177,3 +177,42 @@ var (
 	CDivExactPow10128 = cDivExactPow10128
 	CDivExactPow1064  = cDivExactPow1064
 )
+
+// ParseLong64 and ParseLong128 are the general path of parseW alone: the
+// scanner and the rounding routine, as parseW's tail has them, without the
+// short-numeral path. TestParseShort compares Parse64 and Parse128 with
+// them. Kept in step with parseW's tail by hand; the comparison on words,
+// syntax errors and long numerals would show a drift.
+func ParseLong64(s string, mode Mode) (uint64, Status) {
+	n := scanDecimal(s, Precision64+1)
+	switch n.kind {
+	case scanSyntax:
+		return cNaN64(), Syntax
+	case scanNaN:
+		return cNaN64(), Exact
+	case scanInf:
+		return cInf64(n.neg), Exact
+	}
+	class := classZero
+	if n.sticky {
+		class = classBelowHalf
+	}
+	return round64(n.neg, cWide64(n.mant), n.exp, class, mode, MinExp64)
+}
+
+func ParseLong128(s string, mode Mode) (Uint128, Status) {
+	n := scanDecimal(s, Precision128+1)
+	switch n.kind {
+	case scanSyntax:
+		return cNaN128(), Syntax
+	case scanNaN:
+		return cNaN128(), Exact
+	case scanInf:
+		return cInf128(n.neg), Exact
+	}
+	class := classZero
+	if n.sticky {
+		class = classBelowHalf
+	}
+	return round128(n.neg, cWide128(n.mant), n.exp, class, mode, MinExp128)
+}

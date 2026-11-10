@@ -8,6 +8,8 @@
 
 package bid
 
+import "math/bits"
+
 // UnpackDigits64 decodes x and writes its coefficient digits to the end of buf,
 // without a sign, decimal point or exponent. It returns the same kind, sign and exponent as
 // Unpack64, and the number of bytes written. Zero and non-finite values write
@@ -80,7 +82,18 @@ func append64(dst []byte, x coef64) []byte {
 	return appendDecimal(dst, neg, digs[len(digs)-n:], exp)
 }
 
-// parse64 is Parse64 and Parse128. The string is scanned once, keeping the
+// parse64 is Parse64 and Parse128. A numeral of at most eight characters
+// after its sign, digits with at most one point (money and quantity
+// literals as they are usually written), is read whole here, in the word
+// arithmetic of the digit-run scanner. The short path is written out
+// rather than called because its
+// pieces exceed the inliner's budget, and a call cost the strings it turns
+// away (an exponent form of nine bytes) two nanoseconds; TestParseShort
+// checks it against the general scanner on every string of up to six characters
+// over a small alphabet and on random longer ones. See "Short numerals" in
+// the package documentation.
+//
+// Every other string is scanned once by scanDecimal, keeping the
 // first Precision64+1 significant digits; the digits beyond them become a
 // sticky bit and a larger exponent, so that scanDecimal's description of
 // the numeral is exact. One digit beyond the precision is kept so that
@@ -89,6 +102,60 @@ func append64(dst []byte, x coef64) []byte {
 // what lies below it (the caller contract in round64's comment). The result
 // is rounded once, by round64, from that exact description.
 func parse64(s string, mode Mode) (coef64, Status) {
+	if len(s) > 0 && len(s) <= 9 && s[0] <= '9' { // a sign, a point or a digit first
+		i := 0
+		if s[0] == '+' || s[0] == '-' {
+			i = 1
+		}
+		if m := len(s) - i; m >= 1 && m <= 8 {
+			// The bytes, first lowest, left-padded with '0' to eight: two
+			// overlapping fixed-size loads (one, below four bytes).
+			b := s[i:]
+			var w uint64
+			if m >= 4 {
+				t := b[m-4:]
+				w = uint64(b[0]) | uint64(b[1])<<8 | uint64(b[2])<<16 | uint64(b[3])<<24
+				w |= (uint64(t[0]) | uint64(t[1])<<8 | uint64(t[2])<<16 | uint64(t[3])<<24) << (8 * (m - 4))
+			} else {
+				w = uint64(b[0]) | uint64(b[m-1])<<(8*(m-1))
+				if m == 3 {
+					w |= uint64(b[1]) << 8
+				}
+			}
+			w = w<<(8*(8-m)) | asciiZeros>>(8*m)
+			// Every byte must lie in '.'..'9' (0x2E..0x39), which two
+			// subtractions test at once: a byte below the range borrows in
+			// w - 0x2E…, one above it in 0x39… - w, and either sets a high
+			// bit (the bytes are ASCII, so a borrow is the only way one is
+			// set). An exponent form such as "-1.5E+300" leaves here; '/'
+			// passes and fails the digit test below.
+			if (w-0x2E2E_2E2E_2E2E_2E2E|0x3939_3939_3939_3939-w)&0x8080_8080_8080_8080 == 0 {
+				// A single point, found by the zero-byte test on
+				// w ^ "........", is removed by shifting the bytes below it
+				// up one, another '0' entering at the bottom; the digits
+				// after a point at byte k of the padded word are 7 - k,
+				// whatever the padding. A point alone has no digit and is a
+				// syntax error.
+				exp := 0
+				const points = 0x2E2E_2E2E_2E2E_2E2E
+				p := w ^ points
+				if z := (p - 0x0101_0101_0101_0101) &^ p & 0x8080_8080_8080_8080; z != 0 {
+					if m == 1 {
+						return cNaN64(), Syntax // a point alone
+					}
+					k := bits.TrailingZeros64(z) / 8
+					below := uint64(1)<<(8*k) - 1
+					w = (w&below)<<8 | w&^(uint64(1)<<(8*(k+1))-1) | '0'
+					exp = -(7 - k)
+				}
+				// All eight bytes digits proves the form: a second point or
+				// a '/' fails here.
+				if eightDigits(w) {
+					return round64(s[0] == '-', cWide64(Uint128{Lo: eightDigitsValue(w)}), exp, classZero, mode, MinExp64)
+				}
+			}
+		}
+	}
 	n := scanDecimal(s, Precision64+1)
 	switch n.kind {
 	case scanSyntax:

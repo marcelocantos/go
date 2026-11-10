@@ -1832,6 +1832,25 @@
 // mode and both classes. TestRoundIsTheOnlyPacker allows it to call packW
 // and allows only addSlowW to call it.
 //
+// # Short numerals
+//
+// A numeral of at most eight characters after its sign, digits and at most
+// one point (money and quantity literals as they are usually written), is
+// parsed whole by parseW: the bytes are loaded into one word, a point is
+// found by the zero-byte test and removed by a shift, and the eight digits
+// are proved and read by the same lane arithmetic the digit-run scanner
+// uses (eightDigits, eightDigitsValue). The result still reaches roundW as
+// the general scanner's would, so no new encoder is involved. The path is
+// written out in parseW rather than called: its pieces exceed the
+// inliner's budget, and as a call it cost the strings it turns away (an
+// exponent form of nine bytes) two nanoseconds. TestParseShort checks it
+// against the general scanner alone, bit for bit, on every string of up to
+// six characters over a small alphabet and on random longer ones.
+// Measured 2026-11-10 (Apple M4 Max, interleaved, n=8): Parse/128/short
+// 12.2 → 4.9 ns, Parse/64/short 11.5 → 4.6; a word and a long numeral pay
+// a length and first-byte check, a short exponent form the loads and the
+// digit test.
+//
 // # Digit conversion
 //
 // A two-word coefficient's low word, which cSplitW fixes at exactly nineteen
