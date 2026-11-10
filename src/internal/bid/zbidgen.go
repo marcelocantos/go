@@ -27,7 +27,7 @@ func subSlow64(x, y coef64, mode Mode) coef64 {
 	return *new(coef64)
 }
 
-func addSlow64(x, y coef64, mode Mode) coef64 {
+func addLong64(x, y coef64, mode Mode) coef64 {
 	return *new(coef64)
 }
 
@@ -49,7 +49,7 @@ func subSlow128(x, y coef128, mode Mode) coef128 {
 	return *new(coef128)
 }
 
-func addSlow128(x, y coef128, mode Mode) coef128 {
+func addLong128(x, y coef128, mode Mode) coef128 {
 	return *new(coef128)
 }
 

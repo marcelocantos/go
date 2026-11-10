@@ -56,7 +56,10 @@ func subSlow128(x, y coef128, mode Mode) coef128 {
 	return addSlow128(x, y, mode)
 }
 
-// addSlow128 returns x + y rounded in mode.
+// addLong128 returns x + y rounded in mode, for every operand: addSlow128,
+// which the callers above and the compiler call, is addLong64 for
+// decimal64 and takes most sums of two-word coefficients itself for
+// decimal128 (add128.go).
 //
 // The operand with the larger exponent is scaled up to the exponent of the
 // other if that takes it to addDigits128 digits or fewer, and then the sum is
@@ -95,7 +98,7 @@ func subSlow128(x, y coef128, mode Mode) coef128 {
 // The compiler calls the decimal128 instantiation of this function
 // directly, so its parameters and results are a contract with it: see the
 // end of "Inline fast paths" in the package documentation.
-func addSlow128(x, y coef128, mode Mode) coef128 {
+func addLong128(x, y coef128, mode Mode) coef128 {
 	var yneg, yok bool
 	var yw uint64
 	var ye int
@@ -264,7 +267,7 @@ func addSlow128(x, y coef128, mode Mode) coef128 {
 }
 
 // roundFace128 returns (-1)^neg × (q + f) × 10^exp rounded in mode, for the
-// swamped and the aligned addend of addSlow128 and the inexact quotient of
+// swamped and the aligned addend of addLong128 and the inexact quotient of
 // divLong128, its only callers: q has exactly Precision128 digits, 10^(Precision128-1)
 // <= q <= cMax128(), and f is a fraction, not zero, whose class is known at
 // face value (classBelowHalf or classAboveHalf for a swamped addend; an
@@ -275,7 +278,7 @@ func addSlow128(x, y coef128, mode Mode) coef128 {
 //
 // Why it gives round128's bits. The callers establish MinExp128 < exp <=
 // MaxExp128 and an adjusted exponent exp + Precision128 - 1 of at least Emin128
-// (addSlow128 from its operands' exponents: exp = xe - m, or xe - m - 1 for
+// (addLong128 from its operands' exponents: exp = xe - m, or xe - m - 1 for
 // the padded power of ten, with xe <= MaxExp128 and exp > ye >= MinExp128,
 // since the gap xe - ye exceeds m, by s + 1 with s > 0 for a swamped
 // addend; divLong128 by testing them before the call), so exp is at or above the
@@ -296,7 +299,7 @@ func addSlow128(x, y coef128, mode Mode) coef128 {
 // nearest mode: roundInc adds nothing for it there (in a directed mode it
 // would), and what is left is the encoding, with the carry of a q that the
 // caller's rounding took to 10^Precision128. divLong128 rounds its quotient that
-// way, by biasing the dividend, and the swamped sum of addSlow128 is x
+// way, by biasing the dividend, and the swamped sum of addLong128 is x
 // itself in a nearest mode.
 // TestRoundFaceValue drives every bound here in every mode against the
 // reference, TestSwampedAdd the classes around the swamping gap,

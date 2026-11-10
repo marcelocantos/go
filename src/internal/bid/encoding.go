@@ -257,6 +257,15 @@ func divPair128(x, y Uint128) (xhi, yhi uint64, exp int, neg, ok bool) {
 	return x.Hi & CoeffMask128Hi, y.Hi & CoeffMask128Hi, exp, (x.Hi^y.Hi)&SignMask128Hi != 0, ok
 }
 
+// addPair128 decodes what addSlow128's own path needs. ok reports that x
+// and y are both finite encodings of the first form (see divPair128). xhi
+// and yhi are the high words of the coefficients, whose low words are those
+// of x and y, and xe and ye the exponents, biased.
+func addPair128(x, y Uint128) (xhi, yhi uint64, xe, ye int, ok bool) {
+	ok = (x.Hi&(x.Hi<<1)|y.Hi&(y.Hi<<1))&(Form2Mask128Hi&(Form2Mask128Hi<<1)) == 0
+	return x.Hi & CoeffMask128Hi, y.Hi & CoeffMask128Hi, int(x.Hi >> ExpShift128 & ExpMask128), int(y.Hi >> ExpShift128 & ExpMask128), ok
+}
+
 // shortExp128 returns the exponent of x less shortMinExp, a value from 0
 // to -shortMinExp, if x is a finite first-form encoding whose coefficient
 // fits its low word and whose exponent is from shortMinExp to 0; for every

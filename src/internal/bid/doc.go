@@ -1817,7 +1817,7 @@
 // # Face-value rounding
 //
 // Every rounded result passes through roundW, with one named exception:
-// roundFaceW, which rounds the swamped and the aligned addend of addSlowW
+// roundFaceW, which rounds the swamped and the aligned addend of addLongW
 // and the inexact quotient of divLongW, and has no other caller. Its input is a
 // coefficient q of exactly PrecisionW digits at an exponent inside the
 // format and not tiny, plus a fraction below one unit, not zero, whose
@@ -1832,7 +1832,7 @@
 // is those steps and nothing else; it adds roundInc and calls packW and
 // overflowW as roundW does, so the table, the encoding and the overflow
 // results are shared, not copied. Its comment proves the bounds of its
-// input from addSlowW's. It exists because roundW's clamp, digit count and
+// input from addLongW's. It exists because roundW's clamp, digit count and
 // shift, all of which leave such an input unchanged, cost more than the
 // rounding itself on far additions, and a test for this input inside
 // roundW measured 2 to 7 percent on the other inexact roundings (Round and
@@ -1876,9 +1876,9 @@
 // zero biased remainder of an odd divisor, and the exact quotients, in
 // every mode. A swamped addend needs no decision at all in a nearest
 // mode: x + f rounds down to x and (x - 1) + (1 - f) up to it, so
-// addSlowW passes x scaled to full precision to roundFaceW with no class.
+// addLongW passes x scaled to full precision to roundFaceW with no class.
 // TestRoundIsTheOnlyPacker allows roundFaceW to call packW and allows
-// only addSlowW and divLongW to call it.
+// only addLongW and divLongW to call it.
 //
 // # Operands without a pattern
 //

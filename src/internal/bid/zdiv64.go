@@ -43,7 +43,7 @@ package bid
 // (MinExp64 < exp <= MaxExp64, adjusted exponent at least Emin64) is rounded
 // at face value: the one row of the rounding table, with the carry of the
 // largest coefficient one place up. This is the second use of the
-// face-value exception, after the swamped addend of addSlow64 ("Face-value
+// face-value exception, after the swamped addend of addLong64 ("Face-value
 // rounding" in the package documentation): it saves the reduction of a
 // longer quotient by a reciprocal division and its digit count, which were
 // a third of a division. In the two nearest modes the row is not even

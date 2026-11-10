@@ -56,7 +56,10 @@ func subSlow64(x, y coef64, mode Mode) coef64 {
 	return addSlow64(x, y, mode)
 }
 
-// addSlow64 returns x + y rounded in mode.
+// addLong64 returns x + y rounded in mode, for every operand: addSlow64,
+// which the callers above and the compiler call, is addLong64 for
+// decimal64 and takes most sums of two-word coefficients itself for
+// decimal128 (add128.go).
 //
 // The operand with the larger exponent is scaled up to the exponent of the
 // other if that takes it to addDigits64 digits or fewer, and then the sum is
@@ -95,7 +98,7 @@ func subSlow64(x, y coef64, mode Mode) coef64 {
 // The compiler calls the decimal128 instantiation of this function
 // directly, so its parameters and results are a contract with it: see the
 // end of "Inline fast paths" in the package documentation.
-func addSlow64(x, y coef64, mode Mode) coef64 {
+func addLong64(x, y coef64, mode Mode) coef64 {
 	var yneg, yok bool
 	var yw uint64
 	var ye int
@@ -264,7 +267,7 @@ func addSlow64(x, y coef64, mode Mode) coef64 {
 }
 
 // roundFace64 returns (-1)^neg × (q + f) × 10^exp rounded in mode, for the
-// swamped and the aligned addend of addSlow64 and the inexact quotient of
+// swamped and the aligned addend of addLong64 and the inexact quotient of
 // divLong64, its only callers: q has exactly Precision64 digits, 10^(Precision64-1)
 // <= q <= cMax64(), and f is a fraction, not zero, whose class is known at
 // face value (classBelowHalf or classAboveHalf for a swamped addend; an
@@ -275,7 +278,7 @@ func addSlow64(x, y coef64, mode Mode) coef64 {
 //
 // Why it gives round64's bits. The callers establish MinExp64 < exp <=
 // MaxExp64 and an adjusted exponent exp + Precision64 - 1 of at least Emin64
-// (addSlow64 from its operands' exponents: exp = xe - m, or xe - m - 1 for
+// (addLong64 from its operands' exponents: exp = xe - m, or xe - m - 1 for
 // the padded power of ten, with xe <= MaxExp64 and exp > ye >= MinExp64,
 // since the gap xe - ye exceeds m, by s + 1 with s > 0 for a swamped
 // addend; divLong64 by testing them before the call), so exp is at or above the
@@ -296,7 +299,7 @@ func addSlow64(x, y coef64, mode Mode) coef64 {
 // nearest mode: roundInc adds nothing for it there (in a directed mode it
 // would), and what is left is the encoding, with the carry of a q that the
 // caller's rounding took to 10^Precision64. divLong64 rounds its quotient that
-// way, by biasing the dividend, and the swamped sum of addSlow64 is x
+// way, by biasing the dividend, and the swamped sum of addLong64 is x
 // itself in a nearest mode.
 // TestRoundFaceValue drives every bound here in every mode against the
 // reference, TestSwampedAdd the classes around the swamping gap,

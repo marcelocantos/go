@@ -58,7 +58,10 @@ func subSlowW(x, y coefW, mode Mode) coefW {
 	return addSlowW(x, y, mode)
 }
 
-// addSlowW returns x + y rounded in mode.
+// addLongW returns x + y rounded in mode, for every operand: addSlowW,
+// which the callers above and the compiler call, is addLong64 for
+// decimal64 and takes most sums of two-word coefficients itself for
+// decimal128 (add128.go).
 //
 // The operand with the larger exponent is scaled up to the exponent of the
 // other if that takes it to addDigitsW digits or fewer, and then the sum is
@@ -97,7 +100,7 @@ func subSlowW(x, y coefW, mode Mode) coefW {
 // The compiler calls the decimal128 instantiation of this function
 // directly, so its parameters and results are a contract with it: see the
 // end of "Inline fast paths" in the package documentation.
-func addSlowW(x, y coefW, mode Mode) coefW {
+func addLongW(x, y coefW, mode Mode) coefW {
 	var yneg, yok bool
 	var yw uint64
 	var ye int
@@ -266,7 +269,7 @@ func addSlowW(x, y coefW, mode Mode) coefW {
 }
 
 // roundFaceW returns (-1)^neg × (q + f) × 10^exp rounded in mode, for the
-// swamped and the aligned addend of addSlowW and the inexact quotient of
+// swamped and the aligned addend of addLongW and the inexact quotient of
 // divLongW, its only callers: q has exactly PrecisionW digits, 10^(PrecisionW-1)
 // <= q <= cMaxW(), and f is a fraction, not zero, whose class is known at
 // face value (classBelowHalf or classAboveHalf for a swamped addend; an
@@ -277,7 +280,7 @@ func addSlowW(x, y coefW, mode Mode) coefW {
 //
 // Why it gives roundW's bits. The callers establish MinExpW < exp <=
 // MaxExpW and an adjusted exponent exp + PrecisionW - 1 of at least EminW
-// (addSlowW from its operands' exponents: exp = xe - m, or xe - m - 1 for
+// (addLongW from its operands' exponents: exp = xe - m, or xe - m - 1 for
 // the padded power of ten, with xe <= MaxExpW and exp > ye >= MinExpW,
 // since the gap xe - ye exceeds m, by s + 1 with s > 0 for a swamped
 // addend; divLongW by testing them before the call), so exp is at or above the
@@ -298,7 +301,7 @@ func addSlowW(x, y coefW, mode Mode) coefW {
 // nearest mode: roundInc adds nothing for it there (in a directed mode it
 // would), and what is left is the encoding, with the carry of a q that the
 // caller's rounding took to 10^PrecisionW. divLongW rounds its quotient that
-// way, by biasing the dividend, and the swamped sum of addSlowW is x
+// way, by biasing the dividend, and the swamped sum of addLongW is x
 // itself in a nearest mode.
 // TestRoundFaceValue drives every bound here in every mode against the
 // reference, TestSwampedAdd the classes around the swamping gap,
