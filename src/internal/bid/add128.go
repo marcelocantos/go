@@ -54,8 +54,14 @@ func addSlow64(x, y uint64, mode Mode) uint64 {
 // are a contract with it: see the end of "Inline fast paths" in the package
 // documentation.
 func addSlow128(x, y Uint128, mode Mode) Uint128 {
+	// Coefficients of one word each go on at once, before anything is
+	// decoded: the compiler sends those to addLong128 itself, and add128
+	// cannot afford the test (it would no longer inline).
+	if wordPair128(x, y) {
+		return addLong128(x, y, mode)
+	}
 	xhi, yhi, xe, ye, ok := addPair128(x, y)
-	if !ok || xhi|yhi == 0 || mode > ToNearestAway {
+	if !ok || mode > ToNearestAway {
 		return addLong128(x, y, mode)
 	}
 	// a is the operand with the larger exponent, x if they are equal.

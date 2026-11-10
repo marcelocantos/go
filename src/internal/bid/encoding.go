@@ -257,6 +257,13 @@ func divPair128(x, y Uint128) (xhi, yhi uint64, exp int, neg, ok bool) {
 	return x.Hi & CoeffMask128Hi, y.Hi & CoeffMask128Hi, exp, (x.Hi^y.Hi)&SignMask128Hi != 0, ok
 }
 
+// wordPair128 reports whether neither x nor y has a coefficient bit above
+// its low word: coefficients of one word each, if they are finite and of
+// the first form.
+func wordPair128(x, y Uint128) bool {
+	return (x.Hi|y.Hi)&CoeffMask128Hi == 0
+}
+
 // addPair128 decodes what addSlow128's own path needs. ok reports that x
 // and y are both finite encodings of the first form (see divPair128). xhi
 // and yhi are the high words of the coefficients, whose low words are those

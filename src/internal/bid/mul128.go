@@ -37,8 +37,12 @@ func mulSlow64(x, y uint64, mode Mode) uint64 {
 // are a contract with it: see the end of "Inline fast paths" in the package
 // documentation.
 func mulSlow128(x, y Uint128, mode Mode) Uint128 {
+	// Coefficients of one word each go on at once: see addSlow128.
+	if wordPair128(x, y) {
+		return mulLong128(x, y, mode)
+	}
 	xhi, yhi, xe, ye, ok := addPair128(x, y)
-	if !ok || xhi|yhi == 0 || mode > ToNearestAway {
+	if !ok || mode > ToNearestAway {
 		return mulLong128(x, y, mode)
 	}
 	// A coefficient that is not canonical is a zero. (A canonical zero

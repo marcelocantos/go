@@ -1803,7 +1803,9 @@
 // amd64 and arm64 accept every operand pair that these fronts accept, so
 // the compiler there calls the general paths without the front and does
 // not test the operands a second time: addSlow128, mulSlow128 and div128
-// with the rounding mode as an argument, quietCmpSlow128 for the
+// with the rounding mode as an argument (and, for a sum or a product of
+// coefficients of one word each, addLong128 and mulLong128 directly, which
+// take those first), quietCmpSlow128 for the
 // comparisons, and for two finite operands it has decoded itself,
 // cCmpFinite128 (cmd/compile/internal/ssagen.bidKernelOp and bidCompare).
 // No runtime function stands between the operator and the kernel there:

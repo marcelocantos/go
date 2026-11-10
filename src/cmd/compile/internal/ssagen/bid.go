@@ -169,6 +169,11 @@ func (s *state) bidCompareZero(op ir.Op, x *ssa.Value, zeroOnLeft bool) *ssa.Val
 var (
 	bidKernelAdd, bidKernelMul, bidKernelDiv, bidKernelCmp, bidKernelCmpFinite *obj.LSym
 	bidKernelQuantize, bidKernelIntegral                                       *obj.LSym
+	// The sum and the product of coefficients of one word each: the
+	// kernel's routines for every operand, which take those first.
+	// bidKernelAdd and bidKernelMul are its entries for coefficients of
+	// two words, which hand everything else to these.
+	bidKernelAddLong, bidKernelMulLong *obj.LSym
 )
 
 func initBIDKernelSyms() {
@@ -177,6 +182,8 @@ func initBIDKernelSyms() {
 	}
 	bidKernelAdd = base.PkgLinksym("internal/bid", "addSlow128", obj.ABIInternal)
 	bidKernelMul = base.PkgLinksym("internal/bid", "mulSlow128", obj.ABIInternal)
+	bidKernelAddLong = base.PkgLinksym("internal/bid", "addLong128", obj.ABIInternal)
+	bidKernelMulLong = base.PkgLinksym("internal/bid", "mulLong128", obj.ABIInternal)
 	bidKernelDiv = base.PkgLinksym("internal/bid", "div128", obj.ABIInternal)
 	bidKernelCmp = base.PkgLinksym("internal/bid", "quietCmpSlow128", obj.ABIInternal)
 	bidKernelCmpFinite = base.PkgLinksym("internal/bid", "cCmpFinite128", obj.ABIInternal)
@@ -203,7 +210,7 @@ func (s *state) bidKernelOp(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Valu
 	xhi := s.newValue2(ssaop.OpXor64, u64, s.newValue1(ssaop.OpDecimal128Hi, u64, x), zeroHi)
 	yhi := s.newValue2(ssaop.OpXor64, u64, s.newValue1(ssaop.OpDecimal128Hi, u64, y), zeroHi)
 	xlo, ylo := s.newValue1(ssaop.OpDecimal128Lo, u64, x), s.newValue1(ssaop.OpDecimal128Lo, u64, y)
-	var fn *obj.LSym
+	var fn, long *obj.LSym
 	switch op {
 	case ir.OEQ, ir.ONE, ir.OLT, ir.OLE:
 		res := s.rtcall(bidKernelCmp, true, []*types.Type{types.Types[types.TINT64], boolT}, xhi, xlo, yhi, ylo)
@@ -224,26 +231,59 @@ func (s *state) bidKernelOp(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Valu
 		}
 		return r
 	case ir.OADD:
-		fn = bidKernelAdd
+		fn, long = bidKernelAdd, bidKernelAddLong
 	case ir.OSUB:
 		// x - y is x + (-y), except that a NaN y keeps its sign, so
 		// that the result for it is y made quiet with its own sign.
-		fn = bidKernelAdd
+		fn, long = bidKernelAdd, bidKernelAddLong
 		nanMask := s.constInt64(u64, int64(bid.NaN64))
 		nan := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpAnd64, u64, yhi, nanMask), nanMask)
 		signMask := bid.SignMask128Hi
 		negated := s.newValue2(ssaop.OpXor64, u64, yhi, s.constInt64(u64, int64(signMask)))
 		yhi = s.newValue3(ssaop.OpCondSelect, u64, yhi, negated, nan)
 	case ir.OMUL:
-		fn = bidKernelMul
+		fn, long = bidKernelMul, bidKernelMulLong
 	case ir.ODIV:
 		fn = bidKernelDiv
 	default:
 		return nil
 	}
 	mode := s.constInt8(types.Types[types.TUINT8], int8(bid.ToNearestEven))
-	res := s.rtcall(fn, true, []*types.Type{u64, u64}, xhi, xlo, yhi, ylo, mode)
-	return s.newValue2(ssaop.OpDecimal128Make, rt, res[1], s.newValue2(ssaop.OpXor64, u64, res[0], zeroHi))
+	call := func(fn *obj.LSym) *ssa.Value {
+		res := s.rtcall(fn, true, []*types.Type{u64, u64}, xhi, xlo, yhi, ylo, mode)
+		return s.newValue2(ssaop.OpDecimal128Make, rt, res[1], s.newValue2(ssaop.OpXor64, u64, res[0], zeroHi))
+	}
+	if long == nil {
+		return call(fn)
+	}
+	// The kernel's own paths for a sum and a product are for coefficients
+	// of two words; with one word each, the routine for every operand is
+	// called directly, where its word path is the first thing tried. The
+	// test is two instructions here, and saves those operands (a sum of
+	// amounts whose exponents are far apart, a product too long for the
+	// inline path) a refusal and a second call. How many words the
+	// coefficients have goes with the program's data, so it is a branch.
+	result := ssaMarker("bidkernel") // one per call; see bidAddSub128
+	coeffs := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpOr64, u64, xhi, yhi), s.constInt64(u64, int64(bid.CoeffMask128Hi)))
+	words := s.newValue2(ssaop.OpEq64, boolT, coeffs, s.constInt64(u64, 0))
+	bWords := s.f.NewBlock(block.BlockPlain)
+	bWide := s.f.NewBlock(block.BlockPlain)
+	bEnd := s.f.NewBlock(block.BlockPlain)
+	b := s.endBlock()
+	b.Kind = block.BlockIf
+	b.SetControl(words)
+	b.AddEdgeTo(bWords)
+	b.AddEdgeTo(bWide)
+	s.startBlock(bWords)
+	s.vars[result] = call(long)
+	s.endBlock().AddEdgeTo(bEnd)
+	s.startBlock(bWide)
+	s.vars[result] = call(fn)
+	s.endBlock().AddEdgeTo(bEnd)
+	s.startBlock(bEnd)
+	r := s.variable(result, rt)
+	delete(s.vars, result)
+	return r
 }
 
 // bidAddSub128 adds or subtracts word-sized coefficients directly.
