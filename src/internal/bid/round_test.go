@@ -293,7 +293,7 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 		// The word path of division: a quotient of exactly Precision
 		// digits rounded by its biased remainder, or an exact quotient
 		// with its zeros stripped, in range or turned away.
-		"div128": true,
+		"div128": true, "divWide128": true,
 	}
 	wordEncoder := map[string]bool{"packWord64": true, "packWord128": true, "packWordW": true}
 	// Callers of the inline encoders, which encode the exact results of the
