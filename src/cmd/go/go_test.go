@@ -1050,6 +1050,11 @@ func TestGoListDeps(t *testing.T) {
 			// Some systems don't use internal/cpu.
 			want = "unsafe\nmath/bits\nmath\n"
 		}
+		if strings.Contains(out, "internal/bid") {
+			// With GOEXPERIMENT=decimal, math's decimal bits functions
+			// convert through the decimal kernel.
+			want = strings.Replace(want, "math/bits\nmath\n", "math/bits\ninternal/strconv\ninternal/bid\nmath\n", 1)
+		}
 		if tg.stdout.String() != want {
 			t.Fatalf("list -deps math: wrong order\nhave %q\nwant %q", tg.stdout.String(), want)
 		}

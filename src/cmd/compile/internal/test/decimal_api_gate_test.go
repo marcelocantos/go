@@ -26,7 +26,7 @@ func TestDecimalPublicAPIGate(t *testing.T) {
 		{"go/constant", "p.Quantum"},
 		{"go/types", "p.IsDecimal"},
 		{"debug/dwarf", "p.DecimalFloatType{}"},
-		{"math/decimal", "p.NativeRepresentation"},
+		{"math/decimal", "p.ToZero"},
 	} {
 		t.Run(tc.pkg+"/"+tc.use, func(t *testing.T) {
 			dir := t.TempDir()
