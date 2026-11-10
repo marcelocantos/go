@@ -57,6 +57,12 @@ func cCmpFinite64(xneg bool, xc coef64, xe int, yneg bool, yc coef64, ye int) in
 	return compareWords(xneg, xc, xe, yneg, yc, ye)
 }
 
+// cSel64 returns a if m is zero and b if m is all ones: a choice by a
+// mask, for the choices that depend on the operands' values.
+func cSel64(m uint64, a, b coef64) coef64 {
+	return a ^ (a^b)&m
+}
+
 // cLt64 reports whether a < b.
 func cLt64(a, b coef64) bool {
 	return a < b
@@ -310,6 +316,17 @@ func cNaNPayload64(p coef64, signaling bool) coef64 {
 // with the math/bits divide error.
 func cModFull64(p wide64, m coef64) coef64 {
 	return bits.Rem64(p.Hi, p.Lo, m)
+}
+
+// cModulus64 is cModulus128 for a word, which has nothing to prepare.
+type cModulus64 struct{ m coef64 }
+
+// cModPrepare64 returns m prepared.
+func cModPrepare64(m coef64) cModulus64 { return cModulus64{m} }
+
+// cModPrepared64 is cModFull64 for a prepared modulus.
+func cModPrepared64(p wide64, pm *cModulus64) coef64 {
+	return cModFull64(p, pm.m)
 }
 
 // cLo64 returns the coefficient held in the low word of p. Precondition:

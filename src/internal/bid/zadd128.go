@@ -192,9 +192,9 @@ func addSlow128(x, y coef128, mode Mode) coef128 {
 			if s > 0 && (s >= Precision128 || cLt128(yc, cPow10128(s))) {
 				// To nearest there is nothing to decide: X + f rounds
 				// down to X and (X - 1) + (1 - f) up to X, whatever the
-				// parity, and 10^Precision128 is packFace128's carry.
+				// parity, and 10^Precision128 is roundFace128's carry.
 				if mode != TowardZero && mode != TowardPositive && mode != TowardNegative {
-					return packFace128(xneg, near, xe-m, mode)
+					return roundFace128(xneg, near, xe-m, classZero, mode)
 				}
 				return roundFace128(xneg, p, xe-m, class, mode)
 			}
@@ -291,6 +291,13 @@ func addSlow128(x, y coef128, mode Mode) coef128 {
 // round128 encodes as 10^(Precision128-1) one place up, and that place above
 // MaxExp128 overflows to overflow128's result. Every other step of round128 (the
 // clamp, the digit count, the shift) leaves such a value unchanged.
+//
+// A caller that has rounded q itself, to nearest, passes classZero in a
+// nearest mode: roundInc adds nothing for it there (in a directed mode it
+// would), and what is left is the encoding, with the carry of a q that the
+// caller's rounding took to 10^Precision128. div128 rounds its quotient that
+// way, by biasing the dividend, and the swamped sum of addSlow128 is x
+// itself in a nearest mode.
 // TestRoundFaceValue drives every bound here in every mode against the
 // reference, TestSwampedAdd the classes around the swamping gap,
 // TestAlignedAdd the aligned addend's classes, carries and cancellations,
@@ -298,15 +305,7 @@ func addSlow128(x, y coef128, mode Mode) coef128 {
 func roundFace128(neg bool, q coef128, exp int, class digitClass, mode Mode) coef128 {
 	// The increment is added, not branched on (roundInc); the carry out
 	// of the largest coefficient is the branch, and it is rare.
-	return packFace128(neg, cAddU64128(q, roundInc(class, mode, neg, cOdd128(q))), exp, mode)
-}
-
-// packFace128 returns (-1)^neg × q × 10^exp for a q that roundFace128 has
-// rounded, or that div128 has by biasing its dividend: Precision128 digits, or
-// 10^Precision128 when the rounding carried out of the largest coefficient,
-// which is 10^(Precision128-1) one place up, and above MaxExp128 overflow128's
-// result. The carry is the one branch of a face-value rounding, and rare.
-func packFace128(neg bool, q coef128, exp int, mode Mode) coef128 {
+	q = cAddU64128(q, roundInc(class, mode, neg, cOdd128(q)))
 	if cGtMax128(q) {
 		q, exp = cPow10128(Precision128-1), exp+1
 		if exp > MaxExp128 {

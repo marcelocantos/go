@@ -11,27 +11,25 @@ package bid
 // min128 is Min128: see "Minimum and maximum" in the package documentation.
 func min128(x, y coef128) coef128 {
 	c, ok := quietCmpSlow128(x, y)
-	switch {
-	case !ok:
+	if !ok {
 		return nan128(x, y, y)
-	case c > 0, c == 0 && Signbit128(y) && !Signbit128(x):
-		// Operands of equal value and unlike sign can only be zeros, and
-		// -0 is the lesser.
-		return result128(y)
 	}
-	return result128(x)
+	// y if it is the lesser, or equal with the negative sign: operands of
+	// equal value and unlike sign can only be zeros, and -0 is the lesser.
+	// Which operand that is lies in their values, so it is chosen by a
+	// mask and not by a branch.
+	takeY := b2u(c > 0) | b2u(c == 0)&b2u(Signbit128(y))&^b2u(Signbit128(x))
+	return result128(cSel128(-takeY, x, y))
 }
 
 // max128 is Max128: see "Minimum and maximum" in the package documentation.
 func max128(x, y coef128) coef128 {
 	c, ok := quietCmpSlow128(x, y)
-	switch {
-	case !ok:
+	if !ok {
 		return nan128(x, y, y)
-	case c < 0, c == 0 && Signbit128(x) && !Signbit128(y):
-		return result128(y)
 	}
-	return result128(x)
+	takeY := b2u(c < 0) | b2u(c == 0)&b2u(Signbit128(x))&^b2u(Signbit128(y))
+	return result128(cSel128(-takeY, x, y))
 }
 
 // result128 returns the canonical encoding of the non-NaN value x, which

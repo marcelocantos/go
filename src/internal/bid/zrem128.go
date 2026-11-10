@@ -114,12 +114,20 @@ func remainder128(x, y coef128, nearest bool) coef128 {
 // Precondition: m is not zero.
 func remScaled128(c coef128, k int, m coef128) coef128 {
 	r := cModFull128(cMulFull128(c, cPow10128(k%remStep128)), m)
+	if k < remStep128 {
+		return r
+	}
+	// Beyond one stride every reduction is by the one modulus, prepared
+	// once: its reciprocals are part of every division. A gap within one
+	// stride, the usual one, has the one division above and prepares
+	// nothing.
+	pm := cModPrepare128(m)
 	b := cPow10128(remStep128)
 	for k /= remStep128; k > 0; k >>= 1 {
 		if k&1 != 0 {
-			r = cModFull128(cMulFull128(r, b), m)
+			r = cModPrepared128(cMulFull128(r, b), &pm)
 		}
-		b = cModFull128(cMulFull128(b, b), m)
+		b = cModPrepared128(cMulFull128(b, b), &pm)
 	}
 	return r
 }

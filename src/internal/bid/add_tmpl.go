@@ -194,9 +194,9 @@ func addSlowW(x, y coefW, mode Mode) coefW {
 			if s > 0 && (s >= PrecisionW || cLtW(yc, cPow10W(s))) {
 				// To nearest there is nothing to decide: X + f rounds
 				// down to X and (X - 1) + (1 - f) up to X, whatever the
-				// parity, and 10^PrecisionW is packFaceW's carry.
+				// parity, and 10^PrecisionW is roundFaceW's carry.
 				if mode != TowardZero && mode != TowardPositive && mode != TowardNegative {
-					return packFaceW(xneg, near, xe-m, mode)
+					return roundFaceW(xneg, near, xe-m, classZero, mode)
 				}
 				return roundFaceW(xneg, p, xe-m, class, mode)
 			}
@@ -293,6 +293,13 @@ func addSlowW(x, y coefW, mode Mode) coefW {
 // roundW encodes as 10^(PrecisionW-1) one place up, and that place above
 // MaxExpW overflows to overflowW's result. Every other step of roundW (the
 // clamp, the digit count, the shift) leaves such a value unchanged.
+//
+// A caller that has rounded q itself, to nearest, passes classZero in a
+// nearest mode: roundInc adds nothing for it there (in a directed mode it
+// would), and what is left is the encoding, with the carry of a q that the
+// caller's rounding took to 10^PrecisionW. divW rounds its quotient that
+// way, by biasing the dividend, and the swamped sum of addSlowW is x
+// itself in a nearest mode.
 // TestRoundFaceValue drives every bound here in every mode against the
 // reference, TestSwampedAdd the classes around the swamping gap,
 // TestAlignedAdd the aligned addend's classes, carries and cancellations,
@@ -300,15 +307,7 @@ func addSlowW(x, y coefW, mode Mode) coefW {
 func roundFaceW(neg bool, q coefW, exp int, class digitClass, mode Mode) coefW {
 	// The increment is added, not branched on (roundInc); the carry out
 	// of the largest coefficient is the branch, and it is rare.
-	return packFaceW(neg, cAddU64W(q, roundInc(class, mode, neg, cOddW(q))), exp, mode)
-}
-
-// packFaceW returns (-1)^neg × q × 10^exp for a q that roundFaceW has
-// rounded, or that divW has by biasing its dividend: PrecisionW digits, or
-// 10^PrecisionW when the rounding carried out of the largest coefficient,
-// which is 10^(PrecisionW-1) one place up, and above MaxExpW overflowW's
-// result. The carry is the one branch of a face-value rounding, and rare.
-func packFaceW(neg bool, q coefW, exp int, mode Mode) coefW {
+	q = cAddU64W(q, roundInc(class, mode, neg, cOddW(q)))
 	if cGtMaxW(q) {
 		q, exp = cPow10W(PrecisionW-1), exp+1
 		if exp > MaxExpW {

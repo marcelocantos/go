@@ -114,12 +114,20 @@ func remainder64(x, y coef64, nearest bool) coef64 {
 // Precondition: m is not zero.
 func remScaled64(c coef64, k int, m coef64) coef64 {
 	r := cModFull64(cMulFull64(c, cPow1064(k%remStep64)), m)
+	if k < remStep64 {
+		return r
+	}
+	// Beyond one stride every reduction is by the one modulus, prepared
+	// once: its reciprocals are part of every division. A gap within one
+	// stride, the usual one, has the one division above and prepares
+	// nothing.
+	pm := cModPrepare64(m)
 	b := cPow1064(remStep64)
 	for k /= remStep64; k > 0; k >>= 1 {
 		if k&1 != 0 {
-			r = cModFull64(cMulFull64(r, b), m)
+			r = cModPrepared64(cMulFull64(r, b), &pm)
 		}
-		b = cModFull64(cMulFull64(b, b), m)
+		b = cModPrepared64(cMulFull64(b, b), &pm)
 	}
 	return r
 }

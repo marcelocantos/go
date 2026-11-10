@@ -159,7 +159,8 @@ func div128(x, y coef128, mode Mode) coef128 {
 			// tie, where ties to even takes the even neighbour, the one
 			// below. Nothing here waits for a comparison of the remainder
 			// with the half or branches on the direction, which is as good
-			// as random: the two tests are rare and the carry is packFace128's.
+			// as random: the two tests are rare, and roundFace128, given no
+			// class, only encodes.
 			half := cHalf128(yc)
 			nb, _ := cAddFull128(n, wide128{Lo: half})
 			var rb coef128
@@ -168,7 +169,7 @@ func div128(x, y coef128, mode Mode) coef128 {
 				if cIsZero128(rb) && !cOdd128(yc) && mode != ToNearestAway {
 					q = cEven128(q)
 				}
-				return packFace128(neg, q, exp, mode)
+				return roundFace128(neg, q, exp, classZero, mode)
 			}
 		} else {
 			q, rem = cDivFull128(n, yc)

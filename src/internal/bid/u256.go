@@ -361,6 +361,16 @@ func u256Div128(n Uint256, d Uint128) (q, r Uint128, ok bool) {
 		dn := d.Lo << s
 		v := reciprocal2by1(dn)
 		var r64 uint64
+		if n.Hi.Lo == 0 {
+			// A dividend of two words: the high quotient word is a
+			// division of one word by one, the hardware's, which does
+			// not wait for the reciprocal; the reciprocal step for the
+			// low word takes its remainder, normalised.
+			q.Hi = n.Lo.Hi / d.Lo
+			r64 = n.Lo.Hi - q.Hi*d.Lo
+			q.Lo, r64 = div2by1(r64<<s|n.Lo.Lo>>(64-s), n.Lo.Lo<<s, dn, v)
+			return q, Uint128{Lo: r64 >> s}, true
+		}
 		q.Hi, r64 = div2by1(n.Hi.Lo<<s|n.Lo.Hi>>(64-s), n.Lo.Hi<<s|n.Lo.Lo>>(64-s), dn, v)
 		q.Lo, r64 = div2by1(r64, n.Lo.Lo<<s, dn, v)
 		return q, Uint128{Lo: r64 >> s}, true
@@ -408,6 +418,57 @@ func u256Div128(n Uint256, d Uint128) (q, r Uint128, ok bool) {
 	// Undo the normalisation of the remainder.
 	r = Uint128{Hi: r1 >> s, Lo: r0>>s | r1<<(64-s)}
 	return q, r, true
+}
+
+// divisor128 is a non-zero divisor prepared for repeated division: its
+// normalised words and their reciprocals, which a division would compute
+// again each time. The remainder of a long exponentiation divides by one
+// modulus some twenty times.
+type divisor128 struct {
+	d      Uint128
+	v1, v0 uint64 // d shifted left by s: both words, or v1 alone for a one-word d
+	v      uint64 // reciprocal2by1(v1)
+	vv     uint64 // reciprocal3by2(v1, v0), for a two-word d
+	s      uint
+}
+
+// prepareDivisor128 returns d prepared. Precondition: d is not zero.
+func prepareDivisor128(d Uint128) divisor128 {
+	if d.Hi == 0 {
+		s := uint(bits.LeadingZeros64(d.Lo))
+		v1 := d.Lo << s
+		return divisor128{d: d, v1: v1, v: reciprocal2by1(v1), s: s}
+	}
+	s := uint(bits.LeadingZeros64(d.Hi))
+	v1 := d.Hi<<s | d.Lo>>(64-s)
+	v0 := d.Lo << s
+	v := reciprocal2by1(v1)
+	return divisor128{d: d, v1: v1, v0: v0, v: v, vv: reciprocalExtend(v, v1, v0), s: s}
+}
+
+// u256ModPrepared returns n mod p.d for an n whose quotient fits 128 bits,
+// that is, n.Hi < p.d: the steps of u256Div128 with the reciprocals at
+// hand and the quotient words discarded. Precondition, not checked:
+// n.Hi < p.d.
+func u256ModPrepared(n Uint256, p *divisor128) Uint128 {
+	s := p.s
+	if p.d.Hi == 0 {
+		if div64Native {
+			_, r := bits.Div64(n.Hi.Lo, n.Lo.Hi, p.d.Lo)
+			_, r = bits.Div64(r, n.Lo.Lo, p.d.Lo)
+			return Uint128{Lo: r}
+		}
+		_, r := div2by1(n.Hi.Lo<<s|n.Lo.Hi>>(64-s), n.Lo.Hi<<s|n.Lo.Lo>>(64-s), p.v1, p.v)
+		_, r = div2by1(r, n.Lo.Lo<<s, p.v1, p.v)
+		return Uint128{Lo: r >> s}
+	}
+	w3 := n.Hi.Hi<<s | n.Hi.Lo>>(64-s)
+	w2 := n.Hi.Lo<<s | n.Lo.Hi>>(64-s)
+	w1 := n.Lo.Hi<<s | n.Lo.Lo>>(64-s)
+	w0 := n.Lo.Lo << s
+	_, r1, r0 := div3by2(w3, w2, w1, p.v1, p.v0, p.vv)
+	_, r1, r0 = div3by2(r1, r0, w0, p.v1, p.v0, p.vv)
+	return Uint128{Hi: r1 >> s, Lo: r0>>s | r1<<(64-s)}
 }
 
 // u256DivMod128 returns the full quotient and the remainder of n / d, with

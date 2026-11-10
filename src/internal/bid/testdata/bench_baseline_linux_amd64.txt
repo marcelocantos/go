@@ -1894,4 +1894,60 @@ BenchmarkKernel/Append/128/shuffled-16      	 8737634	        13.60 ns/op	      
 BenchmarkKernel/Append/128/shuffled-16      	 8840710	        13.57 ns/op	       0 B/op	       0 allocs/op
 BenchmarkKernel/Append/128/shuffled-16      	 8821267	        13.58 ns/op	       0 B/op	       0 allocs/op
 BenchmarkKernel/Append/128/shuffled-16      	 8844999	        13.71 ns/op	       0 B/op	       0 allocs/op
+
+# Appended for the drawn rows (Add, Sub, Mul, Div and Less at 128, class
+# drawn, and Div/128/drawn-money). NOT a runner measurement: these rows were
+# taken on 2026-11-10 under Docker's linux/amd64 emulation on an Apple M4
+# Max, with the command above restricted to
+#   -test.bench 'Kernel/^(Add|Sub|Mul|Div|Less)$/^128$/^drawn'
+# so that TestBenchBaselineShape has a sample for every row. Retake this
+# file from the bench job before trusting these rows.
+BenchmarkKernel/Add/128/drawn-16         	 4602298	        27.12 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Add/128/drawn-16         	 4490175	        26.61 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Add/128/drawn-16         	 4492570	        26.91 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Add/128/drawn-16         	 4454754	        27.23 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Add/128/drawn-16         	 4392049	        26.71 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Add/128/drawn-16         	 4513708	        26.74 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Add/128/drawn-16         	 4363905	        26.85 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Add/128/drawn-16         	 4463301	        26.79 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Sub/128/drawn-16         	 4290027	        27.37 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Sub/128/drawn-16         	 4383739	        26.91 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Sub/128/drawn-16         	 4462636	        26.78 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Sub/128/drawn-16         	 4455120	        27.28 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Sub/128/drawn-16         	 4430998	        26.94 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Sub/128/drawn-16         	 4456228	        27.49 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Sub/128/drawn-16         	 4336994	        27.03 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Sub/128/drawn-16         	 4551896	        27.43 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Mul/128/drawn-16         	 3690936	        31.94 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Mul/128/drawn-16         	 3585733	        32.90 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Mul/128/drawn-16         	 3645121	        32.14 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Mul/128/drawn-16         	 3824407	        31.03 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Mul/128/drawn-16         	 3566668	        33.29 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Mul/128/drawn-16         	 3664210	        32.61 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Mul/128/drawn-16         	 3569095	        32.52 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Mul/128/drawn-16         	 3793666	        30.52 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Div/128/drawn-16         	 1000000	       128.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Div/128/drawn-16         	  976446	       122.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Div/128/drawn-16         	  929416	       122.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Div/128/drawn-16         	  969430	       123.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Div/128/drawn-16         	  915618	       123.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Div/128/drawn-16         	  988156	       122.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Div/128/drawn-16         	  963333	       122.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Div/128/drawn-16         	  956900	       122.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Div/128/drawn-money-16   	  674247	       172.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Div/128/drawn-money-16   	  673381	       175.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Div/128/drawn-money-16   	  692220	       172.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Div/128/drawn-money-16   	  711897	       172.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Div/128/drawn-money-16   	  691008	       173.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Div/128/drawn-money-16   	  707995	       174.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Div/128/drawn-money-16   	  695732	       173.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Div/128/drawn-money-16   	  696236	       173.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Less/128/drawn-16        	11238090	        10.64 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Less/128/drawn-16        	11383972	        10.68 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Less/128/drawn-16        	11176857	        10.83 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Less/128/drawn-16        	11348086	        10.69 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Less/128/drawn-16        	11221320	        10.70 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Less/128/drawn-16        	11467194	        10.83 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Less/128/drawn-16        	11380912	        11.11 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Less/128/drawn-16        	11091073	        10.46 ns/op	       0 B/op	       0 allocs/op
 PASS

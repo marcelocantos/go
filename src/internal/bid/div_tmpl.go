@@ -168,7 +168,8 @@ func divW(x, y coefW, mode Mode) coefW {
 			// tie, where ties to even takes the even neighbour, the one
 			// below. Nothing here waits for a comparison of the remainder
 			// with the half or branches on the direction, which is as good
-			// as random: the two tests are rare and the carry is packFaceW's.
+			// as random: the two tests are rare, and roundFaceW, given no
+			// class, only encodes.
 			half := cHalfW(yc)
 			nb, _ := cAddFullW(n, wideW{Lo: half})
 			var rb coefW
@@ -177,7 +178,7 @@ func divW(x, y coefW, mode Mode) coefW {
 				if cIsZeroW(rb) && !cOddW(yc) && mode != ToNearestAway {
 					q = cEvenW(q)
 				}
-				return packFaceW(neg, q, exp, mode)
+				return roundFaceW(neg, q, exp, classZero, mode)
 			}
 		} else {
 			q, rem = cDivFullW(n, yc)

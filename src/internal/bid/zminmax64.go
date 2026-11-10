@@ -11,27 +11,25 @@ package bid
 // min64 is Min64: see "Minimum and maximum" in the package documentation.
 func min64(x, y coef64) coef64 {
 	c, ok := quietCmpSlow64(x, y)
-	switch {
-	case !ok:
+	if !ok {
 		return nan64(x, y, y)
-	case c > 0, c == 0 && Signbit64(y) && !Signbit64(x):
-		// Operands of equal value and unlike sign can only be zeros, and
-		// -0 is the lesser.
-		return result64(y)
 	}
-	return result64(x)
+	// y if it is the lesser, or equal with the negative sign: operands of
+	// equal value and unlike sign can only be zeros, and -0 is the lesser.
+	// Which operand that is lies in their values, so it is chosen by a
+	// mask and not by a branch.
+	takeY := b2u(c > 0) | b2u(c == 0)&b2u(Signbit64(y))&^b2u(Signbit64(x))
+	return result64(cSel64(-takeY, x, y))
 }
 
 // max64 is Max64: see "Minimum and maximum" in the package documentation.
 func max64(x, y coef64) coef64 {
 	c, ok := quietCmpSlow64(x, y)
-	switch {
-	case !ok:
+	if !ok {
 		return nan64(x, y, y)
-	case c < 0, c == 0 && Signbit64(x) && !Signbit64(y):
-		return result64(y)
 	}
-	return result64(x)
+	takeY := b2u(c < 0) | b2u(c == 0)&b2u(Signbit64(x))&^b2u(Signbit64(y))
+	return result64(cSel64(-takeY, x, y))
 }
 
 // result64 returns the canonical encoding of the non-NaN value x, which

@@ -85,6 +85,11 @@ func cCmpFinite128(xneg bool, xc coef128, xe int, yneg bool, yc coef128, ye int)
 	return c
 }
 
+// cSel128 is cSel64 for a 128-bit coefficient.
+func cSel128(m uint64, a, b coef128) coef128 {
+	return coef128{Hi: a.Hi ^ (a.Hi^b.Hi)&m, Lo: a.Lo ^ (a.Lo^b.Lo)&m}
+}
+
 // cLt128 reports whether a < b, without a branch (u128Lt).
 func cLt128(a, b coef128) bool {
 	return u128Lt(a, b)
@@ -424,6 +429,29 @@ func cModFull128(p wide128, m coef128) coef128 {
 	}
 	_, r := u256DivMod128(p, m)
 	return r
+}
+
+// cModulus128 is a modulus prepared for repeated reduction by
+// cModPrepared128: see divisor128.
+type cModulus128 = divisor128
+
+// cModPrepare128 returns m prepared. Precondition: m is not zero; a zero m
+// panics with errDivideByZero.
+func cModPrepare128(m coef128) cModulus128 {
+	if m == (coef128{}) {
+		panic(errDivideByZero)
+	}
+	return prepareDivisor128(m)
+}
+
+// cModPrepared128 is cModFull128 for a prepared modulus: p mod m. A p
+// with p.Hi < m, which is every product of two values below m, divides by
+// the reciprocals at hand; any other takes cModFull128.
+func cModPrepared128(p wide128, pm *cModulus128) coef128 {
+	if u128Lt(p.Hi, pm.d) {
+		return u256ModPrepared(p, pm)
+	}
+	return cModFull128(p, pm.d)
 }
 
 // cLo128 returns the coefficient held in the low half of p. Precondition:

@@ -159,7 +159,8 @@ func div64(x, y coef64, mode Mode) coef64 {
 			// tie, where ties to even takes the even neighbour, the one
 			// below. Nothing here waits for a comparison of the remainder
 			// with the half or branches on the direction, which is as good
-			// as random: the two tests are rare and the carry is packFace64's.
+			// as random: the two tests are rare, and roundFace64, given no
+			// class, only encodes.
 			half := cHalf64(yc)
 			nb, _ := cAddFull64(n, wide64{Lo: half})
 			var rb coef64
@@ -168,7 +169,7 @@ func div64(x, y coef64, mode Mode) coef64 {
 				if cIsZero64(rb) && !cOdd64(yc) && mode != ToNearestAway {
 					q = cEven64(q)
 				}
-				return packFace64(neg, q, exp, mode)
+				return roundFace64(neg, q, exp, classZero, mode)
 			}
 		} else {
 			q, rem = cDivFull64(n, yc)

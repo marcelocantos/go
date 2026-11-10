@@ -1829,9 +1829,9 @@
 // its whole decision is one row of the five-mode table, roundInc(class,
 // mode, sign, odd(q)), and an increment of the largest coefficient carries
 // to 10^(PrecisionW-1) one place up, overflowing above MaxExpW. roundFaceW
-// is those steps and nothing else; it adds roundInc and encodes through
-// packFaceW, which calls packW and overflowW as roundW does, so the table,
-// the encoding and the overflow results are shared, not copied. Its comment proves the bounds of its
+// is those steps and nothing else; it adds roundInc and calls packW and
+// overflowW as roundW does, so the table, the encoding and the overflow
+// results are shared, not copied. Its comment proves the bounds of its
 // input from addSlowW's. It exists because roundW's clamp, digit count and
 // shift, all of which leave such an input unchanged, cost more than the
 // rounding itself on far additions, and a test for this input inside
@@ -1864,8 +1864,9 @@
 // exactly when the division is exact, which goes on to the preferred
 // exponent, and it is zero under an even divisor exactly on a tie, where
 // ties to even takes the neighbour below. Both tests are rare, and the
-// result is encoded by packFaceW, whose carry no quotient of two
-// coefficients reaches (TestDivNearest shows why and checks it). A
+// result is encoded by roundFaceW with no class, which adds nothing in a
+// nearest mode; its carry no quotient of two coefficients reaches
+// (TestDivNearest shows why and checks it). A
 // directed mode takes the class of the remainder against the divisor and
 // roundFaceW; results near the exponent limits, which may be subnormal,
 // clamped or overflowing, take one more division step and go through
@@ -1875,10 +1876,9 @@
 // zero biased remainder of an odd divisor, and the exact quotients, in
 // every mode. A swamped addend needs no decision at all in a nearest
 // mode: x + f rounds down to x and (x - 1) + (1 - f) up to it, so
-// addSlowW encodes x scaled to full precision through packFaceW.
-// TestRoundIsTheOnlyPacker allows packFaceW to call packW, only
-// roundFaceW, divW and addSlowW to call packFaceW, and only addSlowW and
-// divW to call roundFaceW.
+// addSlowW passes x scaled to full precision to roundFaceW with no class.
+// TestRoundIsTheOnlyPacker allows roundFaceW to call packW and allows
+// only addSlowW and divW to call it.
 //
 // # Operands without a pattern
 //
@@ -1923,12 +1923,34 @@
 //   - An order of two coefficients (u128Lt, u128Cmp, cLtW): borrows.
 //   - The corrections of the division's quotient words and of its
 //     reciprocal ("Division").
+//   - A comparison of two values (cCmpFinite128, compareWords, and the
+//     compiler's lowering of the operators): which operand has the larger
+//     exponent, whether the scaled coefficient exceeds the other, and the
+//     signs.
 //
 // The same operators after these changes, drawn at random: 13.3 ns for
 // the addition, 14.4 for the multiplication, 21.7 for the division of
-// 34-digit operands and 20.2 for the division of money amounts. The
-// benchmark loops draw their operands this way under -bid.shuffle, and the
-// rows named shuffled always do.
+// 34-digit operands and 20.2 for the division of money amounts; a
+// comparison of 34-digit operands fell from 9.6 to 4.8. The benchmark rows
+// named shuffled and drawn draw their operands this way: the drawn rows
+// are operands of one kind, 34 digits at nearby exponents or money
+// amounts, with digits, signs and order in no pattern.
+//
+// Not every such decision is worth computing. A branch that resolves at
+// the start of an operation, from the signs or the exponents just
+// decoded, costs little when it mispredicts: the processor has started
+// little else. One that resolves at the end, from a remainder or a class,
+// costs the operation and what followed it. And the replacement is not
+// free: it makes everything after it wait for the answer. Two that were
+// measured and left as branches (2026-11-10): exchanging the operands of
+// an addition by a mask, so that x has the larger exponent, gained 1.4 ns
+// on 34-digit operands in no order, cost 0.7 on operands in one order and
+// 1.3 on operands of nearly equal exponent; and forming the sum and the
+// difference of an aligned addition together, chosen by the signs, gained
+// 1.8 ns on operands of mixed sign and cost 1.5 on operands of one sign.
+// The compiler's lowered addition of two words of one quantum keeps its
+// branch on the signs for the same reason: without it the path has about
+// 17 instructions where the equal-sign path has 3.
 //
 // The price is paid by the predictable case, where a predicted branch
 // costs nothing and its replacement costs the time to compute the answer.
@@ -2026,8 +2048,7 @@
 // every mix (all include about 1.4 ns of the generator that draws the
 // order). The rows of a repeating pool therefore understate what a
 // data-dependent branch costs on real input, here by a factor of two. The
-// row Append/128/shuffled draws its operands that way, and -bid.shuffle
-// does it for every one- and two-operand row. The same routine with
+// row Append/128/shuffled draws its operands that way. The same routine with
 // branches (on the point, on the nine-byte result, between the two shapes
 // of store) is the faster on values of one shape, 3.8 ns against 5.2 on a
 // walked pool, and the slower on mixed ones, up to 9.4 against 6.9 drawn:

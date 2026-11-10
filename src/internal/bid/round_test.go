@@ -266,13 +266,13 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 		"BIDFromDPD64": true, "BIDFromDPD128": true,
 		"Int64To128": true, "Uint64To128": true}
 	// Callers of packW, the checked encoder: the rounding routine, its
-	// overflow result and the encoder of the face-value roundings (no
-	// exact fast path uses the checked encoder).
+	// overflow result and the face-value rounding (no exact fast path
+	// uses the checked encoder).
 	checkedPackers := map[string]bool{
 		"roundW": true, "round64": true, "round128": true,
 		"roundFiniteW": true, "roundFinite64": true, "roundFinite128": true,
 		"overflowW": true, "overflow64": true, "overflow128": true,
-		"packFaceW": true, "packFace64": true, "packFace128": true,
+		"roundFaceW": true, "roundFace64": true, "roundFace128": true,
 	}
 	// The face-value rounding is the one exception to roundW as the
 	// rounding routine, and its proof holds only for the swamped and the
@@ -281,13 +281,6 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 	// documentation. It has those two callers.
 	faceRounder := map[string]bool{"roundFaceW": true, "roundFace64": true, "roundFace128": true}
 	faceCallers := map[string]bool{"addSlowW": true, "addSlow64": true, "addSlow128": true, "divW": true, "div64": true, "div128": true}
-	// packFaceW encodes a coefficient that a face-value rounding has
-	// already rounded: roundFaceW's, the quotient divW rounds to nearest
-	// by biasing its dividend, and the swamped sum of addSlowW, which in a
-	// nearest mode is x itself. It has those three callers.
-	facePacker := map[string]bool{"packFaceW": true, "packFace64": true, "packFace128": true}
-	facePackCallers := map[string]bool{"roundFaceW": true, "roundFace64": true, "roundFace128": true, "divW": true, "div64": true, "div128": true,
-		"addSlowW": true, "addSlow64": true, "addSlow128": true}
 	// Callers of the word packers, which encode the exact results of the
 	// word fast paths of addition, multiplication, fused multiply-add and
 	// quantize: see the comments of those functions and the end of roundW's.
@@ -373,8 +366,6 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 					case checkedEncoder[id.Name] && !checkedPackers[caller]:
 						violations = append(violations, fset.Position(n.Pos()).String()+": "+caller+" calls "+id.Name)
 					case faceRounder[id.Name] && !faceCallers[caller]:
-						violations = append(violations, fset.Position(n.Pos()).String()+": "+caller+" calls "+id.Name)
-					case facePacker[id.Name] && !facePackCallers[caller]:
 						violations = append(violations, fset.Position(n.Pos()).String()+": "+caller+" calls "+id.Name)
 					}
 				case *ast.Ident:

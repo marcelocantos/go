@@ -192,9 +192,9 @@ func addSlow64(x, y coef64, mode Mode) coef64 {
 			if s > 0 && (s >= Precision64 || cLt64(yc, cPow1064(s))) {
 				// To nearest there is nothing to decide: X + f rounds
 				// down to X and (X - 1) + (1 - f) up to X, whatever the
-				// parity, and 10^Precision64 is packFace64's carry.
+				// parity, and 10^Precision64 is roundFace64's carry.
 				if mode != TowardZero && mode != TowardPositive && mode != TowardNegative {
-					return packFace64(xneg, near, xe-m, mode)
+					return roundFace64(xneg, near, xe-m, classZero, mode)
 				}
 				return roundFace64(xneg, p, xe-m, class, mode)
 			}
@@ -291,6 +291,13 @@ func addSlow64(x, y coef64, mode Mode) coef64 {
 // round64 encodes as 10^(Precision64-1) one place up, and that place above
 // MaxExp64 overflows to overflow64's result. Every other step of round64 (the
 // clamp, the digit count, the shift) leaves such a value unchanged.
+//
+// A caller that has rounded q itself, to nearest, passes classZero in a
+// nearest mode: roundInc adds nothing for it there (in a directed mode it
+// would), and what is left is the encoding, with the carry of a q that the
+// caller's rounding took to 10^Precision64. div64 rounds its quotient that
+// way, by biasing the dividend, and the swamped sum of addSlow64 is x
+// itself in a nearest mode.
 // TestRoundFaceValue drives every bound here in every mode against the
 // reference, TestSwampedAdd the classes around the swamping gap,
 // TestAlignedAdd the aligned addend's classes, carries and cancellations,
@@ -298,15 +305,7 @@ func addSlow64(x, y coef64, mode Mode) coef64 {
 func roundFace64(neg bool, q coef64, exp int, class digitClass, mode Mode) coef64 {
 	// The increment is added, not branched on (roundInc); the carry out
 	// of the largest coefficient is the branch, and it is rare.
-	return packFace64(neg, cAddU6464(q, roundInc(class, mode, neg, cOdd64(q))), exp, mode)
-}
-
-// packFace64 returns (-1)^neg × q × 10^exp for a q that roundFace64 has
-// rounded, or that div64 has by biasing its dividend: Precision64 digits, or
-// 10^Precision64 when the rounding carried out of the largest coefficient,
-// which is 10^(Precision64-1) one place up, and above MaxExp64 overflow64's
-// result. The carry is the one branch of a face-value rounding, and rare.
-func packFace64(neg bool, q coef64, exp int, mode Mode) coef64 {
+	q = cAddU6464(q, roundInc(class, mode, neg, cOdd64(q)))
 	if cGtMax64(q) {
 		q, exp = cPow1064(Precision64-1), exp+1
 		if exp > MaxExp64 {

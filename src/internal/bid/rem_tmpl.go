@@ -115,12 +115,20 @@ func remainderW(x, y coefW, nearest bool) coefW {
 // Precondition: m is not zero.
 func remScaledW(c coefW, k int, m coefW) coefW {
 	r := cModFullW(cMulFullW(c, cPow10W(k%remStepW)), m)
+	if k < remStepW {
+		return r
+	}
+	// Beyond one stride every reduction is by the one modulus, prepared
+	// once: its reciprocals are part of every division. A gap within one
+	// stride, the usual one, has the one division above and prepares
+	// nothing.
+	pm := cModPrepareW(m)
 	b := cPow10W(remStepW)
 	for k /= remStepW; k > 0; k >>= 1 {
 		if k&1 != 0 {
-			r = cModFullW(cMulFullW(r, b), m)
+			r = cModPreparedW(cMulFullW(r, b), &pm)
 		}
-		b = cModFullW(cMulFullW(b, b), m)
+		b = cModPreparedW(cMulFullW(b, b), &pm)
 	}
 	return r
 }

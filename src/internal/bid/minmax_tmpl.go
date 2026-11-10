@@ -12,27 +12,25 @@ package bid
 // minW is MinW: see "Minimum and maximum" in the package documentation.
 func minW(x, y coefW) coefW {
 	c, ok := quietCmpSlowW(x, y)
-	switch {
-	case !ok:
+	if !ok {
 		return nanW(x, y, y)
-	case c > 0, c == 0 && SignbitW(y) && !SignbitW(x):
-		// Operands of equal value and unlike sign can only be zeros, and
-		// -0 is the lesser.
-		return resultW(y)
 	}
-	return resultW(x)
+	// y if it is the lesser, or equal with the negative sign: operands of
+	// equal value and unlike sign can only be zeros, and -0 is the lesser.
+	// Which operand that is lies in their values, so it is chosen by a
+	// mask and not by a branch.
+	takeY := b2u(c > 0) | b2u(c == 0)&b2u(SignbitW(y))&^b2u(SignbitW(x))
+	return resultW(cSelW(-takeY, x, y))
 }
 
 // maxW is MaxW: see "Minimum and maximum" in the package documentation.
 func maxW(x, y coefW) coefW {
 	c, ok := quietCmpSlowW(x, y)
-	switch {
-	case !ok:
+	if !ok {
 		return nanW(x, y, y)
-	case c < 0, c == 0 && SignbitW(x) && !SignbitW(y):
-		return resultW(y)
 	}
-	return resultW(x)
+	takeY := b2u(c < 0) | b2u(c == 0)&b2u(SignbitW(x))&^b2u(SignbitW(y))
+	return resultW(cSelW(-takeY, x, y))
 }
 
 // resultW returns the canonical encoding of the non-NaN value x, which
