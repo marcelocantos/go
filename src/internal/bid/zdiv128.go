@@ -206,7 +206,34 @@ func divLong128(x, y coef128, mode Mode) coef128 {
 		}
 	}
 	if class == classZero && k > 0 {
-		q, k = strip128(q, k, first)
+		// strip128's steps, written here and not called: as a call they
+		// cost a decimal64 division with an exact quotient a sixth more,
+		// and one that is not exact a twentieth, for what the call does
+		// to this function's registers. div128's own paths, which reach
+		// an exact quotient more rarely, call strip128.
+		search := true
+		if first > 0 {
+			if sq, ok := cDivExactPow10128(q, first); ok {
+				q, k = sq, k-first
+				search = first == 1
+			} else {
+				search = first > 1
+			}
+		}
+		if search && k > 0 {
+			step := 1
+			for step*2 <= min(k, Precision128+1) {
+				step *= 2
+			}
+			for ; step > 0; step /= 2 {
+				if step > k {
+					continue
+				}
+				if sq, ok := cDivExactPow10128(q, step); ok {
+					q, k = sq, k-step
+				}
+			}
+		}
 	}
 	r, _ := round128(neg, wide128{Lo: q}, xe-ye-k, class, mode, MinExp128)
 	return r

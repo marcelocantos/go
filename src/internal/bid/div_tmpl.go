@@ -215,7 +215,34 @@ func divLongW(x, y coefW, mode Mode) coefW {
 		}
 	}
 	if class == classZero && k > 0 {
-		q, k = stripW(q, k, first)
+		// stripW's steps, written here and not called: as a call they
+		// cost a decimal64 division with an exact quotient a sixth more,
+		// and one that is not exact a twentieth, for what the call does
+		// to this function's registers. div128's own paths, which reach
+		// an exact quotient more rarely, call stripW.
+		search := true
+		if first > 0 {
+			if sq, ok := cDivExactPow10W(q, first); ok {
+				q, k = sq, k-first
+				search = first == 1
+			} else {
+				search = first > 1
+			}
+		}
+		if search && k > 0 {
+			step := 1
+			for step*2 <= min(k, PrecisionW+1) {
+				step *= 2
+			}
+			for ; step > 0; step /= 2 {
+				if step > k {
+					continue
+				}
+				if sq, ok := cDivExactPow10W(q, step); ok {
+					q, k = sq, k-step
+				}
+			}
+		}
 	}
 	r, _ := roundW(neg, wideW{Lo: q}, xe-ye-k, class, mode, MinExpW)
 	return r
