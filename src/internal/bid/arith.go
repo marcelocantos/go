@@ -247,7 +247,7 @@ func compareWords(xneg bool, xc uint64, xe int, yneg bool, yc uint64, ye int) in
 	xs := int(b2u(xneg) & ((xc | -xc) >> 63))
 	ys := int(b2u(yneg) & ((yc | -yc) >> 63))
 	gap := xe - ye
-	m := gap >> 63 // all ones if x has the smaller exponent, and y is scaled
+	m := gap >> intSign // all ones if x has the smaller exponent, and y is scaled
 	a, b := xc^(xc^yc)&uint64(m), yc^(xc^yc)&uint64(m)
 	g := (gap ^ m) - m
 	hi, lo := bits.Mul64(a, pow10tab64[min(g, len(pow10tab64)-1)])

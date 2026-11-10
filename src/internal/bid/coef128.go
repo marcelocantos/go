@@ -58,7 +58,7 @@ func cCmpFinite128(xneg bool, xc coef128, xe int, yneg bool, yc coef128, ye int)
 	xs := int(b2u(xneg) &^ b2u(xc == coef128{}))
 	ys := int(b2u(yneg) &^ b2u(yc == coef128{}))
 	gap := xe - ye
-	m := gap >> 63 // all ones if x has the smaller exponent, and y is scaled
+	m := gap >> intSign // all ones if x has the smaller exponent, and y is scaled
 	dLo, dHi := (xc.Lo^yc.Lo)&uint64(m), (xc.Hi^yc.Hi)&uint64(m)
 	aLo, aHi := xc.Lo^dLo, xc.Hi^dHi
 	bLo, bHi := yc.Lo^dLo, yc.Hi^dHi

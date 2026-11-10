@@ -21,6 +21,10 @@ import "math/bits"
 // math/bits panic (a run-time divide error) instead.
 const errDivideByZero = "internal/bid: division by zero"
 
+// intSign is the shift that spreads the sign of an int over the word: the
+// mask of a negative value, at the int's own width.
+const intSign = bits.UintSize - 1
+
 // u128Add returns a + b modulo 2^128 and the carry out of bit 127 (0 or 1).
 func u128Add(a, b Uint128) (sum Uint128, carry uint64) {
 	sum.Lo, carry = bits.Add64(a.Lo, b.Lo, 0)

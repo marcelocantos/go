@@ -126,7 +126,7 @@ func div128(x, y Uint128, mode Mode) Uint128 {
 		// operands as much as their digits do, so both are scaled, one
 		// of them by 10^0, and nothing branches.
 		e := db - wordDigits(a)
-		sign := e >> 63 // all ones when x is the longer
+		sign := e >> intSign // all ones when x is the longer
 		ah, al := bits.Mul64(a, pow10word[(e&^sign)&31])
 		bh, bl := bits.Mul64(b, pow10word[(-e&sign)&31])
 		_, lt := bits.Sub64(al, bl, 0)
@@ -242,7 +242,7 @@ func divWide128(x, y Uint128, mode Mode) Uint128 {
 
 	// lt is 1 when the leading ratio is below one.
 	e := dy - dx
-	sign := e >> 63 // all ones when x is the longer
+	sign := e >> intSign // all ones when x is the longer
 	px, py := &pow10tab128[e&^sign], &pow10tab128[-e&sign]
 	sh, sl := bits.Mul64(xc.Lo, px.Lo)
 	sh += xc.Lo*px.Hi + xc.Hi*px.Lo
@@ -260,7 +260,7 @@ func divWide128(x, y Uint128, mode Mode) Uint128 {
 	const last = len(pow10tab128) - 1
 	k1 := Precision128 - 1 + e
 	kk := k1 - last
-	kk &^= kk >> 63
+	kk &^= kk >> intSign
 	pm, pt := &pow10tab128[kk], &pow10tab128[k1-kk]
 	mh, ml := bits.Mul64(xc.Lo, pm.Lo)
 	mh += xc.Lo*pm.Hi + xc.Hi*pm.Lo
