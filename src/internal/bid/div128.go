@@ -82,6 +82,33 @@ func div128(x, y Uint128, mode Mode) Uint128 {
 		return divLong128(x, y, mode)
 	}
 
+	// An exact quotient of one-word operands, the usual result of dividing
+	// an amount by a count or a small rate, is found without the long
+	// division. b divides a × 10^j for some j exactly when what b has
+	// besides twos and fives, g, divides a; the least such j is then the
+	// twos or the fives of b in excess of those of a, whichever is more,
+	// and the quotient a × 10^j / b is the result at j places below the
+	// preferred exponent, which is where the long division's quotient
+	// would be stripped to. A division that is not exact leaves here at
+	// the test of g, after a shift, a multiply and one division
+	// instruction beside the work below.
+	if xhi == 0 {
+		tb := bits.TrailingZeros64(b)
+		fb, g := fives(b >> (uint(tb) & 63))
+		if a%g == 0 {
+			fa, _ := fives(a)
+			j := max(tb-bits.TrailingZeros64(a), fb-fa, 0)
+			if j < len(pow10tab64) {
+				if hi, lo := bits.Mul64(a, pow10word[j&31]); hi == 0 {
+					if r, ok := packWord128(neg, 0, lo/b, exp-j); ok {
+						return r
+					}
+					return divLong128(x, y, mode)
+				}
+			}
+		}
+	}
+
 	// The reciprocal, when it is needed, is asked for first: it takes the
 	// divisor alone, it is the longest chain here, and nothing else is
 	// yet in a register for the call to displace.
@@ -180,8 +207,9 @@ func div128(x, y Uint128, mode Mode) Uint128 {
 		rem >>= s
 	}
 	if rem == half {
-		// Exact: the zeros that the scale put in go, as far as the
-		// preferred exponent.
+		// Exact, and not found so above (a dividend of two words, or a
+		// quotient too long for a word): the zeros that the scale put
+		// in go, as far as the preferred exponent.
 		first := 0
 		if k < Precision128 {
 			first = k
@@ -308,6 +336,22 @@ func divWide128(x, y Uint128, mode Mode) Uint128 {
 		return r
 	}
 	return divLong128(x, y, mode)
+}
+
+// fives returns the number of times that 5 divides n, which is not zero,
+// and n without those factors. A multiple of 5 times the inverse of 5
+// modulo 2^64 is its quotient, at most ⌊(2^64-1)/5⌋, and every other
+// value lands above that. The loop runs once for most coefficients and a
+// few times for the rest.
+func fives(n uint64) (c int, rest uint64) {
+	const inv5, max5 = 0xCCCCCCCCCCCCCCCD, ^uint64(0) / 5
+	for {
+		m := n * inv5
+		if m > max5 {
+			return c, n
+		}
+		n, c = m, c+1
+	}
 }
 
 // pow10word is pow10tab64 in an array of 32, so that an index masked to
