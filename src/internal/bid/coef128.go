@@ -54,33 +54,49 @@ func cCmp128(a, b coef128) int {
 // its parameters and result are a contract with it: see the end of "Inline
 // fast paths" in the package documentation.
 func cCmpFinite128(xneg bool, xc coef128, xe int, yneg bool, yc coef128, ye int) int {
-	// The sign that counts: a zero is not negative.
-	xs := int(b2u(xneg) &^ b2u(xc == coef128{}))
-	ys := int(b2u(yneg) &^ b2u(yc == coef128{}))
-	gap := xe - ye
-	m := gap >> intSign // all ones if x has the smaller exponent, and y is scaled
-	dLo, dHi := (xc.Lo^yc.Lo)&uint64(m), (xc.Hi^yc.Hi)&uint64(m)
-	aLo, aHi := xc.Lo^dLo, xc.Hi^dHi
-	bLo, bHi := yc.Lo^dLo, yc.Hi^dHi
-	p := &pow10tab128[min((gap^m)-m, len(pow10tab128)-1)]
-	h00, l00 := bits.Mul64(aLo, p.Lo)
-	h01, l01 := bits.Mul64(aLo, p.Hi)
-	h10, l10 := bits.Mul64(aHi, p.Lo)
-	h11, l11 := bits.Mul64(aHi, p.Hi)
-	w1, c1 := bits.Add64(h00, l01, 0)
-	w1, c2 := bits.Add64(w1, l10, 0)
-	// The upper two words are a sum of these terms, zero only if all are.
-	over := h01 | h10 | l11 | h11 | c1 | c2
-	_, lt := bits.Sub64(l00, bLo, 0)
-	_, lt = bits.Sub64(w1, bHi, lt)
-	_, gt := bits.Sub64(bLo, l00, 0)
-	_, gt = bits.Sub64(bHi, w1, gt)
-	h := (over | -over) >> 63
-	c := int(gt|h) - int(lt&^h)
-	c = (c ^ m) - m    // reversed if the operands were swapped
-	c = (c ^ -xs) + xs // reversed for a negative x
-	if d := ys - xs; d != 0 {
-		c = d // signs differ: the negative one is the lesser
+	// EXPERIMENT: the branchy comparison of a61e558f59, for an A/B on amd64.
+	xz, yz := xc == (coef128{}), yc == (coef128{})
+	switch {
+	case xz && yz:
+		return 0
+	case xz:
+		if yneg {
+			return 1
+		}
+		return -1
+	case yz:
+		if xneg {
+			return -1
+		}
+		return 1
+	case xneg != yneg:
+		if xneg {
+			return -1
+		}
+		return 1
+	}
+	c, gap := 1, xe-ye
+	if gap < 0 {
+		xc, yc, c, gap = yc, xc, -1, -gap
+	}
+	if gap < len(pow10tab128) {
+		if s, overflow := cScaleTab128(xc, gap); !overflow {
+			switch {
+			case s.Hi != yc.Hi:
+				if s.Hi < yc.Hi {
+					c = -c
+				}
+			case s.Lo != yc.Lo:
+				if s.Lo < yc.Lo {
+					c = -c
+				}
+			default:
+				c = 0
+			}
+		}
+	}
+	if xneg {
+		c = -c
 	}
 	return c
 }
