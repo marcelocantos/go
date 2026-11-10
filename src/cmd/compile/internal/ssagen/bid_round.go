@@ -15,8 +15,6 @@ import (
 	"cmd/internal/obj"
 )
 
-var bidRoundVar = ssaMarker("bidround")
-
 // bidRounding lowers quantization and integral rounding of first-form word
 // coefficients on BID targets. The guards prove a canonical finite source,
 // a finite target, and either no change of quantum or removal of 1..19 digits.
@@ -31,6 +29,7 @@ var bidRoundVar = ssaMarker("bidround")
 // Any unproved case calls the portable typed helper with already-evaluated args;
 // this preserves special values, arbitrary encodings and argument evaluation.
 func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fallback *obj.LSym) *ssa.Value {
+	result := ssaMarker("bidround") // one per lowering; see bidAddSub128
 	u64, u8, boolT := types.Types[types.TUINT64], types.Types[types.TUINT8], types.Types[types.TBOOL]
 	zero, one := s.constInt64(u64, 0), s.constInt64(u64, 1)
 	x, mode := args[0], args[len(args)-1]
@@ -92,7 +91,7 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 	b.AddEdgeTo(bSame)
 	b.AddEdgeTo(bShift)
 	s.startBlock(bSame)
-	s.vars[bidRoundVar] = x
+	s.vars[result] = x
 	s.endBlock().AddEdgeTo(bAfter)
 	s.startBlock(bShift)
 	header := func() *ssa.Value {
@@ -123,7 +122,7 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 		power := s.rawLoad(u64, s.newValue2(ssaop.OpAddPtr, ptrT, table, s.newValue2(ssaop.OpMul64, u64, up, s.constInt64(u64, bidWordBytes))))
 		product := s.newValue2(ssaop.OpMul64uhilo, types.NewTuple(u64, u64), coeff, power)
 		guard(s.newValue2(ssaop.OpEq64, boolT, s.newValue1(ssaop.OpSelect0, u64, product), zero))
-		s.vars[bidRoundVar] = s.newValue2(ssaop.OpDecimal128Make, n.Type(), s.newValue1(ssaop.OpSelect1, u64, product), header())
+		s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, n.Type(), s.newValue1(ssaop.OpSelect1, u64, product), header())
 		s.endBlock().AddEdgeTo(bAfter)
 		s.startBlock(bDown)
 	}
@@ -159,9 +158,9 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 	selectMode(bid.TowardNegative, s.newValue2(ssaop.OpAndB, boolT, nonzero, negative))
 	q = s.newValue2(ssaop.OpAdd64, u64, q, increment)
 	if is64 {
-		s.vars[bidRoundVar] = s.newValue1(ssaop.OpCopy, n.Type(), s.newValue2(ssaop.OpOr64, u64, header(), q))
+		s.vars[result] = s.newValue1(ssaop.OpCopy, n.Type(), s.newValue2(ssaop.OpOr64, u64, header(), q))
 	} else {
-		s.vars[bidRoundVar] = s.newValue2(ssaop.OpDecimal128Make, n.Type(), q, header())
+		s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, n.Type(), q, header())
 	}
 	s.endBlock().AddEdgeTo(bAfter)
 	s.startBlock(bSlow)
@@ -178,11 +177,13 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 			kargs = append(kargs, s.newValue2(ssaop.OpXor64, u64, high(args[1]), zeroHi), s.newValue1(ssaop.OpDecimal128Lo, u64, args[1]))
 		}
 		res := s.rtcall(fn, true, []*types.Type{u64, u64}, append(kargs, mode)...)
-		s.vars[bidRoundVar] = s.newValue2(ssaop.OpDecimal128Make, n.Type(), res[1], s.newValue2(ssaop.OpXor64, u64, res[0], zeroHi))
+		s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, n.Type(), res[1], s.newValue2(ssaop.OpXor64, u64, res[0], zeroHi))
 	} else {
-		s.vars[bidRoundVar] = s.rtcall(fallback, true, []*types.Type{n.Type()}, args...)[0]
+		s.vars[result] = s.rtcall(fallback, true, []*types.Type{n.Type()}, args...)[0]
 	}
 	s.endBlock().AddEdgeTo(bAfter)
 	s.startBlock(bAfter)
-	return s.variable(bidRoundVar, n.Type())
+	v := s.variable(result, n.Type())
+	delete(s.vars, result)
+	return v
 }

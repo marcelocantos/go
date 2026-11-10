@@ -246,8 +246,6 @@ func (s *state) bidKernelOp(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Valu
 	return s.newValue2(ssaop.OpDecimal128Make, rt, res[1], s.newValue2(ssaop.OpXor64, u64, res[0], zeroHi))
 }
 
-var bidAddVar = ssaMarker("bidadd")
-
 // bidAddSub128 adds or subtracts word-sized coefficients directly.
 // First handle effective same-sign, same-quantum addition:
 // The equal stored high words establish both sign and quantum equality. A
@@ -274,6 +272,12 @@ var bidAddVar = ssaMarker("bidadd")
 // the runtime, with the original operands. The normal variable/memory phis at
 // bAfter join that call's memory with the unchanged fast-branch memory.
 func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value {
+	// The paths below merge through a variable of their own, as ternary
+	// does. The phi builder for functions of more than smallBlocks blocks
+	// gives a variable the type of the first read it meets, so a marker
+	// shared by every lowering would give a function that lowers both
+	// decimal widths a phi of the wrong width.
+	result := ssaMarker("bidadd")
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
 	zero := s.constInt64(u64, 0)
 	xh := s.newValue1(ssaop.OpDecimal128Hi, u64, x)
@@ -320,7 +324,7 @@ func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	lo := s.newValue1(ssaop.OpSelect0, u64, sum)
 	carry := s.newValue1(ssaop.OpSelect1, u64, sum)
 	hi := s.newValue2(ssaop.OpOr64, u64, xh, carry)
-	s.vars[bidAddVar] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, hi)
+	s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, hi)
 	s.endBlock().AddEdgeTo(bAfter)
 
 	s.startBlock(bOpposite)
@@ -346,7 +350,7 @@ func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	hi = s.newValue2(ssaop.OpXor64, u64, xh, s.newValue2(ssaop.OpLsh64x64, u64, borrow, s.constInt64(u64, 63)))
 	cancelled := s.newValue2(ssaop.OpEq64, boolT, lo, zero)
 	hi = s.newValue3(ssaop.OpCondSelect, u64, s.newValue2(ssaop.OpAnd64, u64, hi, s.constInt64(u64, int64(^signMask))), hi, cancelled)
-	s.vars[bidAddVar] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, hi)
+	s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, hi)
 	s.endBlock().AddEdgeTo(bAfter)
 
 	s.startBlock(bAlign)
@@ -413,7 +417,7 @@ func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	lo = s.newValue1(ssaop.OpSelect0, u64, sum)
 	carry = s.newValue1(ssaop.OpSelect1, u64, sum)
 	hi = s.newValue2(ssaop.OpAdd64, u64, phi, carry)
-	s.vars[bidAddVar] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, s.newValue2(ssaop.OpOr64, u64, lowHeader, hi))
+	s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, s.newValue2(ssaop.OpOr64, u64, lowHeader, hi))
 	s.endBlock().AddEdgeTo(bAfter)
 
 	s.startBlock(bDiff)
@@ -433,18 +437,18 @@ func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	negative = s.newValue3(ssaop.OpCondSelect, u64, zero, negative, isZero)
 	header := s.newValue2(ssaop.OpAnd64, u64, lowHeader, s.constInt64(u64, int64(^signMask)))
 	header = s.newValue2(ssaop.OpOr64, u64, header, negative)
-	s.vars[bidAddVar] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, s.newValue2(ssaop.OpOr64, u64, header, hi))
+	s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, s.newValue2(ssaop.OpOr64, u64, header, hi))
 	s.endBlock().AddEdgeTo(bAfter)
 
 	s.startBlock(bSlow)
-	s.vars[bidAddVar] = s.softDecimalOp(op, rt, x, y)
+	s.vars[result] = s.softDecimalOp(op, rt, x, y)
 	s.endBlock().AddEdgeTo(bAfter)
 
 	s.startBlock(bAfter)
-	return s.variable(bidAddVar, rt)
+	r := s.variable(result, rt)
+	delete(s.vars, result)
+	return r
 }
-
-var bidMulVar = ssaMarker("bidmul")
 
 // bidMul128 multiplies two canonical finite word coefficients directly when
 // the full product and the sum of exponents fit decimal128. Mul64uhilo gives
@@ -456,6 +460,7 @@ var bidMulVar = ssaMarker("bidmul")
 // guard calls the original multiplication, which handles rounding, clamping,
 // noncanonical encodings and specials.
 func (s *state) bidMul128(rt *types.Type, x, y *ssa.Value) *ssa.Value {
+	result := ssaMarker("bidmul") // one per lowering; see bidAddSub128
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
 	zero := s.constInt64(u64, 0)
 	xh := s.newValue1(ssaop.OpDecimal128Hi, u64, x)
@@ -523,12 +528,14 @@ func (s *state) bidMul128(rt *types.Type, x, y *ssa.Value) *ssa.Value {
 	sign := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpXor64, u64, xh, yh), s.constInt64(u64, int64(signMask)))
 	header := s.newValue2(ssaop.OpOr64, u64, sign, s.newValue2(ssaop.OpLsh64x64, u64, exp, shift))
 	header = s.newValue2(ssaop.OpXor64, u64, header, s.constInt64(u64, int64(bid.Zero128Hi)))
-	s.vars[bidMulVar] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, s.newValue2(ssaop.OpOr64, u64, header, hi))
+	s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, s.newValue2(ssaop.OpOr64, u64, header, hi))
 	s.endBlock().AddEdgeTo(bAfter)
 
 	s.startBlock(bSlow)
-	s.vars[bidMulVar] = s.softDecimalOp(ir.OMUL, rt, x, y)
+	s.vars[result] = s.softDecimalOp(ir.OMUL, rt, x, y)
 	s.endBlock().AddEdgeTo(bAfter)
 	s.startBlock(bAfter)
-	return s.variable(bidMulVar, rt)
+	r := s.variable(result, rt)
+	delete(s.vars, result)
+	return r
 }
