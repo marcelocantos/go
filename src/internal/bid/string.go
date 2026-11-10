@@ -107,54 +107,40 @@ const (
 // without leading zeros ("0" for zero), and returns the number written.
 // Bytes before the digits are unchanged. buf must have room for digitBufLen
 // digits, or for the digits of the value.
+//
+// The low word holds exactly u64Digits digits, leading zeros included: two
+// chunks of eight below three digits. Each chunk converts on its own
+// (eightASCII) and is stored as one word, and the high word converts beside
+// them, so the dependent steps are the two divisions that cut the chunks
+// out, not the nineteen that a digit at a time would take. The chunks pay
+// here because the low word's length is fixed: no branch depends on it.
 func writeDigits(buf []byte, hi, lo uint64) int {
 	if hi == 0 {
 		return writeWordDigits(buf, lo)
 	}
-	const pairs = "00010203040506070809" +
-		"10111213141516171819" +
-		"20212223242526272829" +
-		"30313233343536373839" +
-		"40414243444546474849" +
-		"50515253545556575859" +
-		"60616263646566676869" +
-		"70717273747576777879" +
-		"80818283848586878889" +
-		"90919293949596979899"
+	const chunk = 100_000_000 // eight digits
 	i := len(buf)
-	// The low word has exactly 19 digits, including leading zeros.
-	// Write the odd last digit, then nine pairs.
-	i--
-	buf[i] = byte('0' + lo%10)
-	lo /= 10
-	for range u64Digits / 2 {
-		i -= 2
-		p := lo % 100 * 2
-		buf[i], buf[i+1] = pairs[p], pairs[p+1]
-		lo /= 100
-	}
-	lo = hi
-	// The high word has no padding. Pairs shorten the long coefficient's
-	// division chain; the single-word case keeps its smaller scalar loop.
-	for lo >= 100 {
-		i -= 2
-		p := lo % 100 * 2
-		buf[i], buf[i+1] = pairs[p], pairs[p+1]
-		lo /= 100
-	}
-	if lo >= 10 {
-		i -= 2
-		buf[i], buf[i+1] = pairs[lo*2], pairs[lo*2+1]
-	} else {
+	q1 := lo / chunk
+	q2 := lo / (chunk * chunk) // below 1000: the top three digits of the word
+	putEight(buf[i-8:], eightASCII(lo-q1*chunk))
+	putEight(buf[i-16:], eightASCII(q1-q2*chunk))
+	i -= 16
+	for range 3 {
 		i--
-		buf[i] = byte('0' + lo)
+		buf[i] = byte('0' + q2%10)
+		q2 /= 10
 	}
-	return len(buf) - i
+	return u64Digits + writeWordDigits(buf[:i], hi)
 }
 
 // writeWordDigits writes a word backwards into the end of buf without
 // a temporary buffer or a digit-counting pass. It returns the digit count.
 // cSplitW establishes lo < 10^19, so u64Digits bytes suffice even for zero.
+// A digit at a time is the right shape here: the word is usually short
+// (money has six digits), and a conversion in chunks of eight costs its
+// three multiplications whatever the length and a branch on the length
+// that mixed operands mispredict (see "Digit conversion" in the package
+// documentation).
 func writeWordDigits(buf []byte, lo uint64) int {
 	i := len(buf)
 	for {
@@ -166,6 +152,62 @@ func writeWordDigits(buf []byte, lo uint64) int {
 		}
 	}
 	return len(buf) - i
+}
+
+// eightASCII returns the eight decimal digits of v, which is below 10^8,
+// as ASCII bytes packed in a word with the most significant digit in the
+// lowest byte, so that putEight, which stores the word little-endian, lays
+// them out in reading order. Leading zeros are kept.
+//
+// It is three multiplications instead of seven divisions: the value is
+// split into halves of four digits, each half into pairs, each pair into
+// digits, with the parts of one level side by side in the lanes of one
+// word so that a single multiply-and-shift divides them all. At each level
+// the quotient of a lane is recovered by a shift that lands it in the low
+// bits of its own lane, and the bits that the lane above shifts down are
+// masked off, which is sound because every quotient is below the mask and
+// every product stays inside its lane:
+//
+//   - Halves. t = v / 10^4 and u = v - 10^4 t are below 10^4. z holds t in
+//     bits 0–31 and u in bits 32–63.
+//   - Pairs. For q < 10^4, q / 100 = (q × 10486) >> 20: 10486 = ⌈2^20 / 100⌉,
+//     and the error q × (10486 × 100 − 2^20) / 2^20 = 24 q / 2^20 is below
+//     1 for q < 43691. q × 10486 < 2^27 stays inside a 32-bit lane; after
+//     the shift the quotient is in bits 0–6 of the lane (it is below 100)
+//     and whatever the upper lane shifted down starts at bit 12, so the
+//     mask 0x7F per lane keeps the quotient alone. The remainder is
+//     q − 100 × quotient, also inside the lane. y then holds the four
+//     pairs in 16-bit lanes, most significant lowest: t / 100, t mod 100,
+//     u / 100, u mod 100.
+//   - Digits. For p < 100, p / 10 = (p × 103) >> 10: 103 = ⌈2^10 / 10⌉ and
+//     the error p × (103 × 10 − 2^10) / 2^10 = 6 p / 2^10 is below 1 for
+//     p < 171. p × 103 < 2^14 stays inside a 16-bit lane; after the shift
+//     the tens digit is in bits 0–3 of its lane and the lane above lands at
+//     bit 6, so the mask 0xF per lane keeps it. The units are p − 10 × tens.
+//     Tens in the low byte of each lane, units in the high byte, plus '0'
+//     in every byte, is the result.
+//
+// TestEightASCII checks every value below 10^8 against the division loop.
+func eightASCII(v uint64) uint64 {
+	t := v / 10_000
+	z := t | (v-t*10_000)<<32
+	hundreds := ((z * 10486) >> 20) & 0x0000_007F_0000_007F
+	y := hundreds | (z-hundreds*100)<<16
+	tens := ((y * 103) >> 10) & 0x000F_000F_000F_000F
+	return tens | (y-tens*10)<<8 | 0x3030_3030_3030_3030
+}
+
+// putEight stores w little-endian in b[0:8]: the compiler emits one store.
+func putEight(b []byte, w uint64) {
+	_ = b[7]
+	b[0] = byte(w)
+	b[1] = byte(w >> 8)
+	b[2] = byte(w >> 16)
+	b[3] = byte(w >> 24)
+	b[4] = byte(w >> 32)
+	b[5] = byte(w >> 40)
+	b[6] = byte(w >> 48)
+	b[7] = byte(w >> 56)
 }
 
 // appendDecimal appends the to-scientific-string form of the finite value

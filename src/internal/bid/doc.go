@@ -1832,6 +1832,25 @@
 // mode and both classes. TestRoundIsTheOnlyPacker allows it to call packW
 // and allows only addSlowW to call it.
 //
+// # Digit conversion
+//
+// A two-word coefficient's low word, which cSplitW fixes at exactly nineteen
+// digits, is converted to text in chunks of eight digits (writeDigits,
+// eightASCII): each chunk is three multiplications over lanes of one word
+// instead of a chain of divisions, the chunks convert independently, and
+// the high word converts beside them. The same conversion for every word
+// was measured and kept out (2026-11-10, Apple M4 Max, interleaved, n=8):
+// on its own the chunked writer is faster from about sixteen digits
+// (16 digits 9.3 → 6.4 ns, 19 digits 11.6 → 7.8) and no faster below eight,
+// but end to end it cost Append/64/mixed 24% and Append128Word/small 36%,
+// because the three multiplications are paid whatever the length and the
+// branch on the length is mispredicted on mixed operands. Restricted to the
+// fixed-length low word there is no such branch: Append/128/mixed 16.9 →
+// 15.1 ns, UnpackDigits/128/mixed 10.3 → 9.1, Append128Word/large 16.9 →
+// 13.4, and the decimal64 rows unchanged. Replacing the layout's small
+// appends with fixed-size copies was measured in the same pass and did not
+// pay either.
+//
 // # No assembly
 //
 // The package is pure Go, and was measured against assembly before staying
