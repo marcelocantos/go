@@ -55,6 +55,14 @@ const fmaDigitsW = 2*PrecisionW + 3
 // format is refused too, and the general path clamps or folds it.
 // TestFMAWordPath drives the bounds against the reference.
 //
+// A product of two words that the path above does not finish, because z
+// is more than maxWordGap places away or the sum does not fit, is still
+// exact whenever it fits the format, and then the result is the sum of
+// the product and z by addSlowW: every rule of the sum of two values,
+// the preferred exponent min(Q(x)+Q(y), Q(z)) and the signs of zeros
+// included, is the rule for x × y + z with an exact product. A product
+// that does not fit the format takes the general path.
+//
 // The general path is addW over the wide type. The product is computed
 // exactly and is one operand; the other is z. Whichever has the larger
 // exponent, the product or z, is scaled up towards the exponent of the
@@ -121,6 +129,16 @@ func fmaW(x, y, z coefW, mode Mode) coefW {
 					return r
 				}
 			}
+		}
+		// A product that is itself a value of the format, a coefficient of
+		// at most PrecisionW digits at an exponent in range, is exact,
+		// and then x × y + z rounded once is the sum of that value and z:
+		// addSlowW, with its one shift and its face-value rounding, where
+		// the general path below scales the product to fmaDigitsW digits
+		// and divides a double-width sum back. The words of the product
+		// encode by the exact packing exception, as the sum above does.
+		if p, ok := packWordW(pneg, phi, plo, pe-BiasW); ok {
+			return addSlowW(p, z, mode)
 		}
 		a, aneg, ae = cFromU128W(Uint128{Hi: phi, Lo: plo}), pneg, pe-BiasW
 		zc, bneg, be = cFromU64W(zw), zneg, ze-BiasW
