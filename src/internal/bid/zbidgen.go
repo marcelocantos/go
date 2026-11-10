@@ -405,7 +405,7 @@ func UnpackDigits64(buf *[Precision64]byte, x coef64) (kind Kind, neg bool, n, e
 	return *new(Kind), *new(bool), *new(int), *new(int)
 }
 
-func append64(dst []byte, x coef64) []byte {
+func append64(dst []byte, x coef64, sci bool) []byte {
 	return *new([]byte)
 }
 
@@ -417,7 +417,7 @@ func UnpackDigits128(buf *[Precision128]byte, x coef128) (kind Kind, neg bool, n
 	return *new(Kind), *new(bool), *new(int), *new(int)
 }
 
-func append128(dst []byte, x coef128) []byte {
+func append128(dst []byte, x coef128, sci bool) []byte {
 	return *new([]byte)
 }
 

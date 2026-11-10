@@ -3403,13 +3403,13 @@ func checkDPDDecode(t *testing.T, width int, id, hex, want string) bool {
 	var text string
 	if width == 64 {
 		b = bid.Uint128{Lo: bid.BIDFromDPD64(d.Lo)}
-		text = string(bid.Append64(nil, b.Lo))
+		text = string(bid.AppendSci64(nil, b.Lo))
 		if !bid.IsCanonical64(b.Lo) {
 			t.Errorf("%s: BIDFromDPD64(%s) = %#016x is not canonical", id, hex, b.Lo)
 		}
 	} else {
 		b = bid.BIDFromDPD128(d)
-		text = string(bid.Append128(nil, b))
+		text = string(bid.AppendSci128(nil, b))
 		if !bid.IsCanonical128(b) {
 			t.Errorf("%s: BIDFromDPD128(%s) = %#016x%016x is not canonical", id, hex, b.Hi, b.Lo)
 		}

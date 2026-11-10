@@ -93,10 +93,12 @@ type conformanceOps struct {
 	Float32From128 func(x bid.Uint128, mode bid.Mode) float32
 
 	// string.go
-	Append64  func(dst []byte, x uint64) []byte
-	Append128 func(dst []byte, x bid.Uint128) []byte
-	Parse64   func(s string, mode bid.Mode) (uint64, bid.Status)
-	Parse128  func(s string, mode bid.Mode) (bid.Uint128, bid.Status)
+	Append64     func(dst []byte, x uint64) []byte
+	Append128    func(dst []byte, x bid.Uint128) []byte
+	AppendSci64  func(dst []byte, x uint64) []byte
+	AppendSci128 func(dst []byte, x bid.Uint128) []byte
+	Parse64      func(s string, mode bid.Mode) (uint64, bid.Status)
+	Parse128     func(s string, mode bid.Mode) (bid.Uint128, bid.Status)
 
 	// encoding.go
 	Unpack64  func(x uint64) (bid.Kind, bool, uint64, int)
@@ -148,6 +150,7 @@ var kernelOps = conformanceOps{
 	Float32From64: bid.Float32From64, Float32From128: bid.Float32From128,
 
 	Append64: bid.Append64, Append128: bid.Append128,
+	AppendSci64: bid.AppendSci64, AppendSci128: bid.AppendSci128,
 	Parse64: bid.Parse64, Parse128: bid.Parse128,
 
 	Unpack64: bid.Unpack64, Unpack128: bid.Unpack128,
@@ -178,7 +181,7 @@ var conformanceOpNames = []string{
 	"Int64From64", "Int64From128", "Uint64From64", "Uint64From128",
 	"Float64To64", "Float64To128", "Float32To64", "Float32To128",
 	"Float64From64", "Float64From128", "Float32From64", "Float32From128",
-	"Append64", "Append128", "Parse64", "Parse128",
+	"Append64", "Append128", "AppendSci64", "AppendSci128", "Parse64", "Parse128",
 	"Unpack64", "Unpack128", "Pack64", "Pack128",
 	"IsNaN64", "IsNaN128", "IsSignaling64", "IsSignaling128", "IsInf64", "IsInf128",
 	"IsFinite64", "IsFinite128", "IsZero64", "IsZero128", "IsSubnormal64", "IsSubnormal128",
@@ -962,6 +965,14 @@ func (ops *conformanceOps) eval(v *vector) (got, want []string, skipped bool, er
 		x := a.dec128()
 		want = []string{w.wantStr()}
 		run = func() { g(strconv.Quote(string(ops.Append128(nil, x)))) }
+	case "AppendSci64":
+		x := a.dec64()
+		want = []string{w.wantStr()}
+		run = func() { g(strconv.Quote(string(ops.AppendSci64(nil, x)))) }
+	case "AppendSci128":
+		x := a.dec128()
+		want = []string{w.wantStr()}
+		run = func() { g(strconv.Quote(string(ops.AppendSci128(nil, x)))) }
 	case "Parse64":
 		s := a.str()
 		want = []string{w.wantDec64(), w.wantStatus()}

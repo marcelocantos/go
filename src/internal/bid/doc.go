@@ -186,7 +186,7 @@
 // sign is one cohort too, with exponents over the whole range.
 //
 // The character form used throughout this documentation and produced by
-// Append64 and Append128 is the to-scientific-string form of GDA. IEEE
+// AppendSci64 and AppendSci128 is the to-scientific-string form of GDA. IEEE
 // 754-2019 clause 5.12 requires a conversion to character form that is
 // exact and preserves the quantum, and GDA's form meets it; the standard
 // fixes no particular notation. For a finite value, the coefficient is
@@ -662,9 +662,15 @@
 // overflows and "0E+99999999999" is 0E+369.
 //
 // Append64 and Append128 are convertToDecimalCharacter (clauses 5.4.2 and
-// 5.12): they write the character form defined under "Values, cohorts and
-// the character form", which Parse reads back to the canonical encoding
-// of the operand. They are exact and take no Mode.
+// 5.12) in Go's canonical form, the one println, fmt's %v and strconv's
+// 'g' at precision -1 write: the same digits and quantum as the character
+// form defined under "Values, cohorts and the character form", laid out as
+// a Go float is, in plain notation when the adjusted exponent is from -4
+// to 20 and Q(x) <= 0, and otherwise in exponential notation with a
+// lowercase "e" and at least two exponent digits; infinities are "+Inf"
+// and "-Inf". AppendSci64 and AppendSci128 write the character form itself,
+// in which the conformance suites are written. Parse reads both back to
+// the canonical encoding of the operand. They are exact and take no Mode.
 //
 // # Rounding from exact parts
 //
@@ -700,8 +706,8 @@
 //	Function(operands, Mode) = result
 //	Function(operands, Mode) = result, Status
 //
-// Decimal operands and results are in the character form of Append. Two
-// forms that Append never writes are used for operands and for the
+// Decimal operands and results are in the character form of AppendSci.
+// Two forms that AppendSci never writes are used for operands and for the
 // results of the sign operations: -NaN is a NaN with the sign bit set and
 // sNaN a signaling NaN (-sNaN both). Binary operands and results of the
 // Float functions are Go float64 or float32 literals, the shortest that

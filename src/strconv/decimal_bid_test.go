@@ -797,7 +797,7 @@ func TestAppendDecimalCanonicalCapacity(t *testing.T) {
 					}
 					for _, format := range []byte{'e', 'E', 'g', 'G', 'f', '?'} {
 						e := exp + n - 1
-						scientific := format == 'e' || format == 'E' || format != 'f' && (e < -6 || e >= 21 || exp > 0)
+						scientific := format == 'e' || format == 'E' || format != 'f' && (e < -4 || e >= 21 || exp > 0)
 						want := ""
 						if scientific {
 							want = refFormat(neg, coeff, exp, 'e', n-1)
@@ -827,7 +827,7 @@ func TestAppendDecimalCanonicalCapacity(t *testing.T) {
 }
 
 // TestAppendDecimalShort drives the short values, a coefficient below 10^8
-// at an exponent from -6 to 0, which the kernel lays out in registers and
+// at an exponent from -4 to 0, which the kernel lays out in registers and
 // stores straight into the buffer: every coefficient length, with the
 // point at each place inside the digits and to their left, zeros of each
 // quantum, both signs and the values just outside the range. Each is
@@ -853,7 +853,7 @@ func TestAppendDecimalShort(t *testing.T) {
 						want := ""
 						if prec < 0 {
 							e := exp + n - 1
-							scientific := format == 'e' || format == 'E' || format != 'f' && (e < -6 || e >= 21 || exp > 0)
+							scientific := format == 'e' || format == 'E' || format != 'f' && (e < -4 || e >= 21 || exp > 0)
 							switch {
 							case scientific && coeff == "0":
 								// The reference has no exponent form of
@@ -1090,9 +1090,14 @@ func TestFormatDecimalCanonical(t *testing.T) {
 		{coeff: 0, exp: 0, neg: true, g: "-0", e: "-0e+00", f: "-0"},
 		{coeff: 0, exp: -2, g: "0.00", e: "0e-02", f: "0.00"},
 		{coeff: 0, exp: 3, g: "0e+03", e: "0e+03", f: "0"},
-		{coeff: 0, exp: -6, g: "0.000000", e: "0e-06", f: "0.000000"},
+		{coeff: 0, exp: -4, g: "0.0000", e: "0e-04", f: "0.0000"},
+		{coeff: 0, exp: -5, g: "0e-05", e: "0e-05", f: "0.00000"},
+		{coeff: 0, exp: -6, g: "0e-06", e: "0e-06", f: "0.000000"},
 		{coeff: 0, exp: -7, g: "0e-07", e: "0e-07", f: "0.0000000"},
-		{coeff: 1, exp: -6, g: "0.000001", e: "1e-06", f: "0.000001"},
+		{coeff: 1, exp: -4, g: "0.0001", e: "1e-04", f: "0.0001"},
+		{coeff: 1, exp: -5, g: "1e-05", e: "1e-05", f: "0.00001"},
+		{coeff: 12, exp: -5, g: "0.00012", e: "1.2e-04", f: "0.00012"},
+		{coeff: 1, exp: -6, g: "1e-06", e: "1e-06", f: "0.000001"},
 		{coeff: 1, exp: -7, g: "1e-07", e: "1e-07", f: "0.0000001"},
 		{coeff: 10, exp: -8, g: "1.0e-07", e: "1.0e-07", f: "0.00000010"},
 		{coeff: 1000000000000000, exp: 5, g: "1.000000000000000e+20", e: "1.000000000000000e+20", f: "100000000000000000000"},
@@ -1132,7 +1137,11 @@ func TestFormatDecimalCanonicalNotation(t *testing.T) {
 		{"1.234567890123456789012", "1.234567890123456789012"},
 		{"-123456789012345678901.2345678901234", "-123456789012345678901.2345678901234"},
 		{"1.234567890123456789012345678901234", "1.234567890123456789012345678901234"},
-		{"0.000001", "0.000001"},
+		{"0.0001", "0.0001"},
+		{"0.00001", "1e-05"},
+		{"0.000012", "1.2e-05"},
+		{"0.00012", "0.00012"},
+		{"0.000001", "1e-06"},
 		{"0.0000001", "1e-07"},
 		{"0.00", "0.00"},
 		{"-0.00", "-0.00"},
@@ -1172,4 +1181,84 @@ func TestFormatDecimalCanonicalNotation(t *testing.T) {
 func parseDecimal64(s string) (decimal64, error) {
 	d, err := ParseDecimal(s, 64)
 	return decimal64(d), err
+}
+
+// TestFormatDecimalMatchesKernel checks that the canonical string, which
+// FormatDecimal writes with 'g' at precision -1 and fmt's %v writes through
+// it, is the text println writes, which comes from the kernel's Append64
+// and Append128: every coefficient length at every exponent around the
+// thresholds of plain notation, zeros, both signs, the specials, the
+// extremes of the exponent range and random encodings of both widths.
+func TestFormatDecimalMatchesKernel(t *testing.T) {
+	check128 := func(x bid.Uint128) {
+		t.Helper()
+		d := math.Decimal128frombits(x.Hi, x.Lo)
+		if got, want := FormatDecimal(d, 'g', -1, 128), string(bid.Append128(nil, x)); got != want {
+			t.Fatalf("FormatDecimal(%#016x%016x, 'g', -1, 128) = %q, kernel %q", x.Hi, x.Lo, got, want)
+		}
+	}
+	check64 := func(x uint64) {
+		t.Helper()
+		d := decimal128(math.Decimal64frombits(x))
+		if got, want := FormatDecimal(d, 'g', -1, 64), string(bid.Append64(nil, x)); got != want {
+			t.Fatalf("FormatDecimal(%#016x, 'g', -1, 64) = %q, kernel %q", x, got, want)
+		}
+	}
+	n := 0
+	for digits := 0; digits <= bid.Precision128; digits++ {
+		c := bid.Uint128{}
+		for i := 0; i < digits; i++ {
+			// 1, 12, 123, ... with the digits cycling, so that no
+			// coefficient has trailing zeros to hide a misplaced point.
+			hi, lo := bits128mul10(c)
+			c = bid.Uint128{Hi: hi, Lo: lo + uint64(i%9+1)}
+		}
+		for exp := -digits - 8; exp <= 24; exp++ {
+			for _, neg := range []bool{false, true} {
+				x, ok := bid.Pack128(neg, c, exp)
+				if !ok {
+					continue
+				}
+				check128(x)
+				n++
+				if digits <= bid.Precision64 {
+					if y, ok := bid.Pack64(neg, c.Lo, exp); ok {
+						check64(y)
+						n++
+					}
+				}
+			}
+		}
+	}
+	for _, x := range []bid.Uint128{
+		{Hi: bid.Inf128Hi}, {Hi: bid.Inf128Hi | bid.SignMask128Hi}, {Hi: bid.NaN128Hi}, {Hi: bid.SNaN128Hi},
+	} {
+		check128(x)
+	}
+	for _, x := range []uint64{bid.Inf64, bid.Inf64 | bid.SignMask64, bid.NaN64, bid.SNaN64} {
+		check64(x)
+	}
+	r := rand.New(rand.NewSource(1))
+	for range 200000 {
+		check128(bid.Uint128{Hi: r.Uint64(), Lo: r.Uint64()})
+		check64(r.Uint64())
+	}
+	t.Logf("%d values and 400,008 random encodings", n)
+}
+
+// bits128mul10 returns c × 10 as two words, for coefficients that fit.
+func bits128mul10(c bid.Uint128) (hi, lo uint64) {
+	hi = c.Hi*10 + mulhi64(c.Lo, 10)
+	return hi, c.Lo * 10
+}
+
+func mulhi64(a, b uint64) uint64 {
+	const mask = 1<<32 - 1
+	a0, a1 := a&mask, a>>32
+	b0, b1 := b&mask, b>>32
+	w0 := a0 * b0
+	t := a1*b0 + w0>>32
+	w1, w2 := t&mask, t>>32
+	w1 += a0 * b1
+	return a1*b1 + w2 + w1>>32
 }

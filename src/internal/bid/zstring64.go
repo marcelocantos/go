@@ -50,13 +50,14 @@ func UnpackDigits64(buf *[Precision64]byte, x coef64) (kind Kind, neg bool, n, e
 	return
 }
 
-// append64 is Append64 and Append128: it appends the to-scientific-string
-// form of x to dst. A NaN of any kind is "NaN" and an infinity "Infinity"
-// with its sign; a finite value is its coefficient digits, rendered into a
-// local buffer, and its exponent, which appendDecimal places. Unpack64 reads
-// a non-canonical encoding as the zero it denotes, so every bit pattern has
-// a form.
-func append64(dst []byte, x coef64) []byte {
+// append64 is Append64 and Append128, and with sci set AppendSci64 and
+// AppendSci128: it appends Go's canonical form of x to dst, or the
+// to-scientific-string form. A NaN of any kind is "NaN"; an infinity is
+// "+Inf" or "-Inf", or "Infinity" with its sign; a finite value is its
+// coefficient digits, rendered into a local buffer, and its exponent, which
+// appendDecimal or appendSciDecimal places. Unpack64 reads a non-canonical
+// encoding as the zero it denotes, so every bit pattern has a form.
+func append64(dst []byte, x coef64, sci bool) []byte {
 	neg, c, exp, xok := unpackFirst64(x)
 	kind := KindFinite
 	if !xok {
@@ -66,10 +67,15 @@ func append64(dst []byte, x coef64) []byte {
 	case KindNaN:
 		return append(dst, "NaN"...)
 	case KindInf:
-		if neg {
-			dst = append(dst, '-')
+		switch {
+		case sci && neg:
+			return append(dst, "-Infinity"...)
+		case sci:
+			return append(dst, "Infinity"...)
+		case neg:
+			return append(dst, "-Inf"...)
 		}
-		return append(dst, "Infinity"...)
+		return append(dst, "+Inf"...)
 	}
 	var digs [digitBufLen]byte
 	hi, lo := cSplit64(c)
@@ -78,6 +84,9 @@ func append64(dst []byte, x coef64) []byte {
 		n = writeWordDigits(digs[:], lo)
 	} else {
 		n = writeDigits(digs[:], hi, lo)
+	}
+	if sci {
+		return appendSciDecimal(dst, neg, digs[len(digs)-n:], exp)
 	}
 	return appendDecimal(dst, neg, digs[len(digs)-n:], exp)
 }

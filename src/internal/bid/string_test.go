@@ -145,7 +145,7 @@ func TestParseLongExponentCompensation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		x, st := bid.Parse64(tt.s, bid.ToNearestEven)
-		if got := string(bid.Append64(nil, x)); got != tt.want || st != tt.st {
+		if got := string(bid.AppendSci64(nil, x)); got != tt.want || st != tt.st {
 			t.Errorf("Parse64(%.40q...) = %s %s, want %s %s", tt.s, got, showStatus(st), tt.want, showStatus(tt.st))
 		}
 	}
@@ -178,13 +178,20 @@ func TestShort128(t *testing.T) {
 	check := func(x bits) {
 		t.Helper()
 		v := f.decode(x)
-		want := v.kind == finite && v.coeff.IsUint64() && v.coeff.Uint64() < 100_000_000 && v.exp >= -6 && v.exp <= 0 && bid.IsCanonical128(x)
+		want := v.kind == finite && v.coeff.IsUint64() && v.coeff.Uint64() < 100_000_000 && v.exp >= -4 && v.exp <= 0 && bid.IsCanonical128(x)
 		if got := bid.IsShort128(x); got != want {
 			t.Fatalf("IsShort128(%s) = %t, want %t", hex128(x), got, want)
 		}
 		general := string(bid.Append128(nil, x))
-		if ref := f.format(x); general != ref {
+		if ref := f.formatGo(x); general != ref {
 			t.Fatalf("Append128(nil, %s) = %q, reference %q", hex128(x), general, ref)
+		}
+		sci := string(bid.AppendSci128(nil, x))
+		if ref := f.format(x); sci != ref {
+			t.Fatalf("AppendSci128(nil, %s) = %q, reference %q", hex128(x), sci, ref)
+		}
+		if want && sci != general {
+			t.Fatalf("short value %s: Append128 %q and AppendSci128 %q differ", hex128(x), general, sci)
 		}
 		// Spare capacity from none to more than the short path asks for,
 		// with a prefix and with the bytes after the result in use.
@@ -394,14 +401,30 @@ func FuzzRoundTrip(f *testing.F) {
 			}
 			var prefix []byte
 			if wide {
+				prefix = bid.AppendSci128([]byte("pre"), x)
+			} else {
+				prefix = bid.AppendSci64([]byte("pre"), x.Lo)
+			}
+			if string(prefix) != "pre"+text {
+				t.Fatalf("%s: AppendSci to a buffer gives %q, want %q", fm.name, prefix, "pre"+text)
+			}
+			goText := kernel{}.appendGo(fm, x)
+			if len(goText) > maxLen {
+				t.Fatalf("%s: Append(%s) = %q is %d bytes, MaxLen is %d", fm.name, display(fm, x), goText, len(goText), maxLen)
+			}
+			if want := (reference{}).appendGo(fm, x); goText != want {
+				t.Fatalf("%s: Append(%#x) = %q, reference %q", fm.name, x, goText, want)
+			}
+			if wide {
 				prefix = bid.Append128([]byte("pre"), x)
 			} else {
 				prefix = bid.Append64([]byte("pre"), x.Lo)
 			}
-			if string(prefix) != "pre"+text {
-				t.Fatalf("%s: Append to a buffer gives %q, want %q", fm.name, prefix, "pre"+text)
+			if string(prefix) != "pre"+goText {
+				t.Fatalf("%s: Append to a buffer gives %q, want %q", fm.name, prefix, "pre"+goText)
 			}
 			back, st := kernel{}.parse(fm, text, bid.ToNearestEven)
+			goBack, goSt := kernel{}.parse(fm, goText, bid.ToNearestEven)
 			want := x
 			switch v := fm.decode(x); {
 			case v.kind == notANumber:
@@ -414,7 +437,10 @@ func FuzzRoundTrip(f *testing.F) {
 				want = fm.encode(v)
 			}
 			if back != want || st != bid.Exact {
-				t.Fatalf("%s: Parse(Append(%#x) = %q) = %#x %s, want %#x Exact", fm.name, x, text, back, showStatus(st), want)
+				t.Fatalf("%s: Parse(AppendSci(%#x) = %q) = %#x %s, want %#x Exact", fm.name, x, text, back, showStatus(st), want)
+			}
+			if goBack != want || goSt != bid.Exact {
+				t.Fatalf("%s: Parse(Append(%#x) = %q) = %#x %s, want %#x Exact", fm.name, x, goText, goBack, showStatus(goSt), want)
 			}
 		}
 	})

@@ -359,7 +359,7 @@ func allocCases() map[string]func() {
 	var digs128 [bid.Precision128]byte
 	var short128 [bid.ShortLen128]byte
 	var shorts []bid.Uint128
-	for _, str := range []string{"0", "-0.00", "0.000001", "7", "1234.56", "-99999999", "999999.99"} {
+	for _, str := range []string{"0", "-0.00", "0.0001", "7", "1234.56", "-99999999", "999999.99"} {
 		x, _ := bid.Parse128(str, bid.ToNearestEven)
 		shorts = append(shorts, x)
 	}
@@ -601,10 +601,12 @@ func allocCases() map[string]func() {
 		"Float32From128": eachMode(all128, func(x bid.Uint128, m bid.Mode) { asF32 += bid.Float32From128(x, m) }),
 
 		// string.go. dst has the spare capacity the contract requires.
-		"Append64":    each(all64, func(x uint64) { asBuf = bid.Append64(buf[:0], x) }),
-		"Append128":   each(all128, func(x bid.Uint128) { asBuf = bid.Append128(buf[:0], x) }),
-		"IsShort128":  each(all128, func(x bid.Uint128) { asBool = bid.IsShort128(x) }),
-		"PutShort128": each(shorts, func(x bid.Uint128) { asInt = bid.PutShort128(&short128, x) }),
+		"Append64":     each(all64, func(x uint64) { asBuf = bid.Append64(buf[:0], x) }),
+		"Append128":    each(all128, func(x bid.Uint128) { asBuf = bid.Append128(buf[:0], x) }),
+		"AppendSci64":  each(all64, func(x uint64) { asBuf = bid.AppendSci64(buf[:0], x) }),
+		"AppendSci128": each(all128, func(x bid.Uint128) { asBuf = bid.AppendSci128(buf[:0], x) }),
+		"IsShort128":   each(all128, func(x bid.Uint128) { asBool = bid.IsShort128(x) }),
+		"PutShort128":  each(shorts, func(x bid.Uint128) { asInt = bid.PutShort128(&short128, x) }),
 		"UnpackDigits64": each(all64, func(x uint64) {
 			asKind, asBool, asInt, _ = bid.UnpackDigits64(&digs64, x)
 		}),

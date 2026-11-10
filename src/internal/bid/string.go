@@ -8,12 +8,29 @@ import "math/bits"
 
 // Conversion between decimal values and character sequences
 // (IEEE 754-2019 clause 5.4.2 and 5.12, convertFromDecimalCharacter and
-// convertToDecimalCharacter). The character form is the to-scientific-string
-// form of the General Decimal Arithmetic specification, which the standard
-// adopts; it is defined in "Values, cohorts and the character form" in the
-// package documentation, and the exponent and Status rules of Parse are in
-// "Character conversions". The form preserves the quantum, so a string
-// converts back to the same bit pattern.
+// convertToDecimalCharacter). Two character forms are written, and Parse
+// reads both:
+//
+//   - Go's canonical form (Append64, Append128), which println, fmt's %v
+//     and strconv's 'g' at precision -1 write, and which follows Go's
+//     floating-point layout: plain notation unless the exponent of the
+//     leading digit is below -4 or at least 21, exponential notation with
+//     a lowercase "e" and at least two exponent digits ("1e+02",
+//     "1.2e-07"), and "NaN", "+Inf" and "-Inf". The one difference from a
+//     float is the quantum: every coefficient digit is written, and a
+//     quantum above the units digit, which plain notation cannot show,
+//     forces exponential notation (1e+02 is not 100).
+//   - The to-scientific-string form of the General Decimal Arithmetic
+//     specification (AppendSci64, AppendSci128), which the standard
+//     adopts and in which the published conformance suites are written;
+//     it is defined in "Values, cohorts and the character form" in the
+//     package documentation. It differs in its thresholds (-6, and none
+//     above), its uppercase "E" with no exponent padding ("1E+2"), and
+//     "Infinity".
+//
+// The exponent and Status rules of Parse are in "Character conversions".
+// Both forms preserve the quantum, so a string converts back to the same
+// bit pattern.
 
 // MaxLen64 and MaxLen128 bound the number of bytes Append64 and Append128
 // write. The longest forms are the plain notation of a full-precision
@@ -27,12 +44,12 @@ const (
 	MaxLen128 = 1 + len("0.") + 5 + Precision128
 )
 
-// Append64 appends the character form of x to dst and returns the extended
-// buffer (IEEE 754-2019 clause 5.12, convertToDecimalCharacter). It does
-// not allocate when dst has MaxLen64 bytes of spare capacity. The output
-// is exactly what Parse64 reads back to the canonical encoding of x.
+// Append64 appends Go's canonical form of x to dst and returns the
+// extended buffer (IEEE 754-2019 clause 5.12, convertToDecimalCharacter).
+// It does not allocate when dst has MaxLen64 bytes of spare capacity. The
+// output is exactly what Parse64 reads back to the canonical encoding of x.
 func Append64(dst []byte, x uint64) []byte {
-	return append64(dst, x)
+	return append64(dst, x, false)
 }
 
 // Append128 is Append64 for decimal128; it needs MaxLen128 bytes of spare
@@ -41,7 +58,23 @@ func Append128(dst []byte, x Uint128) []byte {
 	if i := len(dst); IsShort128(x) && cap(dst)-i >= ShortLen128 {
 		return dst[:i+PutShort128((*[ShortLen128]byte)(dst[i:i+ShortLen128]), x)]
 	}
-	return append128(dst, x)
+	return append128(dst, x, false)
+}
+
+// AppendSci64 is Append64 for the to-scientific-string form of the General
+// Decimal Arithmetic specification, in which the published conformance
+// suites are written.
+func AppendSci64(dst []byte, x uint64) []byte {
+	return append64(dst, x, true)
+}
+
+// AppendSci128 is AppendSci64 for decimal128. The short values have the
+// same plain notation in both forms.
+func AppendSci128(dst []byte, x Uint128) []byte {
+	if i := len(dst); IsShort128(x) && cap(dst)-i >= ShortLen128 {
+		return dst[:i+PutShort128((*[ShortLen128]byte)(dst[i:i+ShortLen128]), x)]
+	}
+	return append128(dst, x, true)
 }
 
 // The short values, which dominate formatting (money and quantities): a
@@ -52,7 +85,7 @@ func Append128(dst []byte, x Uint128) []byte {
 // or after a leading "0." and zeros.
 const (
 	shortCoeff  = 100_000_000
-	shortMinExp = -6
+	shortMinExp = -4
 
 	// ShortLen128 is the room PutShort128 is given. The longest form it
 	// writes has ten bytes, a sign, eight digits and a point; the rest is
@@ -61,7 +94,9 @@ const (
 )
 
 // IsShort128 reports whether x is finite with a coefficient below 10^8 and
-// an exponent from -6 to 0: a value PutShort128 formats.
+// an exponent from -4 to 0: a value PutShort128 formats. Its leading digit
+// is then at an exponent of -4 or more, so both character forms write it
+// in plain notation.
 func IsShort128(x Uint128) bool {
 	return shortExp128(x) <= -shortMinExp && x.Lo < shortCoeff
 }
@@ -320,11 +355,83 @@ func putEight(b []byte, w uint64) {
 	b[7] = byte(w >> 56)
 }
 
-// appendDecimal appends the to-scientific-string form of the finite value
-// with the sign neg, the coefficient digits digs (at least one, no leading
-// zero unless the coefficient is zero and then just "0") and the exponent
-// exp, as defined under "Values, cohorts and the character form".
+// appendDecimal appends Go's canonical form of the finite value with the
+// sign neg, the coefficient digits digs (at least one, no leading zero
+// unless the coefficient is zero and then just "0") and the exponent exp:
+// plain notation when the quantum is at or below the units digit and the
+// exponent of the leading digit is from canonicalMinExp to below
+// canonicalMaxExp, and exponential notation otherwise, with a lowercase
+// "e", a sign and at least two exponent digits.
 func appendDecimal(dst []byte, neg bool, digs []byte, exp int) []byte {
+	if neg {
+		dst = append(dst, '-')
+	}
+	n := len(digs)
+	adj := exp + n - 1
+	if exp <= 0 && adj >= canonicalMinExp && adj < canonicalMaxExp {
+		return appendPlain(dst, digs, exp)
+	}
+	dst = append(dst, digs[0])
+	if n > 1 {
+		dst = append(dst, '.')
+		dst = append(dst, digs[1:]...)
+	}
+	dst = append(dst, 'e', '+')
+	if adj < 0 {
+		dst[len(dst)-1] = '-'
+		adj = -adj
+	}
+	if adj < 10 {
+		dst = append(dst, '0')
+	}
+	return appendExpDigits(dst, adj)
+}
+
+// The thresholds of Go's canonical form: those of a float's shortest form
+// below the units digit, and those of plain notation above it that keep a
+// money value or a 34-digit count readable.
+const (
+	canonicalMinExp = -4
+	canonicalMaxExp = 21
+)
+
+// appendPlain appends the digits digs with the point placed for the
+// exponent exp, which is zero or negative.
+func appendPlain(dst []byte, digs []byte, exp int) []byte {
+	n := len(digs)
+	switch {
+	case exp == 0:
+		return append(dst, digs...)
+	case n > -exp:
+		dst = append(dst, digs[:n+exp]...)
+		dst = append(dst, '.')
+		return append(dst, digs[n+exp:]...)
+	}
+	dst = append(dst, '0', '.')
+	for range -exp - n {
+		dst = append(dst, '0')
+	}
+	return append(dst, digs...)
+}
+
+// appendExpDigits appends the decimal digits of e, which is not negative.
+func appendExpDigits(dst []byte, e int) []byte {
+	var tmp [8]byte // a decimal128 adjusted exponent has at most four digits
+	i := len(tmp)
+	for {
+		i--
+		tmp[i] = byte('0' + e%10)
+		e /= 10
+		if e == 0 {
+			break
+		}
+	}
+	return append(dst, tmp[i:]...)
+}
+
+// appendSciDecimal is appendDecimal for the to-scientific-string form, as
+// defined under "Values, cohorts and the character form".
+func appendSciDecimal(dst []byte, neg bool, digs []byte, exp int) []byte {
 	if neg {
 		dst = append(dst, '-')
 	}
@@ -332,24 +439,8 @@ func appendDecimal(dst []byte, neg bool, digs []byte, exp int) []byte {
 	// adj is the adjusted exponent: the power of ten of the leading digit.
 	adj := exp + n - 1
 	if exp <= 0 && adj >= -6 {
-		// Plain notation.
-		switch {
-		case exp == 0:
-			dst = append(dst, digs...)
-		case n > -exp:
-			dst = append(dst, digs[:n+exp]...)
-			dst = append(dst, '.')
-			dst = append(dst, digs[n+exp:]...)
-		default:
-			dst = append(dst, '0', '.')
-			for range -exp - n {
-				dst = append(dst, '0')
-			}
-			dst = append(dst, digs...)
-		}
-		return dst
+		return appendPlain(dst, digs, exp)
 	}
-	// Exponential notation.
 	dst = append(dst, digs[0])
 	if n > 1 {
 		dst = append(dst, '.')
@@ -360,17 +451,7 @@ func appendDecimal(dst []byte, neg bool, digs []byte, exp int) []byte {
 		dst[len(dst)-1] = '-'
 		adj = -adj
 	}
-	var tmp [8]byte // a decimal128 adjusted exponent has at most four digits
-	i := len(tmp)
-	for {
-		i--
-		tmp[i] = byte('0' + adj%10)
-		adj /= 10
-		if adj == 0 {
-			break
-		}
-	}
-	return append(dst, tmp[i:]...)
+	return appendExpDigits(dst, adj)
 }
 
 // A scanKind says what scanDecimal found.

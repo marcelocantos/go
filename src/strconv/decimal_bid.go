@@ -26,9 +26,12 @@ import (
 // [parseDecimal] of that string returns the same value and quantum.
 //
 // With 'g' and 'G' and the special precision -1, the result is the canonical
-// string. It is in fixed notation unless the exponent of the leading digit is
-// less than -6 or at least 21, or the quantum is above the units digit, which
-// fixed notation can't show: 1e+03 is not 1000.
+// string, which println and fmt's %v also write. It follows the layout of a
+// float's shortest form: fixed notation unless the exponent of the leading
+// digit is less than -4 or at least 21, and an exponent of at least two
+// digits ("1e-05"). Unlike a float it keeps every coefficient digit, and a
+// quantum above the units digit, which fixed notation can't show, forces
+// exponential notation: 1e+03 is not 1000.
 //
 // The bitSize must be 64 for values from decimal64 or 128 for decimal128.
 //
@@ -317,7 +320,7 @@ func appendZero(dst []byte, neg bool, format byte, prec int) []byte {
 // Exponents of the leading digit outside this range use exponent notation in
 // the canonical string. They are the thresholds encoding/json uses for floats.
 const (
-	canonicalMinExp = -6
+	canonicalMinExp = -4
 	canonicalMaxExp = 21
 )
 

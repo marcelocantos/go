@@ -426,7 +426,8 @@ var ops = []opSpec{
 			},
 		}
 	}},
-	unaryDec("Append", func(im impl, f *format, x bits) outcome { return textOut(strconv.Quote(im.appendTo(f, x))) }),
+	unaryDec("Append", func(im impl, f *format, x bits) outcome { return textOut(strconv.Quote(im.appendGo(f, x))) }),
+	unaryDec("AppendSci", func(im impl, f *format, x bits) outcome { return textOut(strconv.Quote(im.appendTo(f, x))) }),
 	{name: "Round", widths: both, draw: func(g *gen) testCase {
 		f := g.f
 		neg, c, exp, sticky := g.parts()

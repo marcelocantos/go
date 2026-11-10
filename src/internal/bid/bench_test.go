@@ -793,10 +793,16 @@ func benchRowList() benchRows {
 	rs.add("Append", "128", "mixed", "Append128", func(b *testing.B) {
 		loop1(b, mixed.x128, func(x bits) int { return len(bid.Append128(buf[:0], x)) })
 	})
+	rs.add("AppendSci", "64", "mixed", "AppendSci64", func(b *testing.B) {
+		loop1(b, mixed.x64, func(x uint64) int { return len(bid.AppendSci64(buf[:0], x)) })
+	})
+	rs.add("AppendSci", "128", "mixed", "AppendSci128", func(b *testing.B) {
+		loop1(b, mixed.x128, func(x bits) int { return len(bid.AppendSci128(buf[:0], x)) })
+	})
 	// The short form: money and small quantities, the lengths and the
 	// places of the point mixed so that a branch on either would show.
 	var shorts []bits
-	for _, str := range []string{"0", "0.00", "0.05", "7", "17", "250", "1.5", "12.34", "1234.56", "-3.25", "12345.67", "999999.99", "1000", "123456", "-42", "0.000001"} {
+	for _, str := range []string{"0", "0.00", "0.05", "7", "17", "250", "1.5", "12.34", "1234.56", "-3.25", "12345.67", "999999.99", "1000", "123456", "-42", "0.0001"} {
 		x, _ := bid.Parse128(str, rne)
 		shorts = append(shorts, x)
 	}
