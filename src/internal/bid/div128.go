@@ -318,8 +318,56 @@ func divWide128(x, y Uint128, mode Mode) Uint128 {
 	n2, c = bits.Add64(n2, 0, c)
 	n3 += c
 	r := (64 - s) & 63
-	q1, r1, r0 := div3by2(n3<<s|n2>>r, n2<<s|n1>>r, n1<<s|n0>>r, v1, v0, vv)
-	q0, r1, r0 := div3by2(r1, r0, n0<<s, v1, v0, vv)
+	// Two of div3by2's steps (u256.go), written out: as calls they were
+	// 25 instructions and about 4 cycles of each 34-digit division, for
+	// the registers the calls send through memory.
+	var q1, q0, r1, r0 uint64
+	{
+		u2, u1, u0 := n3<<s|n2>>r, n2<<s|n1>>r, n1<<s|n0>>r
+		q, qf := bits.Mul64(vv, u2)
+		qf, c := bits.Add64(qf, u1, 0)
+		q += u2 + c
+		r1 = u1 - q*v1
+		t1, t0 := bits.Mul64(v0, q)
+		r0, c = bits.Sub64(u0, t0, 0)
+		r1, _ = bits.Sub64(r1, t1, c)
+		r0, c = bits.Sub64(r0, v0, 0)
+		r1, _ = bits.Sub64(r1, v1, c)
+		_, lt := bits.Sub64(r1, qf, 0)
+		m := lt - 1
+		q += 1 + m
+		r0, c = bits.Add64(r0, v0&m, 0)
+		r1, _ = bits.Add64(r1, v1&m, c)
+		if r1 > v1 || r1 == v1 && r0 >= v0 {
+			q++
+			r0, c = bits.Sub64(r0, v0, 0)
+			r1, _ = bits.Sub64(r1, v1, c)
+		}
+		q1 = q
+	}
+	{
+		u2, u1, u0 := r1, r0, n0<<s
+		q, qf := bits.Mul64(vv, u2)
+		qf, c := bits.Add64(qf, u1, 0)
+		q += u2 + c
+		r1 = u1 - q*v1
+		t1, t0 := bits.Mul64(v0, q)
+		r0, c = bits.Sub64(u0, t0, 0)
+		r1, _ = bits.Sub64(r1, t1, c)
+		r0, c = bits.Sub64(r0, v0, 0)
+		r1, _ = bits.Sub64(r1, v1, c)
+		_, lt := bits.Sub64(r1, qf, 0)
+		m := lt - 1
+		q += 1 + m
+		r0, c = bits.Add64(r0, v0&m, 0)
+		r1, _ = bits.Add64(r1, v1&m, c)
+		if r1 > v1 || r1 == v1 && r0 >= v0 {
+			q++
+			r0, c = bits.Sub64(r0, v0, 0)
+			r1, _ = bits.Sub64(r1, v1, c)
+		}
+		q0 = q
+	}
 	rem := Uint128{Hi: r1 >> s, Lo: r0>>s | r1<<r}
 	if rem == half {
 		first := 0
