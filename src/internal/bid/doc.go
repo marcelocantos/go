@@ -1809,12 +1809,14 @@
 // # Face-value rounding
 //
 // Every rounded result passes through roundW, with one named exception:
-// roundFaceW, which rounds the swamped addend of addSlowW and the inexact
-// quotient of divW, and has no other caller. Its input is a coefficient q
-// of exactly PrecisionW digits at an exponent inside the format and not
-// tiny, plus a fraction below one unit whose class the caller knows
-// exactly: below a half or above it for the addend; for a quotient, from
-// the remainder against the divisor, a half as well. On such an
+// roundFaceW, which rounds the swamped and the aligned addend of addSlowW
+// and the inexact quotient of divW, and has no other caller. Its input is a
+// coefficient q of exactly PrecisionW digits at an exponent inside the
+// format and not tiny, plus a fraction below one unit, not zero, whose
+// class the caller knows exactly: below a half or above it for a swamped
+// addend; for an aligned addend, from the digits its one shift discards,
+// and for a quotient, from the remainder against the divisor, a half as
+// well. On such an
 // input roundW pads nothing, discards no digit and keeps the exponent, so
 // its whole decision is one row of the five-mode table, roundUp(class,
 // mode, sign, odd(q)), and an increment of the largest coefficient carries
@@ -1831,7 +1833,19 @@
 // the carry at MaxExpW, the padded power of ten of a difference) in every
 // mode against the reference, TestSwampedAdd at the classes around the
 // swamping gap, and the oracle's operand generator reaches it in every
-// mode and both classes. Division scales its dividend so that the quotient
+// mode and both classes. An addend that is not swamped but lies wholly or
+// partly below x's PrecisionW digits is aligned by one shift of y to the
+// place of x scaled to full precision: the sum or difference of the two
+// coefficients has the class of the digits that shift discarded (its
+// complement for a difference, taken from one more unit), and rounds at
+// face value whenever it still has exactly PrecisionW digits. A sum that
+// carries goes to roundW with that class, an exact one to roundW's exact
+// prologue, and a difference that loses its leading digit, which needs
+// digits the shift discarded, takes the general alignment
+// (TestAlignedAdd). Before this path the general alignment scaled x past
+// PrecisionW digits and roundW divided a second time to bring the sum
+// back; the one shift measured 16 percent on additions and subtractions
+// of full-precision operands (2026-11-10). Division scales its dividend so that the quotient
 // has exactly PrecisionW digits (the leading ratio of the coefficients
 // decides between two scale counts) and takes the class of the remainder
 // against the divisor; results near the exponent limits, which may be

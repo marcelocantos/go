@@ -175,6 +175,62 @@ func TestSwampedAdd(t *testing.T) {
 	}
 }
 
+// TestAlignedAdd drives the aligned addend of addSlowW, a y that reaches into
+// the PrecisionW digits of x scaled to full precision without being swamped
+// (addSlowW's comment), against the reference in every mode, both signs and
+// both operand orders: gaps from one place past the scale to the last that
+// leaves a digit of y in x's range; discarded digits of every class,
+// exactly zero and exactly a half included; sums that carry to
+// PrecisionW+1 digits; and differences that lose the leading digit and
+// take the general alignment instead.
+func TestAlignedAdd(t *testing.T) {
+	var k kernel
+	for _, f := range []*format{dec64, dec128} {
+		p := f.prec
+		pow := func(n int) string { return new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(n)), nil).String() }
+		nines := func(n int) string { return strings.Repeat("9", n) }
+		zeros := func(n int) string { return strings.Repeat("0", n) }
+		xcs := []string{"1", "9", "10", "123456789", pow(p - 1), pow(p - 1)[:p-1] + "1", "1" + nines(p-1), "5" + zeros(p-1), nines(p), nines(p - 1), nines(p-1) + "8"}
+		ycs := []string{"5", "15", "25", "49", "50", "51", "500", "1000", "123456789",
+			pow(p - 1), pow(p - 1)[:p-1] + "1", nines(p), nines(p - 1),
+			"5" + zeros(p-1), "4" + nines(p-1), "5" + zeros(p-2) + "1", "9" + zeros(p-1), "12345" + zeros(p-5), "9" + nines(p-2) + "5"}
+		n := 0
+		for _, xc := range xcs {
+			m := p - len(xc)
+			for _, yc := range ycs {
+				dy := len(yc)
+				for _, excess := range []int{1, 2, 3, dy / 2, dy - 1, dy, dy + 1} {
+					if excess < 1 {
+						continue
+					}
+					gap := m + excess
+					for _, xe := range []int{0, f.maxExp, f.minExp + gap} {
+						x, ok := wordOperand(f, false, xc, xe)
+						if !ok {
+							continue
+						}
+						for _, neg := range []bool{false, true} {
+							y, ok := wordOperand(f, neg, yc, xe-gap)
+							if !ok {
+								continue
+							}
+							for _, m := range allModes {
+								n++
+								for _, pair := range [][2]bits{{x, y}, {y, x}, {k.neg(f, x), k.neg(f, y)}} {
+									if got, want := k.add(f, pair[0], pair[1], m), f.add(pair[0], pair[1], m); got != want {
+										t.Fatalf("%s add(%s, %s, %s) = %s, want %s", f.name, f.format(pair[0]), f.format(pair[1]), modeName(m), f.format(got), f.format(want))
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		t.Logf("%s: %d aligned cases", f.name, n)
+	}
+}
+
 // TestWordDecodeBounds checks the word decoders at the bounds of what they
 // accept, through every operation that branches on them (add, sub, mul,
 // quantize and, for unpackWord, the comparisons). For unpackWordCanon, a

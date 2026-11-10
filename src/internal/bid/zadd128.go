@@ -187,6 +187,37 @@ func addSlow128(x, y coef128, mode Mode) coef128 {
 				return roundFace128(xneg, p, xe-m, class, mode)
 			}
 		}
+		// An aligned y. With x scaled to its Precision128 digits X and y
+		// shifted down to X's place as Y + f, the sum is X + Y + f and the
+		// difference (X - Y - 1) + (1 - f) when f is not zero: one division
+		// and one class. Whenever that coefficient still has exactly
+		// Precision128 digits it rounds at face value, as the swamped sum
+		// does. A sum that carries to Precision128+1 digits goes to round128
+		// with the same class, which is still the class of everything
+		// below it. A difference that loses its leading digit needs digits
+		// of y this shift discarded, and takes the path below.
+		if m := Precision128 - dx; gap > m {
+			p := cMulPow10128(xc, m)
+			q, c := cShift128(yc, gap-m)
+			if xneg == yneg {
+				p, _ = cAdd128(p, q)
+				if c != classZero && !cGtMax128(p) {
+					return roundFace128(xneg, p, xe-m, c, mode)
+				}
+				r, _ := round128(xneg, wide128{Lo: p}, xe-m, c, mode, MinExp128)
+				return r
+			}
+			if c != classZero {
+				q, c = cInc128(q), c.complement()
+			}
+			if p, _ = cSub128(p, q); cCmp128(p, cPow10128(Precision128-1)) >= 0 {
+				if c != classZero {
+					return roundFace128(xneg, p, xe-m, c, mode)
+				}
+				r, _ := round128(xneg, wide128{Lo: p}, xe-m, c, mode, MinExp128)
+				return r
+			}
+		}
 		k := min(gap, addDigits128-dx)
 		xc = cMulPow10128(xc, k)
 		if k < gap {
@@ -221,32 +252,37 @@ func addSlow128(x, y coef128, mode Mode) coef128 {
 }
 
 // roundFace128 returns (-1)^neg × (q + f) × 10^exp rounded in mode, for the
-// swamped addend of addSlow128 and the inexact quotient of div128, its only
-// callers: q has exactly Precision128 digits, 10^(Precision128-1) <= q <=
-// cMax128(), and f is a fraction whose class is known at face value
-// (classBelowHalf or classAboveHalf for the addend; a quotient's remainder
-// can also be exactly a half). It is the face-value exception to the rule
-// that every rounded result passes through round128; see "Face-value
-// rounding" in the package documentation.
+// swamped and the aligned addend of addSlow128 and the inexact quotient of
+// div128, its only callers: q has exactly Precision128 digits, 10^(Precision128-1)
+// <= q <= cMax128(), and f is a fraction, not zero, whose class is known at
+// face value (classBelowHalf or classAboveHalf for a swamped addend; an
+// aligned addend's discarded digits and a quotient's remainder can also be
+// exactly a half). It is the face-value exception to the rule that every
+// rounded result passes through round128; see "Face-value rounding" in the
+// package documentation.
 //
 // Why it gives round128's bits. The callers establish MinExp128 < exp <=
 // MaxExp128 and an adjusted exponent exp + Precision128 - 1 of at least Emin128
 // (addSlow128 from its operands' exponents: exp = xe - m, or xe - m - 1 for
-// the padded power of ten, with xe <= MaxExp128 and ye = exp - s - 1 >=
-// MinExp128, s > 0; div128 by testing them before the call), so exp is at or
-// above the floor MinExp128 and the value is not tiny: nothing underflows.
+// the padded power of ten, with xe <= MaxExp128 and exp > ye >= MinExp128,
+// since the gap xe - ye exceeds m, by s + 1 with s > 0 for a swamped
+// addend; div128 by testing them before the call), so exp is at or above the
+// floor MinExp128 and the value is not tiny: nothing underflows.
 // q has Precision128 digits, so round128's place of the result is exp itself:
 // it pads nothing, discards no digit of q, and its class is the caller's.
 // Its decision is then roundUp(class, mode, neg, odd(q)), the one row of
-// the five-mode table this function takes, ties included: the addend's
-// class is never classHalf, a quotient's may be, and roundUp decides a tie
-// as round128 would. An increment of cMax128() carries to 10^Precision128, which
+// the five-mode table this function takes, ties included: a swamped
+// addend's class is never classHalf, the others' may be, and roundUp
+// decides a tie as round128 would. The class is never classZero: roundUp
+// takes an inexact value, and an exact one goes to round128. An increment of
+// cMax128() carries to 10^Precision128, which
 // round128 encodes as 10^(Precision128-1) one place up, and that place above
 // MaxExp128 overflows to overflow128's result. Every other step of round128 (the
 // clamp, the digit count, the shift) leaves such a value unchanged.
 // TestRoundFaceValue drives every bound here in every mode against the
-// reference, TestSwampedAdd the classes around the swamping gap, and the
-// oracle's far regime reaches it in every mode.
+// reference, TestSwampedAdd the classes around the swamping gap,
+// TestAlignedAdd the aligned addend's classes, carries and cancellations,
+// and the oracle's far and general regimes reach it in every mode.
 func roundFace128(neg bool, q coef128, exp int, class digitClass, mode Mode) coef128 {
 	if roundUp(class, mode, neg, cOdd128(q)) {
 		q = cInc128(q)

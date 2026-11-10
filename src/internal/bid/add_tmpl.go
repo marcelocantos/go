@@ -189,6 +189,37 @@ func addSlowW(x, y coefW, mode Mode) coefW {
 				return roundFaceW(xneg, p, xe-m, class, mode)
 			}
 		}
+		// An aligned y. With x scaled to its PrecisionW digits X and y
+		// shifted down to X's place as Y + f, the sum is X + Y + f and the
+		// difference (X - Y - 1) + (1 - f) when f is not zero: one division
+		// and one class. Whenever that coefficient still has exactly
+		// PrecisionW digits it rounds at face value, as the swamped sum
+		// does. A sum that carries to PrecisionW+1 digits goes to roundW
+		// with the same class, which is still the class of everything
+		// below it. A difference that loses its leading digit needs digits
+		// of y this shift discarded, and takes the path below.
+		if m := PrecisionW - dx; gap > m {
+			p := cMulPow10W(xc, m)
+			q, c := cShiftW(yc, gap-m)
+			if xneg == yneg {
+				p, _ = cAddW(p, q)
+				if c != classZero && !cGtMaxW(p) {
+					return roundFaceW(xneg, p, xe-m, c, mode)
+				}
+				r, _ := roundW(xneg, wideW{Lo: p}, xe-m, c, mode, MinExpW)
+				return r
+			}
+			if c != classZero {
+				q, c = cIncW(q), c.complement()
+			}
+			if p, _ = cSubW(p, q); cCmpW(p, cPow10W(PrecisionW-1)) >= 0 {
+				if c != classZero {
+					return roundFaceW(xneg, p, xe-m, c, mode)
+				}
+				r, _ := roundW(xneg, wideW{Lo: p}, xe-m, c, mode, MinExpW)
+				return r
+			}
+		}
 		k := min(gap, addDigitsW-dx)
 		xc = cMulPow10W(xc, k)
 		if k < gap {
@@ -223,32 +254,37 @@ func addSlowW(x, y coefW, mode Mode) coefW {
 }
 
 // roundFaceW returns (-1)^neg × (q + f) × 10^exp rounded in mode, for the
-// swamped addend of addSlowW and the inexact quotient of divW, its only
-// callers: q has exactly PrecisionW digits, 10^(PrecisionW-1) <= q <=
-// cMaxW(), and f is a fraction whose class is known at face value
-// (classBelowHalf or classAboveHalf for the addend; a quotient's remainder
-// can also be exactly a half). It is the face-value exception to the rule
-// that every rounded result passes through roundW; see "Face-value
-// rounding" in the package documentation.
+// swamped and the aligned addend of addSlowW and the inexact quotient of
+// divW, its only callers: q has exactly PrecisionW digits, 10^(PrecisionW-1)
+// <= q <= cMaxW(), and f is a fraction, not zero, whose class is known at
+// face value (classBelowHalf or classAboveHalf for a swamped addend; an
+// aligned addend's discarded digits and a quotient's remainder can also be
+// exactly a half). It is the face-value exception to the rule that every
+// rounded result passes through roundW; see "Face-value rounding" in the
+// package documentation.
 //
 // Why it gives roundW's bits. The callers establish MinExpW < exp <=
 // MaxExpW and an adjusted exponent exp + PrecisionW - 1 of at least EminW
 // (addSlowW from its operands' exponents: exp = xe - m, or xe - m - 1 for
-// the padded power of ten, with xe <= MaxExpW and ye = exp - s - 1 >=
-// MinExpW, s > 0; divW by testing them before the call), so exp is at or
-// above the floor MinExpW and the value is not tiny: nothing underflows.
+// the padded power of ten, with xe <= MaxExpW and exp > ye >= MinExpW,
+// since the gap xe - ye exceeds m, by s + 1 with s > 0 for a swamped
+// addend; divW by testing them before the call), so exp is at or above the
+// floor MinExpW and the value is not tiny: nothing underflows.
 // q has PrecisionW digits, so roundW's place of the result is exp itself:
 // it pads nothing, discards no digit of q, and its class is the caller's.
 // Its decision is then roundUp(class, mode, neg, odd(q)), the one row of
-// the five-mode table this function takes, ties included: the addend's
-// class is never classHalf, a quotient's may be, and roundUp decides a tie
-// as roundW would. An increment of cMaxW() carries to 10^PrecisionW, which
+// the five-mode table this function takes, ties included: a swamped
+// addend's class is never classHalf, the others' may be, and roundUp
+// decides a tie as roundW would. The class is never classZero: roundUp
+// takes an inexact value, and an exact one goes to roundW. An increment of
+// cMaxW() carries to 10^PrecisionW, which
 // roundW encodes as 10^(PrecisionW-1) one place up, and that place above
 // MaxExpW overflows to overflowW's result. Every other step of roundW (the
 // clamp, the digit count, the shift) leaves such a value unchanged.
 // TestRoundFaceValue drives every bound here in every mode against the
-// reference, TestSwampedAdd the classes around the swamping gap, and the
-// oracle's far regime reaches it in every mode.
+// reference, TestSwampedAdd the classes around the swamping gap,
+// TestAlignedAdd the aligned addend's classes, carries and cancellations,
+// and the oracle's far and general regimes reach it in every mode.
 func roundFaceW(neg bool, q coefW, exp int, class digitClass, mode Mode) coefW {
 	if roundUp(class, mode, neg, cOddW(q)) {
 		q = cIncW(q)

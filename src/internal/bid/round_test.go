@@ -256,8 +256,8 @@ func FuzzRound128(f *testing.F) {
 // assemble an encoding by hand are referenced only in encoding.go. The
 // exact fast paths that roundW's comment enumerates are the allowlist
 // here; a new one is added to both or the test fails. So is roundFaceW,
-// the face-value rounding of a swamped addend, and addSlowW, its only
-// caller.
+// the face-value rounding of a swamped or aligned addend and of an inexact
+// quotient, and addSlowW and divW, its only callers.
 func TestRoundIsTheOnlyPacker(t *testing.T) {
 	// Callers of the raw encoder.
 	// Widen, the DPD decoders and the 128-bit integer conversions are exact
@@ -275,8 +275,8 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 		"roundFaceW": true, "roundFace64": true, "roundFace128": true,
 	}
 	// The face-value rounding is the one exception to roundW as the
-	// rounding routine, and its proof holds only for the swamped addend of
-	// addSlowW and the quotient of divW inside the exponent range divW
+	// rounding routine, and its proof holds only for the swamped and the
+	// aligned addend of addSlowW and the quotient of divW inside the exponent range divW
 	// tests: see roundFaceW and "Face-value rounding" in the package
 	// documentation. It has those two callers.
 	faceRounder := map[string]bool{"roundFaceW": true, "roundFace64": true, "roundFace128": true}

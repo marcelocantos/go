@@ -187,6 +187,37 @@ func addSlow64(x, y coef64, mode Mode) coef64 {
 				return roundFace64(xneg, p, xe-m, class, mode)
 			}
 		}
+		// An aligned y. With x scaled to its Precision64 digits X and y
+		// shifted down to X's place as Y + f, the sum is X + Y + f and the
+		// difference (X - Y - 1) + (1 - f) when f is not zero: one division
+		// and one class. Whenever that coefficient still has exactly
+		// Precision64 digits it rounds at face value, as the swamped sum
+		// does. A sum that carries to Precision64+1 digits goes to round64
+		// with the same class, which is still the class of everything
+		// below it. A difference that loses its leading digit needs digits
+		// of y this shift discarded, and takes the path below.
+		if m := Precision64 - dx; gap > m {
+			p := cMulPow1064(xc, m)
+			q, c := cShift64(yc, gap-m)
+			if xneg == yneg {
+				p, _ = cAdd64(p, q)
+				if c != classZero && !cGtMax64(p) {
+					return roundFace64(xneg, p, xe-m, c, mode)
+				}
+				r, _ := round64(xneg, wide64{Lo: p}, xe-m, c, mode, MinExp64)
+				return r
+			}
+			if c != classZero {
+				q, c = cInc64(q), c.complement()
+			}
+			if p, _ = cSub64(p, q); cCmp64(p, cPow1064(Precision64-1)) >= 0 {
+				if c != classZero {
+					return roundFace64(xneg, p, xe-m, c, mode)
+				}
+				r, _ := round64(xneg, wide64{Lo: p}, xe-m, c, mode, MinExp64)
+				return r
+			}
+		}
 		k := min(gap, addDigits64-dx)
 		xc = cMulPow1064(xc, k)
 		if k < gap {
@@ -221,32 +252,37 @@ func addSlow64(x, y coef64, mode Mode) coef64 {
 }
 
 // roundFace64 returns (-1)^neg × (q + f) × 10^exp rounded in mode, for the
-// swamped addend of addSlow64 and the inexact quotient of div64, its only
-// callers: q has exactly Precision64 digits, 10^(Precision64-1) <= q <=
-// cMax64(), and f is a fraction whose class is known at face value
-// (classBelowHalf or classAboveHalf for the addend; a quotient's remainder
-// can also be exactly a half). It is the face-value exception to the rule
-// that every rounded result passes through round64; see "Face-value
-// rounding" in the package documentation.
+// swamped and the aligned addend of addSlow64 and the inexact quotient of
+// div64, its only callers: q has exactly Precision64 digits, 10^(Precision64-1)
+// <= q <= cMax64(), and f is a fraction, not zero, whose class is known at
+// face value (classBelowHalf or classAboveHalf for a swamped addend; an
+// aligned addend's discarded digits and a quotient's remainder can also be
+// exactly a half). It is the face-value exception to the rule that every
+// rounded result passes through round64; see "Face-value rounding" in the
+// package documentation.
 //
 // Why it gives round64's bits. The callers establish MinExp64 < exp <=
 // MaxExp64 and an adjusted exponent exp + Precision64 - 1 of at least Emin64
 // (addSlow64 from its operands' exponents: exp = xe - m, or xe - m - 1 for
-// the padded power of ten, with xe <= MaxExp64 and ye = exp - s - 1 >=
-// MinExp64, s > 0; div64 by testing them before the call), so exp is at or
-// above the floor MinExp64 and the value is not tiny: nothing underflows.
+// the padded power of ten, with xe <= MaxExp64 and exp > ye >= MinExp64,
+// since the gap xe - ye exceeds m, by s + 1 with s > 0 for a swamped
+// addend; div64 by testing them before the call), so exp is at or above the
+// floor MinExp64 and the value is not tiny: nothing underflows.
 // q has Precision64 digits, so round64's place of the result is exp itself:
 // it pads nothing, discards no digit of q, and its class is the caller's.
 // Its decision is then roundUp(class, mode, neg, odd(q)), the one row of
-// the five-mode table this function takes, ties included: the addend's
-// class is never classHalf, a quotient's may be, and roundUp decides a tie
-// as round64 would. An increment of cMax64() carries to 10^Precision64, which
+// the five-mode table this function takes, ties included: a swamped
+// addend's class is never classHalf, the others' may be, and roundUp
+// decides a tie as round64 would. The class is never classZero: roundUp
+// takes an inexact value, and an exact one goes to round64. An increment of
+// cMax64() carries to 10^Precision64, which
 // round64 encodes as 10^(Precision64-1) one place up, and that place above
 // MaxExp64 overflows to overflow64's result. Every other step of round64 (the
 // clamp, the digit count, the shift) leaves such a value unchanged.
 // TestRoundFaceValue drives every bound here in every mode against the
-// reference, TestSwampedAdd the classes around the swamping gap, and the
-// oracle's far regime reaches it in every mode.
+// reference, TestSwampedAdd the classes around the swamping gap,
+// TestAlignedAdd the aligned addend's classes, carries and cancellations,
+// and the oracle's far and general regimes reach it in every mode.
 func roundFace64(neg bool, q coef64, exp int, class digitClass, mode Mode) coef64 {
 	if roundUp(class, mode, neg, cOdd64(q)) {
 		q = cInc64(q)
