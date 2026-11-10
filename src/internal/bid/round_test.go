@@ -276,10 +276,11 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 	}
 	// The face-value rounding is the one exception to roundW as the
 	// rounding routine, and its proof holds only for the swamped addend of
-	// addSlowW: see roundFaceW and "Face-value rounding" in the package
-	// documentation. It has that one caller.
+	// addSlowW and the quotient of divW inside the exponent range divW
+	// tests: see roundFaceW and "Face-value rounding" in the package
+	// documentation. It has those two callers.
 	faceRounder := map[string]bool{"roundFaceW": true, "roundFace64": true, "roundFace128": true}
-	faceCallers := map[string]bool{"addSlowW": true, "addSlow64": true, "addSlow128": true}
+	faceCallers := map[string]bool{"addSlowW": true, "addSlow64": true, "addSlow128": true, "divW": true, "div64": true, "div128": true}
 	// Callers of the word packers, which encode the exact results of the
 	// word fast paths of addition, multiplication and quantize: see the
 	// comments of those functions and the end of roundW's.

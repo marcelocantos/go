@@ -223,23 +223,26 @@ func addSlowW(x, y coefW, mode Mode) coefW {
 }
 
 // roundFaceW returns (-1)^neg × (q + f) × 10^exp rounded in mode, for the
-// swamped addend of addSlowW, its only caller: q has exactly PrecisionW
-// digits, 10^(PrecisionW-1) <= q <= cMaxW(), and f is a fraction whose
-// class, classBelowHalf or classAboveHalf, is known at face value. It is
-// the face-value exception to the rule that every rounded result passes
-// through roundW; see "Face-value rounding" in the package documentation.
+// swamped addend of addSlowW and the inexact quotient of divW, its only
+// callers: q has exactly PrecisionW digits, 10^(PrecisionW-1) <= q <=
+// cMaxW(), and f is a fraction whose class is known at face value
+// (classBelowHalf or classAboveHalf for the addend; a quotient's remainder
+// can also be exactly a half). It is the face-value exception to the rule
+// that every rounded result passes through roundW; see "Face-value
+// rounding" in the package documentation.
 //
-// Why it gives roundW's bits. addSlowW calls it with exp = xe - m (or
-// xe - m - 1 for the padded power of ten), where xe <= MaxExpW is the
-// larger operand's exponent and ye = exp - s - 1 >= MinExpW the smaller's,
-// s > 0, so MinExpW < exp <= MaxExpW: exp is at or above the floor
-// MinExpW, and the adjusted exponent exp + PrecisionW - 1 is at least
-// EminW, so the value is not tiny and nothing underflows. q has PrecisionW
-// digits, so roundW's place of the result is exp itself: it pads nothing,
-// discards no digit of q, and its class is the caller's. Its decision is
-// then roundUp(class, mode, neg, odd(q)), the one row of the five-mode
-// table this function takes; class is never classHalf, so the tie rule is
-// never reached. An increment of cMaxW() carries to 10^PrecisionW, which
+// Why it gives roundW's bits. The callers establish MinExpW < exp <=
+// MaxExpW and an adjusted exponent exp + PrecisionW - 1 of at least EminW
+// (addSlowW from its operands' exponents: exp = xe - m, or xe - m - 1 for
+// the padded power of ten, with xe <= MaxExpW and ye = exp - s - 1 >=
+// MinExpW, s > 0; divW by testing them before the call), so exp is at or
+// above the floor MinExpW and the value is not tiny: nothing underflows.
+// q has PrecisionW digits, so roundW's place of the result is exp itself:
+// it pads nothing, discards no digit of q, and its class is the caller's.
+// Its decision is then roundUp(class, mode, neg, odd(q)), the one row of
+// the five-mode table this function takes, ties included: the addend's
+// class is never classHalf, a quotient's may be, and roundUp decides a tie
+// as roundW would. An increment of cMaxW() carries to 10^PrecisionW, which
 // roundW encodes as 10^(PrecisionW-1) one place up, and that place above
 // MaxExpW overflows to overflowW's result. Every other step of roundW (the
 // clamp, the digit count, the shift) leaves such a value unchanged.

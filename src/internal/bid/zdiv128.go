@@ -18,29 +18,41 @@ package bid
 // preferred exponent xe-ye, then let round128 handle exponent bounds. This
 // includes a coefficient of one without discarding any of x's quantum.
 //
-// The general finite case is long division in one step. With dx and dy the digit
-// counts of the coefficients, the dividend is scaled by
+// The general finite case is long division in one step. With dx and dy the
+// digit counts of the coefficients, the dividend is scaled by
 //
-//	k = Precision128 + 1 - dx + dy
+//	k = Precision128 - dx + dy - lead
 //
-// places, so that the integer quotient q = ⌊xc × 10^k / yc⌋ has at least
-// Precision128+1 digits: xc × 10^k is at least 10^(dx-1+k) and yc is below
-// 10^dy, so q is at least 10^(dx-1+k-dy) = 10^Precision128; and xc × 10^k is
-// below 10^(dx+k) while yc is at least 10^(dy-1), so q is below
-// 10^(Precision128+2). The quotient thus has Precision128+1 or Precision128+2
-// digits, and the remainder, which is exact, supplies the sticky bit for
-// everything below them. That meets the contract of round128: at least one
-// digit of q is discarded, and the discarded digits and the remainder
-// combine exactly into one class. The digit counts bound the widths: dx is
-// at most Precision128 and dy at least 1, so k is between 2 and 2×Precision128,
-// the scaled dividend has at most 2×Precision128+1 digits (33 for decimal64,
-// below 2^128; 69 for decimal128, below 10^77 and so below 2^256), and the
-// quotient, with at most Precision128+2 digits (18 and 36), fits a
-// coefficient. cDivFull128 is the 128-by-64 or 256-by-128 division whose
-// quotient is known to fit.
+// places, where lead is 1 when the leading ratio xc × 10^(dy-dx) reaches
+// yc and 0 otherwise, so that the integer quotient q = ⌊xc × 10^k / yc⌋
+// has exactly Precision128 digits: xc × 10^k / yc lies in
+// [10^(dx+k-dy-1), 10^(dx+k-dy+1)) and reaches 10^(dx+k-dy) exactly when
+// the leading ratio does. The remainder is exact, and so is the class of
+// the discarded fraction rem / yc: below a half, a half or above it as rem
+// compares with yc - rem. The digit counts bound the widths: dx is at most
+// Precision128 and dy at least 1, so k is between 0 and 2×Precision128-1, the
+// scaled dividend has at most 2×Precision128 digits (32 for decimal64, below
+// 2^128; 68 for decimal128, below 10^77 and so below 2^256), and the
+// quotient fits a coefficient. cDivFull128 is the 128-by-64 or 256-by-128
+// division whose quotient is known to fit; the leading comparison
+// multiplies a coefficient up to the other's digit count, at most
+// Precision128 digits, which fits too.
+//
+// An inexact quotient inside the exponent range of roundFace128's proof
+// (MinExp128 < exp <= MaxExp128, adjusted exponent at least Emin128) is rounded
+// at face value from that class: the one row of the rounding table, with
+// the carry of the largest coefficient one place up. This is the second
+// use of the face-value exception, after the swamped addend of addSlow128
+// ("Face-value rounding" in the package documentation): it saves the
+// reduction of a longer quotient by a reciprocal division and its digit
+// count, which were a third of a division. Nearer the exponent limits the
+// result may be subnormal, clamped or overflowing, which only round128
+// decides, so one more division step supplies a round digit and a sticky
+// bit, and round128 rounds q × 10 + d at exponent xe - ye - k - 1 as it
+// rounds every other inexact result with a discarded digit.
 //
 // The exponent of q × 10^-k is xe - ye - k, and for an inexact result that
-// is what round128 rounds at: the result then takes the least exponent, as
+// is what is rounded at: the result then takes the least exponent, as
 // every inexact result does. An exact result (the remainder is zero) must
 // instead take the exponent closest to the preferred one, xe - ye, among
 // those at which it is representable, so the trailing zeros of q, which
@@ -48,11 +60,15 @@ package bid
 // never passes xe - ye, and only when the remainder is zero, so that no
 // non-zero fraction is lost. round128 then raises the exponent further only
 // if the stripped q still has more than Precision128 digits, which is the
-// cohort rule. The strip is a binary search on the number of zeros, as in
-// key128: q has at most Precision128+2 digits, so at most Precision128+1 trailing
-// zeros, and the steps start at the largest power of two not above the
-// smaller of k and Precision128+1, which keeps every power of ten within the
-// coefficient table.
+// cohort rule. For an exact general quotient the strip first tries all k
+// zeros at once, by the modular inverse of 10^k (cDivExactPow10128), which
+// settles the usual short exact quotient in one step; what that does not
+// settle, and the power-of-ten divisor's quotient, take a binary search on
+// the number of zeros, as in key128: q has at most Precision128+1 digits
+// (Precision128, or one more after the round-digit step), so at most
+// Precision128 trailing zeros, and the steps start at the largest power of
+// two not above the smaller of k and Precision128+1, which keeps every power
+// of ten within the coefficient table.
 func div128(x, y coef128, mode Mode) coef128 {
 	xneg, xc, xe, xok := unpackFirst128(x)
 	xk := KindFinite
@@ -94,11 +110,57 @@ func div128(x, y coef128, mode Mode) coef128 {
 	dy := cDigits128(yc)
 	k, q, class := dy-1, xc, classZero
 	if cCmp128(yc, cPow10128(k)) != 0 {
-		k = Precision128 + 1 - cDigits128(xc) + dy
+		// Scale so that q has exactly Precision128 digits: xc × 10^k / yc
+		// lies in [10^(dx+k-dy-1), 10^(dx+k-dy+1)) and reaches 10^(dx+k-dy)
+		// exactly when the leading ratio does, xc × 10^(dy-dx) >= yc, a
+		// comparison of two values of dy or dx digits, which fit.
+		dx := cDigits128(xc)
+		lead := 0
+		if dx <= dy {
+			if cCmp128(cMulPow10128(xc, dy-dx), yc) >= 0 {
+				lead = 1
+			}
+		} else if cCmp128(xc, cMulPow10128(yc, dx-dy)) >= 0 {
+			lead = 1
+		}
+		k = Precision128 - dx + dy - lead
 		var rem coef128
 		q, rem = cDivFull128(cMulPow10Full128(xc, k), yc)
 		if !cIsZero128(rem) {
-			class = classBelowHalf
+			// An inexact quotient: the remainder places the true value
+			// between q and q + 1 at exponent xe - ye - k, and its class is
+			// exact: rem against yc - rem. Within the exponent range that
+			// roundFace128's proof names, that is the whole rounding
+			// decision, taken at face value; nearer the limits round128
+			// takes the usual round digit and sticky bit, found by one
+			// more division step.
+			class = classAboveHalf
+			if other, _ := cSub128(yc, rem); cCmp128(rem, other) < 0 {
+				class = classBelowHalf
+			} else if cCmp128(rem, other) == 0 {
+				class = classHalf
+			}
+			if exp := xe - ye - k; MinExp128 < exp && exp <= MaxExp128 && exp+Precision128-1 >= Emin128 {
+				return roundFace128(neg, q, exp, class, mode)
+			}
+			d, rem2 := cDivFull128(wide128{Lo: cMulPow10128(rem, 1)}, yc)
+			q, _ = cAdd128(cMulPow10128(q, 1), d)
+			k++
+			class = classZero
+			if !cIsZero128(rem2) {
+				class = classBelowHalf
+			}
+		} else if k > 0 && k < Precision128 {
+			// Most exact quotients are short (8.00 / 2, 10.00 / 4) and
+			// their q is all scaling: the k zeros strip at once, by one
+			// exact division through the modular inverse of 10^k (which
+			// first checks the k low bits, so a q that cannot strip costs
+			// a shift). q has Precision128 digits, so k >= Precision128 cannot
+			// strip whole; the search below takes those, and whatever the
+			// attempt does not settle.
+			if sq, ok := cDivExactPow10128(q, k); ok {
+				q, k = sq, 0
+			}
 		}
 	}
 	if class == classZero {

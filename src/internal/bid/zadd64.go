@@ -221,23 +221,26 @@ func addSlow64(x, y coef64, mode Mode) coef64 {
 }
 
 // roundFace64 returns (-1)^neg × (q + f) × 10^exp rounded in mode, for the
-// swamped addend of addSlow64, its only caller: q has exactly Precision64
-// digits, 10^(Precision64-1) <= q <= cMax64(), and f is a fraction whose
-// class, classBelowHalf or classAboveHalf, is known at face value. It is
-// the face-value exception to the rule that every rounded result passes
-// through round64; see "Face-value rounding" in the package documentation.
+// swamped addend of addSlow64 and the inexact quotient of div64, its only
+// callers: q has exactly Precision64 digits, 10^(Precision64-1) <= q <=
+// cMax64(), and f is a fraction whose class is known at face value
+// (classBelowHalf or classAboveHalf for the addend; a quotient's remainder
+// can also be exactly a half). It is the face-value exception to the rule
+// that every rounded result passes through round64; see "Face-value
+// rounding" in the package documentation.
 //
-// Why it gives round64's bits. addSlow64 calls it with exp = xe - m (or
-// xe - m - 1 for the padded power of ten), where xe <= MaxExp64 is the
-// larger operand's exponent and ye = exp - s - 1 >= MinExp64 the smaller's,
-// s > 0, so MinExp64 < exp <= MaxExp64: exp is at or above the floor
-// MinExp64, and the adjusted exponent exp + Precision64 - 1 is at least
-// Emin64, so the value is not tiny and nothing underflows. q has Precision64
-// digits, so round64's place of the result is exp itself: it pads nothing,
-// discards no digit of q, and its class is the caller's. Its decision is
-// then roundUp(class, mode, neg, odd(q)), the one row of the five-mode
-// table this function takes; class is never classHalf, so the tie rule is
-// never reached. An increment of cMax64() carries to 10^Precision64, which
+// Why it gives round64's bits. The callers establish MinExp64 < exp <=
+// MaxExp64 and an adjusted exponent exp + Precision64 - 1 of at least Emin64
+// (addSlow64 from its operands' exponents: exp = xe - m, or xe - m - 1 for
+// the padded power of ten, with xe <= MaxExp64 and ye = exp - s - 1 >=
+// MinExp64, s > 0; div64 by testing them before the call), so exp is at or
+// above the floor MinExp64 and the value is not tiny: nothing underflows.
+// q has Precision64 digits, so round64's place of the result is exp itself:
+// it pads nothing, discards no digit of q, and its class is the caller's.
+// Its decision is then roundUp(class, mode, neg, odd(q)), the one row of
+// the five-mode table this function takes, ties included: the addend's
+// class is never classHalf, a quotient's may be, and roundUp decides a tie
+// as round64 would. An increment of cMax64() carries to 10^Precision64, which
 // round64 encodes as 10^(Precision64-1) one place up, and that place above
 // MaxExp64 overflows to overflow64's result. Every other step of round64 (the
 // clamp, the digit count, the shift) leaves such a value unchanged.

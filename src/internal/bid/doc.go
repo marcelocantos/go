@@ -1809,10 +1809,12 @@
 // # Face-value rounding
 //
 // Every rounded result passes through roundW, with one named exception:
-// roundFaceW, which rounds the swamped addend of addSlowW and has no other
-// caller. Its input is a coefficient q of exactly PrecisionW digits at an
-// exponent inside the format and not tiny, plus a fraction below one unit
-// whose class addSlowW knows exactly, below a half or above it. On such an
+// roundFaceW, which rounds the swamped addend of addSlowW and the inexact
+// quotient of divW, and has no other caller. Its input is a coefficient q
+// of exactly PrecisionW digits at an exponent inside the format and not
+// tiny, plus a fraction below one unit whose class the caller knows
+// exactly: below a half or above it for the addend; for a quotient, from
+// the remainder against the divisor, a half as well. On such an
 // input roundW pads nothing, discards no digit and keeps the exponent, so
 // its whole decision is one row of the five-mode table, roundUp(class,
 // mode, sign, odd(q)), and an increment of the largest coefficient carries
@@ -1829,8 +1831,15 @@
 // the carry at MaxExpW, the padded power of ten of a difference) in every
 // mode against the reference, TestSwampedAdd at the classes around the
 // swamping gap, and the oracle's operand generator reaches it in every
-// mode and both classes. TestRoundIsTheOnlyPacker allows it to call packW
-// and allows only addSlowW to call it.
+// mode and both classes. Division scales its dividend so that the quotient
+// has exactly PrecisionW digits (the leading ratio of the coefficients
+// decides between two scale counts) and takes the class of the remainder
+// against the divisor; results near the exponent limits, which may be
+// subnormal, clamped or overflowing, take one more division step and go
+// through roundW with a round digit as before (divW's comment). The
+// oracle's division regimes and the published suites' division cases
+// cover both routes. TestRoundIsTheOnlyPacker allows roundFaceW to call packW and
+// allows only addSlowW and divW to call it.
 //
 // # Short numerals
 //

@@ -18,29 +18,41 @@ package bid
 // preferred exponent xe-ye, then let round64 handle exponent bounds. This
 // includes a coefficient of one without discarding any of x's quantum.
 //
-// The general finite case is long division in one step. With dx and dy the digit
-// counts of the coefficients, the dividend is scaled by
+// The general finite case is long division in one step. With dx and dy the
+// digit counts of the coefficients, the dividend is scaled by
 //
-//	k = Precision64 + 1 - dx + dy
+//	k = Precision64 - dx + dy - lead
 //
-// places, so that the integer quotient q = ⌊xc × 10^k / yc⌋ has at least
-// Precision64+1 digits: xc × 10^k is at least 10^(dx-1+k) and yc is below
-// 10^dy, so q is at least 10^(dx-1+k-dy) = 10^Precision64; and xc × 10^k is
-// below 10^(dx+k) while yc is at least 10^(dy-1), so q is below
-// 10^(Precision64+2). The quotient thus has Precision64+1 or Precision64+2
-// digits, and the remainder, which is exact, supplies the sticky bit for
-// everything below them. That meets the contract of round64: at least one
-// digit of q is discarded, and the discarded digits and the remainder
-// combine exactly into one class. The digit counts bound the widths: dx is
-// at most Precision64 and dy at least 1, so k is between 2 and 2×Precision64,
-// the scaled dividend has at most 2×Precision64+1 digits (33 for decimal64,
-// below 2^128; 69 for decimal128, below 10^77 and so below 2^256), and the
-// quotient, with at most Precision64+2 digits (18 and 36), fits a
-// coefficient. cDivFull64 is the 128-by-64 or 256-by-128 division whose
-// quotient is known to fit.
+// places, where lead is 1 when the leading ratio xc × 10^(dy-dx) reaches
+// yc and 0 otherwise, so that the integer quotient q = ⌊xc × 10^k / yc⌋
+// has exactly Precision64 digits: xc × 10^k / yc lies in
+// [10^(dx+k-dy-1), 10^(dx+k-dy+1)) and reaches 10^(dx+k-dy) exactly when
+// the leading ratio does. The remainder is exact, and so is the class of
+// the discarded fraction rem / yc: below a half, a half or above it as rem
+// compares with yc - rem. The digit counts bound the widths: dx is at most
+// Precision64 and dy at least 1, so k is between 0 and 2×Precision64-1, the
+// scaled dividend has at most 2×Precision64 digits (32 for decimal64, below
+// 2^128; 68 for decimal128, below 10^77 and so below 2^256), and the
+// quotient fits a coefficient. cDivFull64 is the 128-by-64 or 256-by-128
+// division whose quotient is known to fit; the leading comparison
+// multiplies a coefficient up to the other's digit count, at most
+// Precision64 digits, which fits too.
+//
+// An inexact quotient inside the exponent range of roundFace64's proof
+// (MinExp64 < exp <= MaxExp64, adjusted exponent at least Emin64) is rounded
+// at face value from that class: the one row of the rounding table, with
+// the carry of the largest coefficient one place up. This is the second
+// use of the face-value exception, after the swamped addend of addSlow64
+// ("Face-value rounding" in the package documentation): it saves the
+// reduction of a longer quotient by a reciprocal division and its digit
+// count, which were a third of a division. Nearer the exponent limits the
+// result may be subnormal, clamped or overflowing, which only round64
+// decides, so one more division step supplies a round digit and a sticky
+// bit, and round64 rounds q × 10 + d at exponent xe - ye - k - 1 as it
+// rounds every other inexact result with a discarded digit.
 //
 // The exponent of q × 10^-k is xe - ye - k, and for an inexact result that
-// is what round64 rounds at: the result then takes the least exponent, as
+// is what is rounded at: the result then takes the least exponent, as
 // every inexact result does. An exact result (the remainder is zero) must
 // instead take the exponent closest to the preferred one, xe - ye, among
 // those at which it is representable, so the trailing zeros of q, which
@@ -48,11 +60,15 @@ package bid
 // never passes xe - ye, and only when the remainder is zero, so that no
 // non-zero fraction is lost. round64 then raises the exponent further only
 // if the stripped q still has more than Precision64 digits, which is the
-// cohort rule. The strip is a binary search on the number of zeros, as in
-// key64: q has at most Precision64+2 digits, so at most Precision64+1 trailing
-// zeros, and the steps start at the largest power of two not above the
-// smaller of k and Precision64+1, which keeps every power of ten within the
-// coefficient table.
+// cohort rule. For an exact general quotient the strip first tries all k
+// zeros at once, by the modular inverse of 10^k (cDivExactPow1064), which
+// settles the usual short exact quotient in one step; what that does not
+// settle, and the power-of-ten divisor's quotient, take a binary search on
+// the number of zeros, as in key64: q has at most Precision64+1 digits
+// (Precision64, or one more after the round-digit step), so at most
+// Precision64 trailing zeros, and the steps start at the largest power of
+// two not above the smaller of k and Precision64+1, which keeps every power
+// of ten within the coefficient table.
 func div64(x, y coef64, mode Mode) coef64 {
 	xneg, xc, xe, xok := unpackFirst64(x)
 	xk := KindFinite
@@ -94,11 +110,57 @@ func div64(x, y coef64, mode Mode) coef64 {
 	dy := cDigits64(yc)
 	k, q, class := dy-1, xc, classZero
 	if cCmp64(yc, cPow1064(k)) != 0 {
-		k = Precision64 + 1 - cDigits64(xc) + dy
+		// Scale so that q has exactly Precision64 digits: xc × 10^k / yc
+		// lies in [10^(dx+k-dy-1), 10^(dx+k-dy+1)) and reaches 10^(dx+k-dy)
+		// exactly when the leading ratio does, xc × 10^(dy-dx) >= yc, a
+		// comparison of two values of dy or dx digits, which fit.
+		dx := cDigits64(xc)
+		lead := 0
+		if dx <= dy {
+			if cCmp64(cMulPow1064(xc, dy-dx), yc) >= 0 {
+				lead = 1
+			}
+		} else if cCmp64(xc, cMulPow1064(yc, dx-dy)) >= 0 {
+			lead = 1
+		}
+		k = Precision64 - dx + dy - lead
 		var rem coef64
 		q, rem = cDivFull64(cMulPow10Full64(xc, k), yc)
 		if !cIsZero64(rem) {
-			class = classBelowHalf
+			// An inexact quotient: the remainder places the true value
+			// between q and q + 1 at exponent xe - ye - k, and its class is
+			// exact: rem against yc - rem. Within the exponent range that
+			// roundFace64's proof names, that is the whole rounding
+			// decision, taken at face value; nearer the limits round64
+			// takes the usual round digit and sticky bit, found by one
+			// more division step.
+			class = classAboveHalf
+			if other, _ := cSub64(yc, rem); cCmp64(rem, other) < 0 {
+				class = classBelowHalf
+			} else if cCmp64(rem, other) == 0 {
+				class = classHalf
+			}
+			if exp := xe - ye - k; MinExp64 < exp && exp <= MaxExp64 && exp+Precision64-1 >= Emin64 {
+				return roundFace64(neg, q, exp, class, mode)
+			}
+			d, rem2 := cDivFull64(wide64{Lo: cMulPow1064(rem, 1)}, yc)
+			q, _ = cAdd64(cMulPow1064(q, 1), d)
+			k++
+			class = classZero
+			if !cIsZero64(rem2) {
+				class = classBelowHalf
+			}
+		} else if k > 0 && k < Precision64 {
+			// Most exact quotients are short (8.00 / 2, 10.00 / 4) and
+			// their q is all scaling: the k zeros strip at once, by one
+			// exact division through the modular inverse of 10^k (which
+			// first checks the k low bits, so a q that cannot strip costs
+			// a shift). q has Precision64 digits, so k >= Precision64 cannot
+			// strip whole; the search below takes those, and whatever the
+			// attempt does not settle.
+			if sq, ok := cDivExactPow1064(q, k); ok {
+				q, k = sq, 0
+			}
 		}
 	}
 	if class == classZero {
