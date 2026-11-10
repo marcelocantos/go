@@ -13,11 +13,8 @@ package bid
 // runtime and math; cmd/compile, which runs on one target and compiles for
 // another, chooses by its target instead (cmd/compile/internal/ir).
 
-// NativeEncoding identifies the encoding before the zero mask is applied.
-const NativeEncoding = EncodingBID
-
 // NativeDPD reports whether the native encoding is DPD.
-const NativeDPD = NativeEncoding == EncodingDPD
+const NativeDPD = false
 
 // NativeZero64 and NativeZero128Hi are the native encodings of 0E+0, the
 // masks that make all bits clear the zero value in memory.

@@ -92,6 +92,10 @@ func InitConfig(config *ssa.Config) {
 		softfloatInit()
 	}
 	softdecimalInit()
+	if Arch.LinkArch.Family == sys.ARM64 || Arch.LinkArch.Family == sys.AMD64 {
+		// The standard library uses decimals even with the experiment off.
+		initBIDPowerTables()
+	}
 
 	// Generate a few pointer types that are uncommon in the frontend but common in the backend.
 	// Caching is disabled in the backend, so generating these here avoids allocations.
@@ -3382,6 +3386,18 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			}
 		}
 
+		if n.X.Type().IsDecimal() && !ir.DecimalDPD() {
+			// Inspect already evaluated SSA values, before OGT/OGE are
+			// reversed. This also recognizes simple locals initialized to
+			// zero, at any quantum, without assuming anything about loads.
+			if bidConstZero(a) {
+				return s.bidCompareZero(n.Op(), b, true)
+			}
+			if bidConstZero(b) {
+				return s.bidCompareZero(n.Op(), a, false)
+			}
+		}
+
 		// Convert OGE and OGT into OLE and OLT.
 		op := n.Op()
 		switch op {
@@ -4939,6 +4955,7 @@ var (
 )
 
 func softdecimalInit() {
+	initBIDKernelSyms()
 	softDecimalOps = map[opAndType]*obj.LSym{
 		{ir.OADD, types.TDECIMAL64}: typecheck.LookupRuntimeFunc("dadd64"),
 		{ir.OSUB, types.TDECIMAL64}: typecheck.LookupRuntimeFunc("dsub64"),
@@ -4989,6 +5006,11 @@ func softdecimalInit() {
 // softDecimalOp calls the runtime function for the operator op on decimal
 // operands, which have a common type. Its result has type rt.
 func (s *state) softDecimalOp(op ir.Op, rt *types.Type, args ...*ssa.Value) *ssa.Value {
+	if bidKernelDirect() && args[0].Type.Kind() == types.TDECIMAL128 {
+		if res := s.bidKernelOp(op, rt, args[0], args[1]); res != nil {
+			return res
+		}
+	}
 	fn, ok := softDecimalOps[opAndType{op, args[0].Type.Kind()}]
 	if !ok {
 		s.Fatalf("unhandled decimal operator %v on %v", op, args[0].Type)

@@ -9,28 +9,10 @@ import (
 	"unsafe"
 )
 
-// Representation identifies the stored representation of a decimal value.
-// It describes the words returned by Bits64 and Bits128,
-// rather than an interchange encoding. Both representations XOR the native
-// IEEE encoding with the encoding of 0E+0 so that all-zero memory is Go's zero.
-type Representation uint8
-
-const (
-	// BIDXOR is IEEE BID XORed with 0x31c0000000000000 for decimal64,
-	// or 0x3040000000000000 in the high word for decimal128.
-	BIDXOR Representation = Representation(bid.EncodingBID)
-	// DPDXOR is IEEE DPD XORed with 0x2238000000000000 for decimal64,
-	// or 0x2208000000000000 in the high word for decimal128.
-	DPDXOR Representation = Representation(bid.EncodingDPD)
-	// NativeRepresentation is the representation used by the current target.
-	// It is DPDXOR on ppc64le and BIDXOR on the other supported targets.
-	NativeRepresentation Representation = Representation(bid.NativeEncoding)
-)
-
 // BID64bits returns the IEEE 754 BID encoding of d, without the zero-value XOR.
 // If the native representation uses DPD, this converts the value to canonical
 // BID, preserving its sign, quantum and NaN payload. If it uses BID, every
-// encoding bit is preserved. For exact stored bits, use Bits64.
+// encoding bit is preserved. Bits64 gives the stored bits.
 func BID64bits(d decimal64) uint64 {
 	return bid.FromNative64(Bits64(d) ^ bid.NativeZero64)
 }
@@ -60,7 +42,7 @@ func BID128frombits(hi, lo uint64) decimal128 {
 // DPD64bits returns the IEEE 754 DPD encoding of d, without the zero-value XOR.
 // If the native representation uses BID, this converts the value to canonical
 // DPD, preserving its sign, quantum and NaN payload. If it uses DPD, every
-// encoding bit is preserved. For exact stored bits, use Bits64.
+// encoding bit is preserved. Bits64 gives the stored bits.
 func DPD64bits(d decimal64) uint64 {
 	if bid.NativeDPD {
 		return Bits64(d) ^ bid.NativeZero64

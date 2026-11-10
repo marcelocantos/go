@@ -71,7 +71,10 @@ func Int64To64(x int64, mode Mode) uint64 {
 // Int64To128 returns x converted to decimal128 with exponent 0. Every int64
 // is exactly representable, so it takes no mode.
 func Int64To128(x int64) Uint128 {
-	return int64To128(x, ToNearestEven)
+	neg, m := int64Parts(x)
+	// A uint64 magnitude has at most 20 digits, below Precision128.
+	z, _ := Pack128(neg, Uint128{Lo: m}, 0)
+	return z
 }
 
 // Uint64To64 returns x converted to decimal64, rounded in mode, with
@@ -83,7 +86,8 @@ func Uint64To64(x uint64, mode Mode) uint64 {
 // Uint64To128 returns x converted to decimal128 with exponent 0. Every
 // uint64 is exactly representable, so it takes no mode.
 func Uint64To128(x uint64) Uint128 {
-	return uint64To128(x, ToNearestEven)
+	z, _ := Pack128(false, Uint128{Lo: x}, 0)
+	return z
 }
 
 // Int64From64 returns x rounded to an integer in mode and converted to

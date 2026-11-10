@@ -23,6 +23,7 @@ import "math/bits"
 //	cShiftFullW(p wideW, k int) (q wideW, class digitClass)
 //	cReduceClassW(p wideW, k int) (q coefW, class digitClass)
 //	cScaleW(c coefW, k int) (r coefW, overflow bool)
+//	cScaleTabW(c coefW, k int) (r coefW, overflow bool)
 //	cScaleFullW(p wideW, k int) (r wideW, overflow bool)
 //
 // cShift64, cShift128 and cShiftFull128 are the 64-, 128- and 256-bit forms
@@ -61,7 +62,9 @@ import "math/bits"
 // cScaleW multiplies by 10^k and reports overflow instead of wrapping. On
 // overflow r is zero, so no wrapped value can be mistaken for a result. Zero
 // scales to zero for every k >= 0; any other value overflows for every k
-// beyond the table.
+// beyond the table. cScaleTabW is cScaleW for a k within the table, 0 <= k
+// < len(pow10tabW), and inlines at both widths, which cScaleW does not at
+// 128 bits; a caller on a hot path tests the bound itself and calls it.
 
 // A digitClass classifies the part of a value discarded by a shift: the
 // remainder r of a division by 10^k, compared with 10^k / 2.
@@ -118,29 +121,25 @@ func (c digitClass) complement() digitClass {
 // 10^k >> 1. The test for zero comes first because at k = 0 half is also
 // zero, and an empty tail is not a tie.
 func class64(r, half uint64) digitClass {
-	switch {
-	case r == 0:
-		return classZero
-	case r < half:
-		return classBelowHalf
-	case r == half:
-		return classHalf
-	}
-	return classAboveHalf
+	// classHalf, one less if r is below the half and one more if above,
+	// by the borrows of the two differences; and zero for a zero r, by a
+	// mask. The class of a remainder is as good as random, so nothing
+	// here is a branch.
+	_, lt := bits.Sub64(r, half, 0)
+	_, gt := bits.Sub64(half, r, 0)
+	nz := (r | -r) >> 63
+	return digitClass((uint64(classHalf) + gt - lt) & -nz)
 }
 
 // class128 is class64 for a 128-bit remainder.
 func class128(r, half Uint128) digitClass {
-	if r == (Uint128{}) {
-		return classZero
-	}
-	switch c := u128Cmp(r, half); {
-	case c < 0:
-		return classBelowHalf
-	case c == 0:
-		return classHalf
-	}
-	return classAboveHalf
+	_, lt := bits.Sub64(r.Lo, half.Lo, 0)
+	_, lt = bits.Sub64(r.Hi, half.Hi, lt)
+	_, gt := bits.Sub64(half.Lo, r.Lo, 0)
+	_, gt = bits.Sub64(half.Hi, r.Hi, gt)
+	w := r.Hi | r.Lo
+	nz := (w | -w) >> 63
+	return digitClass((uint64(classHalf) + gt - lt) & -nz)
 }
 
 // reduceClass64 is cReduceClass64, out of line because a 128-by-64 division
@@ -159,6 +158,11 @@ func reduceClass64(p Uint128, k int) (q uint64, class digitClass) {
 		// cheaper: bits.Div64 is software on some ports and slow on others.
 		q = p.Lo / d
 		return q, class64(p.Lo-q*d, d>>1)
+	}
+	if q, r, ok := divPow10Recip64(p, k); ok {
+		// Every quotient that the rounding routine keeps has at most 16
+		// digits, below the 2^56 that the reciprocal needs (see recip.go).
+		return q, class64(r, d>>1)
 	}
 	if p.Hi >= d {
 		panic(errQuotientOverflow)

@@ -14,8 +14,8 @@
 package main
 
 import (
+	"math"
 	"math/big"
-	"math/decimal"
 )
 
 var bad bool
@@ -71,11 +71,11 @@ func want128(neg bool, coeff string, exp int) [2]uint64 {
 }
 
 //go:noinline
-func bits64(d decimal64) uint64 { return decimal.BID64bits(d) }
+func bits64(d decimal64) uint64 { return math.Decimal64bits(d) }
 
 //go:noinline
 func bits128(d decimal128) [2]uint64 {
-	hi, lo := decimal.BID128bits(d)
+	hi, lo := math.Decimal128bits(d)
 	return [2]uint64{lo, hi}
 }
 

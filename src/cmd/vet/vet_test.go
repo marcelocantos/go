@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"go/build"
 	"internal/testenv"
 	"log"
 	"os"
@@ -75,8 +76,10 @@ func TestVet(t *testing.T) {
 			cmd := vetCmd(t, "-printfuncs=Warn,Warnf", name)
 
 			// The asmdecl and framepointer tests assume amd64.
+			ctxt := build.Default
 			if name == "asmdecl" || name == "framepointer" {
 				cmd.Env = append(cmd.Env, "GOOS=linux", "GOARCH=amd64")
+				ctxt.GOOS, ctxt.GOARCH = "linux", "amd64"
 			}
 
 			// Run vet.
@@ -102,6 +105,19 @@ func TestVet(t *testing.T) {
 				t.Fatal(err)
 			}
 			files := slices.Concat(gos, asms)
+			// Files excluded by build constraints (such as a disabled
+			// GOEXPERIMENT) are not vetted, so their expectations do not
+			// apply. The buildtag checker is the exception: it inspects
+			// ignored files too.
+			if name != "buildtag" {
+				files = slices.DeleteFunc(files, func(f string) bool {
+					match, err := ctxt.MatchFile(dir, filepath.Base(f))
+					if err != nil {
+						t.Fatal(err)
+					}
+					return !match
+				})
+			}
 			fullshort := make([]string, 0, len(files)*2)
 			for _, f := range files {
 				fullshort = append(fullshort, f, filepath.Base(f))

@@ -47,7 +47,11 @@ func uint64ToW(x uint64, mode Mode) coefW {
 // quotient is at most a coefficient, so adding one cannot carry out of the
 // type, though at decimal128 it may exceed a uint64.
 func intPartsW(x coefW, mode Mode) (kind Kind, neg bool, m uint64, big, inexact bool) {
-	kind, neg, c, exp := UnpackW(x)
+	neg, c, exp, xok := unpackFirstW(x)
+	kind = KindFinite
+	if !xok {
+		kind, neg, c, exp = unpackRestW(x)
+	}
 	if kind != KindFinite {
 		return kind, neg, 0, false, false
 	}
@@ -62,9 +66,7 @@ func intPartsW(x coefW, mode Mode) (kind Kind, neg bool, m uint64, big, inexact 
 	q, class := cShiftW(c, -exp)
 	if class != classZero {
 		inexact = true
-		if roundUp(class, mode, neg, cOddW(q)) {
-			q = cIncW(q)
-		}
+		q = cAddU64W(q, roundInc(class, mode, neg, cOddW(q)))
 	}
 	m, fits := cToU64W(q)
 	if !fits {

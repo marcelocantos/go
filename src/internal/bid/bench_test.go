@@ -91,6 +91,51 @@ func loop2[A, R any](b *testing.B, xs, ys []A, f func(x, y A) R) {
 	benchSink = s
 }
 
+// The shuffled loops draw each operand by a generator instead of walking
+// the pool. A pool that repeats trains the branch predictor on the
+// operands themselves, however long it is (a pool of 4096 was learned),
+// so a row of a walking loop shows a branch on the data as if it were
+// predictable; a drawn order shows what it costs on input that has no
+// pattern. The generator adds its own time to every row, about 2 ns: it
+// is a chain from each iteration to the next, where the walking loop has
+// none. The rows named shuffled and drawn use these. loop1 and loop2 do
+// not choose between the two by a flag: they must stay small enough to
+// inline into each row with the function it times, and a test with a
+// second call in it put half a nanosecond on every row. See "Operands
+// without a pattern" in the package documentation.
+
+// xorshift is one step of Marsaglia's 64-bit generator (13, 7, 17).
+func xorshift(r uint64) uint64 {
+	r ^= r << 13
+	r ^= r >> 7
+	r ^= r << 17
+	return r
+}
+
+const xorshiftSeed = 88172645463325252
+
+func loop1s[A, R any](b *testing.B, xs []A, f func(x A) R) {
+	var s R
+	m := uint64(len(xs) - 1)
+	r := uint64(xorshiftSeed)
+	for i := 0; i < b.N; i++ {
+		r = xorshift(r)
+		s = f(xs[r>>32&m])
+	}
+	benchSink = s
+}
+
+func loop2s[A, R any](b *testing.B, xs, ys []A, f func(x, y A) R) {
+	var s R
+	m := uint64(len(xs) - 1)
+	r := uint64(xorshiftSeed)
+	for i := 0; i < b.N; i++ {
+		r = xorshift(r)
+		s = f(xs[r>>32&m], ys[r>>32&m])
+	}
+	benchSink = s
+}
+
 func loop3[A, R any](b *testing.B, xs, ys, zs []A, f func(x, y, z A) R) {
 	var s R
 	m := len(xs) - 1
@@ -158,6 +203,7 @@ type benchOperands struct {
 	far, farFMA                        *opnds
 	divInexact, divExact, divWidest    *opnds
 	divByZero                          *opnds
+	drawn, drawnMoney                  *opnds
 	remSmall, remMax                   *opnds
 	fracSigned, fracPositive, integers *opnds
 	ints                               []int64
@@ -270,6 +316,40 @@ func buildBenchOperands() *benchOperands {
 		[3]string{"1", "1"}, [3]string{"9999999999999999", "9999999999999999999999999999999999"}, [3]string{},
 		1, 9999999999999999, 0)
 	bo.divByZero = fixedOpnds([3]string{"1", "1"}, [3]string{"0", "0"}, [3]string{}, 1, 0, 0)
+
+	// The drawn classes, decimal128 only: operands of one kind whose
+	// digits, signs and order have no pattern, for the rows that draw
+	// them by a generator (loop2s). A full-precision pair has 34 digits
+	// each at exponents 1 to 12 apart, either way round; a money pair is
+	// two amounts of 3 to 9 digits with two places. The operations stay
+	// on one path each, as a program's do, so that what the rows show is
+	// the cost of the digits being unpredictable and not of the paths
+	// being mixed, which the mixed class shows.
+	// They have a generator of their own, so that the pools above and
+	// below draw what they always drew.
+	rd := rand.New(rand.NewPCG(3, 4))
+	pair := func(gen func() (x, y value)) *opnds {
+		o := &opnds{}
+		for range poolSize {
+			x, y := gen()
+			o.x128, o.y128 = append(o.x128, dec128.encode(x)), append(o.y128, dec128.encode(y))
+		}
+		return o
+	}
+	bo.drawn = pair(func() (x, y value) {
+		e, g := rd.IntN(20)-10, 1+rd.IntN(12)
+		x = value{kind: finite, neg: rd.IntN(2) == 0, coeff: randDigits(rd, dec128.prec), exp: e}
+		y = value{kind: finite, neg: rd.IntN(2) == 0, coeff: randDigits(rd, dec128.prec), exp: e - g}
+		if rd.IntN(2) == 0 {
+			x, y = y, x
+		}
+		return x, y
+	})
+	bo.drawnMoney = pair(func() (x, y value) {
+		x = value{kind: finite, neg: rd.IntN(2) == 0, coeff: randDigits(rd, 3+rd.IntN(7)), exp: -2}
+		y = value{kind: finite, neg: rd.IntN(2) == 0, coeff: randDigits(rd, 3+rd.IntN(7)), exp: -2}
+		return x, y
+	})
 
 	// Integers and the values that convert to them: small coefficients with
 	// up to three places, so that the value fits an int64 and is mostly
@@ -397,6 +477,23 @@ func benchRowList() benchRows {
 			func(x, y bits) bits { return bid.Div128(x, y, rne) },
 			func(x, y float64) float64 { return x / y })
 	}
+	// The same operations on operands drawn in no order (see the shuffled
+	// loops): what they cost when the predictor has not seen the digits.
+	for _, c := range []struct {
+		op    string
+		class string
+		o     *opnds
+		f     func(x, y bits) bits
+	}{
+		{"Add", "drawn", bo.drawn, func(x, y bits) bits { return bid.Add128(x, y, rne) }},
+		{"Sub", "drawn", bo.drawn, func(x, y bits) bits { return bid.Sub128(x, y, rne) }},
+		{"Mul", "drawn", bo.drawn, func(x, y bits) bits { return bid.Mul128(x, y, rne) }},
+		{"Div", "drawn", bo.drawn, func(x, y bits) bits { return bid.Div128(x, y, rne) }},
+		{"Div", "drawn-money", bo.drawnMoney, func(x, y bits) bits { return bid.Div128(x, y, rne) }},
+	} {
+		rs.add(c.op, "128", c.class, apiName(c.op, "128"), func(b *testing.B) { loop2s(b, c.o.x128, c.o.y128, c.f) })
+	}
+	rs.add("Less", "128", "drawn", "Less128", func(b *testing.B) { loop2s(b, bo.drawn.x128, bo.drawn.y128, bid.Less128) })
 	reg3(&rs, "FMA", "mixed", bo.fmaMix,
 		func(x, y, z uint64) uint64 { return bid.FMA64(x, y, z, rne) },
 		func(x, y, z bits) bits { return bid.FMA128(x, y, z, rne) },
@@ -437,6 +534,17 @@ func benchRowList() benchRows {
 		func(x, y bits) int { c, _ := bid.Compare128(x, y); return c },
 		func(x, y float64) int { return cmp.Compare(x, y) })
 	reg2(&rs, "TotalOrder", "mixed", mixed, bid.TotalOrder64, bid.TotalOrder128, (func(x, y float64) bool)(nil))
+
+	// The general paths without their inline fronts, which the runtime calls
+	// on the targets whose compiler decides the fronts' operands itself. On
+	// the same operands as the fronted rows above, so the difference between
+	// a pair of rows is the cost of the front.
+	reg2(&rs, "AddSlow", "mixed", bo.addMix, (func(x, y uint64) uint64)(nil), func(x, y bits) bits { return bid.AddSlow128(x, y, rne) }, (func(x, y float64) float64)(nil))
+	reg2(&rs, "SubSlow", "mixed", bo.addMix, (func(x, y uint64) uint64)(nil), func(x, y bits) bits { return bid.SubSlow128(x, y, rne) }, (func(x, y float64) float64)(nil))
+	reg2(&rs, "MulSlow", "mixed", mixed, (func(x, y uint64) uint64)(nil), func(x, y bits) bits { return bid.MulSlow128(x, y, rne) }, (func(x, y float64) float64)(nil))
+	reg2(&rs, "EqualSlow", "mixed", mixed, (func(x, y uint64) bool)(nil), bid.EqualSlow128, (func(x, y float64) bool)(nil))
+	reg2(&rs, "LessSlow", "mixed", mixed, (func(x, y uint64) bool)(nil), bid.LessSlow128, (func(x, y float64) bool)(nil))
+	reg2(&rs, "LessEqualSlow", "mixed", mixed, (func(x, y uint64) bool)(nil), bid.LessEqualSlow128, (func(x, y float64) bool)(nil))
 	reg1(&rs, "Key", "mixed", mixed, bid.Key64, bid.Key128, (func(float64) uint64)(nil))
 
 	// Encoding.
@@ -685,8 +793,40 @@ func benchRowList() benchRows {
 	rs.add("Append", "128", "mixed", "Append128", func(b *testing.B) {
 		loop1(b, mixed.x128, func(x bits) int { return len(bid.Append128(buf[:0], x)) })
 	})
+	rs.add("AppendSci", "64", "mixed", "AppendSci64", func(b *testing.B) {
+		loop1(b, mixed.x64, func(x uint64) int { return len(bid.AppendSci64(buf[:0], x)) })
+	})
+	rs.add("AppendSci", "128", "mixed", "AppendSci128", func(b *testing.B) {
+		loop1(b, mixed.x128, func(x bits) int { return len(bid.AppendSci128(buf[:0], x)) })
+	})
+	// The short form: money and small quantities, the lengths and the
+	// places of the point mixed so that a branch on either would show.
+	var shorts []bits
+	for _, str := range []string{"0", "0.00", "0.05", "7", "17", "250", "1.5", "12.34", "1234.56", "-3.25", "12345.67", "999999.99", "1000", "123456", "-42", "0.0001"} {
+		x, _ := bid.Parse128(str, rne)
+		shorts = append(shorts, x)
+	}
+	var short [bid.ShortLen128]byte
+	rs.add("IsShort", "128", "mixed", "IsShort128", func(b *testing.B) { loop1(b, mixed.x128, bid.IsShort128) })
+	rs.add("PutShort", "128", "short", "PutShort128", func(b *testing.B) {
+		loop1(b, shorts, func(x bits) int { return bid.PutShort128(&short, x) })
+	})
+	rs.add("Append", "128", "short", "Append128", func(b *testing.B) {
+		loop1(b, shorts, func(x bits) int { return len(bid.Append128(buf[:0], x)) })
+	})
+	rs.add("Append", "128", "shuffled", "Append128", func(b *testing.B) {
+		loop1s(b, shorts, func(x bits) int { return len(bid.Append128(buf[:0], x)) })
+	})
 	rs.add("Append", "float64", "mixed", "", func(b *testing.B) {
 		loop1(b, mixed.xf, func(x float64) int { return len(strconv.AppendFloat(buf[:0], x, 'E', -1, 64)) })
+	})
+	var digs64 [bid.Precision64]byte
+	var digs128 [bid.Precision128]byte
+	rs.add("UnpackDigits", "64", "mixed", "UnpackDigits64", func(b *testing.B) {
+		loop1(b, mixed.x64, func(x uint64) int { _, _, n, _ := bid.UnpackDigits64(&digs64, x); return n })
+	})
+	rs.add("UnpackDigits", "128", "mixed", "UnpackDigits128", func(b *testing.B) {
+		loop1(b, mixed.x128, func(x bits) int { _, _, n, _ := bid.UnpackDigits128(&digs128, x); return n })
 	})
 
 	return rs

@@ -13,7 +13,7 @@ import (
 // The conversions between decimal values and text are those of
 // internal/bid: parseDecimal reads its input with bid.Parse64 or bid.Parse128,
 // and formatDecimal and appendDecimal take
-// the digits of a value from the character form bid.Append128 writes. This
+// the coefficient digits, sign and quantum from bid.UnpackDigits128. This
 // file owns the format verbs and precision, and the layout of the digits
 // that follows from them. Whenever a precision asks for fewer digits than
 // a value has, the value is rounded by the kernel's Quantize.
@@ -26,15 +26,21 @@ import (
 // [parseDecimal] of that string returns the same value and quantum.
 //
 // With 'g' and 'G' and the special precision -1, the result is the canonical
-// string. It is in fixed notation unless the exponent of the leading digit is
-// less than -6 or at least 21, or the quantum is above the units digit, which
-// fixed notation can't show: 1e+03 is not 1000.
+// string, which println and fmt's %v also write. It follows the layout of a
+// float's shortest form: fixed notation unless the exponent of the leading
+// digit is less than -4 or at least 21, and an exponent of at least two
+// digits ("1e-05"). Unlike a float it keeps every coefficient digit, and a
+// quantum above the units digit, which fixed notation can't show, forces
+// exponential notation: 1e+03 is not 1000.
 //
 // The bitSize must be 64 for values from decimal64 or 128 for decimal128.
 //
 //go:linkname formatDecimal
 func formatDecimal(d decimal128, fmt byte, prec int, bitSize int) string {
-	return string(appendDecimal(nil, d, fmt, prec, bitSize))
+	// The canonical form fits on the stack. Explicit fixed-point formats
+	// and large precisions may grow past this buffer through append.
+	var buf [bid.MaxLen128]byte
+	return string(appendDecimal(buf[:0], d, fmt, prec, bitSize))
 }
 
 // appendDecimal appends the string form of the decimal128 value d,
@@ -50,22 +56,116 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 	hi, lo := decimal.BID128bits(d)
 	x := bid.Uint128{Hi: hi, Lo: lo}
 
-	var text [bid.MaxLen128]byte
-	var v finite
-	if v.scan(bid.Append128(text[:0], x)) {
-		return appendSpecial(dst, text[:])
+	// A short coefficient at or just below the units place (money and most
+	// quantities) is plain digits around a point in every notation that
+	// keeps all the digits, which is each verb but 'e' and 'E' at
+	// precision -1. The kernel lays those out in registers and stores
+	// them straight into dst, exactly the bytes appended.
+	if i := len(dst); bid.IsShort128(x) && prec < 0 && fmt != 'e' && fmt != 'E' && cap(dst)-i >= bid.ShortLen128 {
+		return dst[:i+bid.PutShort128((*[bid.ShortLen128]byte)(dst[i:i+bid.ShortLen128]), x)]
+	}
+
+	var digs [bid.Precision128]byte
+	kind, neg, n, exp := bid.UnpackDigits128(&digs, x)
+	switch kind {
+	case bid.KindNaN:
+		return append(dst, "NaN"...)
+	case bid.KindInf:
+		if neg {
+			return append(dst, "-Inf"...)
+		}
+		return append(dst, "+Inf"...)
 	}
 
 	if prec < 0 {
-		return appendCanonical(dst, &v, normalFormat(fmt))
+		// Canonical output keeps all coefficient digits and the quantum. Keep
+		// its layout here so it needs neither a call nor the rounding state.
+		format := normalFormat(fmt)
+		digits := digs[len(digs)-n:]
+		if n == 0 {
+			digits = []byte{'0'}
+		}
+		if neg {
+			dst = append(dst, '-')
+		}
+		switch format {
+		case 'e', 'E':
+			return appendExp(dst, digits, exp, format, -1)
+		case 'f':
+			if n == 0 {
+				exp = min(exp, 0)
+			}
+			return appendFixed(dst, digits, exp, -1)
+		}
+		e := exp + len(digits) - 1
+		if e < canonicalMinExp || e >= canonicalMaxExp || exp > 0 {
+			ef := byte('e')
+			if format == 'G' {
+				ef = 'E'
+			}
+			return appendExp(dst, digits, exp, ef, -1)
+		}
+		if exp == 0 {
+			return append(dst, digits...)
+		}
+		// The canonical fixed form neither rounds nor pads when the point is
+		// inside the coefficient. Reserve the whole result once, then place
+		// the two digit spans without the general formatter's append checks.
+		point := len(digits) + exp
+		if point > 0 && cap(dst)-len(dst) >= len(digits)+1 {
+			start := len(dst)
+			dst = dst[:start+len(digits)+1]
+			// Small spans cost less to place directly than to dispatch two
+			// variable-size copies. The ARM64 length sweep crosses over at
+			// ten digits; retain bulk copying above the measured short range.
+			const directDigits = 9
+			if len(digits) <= directDigits {
+				for i := 0; i < point; i++ {
+					dst[start+i] = digits[i]
+				}
+				dst[start+point] = '.'
+				for i := point; i < len(digits); i++ {
+					dst[start+i+1] = digits[i]
+				}
+			} else {
+				copyDecimalDigits(dst[start:], digits[:point])
+				dst[start+point] = '.'
+				copyDecimalDigits(dst[start+point+1:], digits[point:])
+			}
+			return dst
+		}
+		return appendFixed(dst, digits, exp, -1)
 	}
+	v := finite{neg: neg, n: n, exp: exp, digs: &digs}
 	if v.n > 0 {
 		v.round(x, normalFormat(fmt), prec)
 	}
 	if v.n == 0 {
 		return appendZero(dst, v.neg, fmt, prec)
 	}
-	return formatDigits(dst, v.neg, v.exp, v.digs[:v.n], normalFormat(fmt), prec)
+	return formatDigits(dst, v.neg, v.exp, v.digs[len(v.digs)-v.n:], normalFormat(fmt), prec)
+}
+
+// copyDecimalDigits copies a non-overlapping coefficient span; dst must be at
+// least as long as src. Constant head and tail copies cover medium spans,
+// with identical overlapping stores
+// when the length lies between the two chunk sizes. Smaller and larger spans
+// retain the general copy operation.
+func copyDecimalDigits(dst, src []byte) {
+	const word = 8
+	n := len(src)
+	if n >= word && n <= 4*word {
+		dst = dst[:n]
+		if n <= 2*word {
+			copy(dst[:word], src[:word])
+			copy(dst[n-word:], src[n-word:])
+		} else {
+			copy(dst[:2*word], src[:2*word])
+			copy(dst[n-2*word:], src[n-2*word:])
+		}
+		return
+	}
+	copy(dst, src)
 }
 
 // parseDecimal converts a string to a decimal value of the given bitSize, 64 or
@@ -109,61 +209,16 @@ func parseDecimal(s string, bitSize int) (decimal128, error) {
 	return d, nil
 }
 
-// --- Digits of the character form ---
+// --- Coefficient digits ---
 
-// A finite is a finite value as the digits of its character form: the value
-// is (-1)^neg × digs[:n] × 10^exp. There are no leading zeros; n is zero
-// for a zero value, whatever its exponent.
+// A finite holds the coefficient digits of a finite value: the value
+// is (-1)^neg × digs[len(digs)-n:] × 10^exp. There are no leading zeros;
+// n is zero for a zero value, whatever its exponent.
 type finite struct {
 	neg  bool
 	n    int
 	exp  int
-	digs [bid.Precision128]byte
-}
-
-// scan reads the character form of a value, as bid.Append128 writes it. It
-// reports whether the value is an infinity or a NaN, which have no digits.
-func (v *finite) scan(text []byte) (special bool) {
-	i := 0
-	if text[i] == '-' {
-		v.neg = true
-		i++
-	}
-	if text[i] > '9' { // "Infinity" or "NaN"
-		return true
-	}
-	// Digits with an optional point, then an optional exponent.
-	frac := 0
-	point := false
-	for ; i < len(text) && text[i] != 'E'; i++ {
-		c := text[i]
-		if c == '.' {
-			point = true
-			continue
-		}
-		if point {
-			frac++
-		}
-		if v.n == 0 && c == '0' {
-			continue // not significant
-		}
-		v.digs[v.n] = c
-		v.n++
-	}
-	e := 0
-	if i < len(text) {
-		i++ // E
-		eneg := text[i] == '-'
-		i++ // the sign is always written
-		for ; i < len(text); i++ {
-			e = e*10 + int(text[i]-'0')
-		}
-		if eneg {
-			e = -e
-		}
-	}
-	v.exp = e - frac
-	return false
+	digs *[bid.Precision128]byte
 }
 
 // round rounds the value to the precision that format and prec call for:
@@ -205,14 +260,13 @@ func (v *finite) round(x bid.Uint128, format byte, prec int) {
 	quantum, _ := bid.Pack128(false, bid.Uint128{Lo: 1}, drop)
 	q := bid.Quantize128(c, quantum, bid.ToNearestEven)
 
-	var text [bid.MaxLen128]byte
-	var r finite
-	r.scan(bid.Append128(text[:0], q))
-	v.n = r.n
-	v.digs = r.digs
-	v.exp += r.exp
+	_, _, n, qexp := bid.UnpackDigits128(v.digs, q)
+	v.n = n
+	v.exp += qexp
 	if keep > 0 && v.n > keep {
 		// A carry made 9.99 into 10.0. The extra digit is a zero.
+		// Keep the leading digits right-aligned after dropping that zero.
+		copy(v.digs[len(v.digs)-keep:], v.digs[len(v.digs)-v.n:len(v.digs)-v.n+keep])
 		v.exp += v.n - keep
 		v.n = keep
 	}
@@ -228,17 +282,6 @@ func normalFormat(fmt byte) byte {
 		return fmt
 	}
 	return 'g'
-}
-
-// appendSpecial appends the infinity or NaN whose character form is text.
-func appendSpecial(dst []byte, text []byte) []byte {
-	switch {
-	case text[0] == 'N':
-		return append(dst, "NaN"...)
-	case text[0] == '-':
-		return append(dst, "-Inf"...)
-	}
-	return append(dst, "+Inf"...)
 }
 
 // appendZero appends a zero of the given sign.
@@ -277,39 +320,9 @@ func appendZero(dst []byte, neg bool, format byte, prec int) []byte {
 // Exponents of the leading digit outside this range use exponent notation in
 // the canonical string. They are the thresholds encoding/json uses for floats.
 const (
-	canonicalMinExp = -6
+	canonicalMinExp = -4
 	canonicalMaxExp = 21
 )
-
-// appendCanonical appends all the digits of v, which keeps its quantum, for a
-// negative precision. A zero has one digit and the exponent of its quantum.
-func appendCanonical(dst []byte, v *finite, format byte) []byte {
-	digits, exp := v.digs[:v.n], v.exp
-	if v.n == 0 {
-		digits = []byte{'0'}
-	}
-	if v.neg {
-		dst = append(dst, '-')
-	}
-	switch format {
-	case 'e', 'E':
-		return appendExp(dst, digits, exp, format, -1)
-	case 'f':
-		if v.n == 0 {
-			exp = min(exp, 0)
-		}
-		return appendFixed(dst, digits, exp, -1)
-	}
-	e := exp + len(digits) - 1
-	if e < canonicalMinExp || e >= canonicalMaxExp || exp > 0 {
-		ef := byte('e')
-		if format == 'G' {
-			ef = 'E'
-		}
-		return appendExp(dst, digits, exp, ef, -1)
-	}
-	return appendFixed(dst, digits, exp, -1)
-}
 
 // formatDigits formats the non-zero value (-1)^neg × digits × 10^exp, where
 // format is one of 'e', 'E', 'f', 'g' and 'G' and prec is not negative. The
@@ -328,18 +341,27 @@ func formatDigits(dst []byte, neg bool, exp int, digits []byte, format byte, pre
 		return appendFixed(dst, digits, exp, prec)
 	}
 
-	// 'g' uses 'e' for large/small exponents, 'f' otherwise.
-	// Trailing zeros and trailing decimal points are stripped.
+	// 'g' uses 'e' for large/small exponents, 'f' otherwise, and shows no
+	// trailing zeros after the point and no point without digits after
+	// it. The zeros come off the digits before anything is laid out, so
+	// that nothing is appended only to be removed: dst may carry a prefix
+	// that is not this function's to read, and its spare capacity is not
+	// this function's to write beyond the result.
 	ef := byte('e')
 	if format == 'G' {
 		ef = 'E'
 	}
 	e := exp + ndigits - 1
 	p := max(prec, 1)
-	if e >= -4 && e < p {
-		return stripTrailingZeros(appendFixed(dst, digits, exp, p-ndigits-exp))
+	for ndigits > 1 && digits[ndigits-1] == '0' {
+		ndigits--
+		exp++
 	}
-	return stripTrailingZeros(appendExp(dst, digits, exp, ef, p-1))
+	digits = digits[:ndigits]
+	if e >= -4 && e < p {
+		return appendFixed(dst, digits, exp, max(-exp, 0))
+	}
+	return appendExp(dst, digits, exp, ef, ndigits-1)
 }
 
 // appendFixed formats in fixed-point notation. If prec is not negative the
@@ -439,58 +461,5 @@ func appendExp(dst []byte, digits []byte, exp int, format byte, prec int) []byte
 		dst = append(dst, '0')
 	}
 	dst = append(dst, byte(e%10)+'0')
-	return dst
-}
-
-// stripTrailingZeros removes trailing zeros after a decimal point,
-// and the decimal point itself if no fractional digits remain.
-// It handles scientific notation (e.g., "1.230e+02" → "1.23e+02").
-func stripTrailingZeros(dst []byte) []byte {
-	// Find the exponent part if present.
-	expIdx := -1
-	for i := len(dst) - 1; i >= 0; i-- {
-		if dst[i] == 'e' || dst[i] == 'E' {
-			expIdx = i
-			break
-		}
-	}
-
-	// Find decimal point.
-	dotIdx := -1
-	end := len(dst)
-	if expIdx >= 0 {
-		end = expIdx
-	}
-	for i := 0; i < end; i++ {
-		if dst[i] == '.' {
-			dotIdx = i
-			break
-		}
-	}
-	if dotIdx < 0 {
-		return dst // no decimal point, nothing to strip
-	}
-
-	// Strip trailing zeros from fractional part (before exponent if present).
-	stripTo := end
-	for stripTo > dotIdx+1 && dst[stripTo-1] == '0' {
-		stripTo--
-	}
-	// Remove decimal point if no fractional digits remain.
-	if stripTo == dotIdx+1 {
-		stripTo = dotIdx
-	}
-
-	if stripTo == end {
-		return dst // nothing stripped
-	}
-
-	// Rebuild: dst[:stripTo] + dst[expIdx:]
-	if expIdx >= 0 {
-		tail := append([]byte(nil), dst[expIdx:]...)
-		dst = append(dst[:stripTo], tail...)
-	} else {
-		dst = dst[:stripTo]
-	}
 	return dst
 }

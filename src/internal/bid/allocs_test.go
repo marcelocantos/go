@@ -114,12 +114,13 @@ func exportedAPI(t testing.TB) []string {
 	return names
 }
 
-// ignoredByBuildTag reports whether src has a "//go:build ignore" line
-// before its package clause: the generator and the templates.
+// ignoredByBuildTag reports whether src has a "//go:build ignore" or
+// "//go:build bidgen" line before its package clause: the generator, the
+// templates and the generator's stand-in for the generated files.
 func ignoredByBuildTag(src string) bool {
 	for _, line := range strings.Split(src, "\n") {
 		line = strings.TrimSpace(line)
-		if line == "//go:build ignore" {
+		if line == "//go:build ignore" || line == "//go:build bidgen" {
 			return true
 		}
 		if strings.HasPrefix(line, "package ") {
@@ -354,6 +355,14 @@ func allocCases() map[string]func() {
 	all64, core64 := allocOperands64()
 	all128, core128 := allocOperands128()
 	buf := make([]byte, 0, bid.MaxLen128)
+	var digs64 [bid.Precision64]byte
+	var digs128 [bid.Precision128]byte
+	var short128 [bid.ShortLen128]byte
+	var shorts []bid.Uint128
+	for _, str := range []string{"0", "-0.00", "0.0001", "7", "1234.56", "-99999999", "999999.99"} {
+		x, _ := bid.Parse128(str, bid.ToNearestEven)
+		shorts = append(shorts, x)
+	}
 
 	// Float operands. The largest and the smallest subnormal float64 are the
 	// multiword paths of Float64To; the exactly representable ties and the
@@ -391,20 +400,23 @@ func allocCases() map[string]func() {
 
 	return map[string]func(){
 		// arith.go: arithmetic.
-		"Add64":  pairsMode(all64, func(x, y uint64, m bid.Mode) { asU64 ^= bid.Add64(x, y, m) }),
-		"Add128": pairsMode(all128, func(x, y bid.Uint128, m bid.Mode) { asU128 = bid.Add128(x, y, m) }),
-		"Sub64":  pairsMode(all64, func(x, y uint64, m bid.Mode) { asU64 ^= bid.Sub64(x, y, m) }),
-		"Sub128": pairsMode(all128, func(x, y bid.Uint128, m bid.Mode) { asU128 = bid.Sub128(x, y, m) }),
-		"Mul64":  pairsMode(all64, func(x, y uint64, m bid.Mode) { asU64 ^= bid.Mul64(x, y, m) }),
-		"Mul128": pairsMode(all128, func(x, y bid.Uint128, m bid.Mode) { asU128 = bid.Mul128(x, y, m) }),
-		"Div64":  pairsMode(all64, func(x, y uint64, m bid.Mode) { asU64 ^= bid.Div64(x, y, m) }),
-		"Div128": pairsMode(all128, func(x, y bid.Uint128, m bid.Mode) { asU128 = bid.Div128(x, y, m) }),
-		"FMA64":  triplesMode(core64, func(x, y, z uint64, m bid.Mode) { asU64 ^= bid.FMA64(x, y, z, m) }),
-		"FMA128": triplesMode(core128, func(x, y, z bid.Uint128, m bid.Mode) { asU128 = bid.FMA128(x, y, z, m) }),
-		"Rem64":  pairs(all64, func(x, y uint64) { asU64 ^= bid.Rem64(x, y) }),
-		"Rem128": pairs(all128, func(x, y bid.Uint128) { asU128 = bid.Rem128(x, y) }),
-		"Mod64":  pairs(all64, func(x, y uint64) { asU64 ^= bid.Mod64(x, y) }),
-		"Mod128": pairs(all128, func(x, y bid.Uint128) { asU128 = bid.Mod128(x, y) }),
+		"Add64":      pairsMode(all64, func(x, y uint64, m bid.Mode) { asU64 ^= bid.Add64(x, y, m) }),
+		"Add128":     pairsMode(all128, func(x, y bid.Uint128, m bid.Mode) { asU128 = bid.Add128(x, y, m) }),
+		"Sub64":      pairsMode(all64, func(x, y uint64, m bid.Mode) { asU64 ^= bid.Sub64(x, y, m) }),
+		"Sub128":     pairsMode(all128, func(x, y bid.Uint128, m bid.Mode) { asU128 = bid.Sub128(x, y, m) }),
+		"Mul64":      pairsMode(all64, func(x, y uint64, m bid.Mode) { asU64 ^= bid.Mul64(x, y, m) }),
+		"Mul128":     pairsMode(all128, func(x, y bid.Uint128, m bid.Mode) { asU128 = bid.Mul128(x, y, m) }),
+		"AddSlow128": pairsMode(all128, func(x, y bid.Uint128, m bid.Mode) { asU128 = bid.AddSlow128(x, y, m) }),
+		"SubSlow128": pairsMode(all128, func(x, y bid.Uint128, m bid.Mode) { asU128 = bid.SubSlow128(x, y, m) }),
+		"MulSlow128": pairsMode(all128, func(x, y bid.Uint128, m bid.Mode) { asU128 = bid.MulSlow128(x, y, m) }),
+		"Div64":      pairsMode(all64, func(x, y uint64, m bid.Mode) { asU64 ^= bid.Div64(x, y, m) }),
+		"Div128":     pairsMode(all128, func(x, y bid.Uint128, m bid.Mode) { asU128 = bid.Div128(x, y, m) }),
+		"FMA64":      triplesMode(core64, func(x, y, z uint64, m bid.Mode) { asU64 ^= bid.FMA64(x, y, z, m) }),
+		"FMA128":     triplesMode(core128, func(x, y, z bid.Uint128, m bid.Mode) { asU128 = bid.FMA128(x, y, z, m) }),
+		"Rem64":      pairs(all64, func(x, y uint64) { asU64 ^= bid.Rem64(x, y) }),
+		"Rem128":     pairs(all128, func(x, y bid.Uint128) { asU128 = bid.Rem128(x, y) }),
+		"Mod64":      pairs(all64, func(x, y uint64) { asU64 ^= bid.Mod64(x, y) }),
+		"Mod128":     pairs(all128, func(x, y bid.Uint128) { asU128 = bid.Mod128(x, y) }),
 
 		"RoundToIntegral64":  eachMode(all64, func(x uint64, m bid.Mode) { asU64 ^= bid.RoundToIntegral64(x, m) }),
 		"RoundToIntegral128": eachMode(all128, func(x bid.Uint128, m bid.Mode) { asU128 = bid.RoundToIntegral128(x, m) }),
@@ -516,18 +528,21 @@ func allocCases() map[string]func() {
 		"CopySign128":                pairs(all128, func(x, y bid.Uint128) { asU128 = bid.CopySign128(x, y) }),
 
 		// compare.go.
-		"Equal64":       pairs(all64, func(x, y uint64) { asBool = bid.Equal64(x, y) }),
-		"Equal128":      pairs(all128, func(x, y bid.Uint128) { asBool = bid.Equal128(x, y) }),
-		"Less64":        pairs(all64, func(x, y uint64) { asBool = bid.Less64(x, y) }),
-		"Less128":       pairs(all128, func(x, y bid.Uint128) { asBool = bid.Less128(x, y) }),
-		"LessEqual64":   pairs(all64, func(x, y uint64) { asBool = bid.LessEqual64(x, y) }),
-		"LessEqual128":  pairs(all128, func(x, y bid.Uint128) { asBool = bid.LessEqual128(x, y) }),
-		"Compare64":     pairs(all64, func(x, y uint64) { asInt, asBool = bid.Compare64(x, y) }),
-		"Compare128":    pairs(all128, func(x, y bid.Uint128) { asInt, asBool = bid.Compare128(x, y) }),
-		"TotalOrder64":  pairs(all64, func(x, y uint64) { asBool = bid.TotalOrder64(x, y) }),
-		"TotalOrder128": pairs(all128, func(x, y bid.Uint128) { asBool = bid.TotalOrder128(x, y) }),
-		"Key64":         each(all64, func(x uint64) { keyOf(bid.Key64(x)) }),
-		"Key128":        each(all128, func(x bid.Uint128) { keyOf(bid.Key128(x)) }),
+		"Equal64":          pairs(all64, func(x, y uint64) { asBool = bid.Equal64(x, y) }),
+		"Equal128":         pairs(all128, func(x, y bid.Uint128) { asBool = bid.Equal128(x, y) }),
+		"Less64":           pairs(all64, func(x, y uint64) { asBool = bid.Less64(x, y) }),
+		"Less128":          pairs(all128, func(x, y bid.Uint128) { asBool = bid.Less128(x, y) }),
+		"LessEqual64":      pairs(all64, func(x, y uint64) { asBool = bid.LessEqual64(x, y) }),
+		"LessEqual128":     pairs(all128, func(x, y bid.Uint128) { asBool = bid.LessEqual128(x, y) }),
+		"EqualSlow128":     pairs(all128, func(x, y bid.Uint128) { asBool = bid.EqualSlow128(x, y) }),
+		"LessSlow128":      pairs(all128, func(x, y bid.Uint128) { asBool = bid.LessSlow128(x, y) }),
+		"LessEqualSlow128": pairs(all128, func(x, y bid.Uint128) { asBool = bid.LessEqualSlow128(x, y) }),
+		"Compare64":        pairs(all64, func(x, y uint64) { asInt, asBool = bid.Compare64(x, y) }),
+		"Compare128":       pairs(all128, func(x, y bid.Uint128) { asInt, asBool = bid.Compare128(x, y) }),
+		"TotalOrder64":     pairs(all64, func(x, y uint64) { asBool = bid.TotalOrder64(x, y) }),
+		"TotalOrder128":    pairs(all128, func(x, y bid.Uint128) { asBool = bid.TotalOrder128(x, y) }),
+		"Key64":            each(all64, func(x uint64) { keyOf(bid.Key64(x)) }),
+		"Key128":           each(all128, func(x bid.Uint128) { keyOf(bid.Key128(x)) }),
 
 		// convert.go.
 		"Widen":  each(all64, func(x uint64) { asU128 = bid.Widen(x) }),
@@ -586,8 +601,18 @@ func allocCases() map[string]func() {
 		"Float32From128": eachMode(all128, func(x bid.Uint128, m bid.Mode) { asF32 += bid.Float32From128(x, m) }),
 
 		// string.go. dst has the spare capacity the contract requires.
-		"Append64":  each(all64, func(x uint64) { asBuf = bid.Append64(buf[:0], x) }),
-		"Append128": each(all128, func(x bid.Uint128) { asBuf = bid.Append128(buf[:0], x) }),
+		"Append64":     each(all64, func(x uint64) { asBuf = bid.Append64(buf[:0], x) }),
+		"Append128":    each(all128, func(x bid.Uint128) { asBuf = bid.Append128(buf[:0], x) }),
+		"AppendSci64":  each(all64, func(x uint64) { asBuf = bid.AppendSci64(buf[:0], x) }),
+		"AppendSci128": each(all128, func(x bid.Uint128) { asBuf = bid.AppendSci128(buf[:0], x) }),
+		"IsShort128":   each(all128, func(x bid.Uint128) { asBool = bid.IsShort128(x) }),
+		"PutShort128":  each(shorts, func(x bid.Uint128) { asInt = bid.PutShort128(&short128, x) }),
+		"UnpackDigits64": each(all64, func(x uint64) {
+			asKind, asBool, asInt, _ = bid.UnpackDigits64(&digs64, x)
+		}),
+		"UnpackDigits128": each(all128, func(x bid.Uint128) {
+			asKind, asBool, asInt, _ = bid.UnpackDigits128(&digs128, x)
+		}),
 		"Parse64": func() {
 			for _, s := range strs {
 				for _, m := range allocModes {

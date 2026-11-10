@@ -64,10 +64,11 @@ const (
 
 // Round64 is the rounding routine of the package, exposed for callers that
 // hold an exact value in parts: the compiler encoding a constant whose
-// exact value it has reduced, and the string parser. Every operation of
-// the package reaches an encoding through this routine (round64 in
-// zarith64.go, generated from roundW in arith_tmpl.go, whose comment is
-// the contract for callers inside the package).
+// exact value it has reduced, and the string parser. The general
+// rounding implementation is round64 in zarith64.go, generated from
+// roundW in arith_tmpl.go. Fixed-quantum operations with bounded
+// coefficients use its shared roundFinite64 helper; the templates document
+// the preconditions of both entry points.
 //
 // The input describes the exact value v = (-1)^neg × (coeff + f) × 10^exp,
 // where f is zero when sticky is false and an unspecified fraction with
@@ -94,27 +95,45 @@ func Round128(neg bool, coeff Uint128, exp int, sticky bool, mode Mode) (Uint128
 // The width-independent half of the rounding routine (rule 7 of "Width
 // parameterisation" in the package documentation): the direction decision
 // and the overflow result, which look at a digit class, a mode and a sign
-// and at no coefficient. roundW in arith_tmpl.go is the other half.
+// and at no coefficient. roundW and roundFiniteW in arith_tmpl.go are
+// the coefficient-dependent half.
 
-// roundUp reports whether a truncated magnitude is to be incremented by one
-// unit in its last place: class is the class of the discarded part (never
-// classZero; an exact value is not rounded), odd the parity of the
-// truncated coefficient and neg the sign of the value (IEEE 754-2019
-// clause 4.3). A Mode outside the five behaves as ToNearestEven, as the
-// contract says, which is why that mode is the default case and not a
-// named one.
-func roundUp(class digitClass, mode Mode, neg, odd bool) bool {
+// roundInc returns the increment of a truncated magnitude, 1 if it is to be
+// rounded up by one unit in its last place and 0 if not: class is the
+// class of the discarded part (never classZero; an exact value is not
+// rounded), odd the parity of the truncated coefficient and neg the sign of
+// the value (IEEE 754-2019 clause 4.3). A Mode outside the five behaves as
+// ToNearestEven, as the contract says, which is why that mode is the
+// default case and not a named one.
+//
+// The result is a number to add, not a condition to branch on: whether a
+// value rounds up is in its discarded digits, as good as random, and a
+// branch on it mispredicts every other time on operands with no pattern.
+// The mode is the only branch, and it does not vary. To nearest, ties to
+// even, increments for a class above the half, and for the half when the
+// coefficient is odd: class + odd reaches 3 in exactly those cases. Ties
+// away increments from the half up, the classes with the high bit set.
+func roundInc(class digitClass, mode Mode, neg, odd bool) uint64 {
 	switch mode {
 	case ToNearestAway:
-		return class >= classHalf
+		return uint64(class >> 1)
 	case TowardZero:
-		return false
+		return 0
 	case TowardPositive:
-		return !neg
+		return b2u(!neg)
 	case TowardNegative:
-		return neg
+		return b2u(neg)
 	}
-	return class == classAboveHalf || class == classHalf && odd
+	return (uint64(class) + b2u(odd) + 1) >> 2
+}
+
+// b2u returns 1 for true and 0 for false; the compiler emits no branch.
+func b2u(b bool) uint64 {
+	var u uint64
+	if b {
+		u = 1
+	}
+	return u
 }
 
 // overflowsToInf reports whether an overflow of sign neg delivers the
@@ -133,8 +152,8 @@ func overflowsToInf(mode Mode, neg bool) bool {
 	return true
 }
 
-// errRoundRange is the panic value of packW when roundW hands PackW a
-// coefficient or exponent outside the format, which is a bug in roundW.
+// errRoundRange is the panic value of packW when a rounding routine hands
+// PackW a coefficient or exponent outside the format, which is an internal bug.
 const errRoundRange = "internal/bid: rounded result outside the format"
 
 // maxWideDigits bounds the decimal digits of a wideW of either width: the

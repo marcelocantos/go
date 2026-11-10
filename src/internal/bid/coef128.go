@@ -4,6 +4,8 @@
 
 package bid
 
+import "math/bits"
+
 // The decimal128 instantiation of the coefficient vocabulary used by the
 // shared core (see "Width parameterisation" in the package documentation,
 // rule 4). The decimal64 instantiation, with identical signatures, is in
@@ -25,6 +27,82 @@ func cIsZero128(c coef128) bool {
 // cCmp128 returns -1, 0 or +1 as a is less than, equal to or greater than b.
 func cCmp128(a, b coef128) int {
 	return u128Cmp(a, b)
+}
+
+// cCmpFinite128 is cCmpFinite64 for decimal128: the comparison of two
+// finite values with coefficients of two words, at most MaxCoeff128.
+//
+// The coefficient with the larger exponent is scaled by the difference of
+// the exponents, which aligns the two at the smaller exponent, and the
+// aligned coefficients compare. The scaled coefficient is a product of
+// four words, of which the upper two are only tested for zero: if they are
+// not, it exceeds every coefficient. A difference beyond the table of
+// powers is taken as its last power, 10^38, which already puts any
+// non-zero coefficient above every other. A zero coefficient needs no
+// case: its product is zero. One multiplication and one comparison decide
+// every pair, with no digit count, however far apart the exponents are.
+//
+// Nothing here is a branch, and nothing is a call. Which operand has the
+// larger exponent, whether the scaled one then exceeds the other, and the
+// signs are in the operands' values: comparing values with no pattern, a
+// branch on any of them is a coin toss ("Operands without a pattern" in
+// the package documentation). The operands are swapped by a mask, the
+// comparison is borrows, and the signs are arithmetic.
+//
+// The compiler calls this function directly for two finite operands it has
+// decoded, with the exponents as stored (only their difference counts), so
+// its parameters and result are a contract with it: see the end of "Inline
+// fast paths" in the package documentation.
+func cCmpFinite128(xneg bool, xc coef128, xe int, yneg bool, yc coef128, ye int) int {
+	// The sign that counts: a zero is not negative.
+	xs := int(b2u(xneg) &^ b2u(xc == coef128{}))
+	ys := int(b2u(yneg) &^ b2u(yc == coef128{}))
+	gap := xe - ye
+	m := gap >> intSign // all ones if x has the smaller exponent, and y is scaled
+	dLo, dHi := (xc.Lo^yc.Lo)&uint64(m), (xc.Hi^yc.Hi)&uint64(m)
+	aLo, aHi := xc.Lo^dLo, xc.Hi^dHi
+	bLo, bHi := yc.Lo^dLo, yc.Hi^dHi
+	p := &pow10tab128[min((gap^m)-m, len(pow10tab128)-1)]
+	h00, l00 := bits.Mul64(aLo, p.Lo)
+	h01, l01 := bits.Mul64(aLo, p.Hi)
+	h10, l10 := bits.Mul64(aHi, p.Lo)
+	h11, l11 := bits.Mul64(aHi, p.Hi)
+	w1, c1 := bits.Add64(h00, l01, 0)
+	w1, c2 := bits.Add64(w1, l10, 0)
+	// The upper two words are a sum of these terms, zero only if all are.
+	over := h01 | h10 | l11 | h11 | c1 | c2
+	_, lt := bits.Sub64(l00, bLo, 0)
+	_, lt = bits.Sub64(w1, bHi, lt)
+	_, gt := bits.Sub64(bLo, l00, 0)
+	_, gt = bits.Sub64(bHi, w1, gt)
+	h := (over | -over) >> 63
+	c := int(gt|h) - int(lt&^h)
+	c = (c ^ m) - m    // reversed if the operands were swapped
+	c = (c ^ -xs) + xs // reversed for a negative x
+	if d := ys - xs; d != 0 {
+		c = d // signs differ: the negative one is the lesser
+	}
+	return c
+}
+
+// cSel128 is cSel64 for a 128-bit coefficient.
+func cSel128(m uint64, a, b coef128) coef128 {
+	return coef128{Hi: a.Hi ^ (a.Hi^b.Hi)&m, Lo: a.Lo ^ (a.Lo^b.Lo)&m}
+}
+
+// cLt128 reports whether a < b, without a branch (u128Lt).
+func cLt128(a, b coef128) bool {
+	return u128Lt(a, b)
+}
+
+// cEq128 reports whether a == b.
+func cEq128(a, b coef128) bool {
+	return a == b
+}
+
+// cClass128 is cClass64 for a 128-bit fraction.
+func cClass128(r, rest coef128) digitClass {
+	return class128(r, rest)
 }
 
 // cAdd128 returns a + b modulo 2^128 and whether the sum carried out of the
@@ -50,27 +128,42 @@ func cOdd128(c coef128) bool {
 // cDigits64 for the method; here the table has 39 entries, 10^0 to 10^38,
 // the powers of ten below 2^128.
 func cDigits128(c coef128) int {
+	// The estimate is one short unless c is below 10^t, and that is the
+	// borrow of c - 10^t: no branch, which for coefficients of one length
+	// would be taken about half the time. The branch in u128Len, on the
+	// magnitude, stays: operands of one kind take it one way.
 	t := u128Len(c) * 1233 >> 12
-	if u128Lt(c, pow10tab128[t]) {
-		return t
-	}
-	return t + 1
+	p := &pow10tab128[t]
+	_, b := bits.Sub64(c.Lo, p.Lo, 0)
+	_, b = bits.Sub64(c.Hi, p.Hi, b)
+	return t + 1 - int(b)
 }
 
 // cMulPow10128 returns c × 10^k. Precondition: 0 <= k <= 38 and the product
 // fits 128 bits; a product that does not panics rather than wrap.
+//
+// It is u128MulFits written out so that it inlines (a call cost addition
+// and rounding a call each): a product that fits 128 bits has a factor
+// below 2^64, which is taken as a, and the product is a.Lo times both
+// words of b.
 func cMulPow10128(c coef128, k int) coef128 {
-	p := u128Mul(c, pow10tab128[k])
-	if p.Hi != (Uint128{}) {
+	a, b := c, pow10tab128[k]
+	if a.Hi != 0 {
+		a, b = b, a
+	}
+	h0, lo := bits.Mul64(a.Lo, b.Lo)
+	h1, l1 := bits.Mul64(a.Lo, b.Hi)
+	hi, carry := bits.Add64(h0, l1, 0)
+	if a.Hi|h1|carry != 0 {
 		panic("internal/bid: coefficient overflow")
 	}
-	return p.Lo
+	return coef128{Hi: hi, Lo: lo}
 }
 
 // cDivPow10128 returns the quotient and remainder of c / 10^k, so that
 // c = q × 10^k + r with 0 <= r < 10^k. Precondition: 0 <= k <= 38.
 func cDivPow10128(c coef128, k int) (q, r coef128) {
-	return u128Div(c, pow10tab128[k])
+	return divPow10Recip128(c, k)
 }
 
 // cGtMax128 reports whether c exceeds the largest decimal128 coefficient.
@@ -100,13 +193,13 @@ func cReduce128(p wide128, k int) (q coef128, sticky bool) {
 
 // cLenFull128 returns the number of decimal digits of p: 0 for zero. The
 // method is that of cDigits64, with a table of the 78 powers of ten below
-// 2^256.
+// 2^256, except that the comparison with the table is the borrow of
+// p - 10^t, which needs no branch: the comparison is data-dependent, and
+// as a branch it mispredicted often enough to cost about as much again.
 func cLenFull128(p wide128) int {
 	t := u256Len(p) * 1233 >> 12
-	if u256Lt(p, pow10tab256[t]) {
-		return t
-	}
-	return t + 1
+	_, borrow := u256Sub(p, pow10tab256[t])
+	return t + 1 - int(borrow)
 }
 
 // cAddFull128 returns a + b modulo 2^256 and whether the sum carried out of
@@ -134,6 +227,12 @@ func cIncFull128(p wide128) wide128 {
 // k >= 0 is allowed; see "Decimal-digit primitives" in digits.go for what
 // the caller may assume.
 func cShift128(c coef128, k int) (q coef128, class digitClass) {
+	if c.Hi == 0 {
+		// The word-sized primitive accepts every uint64, including the
+		// 20-digit values that do not fit a decimal64 coefficient.
+		lo, class := cShift64(c.Lo, k)
+		return coef128{Lo: lo}, class
+	}
 	if k >= len(pow10tab128) {
 		if c == (coef128{}) {
 			return coef128{}, classZero
@@ -141,8 +240,14 @@ func cShift128(c coef128, k int) (q coef128, class digitClass) {
 		return coef128{}, classBelowHalf
 	}
 	d := pow10tab128[k]
-	q, r := u128Div(c, d)
+	q, r := divPow10Recip128(c, k)
 	return q, class128(r, u128Shr(d, 1))
+}
+
+// cDivExactPow10128 returns c / 10^k and true when 10^k divides c, and false
+// otherwise. Any k >= 0 is allowed; recip128.go gives the method.
+func cDivExactPow10128(c coef128, k int) (q coef128, ok bool) {
+	return divExactPow10Recip128(c, k)
 }
 
 // cShiftFull128 is cShift128 for a 256-bit value.
@@ -170,6 +275,11 @@ func cShiftFull128(p wide128, k int) (q wide128, class digitClass) {
 		k -= maxStep
 	}
 	d := pow10tab128[k]
+	if ql, r, ok := u256DivPow10(p, k); ok {
+		// The quotient has at most 120 bits, which holds for every
+		// quotient that the rounding routine keeps (see recip.go).
+		return wide128{Lo: ql}, class128(r, u128Shr(d, 1)).withSticky(sticky)
+	}
 	q, r := u256DivMod128(p, d)
 	return q, class128(r, u128Shr(d, 1)).withSticky(sticky)
 }
@@ -194,11 +304,27 @@ func cScale128(c coef128, k int) (r coef128, overflow bool) {
 	if k >= len(pow10tab128) {
 		return coef128{}, c != coef128{}
 	}
-	w := u128Mul(c, pow10tab128[k])
-	if w.Hi != (Uint128{}) {
-		return coef128{}, true
+	return cScaleTab128(c, k)
+}
+
+// cScaleTab128 is cScale128 for a k within the table of powers, 0 <= k <= 38,
+// which inlines (cScale128's test of the table bound puts it over the
+// budget). It is u128MulFits written out, as cMulPow10128 is: a product
+// that fits 128 bits has a factor below 2^64, which is taken as a, and the
+// product is a.Lo times both words of b. If both factors have a high word
+// the product is at least 2^128, which a.Hi reports after the swap.
+func cScaleTab128(a coef128, k int) (r coef128, overflow bool) {
+	b := pow10tab128[k]
+	if a.Hi != 0 {
+		a, b = b, a
 	}
-	return w.Lo, false
+	h0, lo := bits.Mul64(a.Lo, b.Lo)
+	h1, l1 := bits.Mul64(a.Lo, b.Hi)
+	hi, carry := bits.Add64(h0, l1, 0)
+	if a.Hi|h1|carry != 0 {
+		return r, true
+	}
+	return coef128{Hi: hi, Lo: lo}, false
 }
 
 // cScaleFull128 is cScale128 for a 256-bit value. If both factors exceed
@@ -305,6 +431,29 @@ func cModFull128(p wide128, m coef128) coef128 {
 	return r
 }
 
+// cModulus128 is a modulus prepared for repeated reduction by
+// cModPrepared128: see divisor128.
+type cModulus128 = divisor128
+
+// cModPrepare128 returns m prepared. Precondition: m is not zero; a zero m
+// panics with errDivideByZero.
+func cModPrepare128(m coef128) cModulus128 {
+	if m == (coef128{}) {
+		panic(errDivideByZero)
+	}
+	return prepareDivisor128(m)
+}
+
+// cModPrepared128 is cModFull128 for a prepared modulus: p mod m. A p
+// with p.Hi < m, which is every product of two values below m, divides by
+// the reciprocals at hand; any other takes cModFull128.
+func cModPrepared128(p wide128, pm *cModulus128) coef128 {
+	if u128Lt(p.Hi, pm.d) {
+		return u256ModPrepared(p, pm)
+	}
+	return cModFull128(p, pm.d)
+}
+
 // cLo128 returns the coefficient held in the low half of p. Precondition:
 // the high half is zero, that is, p fits a coefficient; a p that does not
 // panics rather than truncates.
@@ -313,6 +462,22 @@ func cLo128(p wide128) coef128 {
 		panic(errQuotientOverflow)
 	}
 	return p.Lo
+}
+
+// cHalf128 returns ⌊c / 2⌋.
+func cHalf128(c coef128) coef128 {
+	return coef128{Hi: c.Hi >> 1, Lo: c.Lo>>1 | c.Hi<<63}
+}
+
+// cEven128 returns c with its low bit clear: c itself if even, c - 1 if odd.
+func cEven128(c coef128) coef128 {
+	return coef128{Hi: c.Hi, Lo: c.Lo &^ 1}
+}
+
+// cAddU64128 returns c + u modulo 2^128.
+func cAddU64128(c coef128, u uint64) coef128 {
+	lo, carry := bits.Add64(c.Lo, u, 0)
+	return coef128{Hi: c.Hi + carry, Lo: lo}
 }
 
 // cInc128 returns c + 1. Precondition: c is below the largest value of the
@@ -340,6 +505,12 @@ func cFromU64128(m uint64) coef128 {
 	return Uint128{Lo: m}
 }
 
+// cWords128 returns c as the two words that packWord128 encodes, most
+// significant first.
+func cWords128(c coef128) (hi, lo uint64) {
+	return c.Hi, c.Lo
+}
+
 // cToU64128 returns the value of c as a uint64, and whether it fits one.
 func cToU64128(c coef128) (m uint64, ok bool) {
 	return c.Lo, c.Hi == 0
@@ -354,13 +525,35 @@ func cFromU128128(q Uint128) wide128 {
 // cSplit128 returns c split into the words hi and lo with
 // c = hi × 10^19 + lo and lo < 10^19, the form writeDigits renders.
 // Precondition: c is at most MaxCoeff128, below 10^34, so hi is below 10^15
-// and fits a word; a c that does not panics rather than truncates.
+// and fits a word.
 func cSplit128(c coef128) (hi, lo uint64) {
-	q, r := u128Div64(c, pow10tab64[u64Digits])
-	if q.Hi != 0 {
-		panic(errQuotientOverflow)
+	const divisor = 10_000_000_000_000_000_000 // The u64Digits decimal chunk.
+	if c.Hi == 0 {
+		if c.Lo < divisor {
+			return 0, c.Lo
+		}
+		// 2^64 < 2*divisor, so a word has quotient at most one.
+		return 1, c.Lo - divisor
 	}
-	return q.Lo, r
+	// Let R = floor(2^128/divisor). Since 2^63 < divisor < 2^64,
+	// R's high word is one. The high half of c*R is the quotient estimate.
+	// 0 <= c/divisor - c*R/2^128 < c/2^128 < 1, so that estimate is
+	// exact or one too small. The coefficient bound makes it fit uint64.
+	const reciprocalLo = uint64((1<<128)/divisor - (1 << 64))
+	p0hi, _ := bits.Mul64(c.Lo, reciprocalLo)
+	p1hi, p1lo := bits.Mul64(c.Hi, reciprocalLo)
+	middle, carry0 := bits.Add64(p0hi, c.Lo, 0)
+	_, carry1 := bits.Add64(middle, p1lo, 0)
+	hi = c.Hi + p1hi + carry0 + carry1
+	// The tighter bound c < 10^34 gives remainder < divisor +
+	// 10^34*divisor/2^128 < 2^64. Low-word arithmetic therefore recovers
+	// the full remainder even though hi*divisor itself can exceed a word.
+	lo = c.Lo - hi*divisor
+	if lo >= divisor {
+		hi++
+		lo -= divisor
+	}
+	return hi, lo
 }
 
 // cWide128 returns the 128-bit value m as a wide128.

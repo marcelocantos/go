@@ -3,7 +3,12 @@
 // license that can be found in the LICENSE file.
 
 // Soft-decimal entry points for decimal128; see decimal64.go. A decimal128
-// passes as the two uint64 halves of its BID bit pattern, high first.
+// passes as the two uint64 halves of its BID bit pattern, high first. The
+// operators that the compiler also lowers to integer fast paths, + - * and
+// the comparisons, are in decimal128_call.go for the targets without those
+// paths. On amd64 and arm64 the compiler calls internal/bid for the
+// operands its fast paths refuse, and for division, with no function here
+// between them (cmd/compile/internal/ssagen.bidKernelOp).
 
 package runtime
 
@@ -12,36 +17,9 @@ import (
 	"unsafe"
 )
 
-func dadd128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
-	z := bid.Add128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven)
-	return to128(z)
-}
-
-func dsub128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
-	z := bid.Sub128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven)
-	return to128(z)
-}
-
-func dmul128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
-	z := bid.Mul128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven)
-	return to128(z)
-}
-
 func ddiv128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
 	z := bid.Div128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven)
 	return to128(z)
-}
-
-func deq128(xhi, xlo, yhi, ylo uint64) bool {
-	return bid.Equal128(from128(xhi, xlo), from128(yhi, ylo))
-}
-
-func dlt128(xhi, xlo, yhi, ylo uint64) bool {
-	return bid.Less128(from128(xhi, xlo), from128(yhi, ylo))
-}
-
-func dle128(xhi, xlo, yhi, ylo uint64) bool {
-	return bid.LessEqual128(from128(xhi, xlo), from128(yhi, ylo))
 }
 
 func dmin128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {

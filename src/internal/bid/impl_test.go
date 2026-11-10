@@ -67,7 +67,8 @@ type impl interface {
 	float32From(f *format, x bits, m bid.Mode) float32
 
 	parse(f *format, s string, m bid.Mode) (bits, bid.Status)
-	appendTo(f *format, x bits) string
+	appendTo(f *format, x bits) string // the to-scientific-string form
+	appendGo(f *format, x bits) string // Go's canonical form
 	round(f *format, neg bool, c bid.Uint128, exp int, sticky bool, m bid.Mode) (bits, bid.Status)
 }
 
@@ -159,6 +160,7 @@ func (reference) float32From(f *format, x bits, m bid.Mode) float32 {
 }
 func (reference) parse(f *format, s string, m bid.Mode) (bits, bid.Status) { return f.parse(s, m) }
 func (reference) appendTo(f *format, x bits) string                        { return f.format(x) }
+func (reference) appendGo(f *format, x bits) string                        { return f.formatGo(x) }
 func (reference) round(f *format, neg bool, c bid.Uint128, exp int, sticky bool, m bid.Mode) (bits, bid.Status) {
 	if f.width == 64 && c.Hi != 0 {
 		panic("round: decimal64 coefficient wider than 64 bits")
@@ -452,9 +454,26 @@ func (kernel) parse(f *format, s string, m bid.Mode) (bits, bid.Status) {
 }
 func (kernel) appendTo(f *format, x bits) string {
 	if w64(f) {
+		return string(bid.AppendSci64(nil, x.Lo))
+	}
+	// AppendSci128 takes its short path only with spare capacity. Both
+	// routes must give one string, so every test of the character form
+	// checks the short path wherever it applies.
+	general, roomy := bid.AppendSci128(nil, x), bid.AppendSci128(make([]byte, 0, 2*bid.MaxLen128), x)
+	if string(general) != string(roomy) {
+		panic(fmt.Sprintf("AppendSci128(%016x%016x) = %q without spare capacity, %q with it", x.Hi, x.Lo, general, roomy))
+	}
+	return string(general)
+}
+func (kernel) appendGo(f *format, x bits) string {
+	if w64(f) {
 		return string(bid.Append64(nil, x.Lo))
 	}
-	return string(bid.Append128(nil, x))
+	general, roomy := bid.Append128(nil, x), bid.Append128(make([]byte, 0, 2*bid.MaxLen128), x)
+	if string(general) != string(roomy) {
+		panic(fmt.Sprintf("Append128(%016x%016x) = %q without spare capacity, %q with it", x.Hi, x.Lo, general, roomy))
+	}
+	return string(general)
 }
 func (kernel) round(f *format, neg bool, c bid.Uint128, exp int, sticky bool, m bid.Mode) (bits, bid.Status) {
 	if w64(f) {

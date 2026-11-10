@@ -83,7 +83,7 @@
 //     written after initialization. Static tables are permitted.
 //   - Exactly one rounding per operation. Every operation computes its
 //     result exactly, or with an exact sticky bit, and that intermediate
-//     reaches the encoding through one rounding routine. No operation
+//     reaches the encoding through the shared rounding implementation. No operation
 //     rounds an intermediate and then rounds again, and no two operations
 //     carry their own rounding logic. The exported [Round64] and
 //     [Round128] are that routine's entry points for callers that already
@@ -186,7 +186,7 @@
 // sign is one cohort too, with exponents over the whole range.
 //
 // The character form used throughout this documentation and produced by
-// Append64 and Append128 is the to-scientific-string form of GDA. IEEE
+// AppendSci64 and AppendSci128 is the to-scientific-string form of GDA. IEEE
 // 754-2019 clause 5.12 requires a conversion to character form that is
 // exact and preserves the quantum, and GDA's form meets it; the standard
 // fixes no particular notation. For a finite value, the coefficient is
@@ -662,9 +662,15 @@
 // overflows and "0E+99999999999" is 0E+369.
 //
 // Append64 and Append128 are convertToDecimalCharacter (clauses 5.4.2 and
-// 5.12): they write the character form defined under "Values, cohorts and
-// the character form", which Parse reads back to the canonical encoding
-// of the operand. They are exact and take no Mode.
+// 5.12) in Go's canonical form, the one println, fmt's %v and strconv's
+// 'g' at precision -1 write: the same digits and quantum as the character
+// form defined under "Values, cohorts and the character form", laid out as
+// a Go float is, in plain notation when the adjusted exponent is from -4
+// to 20 and Q(x) <= 0, and otherwise in exponential notation with a
+// lowercase "e" and at least two exponent digits; infinities are "+Inf"
+// and "-Inf". AppendSci64 and AppendSci128 write the character form itself,
+// in which the conformance suites are written. Parse reads both back to
+// the canonical encoding of the operand. They are exact and take no Mode.
 //
 // # Rounding from exact parts
 //
@@ -700,8 +706,8 @@
 //	Function(operands, Mode) = result
 //	Function(operands, Mode) = result, Status
 //
-// Decimal operands and results are in the character form of Append. Two
-// forms that Append never writes are used for operands and for the
+// Decimal operands and results are in the character form of AppendSci.
+// Two forms that AppendSci never writes are used for operands and for the
 // results of the sign operations: -NaN is a NaN with the sign bit set and
 // sNaN a signaling NaN (-sNaN both). Binary operands and results of the
 // Float functions are Go float64 or float32 literals, the shortest that
@@ -1698,10 +1704,15 @@
 //  1. Source of truth. Every width-dependent algorithm lives in a template
 //     NAME_tmpl.go (//go:build ignore), written once in the template
 //     vocabulary below, one template per family of operations. gen_arith.go
-//     (//go:build ignore, run by "//go:generate go run gen_arith.go" in
-//     arith.go) writes zNAME64.go and zNAME128.go from each template, which
-//     are committed, and zpow10.go, the tables of powers of ten that the
-//     helpers below index. Nobody edits a z*.go file. A test,
+//     (//go:build ignore, run by "//go:generate go run -tags bidgen
+//     gen_arith.go" in arith.go) writes zNAME64.go and zNAME128.go from each
+//     template, which are committed, and zpow10.go, the tables of powers of
+//     ten that the helpers below index. The generator links this package
+//     (the runtime imports it), so it is built with the tag bidgen, under
+//     which the files generated from templates are replaced by zbidgen.go,
+//     their declarations with bodies that return zero values: generated code
+//     that does not compile never stops the generator from building. Nobody
+//     edits a z*.go file. A test,
 //     TestGenerated, guarded by testenv.MustHaveGoRun, regenerates into a
 //     scratch directory and fails on any difference from the committed
 //     files.
@@ -1727,8 +1738,8 @@
 //     cDivPow10W(c, k) (q, r coefW), cGtMaxW,
 //     cPow10W(k), cMulFullW(a, b) wideW, cReduceW(p wideW, k) (q coefW,
 //     sticky bool) and cLenFullW(p wideW) int, with the decimal-digit
-//     primitives cShiftW, cShiftFullW, cReduceClassW, cScaleW and cScaleFullW
-//     (digits.go says what a caller may assume of them) and the rounding
+//     primitives cShiftW, cShiftFullW, cReduceClassW, cScaleW, cScaleTabW and
+//     cScaleFullW (digits.go says what a caller may assume of them) and the rounding
 //     routine's cLoW(p wideW) coefW, cIncW, cMaxW() and cInfW(neg), the
 //     division's cMulPow10FullW(c, k) wideW (a coefficient scaled into the
 //     double width), cDivFullW(n wideW, d coefW) (q, r coefW) (the 128-by-64
@@ -1760,6 +1771,437 @@
 //     the same machine has a helper that stopped inlining or an algorithm
 //     that grew a width-independent cost; fix that, do not special-case the
 //     width.
+//
+// # Inline fast paths
+//
+// The money cases of addition, subtraction, multiplication, quantize and the
+// comparisons, word operands of one quantum, cost little more than the call
+// that reaches them, so they are decided in front of the call. Each such
+// operation is generated as a small function, addW, subW, mulW, quantizeW,
+// equalW, lessW and lessEqualW, that asks an encoding-level
+// helper in encoding.go (addSameQuantumW, subSameQuantumW, mulShortW,
+// quantizeSameW and sameQuantumKeysW) whether it can decide the operands
+// from their bits, and otherwise calls the general path, named with the
+// suffix Slow (addSlowW, ...). The helpers decide only exact results, which
+// they encode exactly as the general path does; each states its bounds and
+// why the general path gives the same bits, TestInlineBounds checks each
+// bound from both sides and TestInlinePaths compares every decided result
+// with the general path's over a pool of operands around the bounds.
+//
+// The compiler charges a call to a function of this package whose name ends
+// in Slow64 or Slow128 as a cheap call, as it does runtime.heapBits.next's
+// call to nextArena, so that the front, and the one-line exported wrapper
+// around it, fit the inlining budget: a full call would cost 57 of its 80.
+// The exported Add, Sub, Mul, Quantize, Equal, Less and LessEqual functions
+// of both widths inline into their callers; their inline costs, under
+// -gcflags=-m=2, are between 33 (Quantize64) and 78 (Mul128), and
+// cmd/compile's TestIntendedInlining fails if one of them stops inlining.
+// The general paths keep their own word fast paths, so an operand pair the
+// front refuses costs the front's test and nothing else. A front must stay
+// small: what does not fit beside the call, such as the word fast path of
+// addition at another exponent (cost 316), stays on the general path, and an
+// operation whose front does not fit has none. Compare64 and Compare128 with
+// a front would cost 88 and 92; out of line, the front costs every operand it
+// refuses a second call, 11 to 16 percent on the mixed rows, so they, Min and
+// Max call quietCmpSlowW directly.
+//
+// The compiler's own integer fast paths for the decimal128 operators on
+// amd64 and arm64 accept every operand pair that these fronts accept, so
+// the compiler there calls the general paths without the front and does
+// not test the operands a second time: addSlow128, mulSlow128 and div128
+// with the rounding mode as an argument (and, for a sum or a product of
+// coefficients of one word each, addLong128 and mulLong128 directly, which
+// take those first), quietCmpSlow128 for the
+// comparisons, and for two finite operands it has decoded itself,
+// cCmpFinite128 (cmd/compile/internal/ssagen.bidKernelOp and bidCompare).
+// No runtime function stands between the operator and the kernel there:
+// one cost a frame and a second call on every such operand pair, 0.6 to
+// 0.8 ns of an addition's 9. Those functions' parameters are therefore a
+// contract with the compiler, which passes a decimal128 as its two words,
+// high first, as Uint128 lays them out. AddSlow128 and its relatives export
+// the same paths for the tests and the benchmark rows. The general paths
+// take every operand, so no result depends on any of this.
+//
+// # Face-value rounding
+//
+// Every rounded result passes through roundW, with one named exception:
+// roundFaceW, which rounds the swamped and the aligned addend of addLongW
+// and the inexact quotient of divLongW, and has no other caller. Its input is a
+// coefficient q of exactly PrecisionW digits at an exponent inside the
+// format and not tiny, plus a fraction below one unit, not zero, whose
+// class the caller knows exactly: below a half or above it for a swamped
+// addend; for an aligned addend, from the digits its one shift discards,
+// and for a quotient, from the remainder against the divisor, a half as
+// well. On such an
+// input roundW pads nothing, discards no digit and keeps the exponent, so
+// its whole decision is one row of the five-mode table, roundInc(class,
+// mode, sign, odd(q)), and an increment of the largest coefficient carries
+// to 10^(PrecisionW-1) one place up, overflowing above MaxExpW. roundFaceW
+// is those steps and nothing else; it adds roundInc and calls packW and
+// overflowW as roundW does, so the table, the encoding and the overflow
+// results are shared, not copied. Its comment proves the bounds of its
+// input from addLongW's. It exists because roundW's clamp, digit count and
+// shift, all of which leave such an input unchanged, cost more than the
+// rounding itself on far additions, and a test for this input inside
+// roundW measured 2 to 7 percent on the other inexact roundings (Round and
+// the binary conversions, 2026-11-10).
+// TestRoundFaceValue drives it at every bound (the carry, the overflow of
+// the carry at MaxExpW, the padded power of ten of a difference) in every
+// mode against the reference, TestSwampedAdd at the classes around the
+// swamping gap, and the oracle's operand generator reaches it in every
+// mode and both classes. An addend that is not swamped but lies wholly or
+// partly below x's PrecisionW digits is aligned by one shift of y to the
+// place of x scaled to full precision: the sum or difference of the two
+// coefficients has the class of the digits that shift discarded (its
+// complement for a difference, taken from one more unit), and rounds at
+// face value whenever it still has exactly PrecisionW digits. A sum that
+// carries goes to roundW with that class, an exact one to roundW's exact
+// prologue, and a difference that loses its leading digit, which needs
+// digits the shift discarded, takes the general alignment
+// (TestAlignedAdd). Before this path the general alignment scaled x past
+// PrecisionW digits and roundW divided a second time to bring the sum
+// back; the one shift measured 16 percent on additions and subtractions
+// of full-precision operands (2026-11-10). Division scales its dividend so
+// that the quotient has exactly PrecisionW digits (the leading ratio of
+// the coefficients decides between two scale counts). In the two nearest
+// modes it then rounds without a class at all: the dividend is biased by
+// half the divisor, ⌊yc/2⌋, and the quotient of the biased dividend is the
+// quotient rounded to nearest with ties up, since the bias carries into
+// the next unit exactly when the fraction is a half or more. The biased
+// remainder tells the two cases that are not that: it equals ⌊yc/2⌋
+// exactly when the division is exact, which goes on to the preferred
+// exponent, and it is zero under an even divisor exactly on a tie, where
+// ties to even takes the neighbour below. Both tests are rare, and the
+// result is encoded by roundFaceW with no class, which adds nothing in a
+// nearest mode; its carry no quotient of two coefficients reaches
+// (TestDivNearest shows why and checks it). A
+// directed mode takes the class of the remainder against the divisor and
+// roundFaceW; results near the exponent limits, which may be subnormal,
+// clamped or overflowing, take one more division step and go through
+// roundW with a round digit as before (divLongW's comment). The oracle's
+// division regimes and the published suites' division cases cover the
+// routes, and TestDivNearest the ties, the fractions next to them, the
+// zero biased remainder of an odd divisor, and the exact quotients, in
+// every mode. A swamped addend needs no decision at all in a nearest
+// mode: x + f rounds down to x and (x - 1) + (1 - f) up to it, so
+// addLongW passes x scaled to full precision to roundFaceW with no class.
+// TestRoundIsTheOnlyPacker allows roundFaceW to call packW and allows
+// only addLongW and divLongW to call it.
+//
+// # Operands without a pattern
+//
+// A benchmark that repeats a few operands, or walks a pool of them in
+// order, trains the branch predictor on those operands: every branch on
+// their digits is predicted, and the rows read as if it always were. On
+// operands drawn in an order the predictor cannot learn, each branch that
+// depends on the digits is a coin toss, and a misprediction late in an
+// operation also discards whatever the processor had begun of the next.
+// The cost is not small. Measured on decimal128 operators over pools of
+// 4096 random operand pairs (Apple M4 Max, 2026-11-10, net of the loop),
+// walked in order against drawn at random, before this section's changes:
+//
+//	34 digits, exponents 1 to 12 apart   walked   drawn
+//	  x + y                                16.0    21.8 ns
+//	  x * y                                20.3    21.5
+//	  x / y                                26.6    47.5
+//	money amounts, two places
+//	  x / y                                23.0    34.2
+//
+// and the side-by-side harness, whose sets are four variants of one pair,
+// showed 12 ns for the addition and 18 for the division of 34-digit
+// operands. A table of predictable operands understates what real data
+// costs, here by a factor of up to three.
+//
+// So the kernel distinguishes two kinds of decision. What an operation
+// decides from the kind of its operands (how many words a coefficient has,
+// whether the exponents are far apart, whether a value is special) is the
+// same from one call to the next in a program that computes with one kind
+// of data, and stays a branch: a predicted branch lets what follows start
+// before the test resolves. What it decides from the digits themselves is
+// not predictable and is computed, not branched on:
+//
+//   - The direction of a rounding. roundInc returns the increment as a
+//     number, which roundW, roundFiniteW, roundFaceW and the integer
+//     conversions add; the carry out of the largest coefficient is the
+//     branch, and it is rare.
+//   - The class of a remainder against a half (class64, class128): two
+//     borrows and a mask.
+//   - Whether a coefficient reaches the next power of ten, the second half
+//     of a digit count (cDigits128): the borrow of c - 10^t.
+//   - An order of two coefficients (u128Lt, u128Cmp, cLtW): borrows.
+//   - The corrections of the division's quotient words and of its
+//     reciprocal ("Division").
+//   - A comparison of two values (cCmpFinite128, compareWords, and the
+//     compiler's lowering of the operators): which operand has the larger
+//     exponent, whether the scaled coefficient exceeds the other, and the
+//     signs.
+//
+// The same operators after these changes, drawn at random: 13.3 ns for
+// the addition, 14.4 for the multiplication, 21.7 for the division of
+// 34-digit operands and 20.2 for the division of money amounts; a
+// comparison of 34-digit operands fell from 9.6 to 4.8. The benchmark rows
+// named shuffled and drawn draw their operands this way: the drawn rows
+// are operands of one kind, 34 digits at nearby exponents or money
+// amounts, with digits, signs and order in no pattern.
+//
+// The comparison shows the trade most plainly, because the branches it
+// gives up are cheap when predicted. Timed against the branching form it
+// replaced, each on one machine in interleaved rounds (2026-11-11), the
+// comparison of two decimal128 values took, in ns:
+//
+//	                                  branch-free   branching
+//	Apple M4 Max, a pool repeated            5.9         6.7
+//	Apple M4 Max, drawn at random            7.0        12.7
+//	AMD EPYC 9V45, a pool repeated           7.6         5.0
+//	AMD EPYC 9V45, drawn at random           8.8        14.9
+//
+// On amd64 the branching form wins by about 2.5 ns on operands that
+// repeat and loses by 6 on operands that do not. The branch-free form is
+// kept on both: operands that repeat in a pattern a predictor learns are
+// a property of benchmarks more than of programs, and the comparisons of
+// money amounts at one quantum, the homogeneous case where branches would
+// be predicted, are decided in line by the compiler and never reach this
+// code.
+//
+// Not every such decision is worth computing. A branch that resolves at
+// the start of an operation, from the signs or the exponents just
+// decoded, costs little when it mispredicts: the processor has started
+// little else. One that resolves at the end, from a remainder or a class,
+// costs the operation and what followed it. And the replacement is not
+// free: it makes everything after it wait for the answer. Two that were
+// measured and left as branches (2026-11-10): exchanging the operands of
+// an addition by a mask, so that x has the larger exponent, gained 1.4 ns
+// on 34-digit operands in no order, cost 0.7 on operands in one order and
+// 1.3 on operands of nearly equal exponent; and forming the sum and the
+// difference of an aligned addition together, chosen by the signs, gained
+// 1.8 ns on operands of mixed sign and cost 1.5 on operands of one sign.
+// The compiler's lowered addition of two words of one quantum keeps its
+// branch on the signs for the same reason: without it the path has about
+// 17 instructions where the equal-sign path has 3.
+//
+// The price is paid by the predictable case, where a predicted branch
+// costs nothing and its replacement costs the time to compute the answer.
+// Addition and multiplication gain there too (the harness rows fall 5
+// percent), because their branches were late and their replacements
+// short. Division does not: it is a chain in which each step waits for
+// the one before, and its harness rows rise from 17.4 to about 20 ns for
+// 34-digit operands and from 14.0 to about 17 for money amounts, against
+// 47.5 to 21.7 and 34.2 to 20.2 on operands without a pattern. The trade
+// was taken: operands are not four variants of one pair.
+//
+// # Division
+//
+// The 256-by-128 division at the centre of a decimal128 division
+// (u256Div128) follows Möller and Granlund's division by a reciprocal, and
+// u256.go states the method. Three things in it follow from the section
+// above.
+//
+// The reciprocal of the divisor's leading word is computed without a
+// division where the target has no instruction for one. bits.Div64 is
+// then a routine of two hardware divisions and two loops of corrections
+// whose trips depend on the operand: alone, it takes 5.6 ns on one divisor
+// repeated and 11.6 on divisors without a pattern, and the table and
+// Newton steps of reciprocalNewton 5.9 and 6.7. On amd64 bits.Div64 is the
+// division instruction and is used.
+//
+// The corrections are carries and masks. The first correction of the
+// two-word reciprocal applies to more than half of all divisors, and that
+// of a quotient word about half the time. The product that the
+// reciprocal's second correction needs is started before the first has
+// finished, and adjusted for it.
+//
+// The leading quotient word does not wait for the two-word reciprocal. A
+// decimal128 quotient has 34 digits, under 113 bits, so its leading word
+// has under 50, and an estimate from the leading word of the divisor
+// alone is then exact but for a few times in a thousand (div3by2Lead).
+// The two-word reciprocal is extended beside that step and serves the
+// second word, which needs it.
+//
+// # Straight paths
+//
+// The time of a decimal128 operation on two-word coefficients, and of a
+// division on any, was set less by what the operation computes than by
+// what the general routines do around it. The processor's own counters say
+// so (on macOS, "/usr/bin/time -l" reports instructions retired and cycles
+// for a process, and a benchmark run at a fixed count, less the same run
+// at a count of one, gives both per operation; unlike a timing, the
+// instruction count does not move with the machine's load). A division of
+// two money amounts retired 470 instructions, at more than six to the
+// cycle; the arithmetic it needs is under 150. The rest was the general
+// path's glue: decoding in a form that serves every operand, calls to
+// helpers too large to inline, each of which sends every live value
+// through memory because the Go calling convention saves no register
+// across a call, digit counts and comparisons at the width of the widest
+// case, and a rounding routine that begins by finding out what its caller
+// knew.
+//
+// So the three operators have, for decimal128, an entry written by hand in
+// front of the routine that the template generates, which keeps every
+// operand and is renamed for it: div128 and divWide128 in front of
+// divLong128, addSlow128 in front of addLong128, mulSlow128 in front of
+// mulLong128 (div128.go, add128.go, mul128.go). Each takes finite operands
+// of the first form in a mode that rounds to nearest, computes one result
+// in one pass with as few calls as its arithmetic allows, and hands
+// everything else to the general routine by calling it with the original
+// operands: the special values, the directed modes, and any result that
+// packWord128 refuses, which covers the subnormal range, overflow, a
+// clamped exponent and a coefficient that a rounding carried to 10^34. A
+// decimal64 operation is word arithmetic throughout and has no such entry.
+//
+// All three round the same way. The value whose digits are to go is
+// biased by half of the power of ten it is divided by (half the divisor,
+// in a division), so that the quotient is already rounded half up; the
+// remainder of that division is zero exactly on a tie, which then takes
+// the even neighbour by its low bit, and nothing else about the direction
+// of the rounding is computed or branched on.
+//
+// Measured on operands drawn without a pattern (Apple M4 Max, 2026-11-10,
+// instructions and cycles per operation, net of the loop):
+//
+//	                                       before        after
+//	amount / amount                      505  98.9     188  46.2
+//	34 digits / amount                   490  81.0     173  32.3
+//	34 digits / 34 digits                580  88.6     425  80.5
+//	34 digits + 34 digits                353  55.1     207  27.2
+//	34 digits × 34 digits                486  62.0     203  42.3
+//	34 digits × amount                   442  67.6     201  42.9
+//
+// Three things learned on the way govern how these functions are written.
+//
+// A function that calls nothing spills nothing. Where a helper was too
+// large to inline and the path is hot, its body is written out in the
+// caller (the digit count and the division by a power of ten in
+// mulSlow128 and addSlow128): the same instructions without the call, the
+// frame and the stores and loads either side.
+//
+// The order of the text is the order of the work. The processor starts
+// what it reads first, and these paths are long enough that what is
+// written last waits for room. The longest chain is therefore written
+// first: asking for a divisor's reciprocal before the digit counts, which
+// left less to save across its calls, made divWide128 a tenth slower,
+// because the chain that ends in the quotient then started ninety
+// instructions late.
+//
+// A division instruction can beat a reciprocal even where it is slow. A
+// divisor below 2^32, which the divisors of money are, divides a dividend
+// of three words half a word at a time by four word divisions: a chain
+// some twelve cycles longer than the reciprocal's, in a tenth of its
+// instructions, and faster by a fifth.
+//
+// An exact quotient needs no long division. A divisor b divides a × 10^j
+// for some j exactly when its part prime to ten divides a, and the least
+// such j is the twos or fives of b in excess of those of a. div128 tests
+// that first for one-word operands, at the cost of a shift, a multiply and
+// a division instruction, and an exact quotient (an amount over a count,
+// 1234.56 / 3.00) is then one more division: 44 cycles became 14, where
+// the long division found the quotient to 34 digits and searched it for
+// its zeros. Divisions that are not exact pay about a tenth for the test.
+//
+// Not everything computed is better than a branch. In addSlow128 the exact
+// sum and the rounded one, and the sum and the difference, stay separate
+// branches: dividing always (by one when nothing is dropped) and adding
+// under a mask of the signs made the function indifferent to operands
+// that mix those cases, and a third slower on operands that do not. The
+// cost is that sums at one exponent or one apart, which alternate between
+// the cases and carry often, run a sixth slower than before this section.
+//
+// # Short numerals
+//
+// A numeral of at most eight characters after its sign, digits and at most
+// one point (money and quantity literals as they are usually written), is
+// parsed whole by parseW: the bytes are loaded into one word, a point is
+// found by the zero-byte test and removed by a shift, and the eight digits
+// are proved and read by the same lane arithmetic the digit-run scanner
+// uses (eightDigits, eightDigitsValue). The result still reaches roundW as
+// the general scanner's would, so no new encoder is involved. The path is
+// written out in parseW rather than called: its pieces exceed the
+// inliner's budget, and as a call it cost the strings it turns away (an
+// exponent form of nine bytes) two nanoseconds. TestParseShort checks it
+// against the general scanner alone, bit for bit, on every string of up to
+// six characters over a small alphabet and on random longer ones.
+// Measured 2026-11-10 (Apple M4 Max, interleaved, n=8): Parse/128/short
+// 12.2 → 4.9 ns, Parse/64/short 11.5 → 4.6; a word and a long numeral pay
+// a length and first-byte check, a short exponent form the loads and the
+// digit test.
+//
+// # Digit conversion
+//
+// A two-word coefficient's low word, which cSplitW fixes at exactly nineteen
+// digits, is converted to text in chunks of eight digits (writeDigits,
+// eightASCII): each chunk is three multiplications over lanes of one word
+// instead of a chain of divisions, the chunks convert independently, and
+// the high word converts beside them. The same conversion for every word
+// was measured and kept out (2026-11-10, Apple M4 Max, interleaved, n=8):
+// on its own the chunked writer is faster from about sixteen digits
+// (16 digits 9.3 → 6.4 ns, 19 digits 11.6 → 7.8) and no faster below eight,
+// but end to end it cost Append/64/mixed 24% and Append128Word/small 36%,
+// because the three multiplications are paid whatever the length and the
+// branch on the length is mispredicted on mixed operands. Restricted to the
+// fixed-length low word there is no such branch: Append/128/mixed 16.9 →
+// 15.1 ns, UnpackDigits/128/mixed 10.3 → 9.1, Append128Word/large 16.9 →
+// 13.4, and the decimal64 rows unchanged. Replacing the layout's small
+// appends with fixed-size copies was measured in the same pass and did not
+// pay either.
+//
+// The short values, a decimal128 coefficient below 10^8 at an exponent
+// from -6 to 0 (money and most quantities), have their own conversion,
+// PutShort128, and it is the chunk of eight after all, without the branch
+// that sank it above. The eight digits stay in a register; the leading
+// zeros the value does not show are dropped by a shift, the point is
+// opened by another, and the result is stored in overlapping words, three
+// of four bytes for a length from four to nine and three single bytes for
+// a shorter one, both always stored, with the words of a short result
+// sent to a scratch buffer by a selected address. Nothing in it is a
+// branch on the value. Two findings shaped it (Apple M4 Max, 2026-11-10).
+//
+// First, a pool of operands that repeats, as every benchmark here has,
+// trains the branch predictor on the operands themselves: a pool of 4096
+// mixed lengths runs the digit-at-a-time writer's exit branch as if it
+// were predictable. Drawn in an order the predictor cannot learn, that
+// writer and its copies took 12.5 to 16.7 ns on mixed short values against
+// 7.0 on values of one length, and the branch-free form 6.5 to 6.9 on
+// every mix (all include about 1.4 ns of the generator that draws the
+// order). The rows of a repeating pool therefore understate what a
+// data-dependent branch costs on real input, here by a factor of two. The
+// row Append/128/shuffled draws its operands that way. The same routine with
+// branches (on the point, on the nine-byte result, between the two shapes
+// of store) is the faster on values of one shape, 3.8 ns against 5.2 on a
+// walked pool, and the slower on mixed ones, up to 9.4 against 6.9 drawn:
+// the branch-free form was kept because its time does not depend on the
+// data.
+//
+// Second, the number of digits must not be read from the converted word,
+// although the zero bytes of the word give it for nothing. Every store
+// address depends on the count, and a count that waits for the
+// multiplications of the conversion holds every address back with it:
+// measured on a walked pool, the routine took 6.6 to 7.0 ns with the
+// count from the word and 5.2 to 5.6 with the count from the coefficient
+// through the digit-count table, on which the addresses resolve while the
+// digits are still being multiplied (with branches, 4.8 to 5.7 against 3.6
+// to 4.3).
+//
+// Through strconv, the canonical form of a money value fell from 7.4 ns
+// appended and 14.5 as a new string, and 34-digit values are unchanged
+// (the numbers are in the commit that added the path); a test for the
+// short encodings is one rotation and two comparisons (IsShort128).
+//
+// # No assembly
+//
+// The package is pure Go, and was measured against assembly before staying
+// so (darwin/arm64, Apple M4 Max, 2026-11-10). On arm64 the compiler emits
+// u128Mul as the 8 MUL and UMULH a 128×128-bit product needs and 8 additions
+// and moves where hand-written code needs 6, with no spills; the reciprocal
+// division divPow10Recip128 builds a frame only for its bounds panic. A
+// hand-written u128Mul (ABI0, so its arguments pass on the stack, and never
+// inlined) measured 5.07 ns a product against 3.79 for the inlined Go, and
+// the high half of the product, the 256-bit reciprocal step of u256DivPow10,
+// 4.71 against 3.50 in throughput and 5.38 against 2.10 when each step
+// feeds the next: the call costs more than the two instructions it saves,
+// and no kernel row can gain the 10% that would justify it. On amd64 the
+// compiler emits MULQ and the moves its fixed registers need (37
+// instructions for u128Mul); built with GOAMD64=v3 it emits MULX, and
+// u128Mul takes 24 and divPow10Recip128 83 instead of 100, with no
+// assembly.
 //
 // # Dependencies
 //

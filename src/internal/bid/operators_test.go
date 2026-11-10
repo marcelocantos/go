@@ -10,15 +10,14 @@ import (
 	"fmt"
 	"internal/bid"
 	"math"
-	dec "math/decimal"
 	"math/rand/v2"
 	"runtime"
 	"testing"
 )
 
 // The language's decimal operators, compared with the kernel. On every
-// target but linux/ppc64le the operators are runtime calls into the kernel,
-// so this checks the compiler's calls and the memory form. On linux/ppc64le
+// BID target the operators use integer fast paths or runtime calls into the
+// kernel, so this checks both paths and the memory form. On linux/ppc64le
 // most of them are POWER's decimal floating-point instructions (see
 // cmd/compile/internal/ssagen/dpd.go), and this is the differential test of
 // the hardware path: every case of the oracle's generators, run through the
@@ -134,14 +133,14 @@ func opFromFloat64To128(x float64) decimal128 { return decimal128(x) }
 //go:noinline
 func opToFloat64From128(x decimal128) float64 { return float64(x) }
 
-func d64(x bits) decimal64 { return dec.BID64frombits(x.Lo) }
+func d64(x bits) decimal64 { return math.Decimal64frombits(x.Lo) }
 
-func d128(x bits) decimal128 { return dec.BID128frombits(x.Hi, x.Lo) }
+func d128(x bits) decimal128 { return math.Decimal128frombits(x.Hi, x.Lo) }
 
-func b64(d decimal64) bits { return bits{Lo: dec.BID64bits(d)} }
+func b64(d decimal64) bits { return bits{Lo: math.Decimal64bits(d)} }
 
 func b128(d decimal128) bits {
-	hi, lo := dec.BID128bits(d)
+	hi, lo := math.Decimal128bits(d)
 	return bits{Hi: hi, Lo: lo}
 }
 
@@ -372,7 +371,7 @@ func TestDecimalRoundingMode(t *testing.T) {
 			{-big, -1.5, "-1234567890123458"},
 			{big, 0.49, "1234567890123456"},
 		} {
-			got := string(bid.Append64(nil, dec.BID64bits(opAdd64(c.x, c.y))))
+			got := string(bid.Append64(nil, math.Decimal64bits(opAdd64(c.x, c.y))))
 			if got != c.want {
 				t.Errorf("%s: %v + %v = %s, want %s", where, c.x, c.y, got, c.want)
 			}

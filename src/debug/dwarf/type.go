@@ -591,10 +591,6 @@ func (d *Data) readType(name string, r typeReader, off Offset, typeCache map[Off
 			typ = new(FloatType)
 		case encDecimalFloat:
 			typ = newDecimalFloatType()
-			if typ == nil {
-				err = DecodeError{name, e.Offset, "unrecognized encoding attribute value"}
-				goto Error
-			}
 		case encSigned:
 			typ = new(IntType)
 		case encUnsigned:

@@ -14,12 +14,53 @@ import (
 	"fmt"
 	"internal/bid"
 	"math/big"
+	"math/rand/v2"
 	"strings"
 	"testing"
 )
 
 // parseModes is every mode, with one out of range.
 var parseModes = []bid.Mode{bid.ToNearestEven, bid.ToNearestAway, bid.TowardZero, bid.TowardPositive, bid.TowardNegative, 9}
+
+// TestAppendDigitPairs covers every pair at every interior decimal position,
+// including zeros in the low word, and the boundaries between digit lengths.
+// The expected text comes from the independent big.Int formatter.
+func TestAppendDigitPairs(t *testing.T) {
+	for _, f := range both {
+		check := func(c *big.Int) {
+			t.Helper()
+			for _, exp := range []int{0, -3, -f.prec - 6, f.maxExp} {
+				for _, neg := range []bool{false, true} {
+					x := f.encode(value{kind: finite, neg: neg, coeff: c, exp: exp})
+					if got, want := (kernel{}).appendTo(f, x), f.format(x); got != want {
+						t.Fatalf("%s Append(%x) = %q, want %q", f.name, x, got, want)
+					}
+				}
+			}
+		}
+		for pos := 0; pos < f.prec-2; pos++ {
+			for pair := int64(0); pair < 100; pair++ {
+				c := new(big.Int).Mul(big.NewInt(pair), pow10(pos))
+				c.Add(c, pow10(f.prec-1))
+				check(c)
+			}
+		}
+		for n := 0; n < f.prec; n++ {
+			for _, delta := range []int64{-1, 0, 1} {
+				check(new(big.Int).Add(pow10(n), big.NewInt(delta)))
+			}
+		}
+		for _, shift := range []uint{53, 64} {
+			for _, delta := range []int64{-1, 0, 1} {
+				c := new(big.Int).Lsh(big.NewInt(1), shift)
+				c.Add(c, big.NewInt(delta))
+				if c.Cmp(f.maxCoeff) <= 0 {
+					check(c)
+				}
+			}
+		}
+	}
+}
 
 // checkParse compares the kernel's Parse of s with the reference's in
 // every mode and every width.
@@ -104,10 +145,111 @@ func TestParseLongExponentCompensation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		x, st := bid.Parse64(tt.s, bid.ToNearestEven)
-		if got := string(bid.Append64(nil, x)); got != tt.want || st != tt.st {
+		if got := string(bid.AppendSci64(nil, x)); got != tt.want || st != tt.st {
 			t.Errorf("Parse64(%.40q...) = %s %s, want %s %s", tt.s, got, showStatus(st), tt.want, showStatus(tt.st))
 		}
 	}
+}
+
+// TestShort128 checks the short form of decimal128 against the reference
+// and against the general formatter: IsShort128 accepts exactly the finite
+// encodings with a coefficient below 10^8 and an exponent from -6 to 0;
+// for those, PutShort128 writes the reference's character form and no byte
+// after it; and Append128 returns the same string with spare capacity (the
+// short path) and without (the general one). The coefficients are every
+// value below 2000, every length's bounds and a random sample of each
+// length, at every exponent from -8 to 2 and both signs; the encodings
+// IsShort128 must refuse include those one bit away from a short one, the
+// second form and the special values.
+func TestShort128(t *testing.T) {
+	f := dec128
+	r := rand.New(rand.NewPCG(*seedFlag, streamSeed("short128")))
+	var coeffs []uint64
+	for c := uint64(0); c < 2000; c++ {
+		coeffs = append(coeffs, c)
+	}
+	for p := uint64(1000); p <= 1_000_000_000; p *= 10 {
+		coeffs = append(coeffs, p-1, p, p+1, p/2, 5*p-1)
+		for range 200 {
+			coeffs = append(coeffs, p+r.Uint64N(9*p))
+		}
+	}
+	coeffs = append(coeffs, 99_999_999, 100_000_000, 100_000_001, 1<<32, 1<<63, ^uint64(0))
+	check := func(x bits) {
+		t.Helper()
+		v := f.decode(x)
+		want := v.kind == finite && v.coeff.IsUint64() && v.coeff.Uint64() < 100_000_000 && v.exp >= -4 && v.exp <= 0 && bid.IsCanonical128(x)
+		if got := bid.IsShort128(x); got != want {
+			t.Fatalf("IsShort128(%s) = %t, want %t", hex128(x), got, want)
+		}
+		general := string(bid.Append128(nil, x))
+		if ref := f.formatGo(x); general != ref {
+			t.Fatalf("Append128(nil, %s) = %q, reference %q", hex128(x), general, ref)
+		}
+		sci := string(bid.AppendSci128(nil, x))
+		if ref := f.format(x); sci != ref {
+			t.Fatalf("AppendSci128(nil, %s) = %q, reference %q", hex128(x), sci, ref)
+		}
+		if want && sci != general {
+			t.Fatalf("short value %s: Append128 %q and AppendSci128 %q differ", hex128(x), general, sci)
+		}
+		// Spare capacity from none to more than the short path asks for,
+		// with a prefix and with the bytes after the result in use.
+		for _, room := range []int{0, len(general), bid.ShortLen128 - 1, bid.ShortLen128, bid.ShortLen128 + 9} {
+			buf := make([]byte, 2+room+1)
+			for i := range buf {
+				buf[i] = '#'
+			}
+			out := bid.Append128(buf[:2:2+room], x)
+			if string(out) != "##"+general {
+				t.Fatalf("Append128(%s) with room %d = %q, want %q", hex128(x), room, out, "##"+general)
+			}
+			if &out[0] == &buf[0] {
+				for i := len(out); i < len(buf); i++ {
+					if buf[i] != '#' {
+						t.Fatalf("Append128(%s) with room %d wrote byte %d, after its %d-byte result", hex128(x), room, i, len(out))
+					}
+				}
+			}
+		}
+		if !want {
+			return
+		}
+		var buf [bid.ShortLen128]byte
+		for i := range buf {
+			buf[i] = '#'
+		}
+		n := bid.PutShort128(&buf, x)
+		if n < 0 || n > len(buf) || string(buf[:n]) != general {
+			t.Fatalf("PutShort128(%s) = %q (n = %d), want %q", hex128(x), buf[:max(0, min(n, len(buf)))], n, general)
+		}
+		for i := n; i < len(buf); i++ {
+			if buf[i] != '#' {
+				t.Fatalf("PutShort128(%s) wrote byte %d, after its %d-byte result %q", hex128(x), i, n, general)
+			}
+		}
+	}
+	n := 0
+	for _, c := range coeffs {
+		for exp := -8; exp <= 2; exp++ {
+			for _, neg := range []bool{false, true} {
+				x := f.encode(value{kind: finite, neg: neg, coeff: new(big.Int).SetUint64(c), exp: exp})
+				check(x)
+				n++
+				// One bit of the high coefficient word, and of each field
+				// above it, away from this encoding.
+				for _, bit := range []uint{0, 17, 48, 49, 52, 61, 62} {
+					check(bits{Hi: x.Hi ^ 1<<bit, Lo: x.Lo})
+				}
+			}
+		}
+	}
+	for _, hi := range []uint64{0x78 << 56, 0xf8 << 56, 0x7c << 56, 0x7e << 56, 0xfc << 56, 3 << 61, 3<<61 | 1<<60, 0, 1 << 63, ^uint64(0)} {
+		for _, lo := range []uint64{0, 1, 123456, 99_999_999, 100_000_000, ^uint64(0)} {
+			check(bits{Hi: hi, Lo: lo})
+		}
+	}
+	t.Logf("%d values, each with seven neighbouring encodings", n)
 }
 
 // TestAppendLongest checks that the longest forms fit MaxLen.
@@ -259,14 +401,30 @@ func FuzzRoundTrip(f *testing.F) {
 			}
 			var prefix []byte
 			if wide {
+				prefix = bid.AppendSci128([]byte("pre"), x)
+			} else {
+				prefix = bid.AppendSci64([]byte("pre"), x.Lo)
+			}
+			if string(prefix) != "pre"+text {
+				t.Fatalf("%s: AppendSci to a buffer gives %q, want %q", fm.name, prefix, "pre"+text)
+			}
+			goText := kernel{}.appendGo(fm, x)
+			if len(goText) > maxLen {
+				t.Fatalf("%s: Append(%s) = %q is %d bytes, MaxLen is %d", fm.name, display(fm, x), goText, len(goText), maxLen)
+			}
+			if want := (reference{}).appendGo(fm, x); goText != want {
+				t.Fatalf("%s: Append(%#x) = %q, reference %q", fm.name, x, goText, want)
+			}
+			if wide {
 				prefix = bid.Append128([]byte("pre"), x)
 			} else {
 				prefix = bid.Append64([]byte("pre"), x.Lo)
 			}
-			if string(prefix) != "pre"+text {
-				t.Fatalf("%s: Append to a buffer gives %q, want %q", fm.name, prefix, "pre"+text)
+			if string(prefix) != "pre"+goText {
+				t.Fatalf("%s: Append to a buffer gives %q, want %q", fm.name, prefix, "pre"+goText)
 			}
 			back, st := kernel{}.parse(fm, text, bid.ToNearestEven)
+			goBack, goSt := kernel{}.parse(fm, goText, bid.ToNearestEven)
 			want := x
 			switch v := fm.decode(x); {
 			case v.kind == notANumber:
@@ -279,8 +437,69 @@ func FuzzRoundTrip(f *testing.F) {
 				want = fm.encode(v)
 			}
 			if back != want || st != bid.Exact {
-				t.Fatalf("%s: Parse(Append(%#x) = %q) = %#x %s, want %#x Exact", fm.name, x, text, back, showStatus(st), want)
+				t.Fatalf("%s: Parse(AppendSci(%#x) = %q) = %#x %s, want %#x Exact", fm.name, x, text, back, showStatus(st), want)
+			}
+			if goBack != want || goSt != bid.Exact {
+				t.Fatalf("%s: Parse(Append(%#x) = %q) = %#x %s, want %#x Exact", fm.name, x, goText, goBack, showStatus(goSt), want)
 			}
 		}
 	})
+}
+
+// TestParseEightDigits checks the eight-digit step of scanDecimal against
+// the reference at its bounds: digit runs of every length from 1 to 48, so
+// that a run of eight starts at every offset and crosses the word bound (19
+// kept digits) and the bound of kept digits (Precision+1) at every offset,
+// behind 0 to 9 leading zeros, with a point at every position, with zeros
+// and non-zero digits beyond the kept ones (the sticky bit), and with one
+// byte replaced by each of the bytes next to the digits in ASCII and by
+// bytes whose low nibble is a digit (which the digit test must refuse), so
+// that every chunk position sees a non-digit.
+func TestParseEightDigits(t *testing.T) {
+	digitsOf := func(n int, salt int) string {
+		var b strings.Builder
+		for i := range n {
+			b.WriteByte(byte('0' + (i*7+salt*3+1)%10))
+		}
+		return b.String()
+	}
+	check := func(f *format, s string) {
+		t.Helper()
+		got, gst := kernel{}.parse(f, s, rne)
+		want, wst := f.parse(s, rne)
+		if got != want || gst != wst {
+			t.Fatalf("%s Parse(%q) = %s, %v; reference %s, %v", f.name, s, f.format(got), gst, f.format(want), wst)
+		}
+	}
+	bad := []byte{'/', ':', '.', 'e', '+', ' ', 0, 0x30 | 0x80, 0x39 + 0x40, 0x13, 0x3A, 0xB5}
+	n := 0
+	for _, f := range both {
+		for length := 1; length <= 48; length++ {
+			for zeros := range 10 {
+				for salt := range 3 {
+					run := digitsOf(length, salt)
+					if salt == 2 && length > f.prec+1 {
+						// Zeros beyond the kept digits: no sticky bit.
+						run = run[:f.prec+1] + strings.Repeat("0", length-f.prec-1)
+					}
+					s := strings.Repeat("0", zeros) + run
+					check(f, s)
+					check(f, "-"+s+"E-3")
+					for p := 0; p <= len(s); p++ {
+						check(f, s[:p]+"."+s[p:])
+						n++
+					}
+					if zeros < 2 {
+						for p := range len(s) {
+							for _, c := range bad {
+								check(f, s[:p]+string([]byte{c})+s[p+1:])
+								n++
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	t.Logf("%d strings", n)
 }

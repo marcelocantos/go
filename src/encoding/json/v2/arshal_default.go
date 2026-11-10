@@ -894,7 +894,7 @@ func makeDecimal64Marshaler(t reflect.Type) *marshaler {
 			return newInvalidFormatError(enc, t)
 		}
 
-		s := cleanDecimalExp(decimalreflect.FormatDecimal(decimalreflect.Decimal(va.Value), 'g', -1, 64))
+		s := jsonDecimal(decimalreflect.Decimal(va.Value), 64)
 		if s == "NaN" || s == "+Inf" || s == "-Inf" {
 			err := fmt.Errorf("unsupported value: %s", s)
 			return newMarshalErrorBefore(enc, t, err)
@@ -978,7 +978,7 @@ func makeDecimal128Marshaler(t reflect.Type) *marshaler {
 			return newInvalidFormatError(enc, t)
 		}
 
-		s := cleanDecimalExp(decimalreflect.FormatDecimal(decimalreflect.Decimal(va.Value), 'g', -1, 128))
+		s := jsonDecimal(decimalreflect.Decimal(va.Value), 128)
 		if s == "NaN" || s == "+Inf" || s == "-Inf" {
 			err := fmt.Errorf("unsupported value: %s", s)
 			return newMarshalErrorBefore(enc, t, err)
@@ -2434,6 +2434,19 @@ func (s *uintSet) insert(i uint) bool {
 		s.hi[iHi].set(iLo)
 		return !has
 	}
+}
+
+// jsonDecimal returns the JSON text of d, which has the given bitSize: the
+// canonical string with JSON's exponent thresholds, as for floats. The
+// canonical string goes to exponential notation below 1e-4, and JSON, like
+// ECMAScript, below 1e-6; a value in between, whose quantum is below the
+// units digit, is written in fixed notation with every coefficient digit.
+func jsonDecimal(d decimal128, bitSize int) string {
+	s := decimalreflect.FormatDecimal(d, 'g', -1, bitSize)
+	if n := len(s); n >= 4 && s[n-4] == 'e' && s[n-3] == '-' && s[n-2] == '0' && (s[n-1] == '5' || s[n-1] == '6') {
+		return decimalreflect.FormatDecimal(d, 'f', -1, bitSize)
+	}
+	return cleanDecimalExp(s)
 }
 
 // cleanDecimalExp cleans up e-09 to e-9, as for floats.

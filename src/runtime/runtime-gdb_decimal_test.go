@@ -301,7 +301,7 @@ func TestGdbDecimalDecoder(t *testing.T) {
 		vectors = append(vectors, vector{
 			name:  fmt.Sprintf("%s decimal64 dpd=%v %#016x", name, dpd, enc),
 			input: fmt.Sprintf("%x %x %x", zero, zeroHi, enc^zero),
-			want:  string(bid.Append64(nil, b)),
+			want:  string(bid.AppendSci64(nil, b)),
 		})
 	}
 	add128 := func(name string, dpd bool, enc bid.Uint128) {
@@ -312,7 +312,7 @@ func TestGdbDecimalDecoder(t *testing.T) {
 		vectors = append(vectors, vector{
 			name:  fmt.Sprintf("%s decimal128 dpd=%v %#016x%016x", name, dpd, enc.Hi, enc.Lo),
 			input: fmt.Sprintf("%x %x %x %x", zero, zeroHi, enc.Lo, enc.Hi^zeroHi),
-			want:  string(bid.Append128(nil, b)),
+			want:  string(bid.AppendSci128(nil, b)),
 		})
 	}
 

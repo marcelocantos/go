@@ -8,27 +8,28 @@ package decimal_test
 
 import (
 	"fmt"
+	. "math"
 	"math/decimal"
 	"testing"
 	"unsafe"
 )
 
-func TestBID64BitsRoundTrip(t *testing.T) {
+func TestDecimal64BitsRoundTrip(t *testing.T) {
 	for _, v := range []decimal64{0, 1, -1, 3.14, -3.14, 0.001, 9999999999999999} {
-		bits := decimal.BID64bits(v)
-		got := decimal.BID64frombits(bits)
+		bits := Decimal64bits(v)
+		got := Decimal64frombits(bits)
 		if got != v {
-			t.Errorf("decimal.BID64frombits(decimal.BID64bits(%v)) = %v", v, got)
+			t.Errorf("Decimal64frombits(Decimal64bits(%v)) = %v", v, got)
 		}
 	}
 }
 
-func TestBID128BitsRoundTrip(t *testing.T) {
+func TestDecimal128BitsRoundTrip(t *testing.T) {
 	for _, v := range []decimal128{0, 1, -1, 3.14, -3.14, 0.001, 9999999999999999} {
-		hi, lo := decimal.BID128bits(v)
-		got := decimal.BID128frombits(hi, lo)
+		hi, lo := Decimal128bits(v)
+		got := Decimal128frombits(hi, lo)
 		if got != v {
-			t.Errorf("decimal.BID128frombits(decimal.BID128bits(%v)) = %v", v, got)
+			t.Errorf("Decimal128frombits(Decimal128bits(%v)) = %v", v, got)
 		}
 	}
 }
@@ -780,7 +781,7 @@ func TestDecimal64Quantize(t *testing.T) {
 		s := fmt.Sprintf("%g", got)
 		if s != tt.want {
 			// Dump raw BID bits for diagnosis.
-			d64bits := decimal.BID64bits(got)
+			d64bits := Decimal64bits(got)
 			d128 := decimal128(got)
 			p := (*[2]uint64)(unsafe.Pointer(&d128))
 			t.Errorf("decimal.Quantize[decimal64](%g, %g) = %s, want %s\n"+
@@ -853,7 +854,7 @@ func TestQuantum(t *testing.T) {
 	// Quantize by a value's quantum is Quantize by the value.
 	for _, y := range []decimal64{0.01, -5e3, 1.000} {
 		x := decimal64(2.71828)
-		if a, b := decimal.Quantize(x, decimal.Quantum(y)), decimal.Quantize(x, y); decimal.BID64bits(a) != decimal.BID64bits(b) {
+		if a, b := decimal.Quantize(x, decimal.Quantum(y)), decimal.Quantize(x, y); Decimal64bits(a) != Decimal64bits(b) {
 			t.Errorf("Quantize(%g, Quantum(%g)) = %g, Quantize(%g, %g) = %g", x, y, a, x, y, b)
 		}
 	}
@@ -904,7 +905,7 @@ func TestPayload(t *testing.T) {
 		if decimal.Payload(r) != 42 {
 			t.Errorf("payload after arithmetic = %g, want 42", decimal.Payload(r))
 		}
-		if b := decimal.BID64bits(r); b&(1<<57) != 0 { // the signaling bit
+		if b := Decimal64bits(r); b&(1<<57) != 0 { // the signaling bit
 			t.Errorf("arithmetic on a signaling NaN returned a signaling NaN: %#x", b)
 		}
 	}

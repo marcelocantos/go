@@ -209,9 +209,9 @@ func RoundToEven[D Decimal](x D) D { return integral(x, bid.ToNearestEven) }
 
 func integral[D Decimal](x D, mode bid.Mode) D {
 	if is64(x) {
-		return from64[D](bid.RoundToIntegral64(bits64(x), mode))
+		return D(integral64(decimal64(x), mode))
 	}
-	return from128[D](bid.RoundToIntegral128(bits128(x), mode))
+	return D(integral128(decimal128(x), mode))
 }
 
 // Mod returns the floating-point remainder of x/y. The magnitude of the
@@ -265,9 +265,9 @@ func Quantize[D Decimal](x, y D) D { return QuantizeMode(x, y, ToNearestEven) }
 // QuantizeMode(x, 0.01, ToNearestAway) rounds half a cent up in magnitude.
 func QuantizeMode[D Decimal](x, y D, mode RoundingMode) D {
 	if is64(x) {
-		return from64[D](bid.Quantize64(bits64(x), bits64(y), mode.mode()))
+		return D(quantize64(decimal64(x), decimal64(y), mode))
 	}
-	return from128[D](bid.Quantize128(bits128(x), bits128(y), mode.mode()))
+	return D(quantize128(decimal128(x), decimal128(y), mode))
 }
 
 // SameQuantum reports whether x and y have the same quantum, the exponent of
@@ -295,3 +295,19 @@ func Quantum[D Decimal](x D) D { return unary(x, bid.Quantum64, bid.Quantum128) 
 // largest exponent at which it is representable. Reduce(1.50) is 1.5, and
 // Reduce of any zero is a zero with exponent 0 and the sign of x.
 func Reduce[D Decimal](x D) D { return unary(x, bid.Reduce64, bid.Reduce128) }
+
+// Concrete entry points keep the generic dispatch small enough to inline.
+// ARM64 and AMD64 recognize these calls and lower bounded BID cases directly;
+// these bodies are the portable fallback, including DPD conversion.
+func integral64(x decimal64, mode bid.Mode) decimal64 {
+	return from64[decimal64](bid.RoundToIntegral64(bits64(x), mode))
+}
+func integral128(x decimal128, mode bid.Mode) decimal128 {
+	return from128[decimal128](bid.RoundToIntegral128(bits128(x), mode))
+}
+func quantize64(x, y decimal64, mode RoundingMode) decimal64 {
+	return from64[decimal64](bid.Quantize64(bits64(x), bits64(y), mode.mode()))
+}
+func quantize128(x, y decimal128, mode RoundingMode) decimal128 {
+	return from128[decimal128](bid.Quantize128(bits128(x), bits128(y), mode.mode()))
+}

@@ -519,6 +519,30 @@ opSwitch:
 						// implemented in the escape analysis phase.
 						cheap = true
 					}
+				case "internal/bid":
+					// The general path of a decimal operation whose
+					// exported entry point inlines a fast path in front of
+					// it, as runtime.heapBits.next does with nextArena: the
+					// call is the cold side of the fast path, and charging
+					// it as a full call would keep the fast path out of
+					// every caller. See "Inline fast paths" in
+					// internal/bid's package documentation.
+					//
+					// Charged as a full call (57 of the budget of 80), the
+					// call leaves too little for any useful fast path, and
+					// the money operations through math/decimal and the
+					// kernel would each pay a call they need not: with the
+					// rule, adding or quantizing two amounts at one quantum
+					// takes under 1 ns and comparing them under 2 (Apple M4
+					// Max, 2026-11). The rule is kept deliberately narrow,
+					// one package and one naming convention, so that it
+					// changes no other inlining decision; the generated
+					// code of the general path is the same either way, and
+					// internal/bid's TestInlinePaths checks the fronts'
+					// results against the general paths.
+					if strings.HasSuffix(fn, "Slow64") || strings.HasSuffix(fn, "Slow128") {
+						cheap = true
+					}
 				case "internal/runtime/sys":
 					switch fn {
 					case "GetCallerPC", "GetCallerSP":

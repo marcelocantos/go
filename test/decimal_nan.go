@@ -42,7 +42,7 @@ func (n nan) String() string {
 
 // d64 returns the NaN of the decimal64 x, with ok = false if x is not one.
 func d64(x decimal64) (n nan, ok bool) {
-	b := decimal.BID64bits(x)
+	b := math.Decimal64bits(x)
 	if b>>58&0x1F != 0x1F {
 		return nan{}, false
 	}
@@ -51,7 +51,7 @@ func d64(x decimal64) (n nan, ok bool) {
 
 // d128 returns the NaN of the decimal128 x; its payload must fit 64 bits.
 func d128(x decimal128) (n nan, ok bool) {
-	hi, lo := decimal.BID128bits(x)
+	hi, lo := math.Decimal128bits(x)
 	if hi>>58&0x1F != 0x1F || hi&(1<<46-1) != 0 {
 		return nan{}, false
 	}
@@ -81,12 +81,12 @@ var (
 
 //go:noinline
 func setup() {
-	qd = decimal.BID64frombits(0x7c00000000000123)
-	nd = decimal.BID64frombits(0xfc00000000000045)
-	sd = decimal.BID64frombits(0x7e00000000000067)
-	qd2 = decimal.BID128frombits(0x7c00000000000000, 0x123)
-	nd2 = decimal.BID128frombits(0xfc00000000000000, 0x45)
-	sd2 = decimal.BID128frombits(0x7e00000000000000, 0x67)
+	qd = math.Decimal64frombits(0x7c00000000000123)
+	nd = math.Decimal64frombits(0xfc00000000000045)
+	sd = math.Decimal64frombits(0x7e00000000000067)
+	qd2 = math.Decimal128frombits(0x7c00000000000000, 0x123)
+	nd2 = math.Decimal128frombits(0xfc00000000000000, 0x45)
+	sd2 = math.Decimal128frombits(0x7e00000000000000, 0x67)
 	qf = math.Float64frombits(0x7ff8000000000123)
 	nf = math.Float64frombits(0xfff8000000000045)
 	sf = math.Float64frombits(0x7ff0000000000067)
@@ -188,7 +188,7 @@ func main() {
 	g, ok := d64(decimal64(nd2))
 	check("decimal64(n)", g, ok, neg45)
 	// A decimal128 payload of 10^15 or more does not fit decimal64.
-	big := decimal.BID128frombits(0x7c00000000000000, 1_000_000_000_000_000)
+	big := math.Decimal128frombits(0x7c00000000000000, 1_000_000_000_000_000)
 	g, ok = d64(decimal64(big))
 	check("decimal64(NaN 10^15)", g, ok, canon)
 

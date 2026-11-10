@@ -5,9 +5,11 @@
 package test
 
 import (
+	"internal/buildcfg"
 	"internal/testenv"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -24,7 +26,7 @@ func TestDecimalPublicAPIGate(t *testing.T) {
 		{"go/constant", "p.Quantum"},
 		{"go/types", "p.IsDecimal"},
 		{"debug/dwarf", "p.DecimalFloatType{}"},
-		{"math/decimal", "p.NativeRepresentation"},
+		{"math/decimal", "p.ToZero"},
 	} {
 		t.Run(tc.pkg+"/"+tc.use, func(t *testing.T) {
 			dir := t.TempDir()
@@ -37,12 +39,22 @@ func TestDecimalPublicAPIGate(t *testing.T) {
 			}
 			// Enabled, default, explicit off, then enabled again also exercises
 			// cache separation without clearing or replacing the build cache.
+			// The default is the toolchain's, which make.bash may have built
+			// with GOEXPERIMENT=decimal.
 			for _, mode := range []string{"decimal", "", "nodecimal", "decimal"} {
+				goexp := mode
+				if goexp == "" {
+					goexp = buildcfg.DefaultGOEXPERIMENT
+				}
+				exp, err := buildcfg.ParseGOEXPERIMENT(runtime.GOOS, runtime.GOARCH, goexp)
+				if err != nil {
+					t.Fatal(err)
+				}
 				cmd := testenv.Command(t, testenv.GoToolPath(t), "build", "-o", os.DevNull, ".")
 				cmd.Dir = dir
 				cmd.Env = append(os.Environ(), "GOEXPERIMENT="+mode, "GOWORK=off", "GOFLAGS=")
 				out, err := cmd.CombinedOutput()
-				if mode == "decimal" {
+				if exp.Decimal {
 					if err != nil {
 						t.Fatalf("enabled API: %v\n%s", err, out)
 					}

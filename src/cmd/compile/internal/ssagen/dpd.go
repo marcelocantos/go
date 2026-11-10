@@ -12,6 +12,7 @@ import (
 	"cmd/compile/internal/ssa/block"
 	"cmd/compile/internal/ssa/ssaop"
 	"cmd/compile/internal/types"
+	"cmd/internal/sys"
 )
 
 // Decimal operators on targets whose native decimal encoding is DPD
@@ -126,10 +127,22 @@ var dpdArith = map[opAndType]ssaop.Op{
 }
 
 // decimalOp is the operator op on decimal operands of a common type, with
-// result type rt: on a DPD target the hardware's instructions, elsewhere a
-// runtime call.
+// result type rt: on a DPD target the hardware's instructions, elsewhere
+// integer fast paths with runtime calls for the general case.
 func (s *state) decimalOp(op ir.Op, rt *types.Type, args ...*ssa.Value) *ssa.Value {
 	if !ir.DecimalDPD() {
+		if rt.IsBoolean() && (Arch.LinkArch.Family == sys.ARM64 || Arch.LinkArch.Family == sys.AMD64) {
+			return s.bidCompare(op, args[0], args[1])
+		}
+		if rt.Kind() == types.TDECIMAL128 &&
+			(Arch.LinkArch.Family == sys.ARM64 || Arch.LinkArch.Family == sys.AMD64) {
+			switch op {
+			case ir.OADD, ir.OSUB:
+				return s.bidAddSub128(op, rt, args[0], args[1])
+			case ir.OMUL:
+				return s.bidMul128(rt, args[0], args[1])
+			}
+		}
 		return s.softDecimalOp(op, rt, args...)
 	}
 	x, y := args[0], args[1]
@@ -178,8 +191,6 @@ func (s *state) dpdSignbit(w *ssa.Value) *ssa.Value {
 	return s.newValue2(ssaop.OpLess64, types.Types[types.TBOOL], s.newValue1(ssaop.OpCopy, types.Types[types.TINT64], w), s.constInt64(types.Types[types.TINT64], 0))
 }
 
-var dpdMinMaxVar = ssaMarker("dpdminmax")
-
 // dpdMinMax is the built-in min (or max, if isMax) of the decimals x and y,
 // as internal/bid's Min64 and Max64 define it. If either is a NaN the result
 // is the NaN that "NaN results" chooses, made quiet, which is what DADD of
@@ -190,6 +201,7 @@ var dpdMinMaxVar = ssaMarker("dpdminmax")
 // redundant declet survives only from unsafe memory, so the result is the
 // operand's encoding as it is.
 func (s *state) dpdMinMax(isMax bool, rt *types.Type, x, y *ssa.Value) *ssa.Value {
+	result := ssaMarker("dpdminmax") // one per lowering; see bidAddSub128
 	boolT := types.Types[types.TBOOL]
 	wide := rt.Kind() == types.TDECIMAL128
 	var xh, xl, yh, yl *ssa.Value
@@ -213,9 +225,9 @@ func (s *state) dpdMinMax(isMax bool, rt *types.Type, x, y *ssa.Value) *ssa.Valu
 	s.startBlock(bNaN)
 	if wide {
 		hi, lo := s.dpdTuple(s.newValue4(ssaop.OpDPDAdd128, s.dpdTupleType(), xh, xl, yh, yl))
-		s.vars[dpdMinMaxVar] = s.dpdOut128(rt, hi, lo)
+		s.vars[result] = s.dpdOut128(rt, hi, lo)
 	} else {
-		s.vars[dpdMinMaxVar] = s.dpdOut64(rt, s.newValue2(ssaop.OpDPDAdd64, types.Types[types.TUINT64], xh, yh))
+		s.vars[result] = s.dpdOut64(rt, s.newValue2(ssaop.OpDPDAdd64, types.Types[types.TUINT64], xh, yh))
 	}
 	s.endBlock()
 	bNaN.AddEdgeTo(bAfter)
@@ -250,15 +262,17 @@ func (s *state) dpdMinMax(isMax bool, rt *types.Type, x, y *ssa.Value) *ssa.Valu
 	if wide {
 		hi := s.newValue3(ssaop.OpCondSelect, u64, yh, xh, pickY)
 		lo := s.newValue3(ssaop.OpCondSelect, u64, yl, xl, pickY)
-		s.vars[dpdMinMaxVar] = s.dpdOut128(rt, hi, lo)
+		s.vars[result] = s.dpdOut128(rt, hi, lo)
 	} else {
-		s.vars[dpdMinMaxVar] = s.dpdOut64(rt, s.newValue3(ssaop.OpCondSelect, u64, yh, xh, pickY))
+		s.vars[result] = s.dpdOut64(rt, s.newValue3(ssaop.OpCondSelect, u64, yh, xh, pickY))
 	}
 	s.endBlock()
 	bNum.AddEdgeTo(bAfter)
 
 	s.startBlock(bAfter)
-	return s.variable(dpdMinMaxVar, rt)
+	r := s.variable(result, rt)
+	delete(s.vars, result)
+	return r
 }
 
 // dpdConv converts v from the kind fk to the kind tk, where one of them is a

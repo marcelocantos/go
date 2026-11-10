@@ -702,3 +702,215 @@ func TestComparisonsPropertiesLong(t *testing.T) {
 		})
 	}
 }
+
+// TestCompareWords covers the word coefficient bounds and exponent gaps used
+// by the fast comparison, against the independent big.Int reference.
+func TestCompareWords(t *testing.T) {
+	for _, f := range both {
+		check := func(x, y bits) {
+			t.Helper()
+			want, ordered := f.compare(x, y)
+			got, ok := (kernel{}).compare(f, x, y)
+			if got != want || ok != ordered || (kernel{}).equal(f, x, y) != (ordered && want == 0) ||
+				(kernel{}).less(f, x, y) != (ordered && want < 0) || (kernel{}).lessEqual(f, x, y) != (ordered && want <= 0) {
+				t.Fatalf("%s word comparison (%x, %x): got (%d, %t), want (%d, %t)", f.name, x, y, got, ok, want, ordered)
+			}
+		}
+		word := func(c uint64, exp int, neg bool) bits {
+			return f.encode(value{kind: finite, neg: neg, coeff: new(big.Int).SetUint64(c), exp: exp})
+		}
+		coeffs := []uint64{0, 1, 9, 10, 1<<53 - 1, 1 << 53, bid.MaxCoeff64}
+		if f == dec128 {
+			coeffs = append(coeffs, 1<<63, 10000000000000000000, ^uint64(0))
+		}
+		for _, gap := range []int{0, 1, 15, 16, 18, 19, 20, 21, f.maxExp - f.minExp} {
+			for _, xe := range []int{f.minExp, min(0, f.maxExp-gap), f.maxExp - gap} {
+				for _, xc := range coeffs {
+					for _, yc := range coeffs {
+						for signs := range 4 {
+							x, y := word(xc, xe, signs&1 != 0), word(yc, xe+gap, signs&2 != 0)
+							check(x, y)
+							check(y, x)
+						}
+					}
+				}
+			}
+		}
+		r := rand.New(rand.NewPCG(*seedFlag, streamSeed("compare-words-"+f.name)))
+		for i := range numCases() {
+			xc, yc := r.Uint64(), r.Uint64()
+			if f == dec64 {
+				xc %= bid.MaxCoeff64 + 1
+				yc %= bid.MaxCoeff64 + 1
+			}
+			xe := f.minExp + r.IntN(f.maxExp-f.minExp+1)
+			ye := f.minExp + r.IntN(f.maxExp-f.minExp+1)
+			if i&1 == 0 {
+				ye = min(f.maxExp, xe+r.IntN(22))
+			}
+			check(word(xc, xe, r.IntN(2) != 0), word(yc, ye, r.IntN(2) != 0))
+		}
+	}
+}
+
+// These paired-operand probes complement the broad mixed kernel rows. The
+// fallback values deliberately include second-form decimal64 coefficients
+// and wide decimal128 coefficients, together with exceptional operands.
+func BenchmarkCompareWords(b *testing.B) {
+	for _, f := range both {
+		wide := "9999999999999999"
+		if f == dec128 {
+			wide = "9999999999999999999999999999999999"
+		}
+		for _, c := range []struct {
+			name string
+			x, y [4]opnd
+		}{
+			{"sameQuantum", [4]opnd{fin("12345", -2), nfin("42", -2), fin("0", 0), nfin("0", 0)},
+				[4]opnd{fin("42", -2), nfin("12345", -2), fin("1", 0), fin("0", 0)}},
+			{"nearby", [4]opnd{fin("12345", -2), nfin("42", -2), fin("1", 0), fin("9", 19)},
+				[4]opnd{fin("42", -3), nfin("12345", -4), fin("999999", -5), fin("1", 0)}},
+			{"far", [4]opnd{fin("1", 20), fin("1", f.maxExp), nfin("1", 20), fin("0", f.maxExp)},
+				[4]opnd{fin("9", 0), fin("1", f.minExp), nfin("9", 0), fin("1", 0)}},
+			{"fallback", [4]opnd{fin(wide, -2), nfin(wide, -2), cNaN, cInf},
+				[4]opnd{fin(wide, -3), fin(wide, -2), fin("1", 0), cInf}},
+		} {
+			var xs, ys [4]bits
+			for i := range xs {
+				xs[i], ys[i] = c.x[i].bits(f), c.y[i].bits(f)
+			}
+			b.Run(f.name+"/"+c.name, func(b *testing.B) {
+				loop2(b, xs[:], ys[:], func(x, y bits) int { c, _ := (kernel{}).compare(f, x, y); return c })
+			})
+		}
+	}
+}
+
+// TestKeyUnpackSplit checks Key64 and Key128 on both sides of the bound
+// between the inline first-form decode and unpackRest, which keyW calls
+// itself: the largest first-form coefficients, the second form (canonical
+// and not), the largest decimal128 first-form coefficients from
+// MaxCoeff128Hi × 2^64 up, zeros and the special values. The key must be
+// that of Unpack's decoding with trailing zeros stripped.
+func TestKeyUnpackSplit(t *testing.T) {
+	want := func(kind bid.Kind, neg bool, c *big.Int, exp int) bid.Key {
+		if kind != bid.KindFinite || c.Sign() == 0 {
+			if kind == bid.KindNaN || kind == bid.KindFinite {
+				neg = false
+			}
+			return bid.Key{Kind: kind, Neg: neg}
+		}
+		ten := big.NewInt(10)
+		c = new(big.Int).Set(c)
+		for {
+			q, r := new(big.Int).QuoRem(c, ten, new(big.Int))
+			if r.Sign() != 0 {
+				break
+			}
+			c, exp = q, exp+1
+		}
+		return bid.Key{Coeff: bid.Uint128{Hi: new(big.Int).Rsh(c, 64).Uint64(), Lo: c.Uint64()}, Exp: int32(exp), Kind: kind, Neg: neg}
+	}
+	var xs64 []uint64
+	for _, neg := range []uint64{0, bid.SignMask64} {
+		for _, e := range []uint64{0, 398, 767} {
+			for _, c := range []uint64{0, 1, 10, 1<<53 - 1, 9000000000000000, 1<<53 - 3} {
+				xs64 = append(xs64, neg|e<<bid.ExpShift64|c)
+			}
+			for _, c := range []uint64{0, 1, 0x2386F26FC0FFFF & (1<<51 - 1), 1<<51 - 1} {
+				xs64 = append(xs64, neg|bid.Form2Mask64|e<<bid.Form2ExpShift64|c)
+			}
+		}
+		xs64 = append(xs64, neg|bid.Inf64, neg|bid.NaN64|5, neg|bid.SNaN64)
+	}
+	for _, x := range xs64 {
+		kind, neg, c, exp := bid.Unpack64(x)
+		if got, w := bid.Key64(x), want(kind, neg, new(big.Int).SetUint64(c), exp); got != w {
+			t.Errorf("Key64(%#016x) = %+v, want %+v", x, got, w)
+		}
+	}
+	var xs128 []bid.Uint128
+	for _, neg := range []uint64{0, bid.SignMask128Hi} {
+		for _, e := range []uint64{0, 6176, 12287} {
+			for _, c := range []bid.Uint128{{}, {Lo: 10}, {Hi: bid.MaxCoeff128Hi - 1, Lo: 1<<64 - 1}, {Hi: bid.MaxCoeff128Hi}, {Hi: bid.MaxCoeff128Hi, Lo: bid.MaxCoeff128Lo}, {Hi: bid.MaxCoeff128Hi, Lo: bid.MaxCoeff128Lo + 1}, {Hi: bid.CoeffMask128Hi, Lo: 1<<64 - 1}} {
+				xs128 = append(xs128, bid.Uint128{Hi: neg | e<<bid.ExpShift128 | c.Hi, Lo: c.Lo})
+			}
+			xs128 = append(xs128, bid.Uint128{Hi: neg | bid.Form2Mask128Hi | e<<bid.Form2ExpShift128, Lo: 7})
+		}
+		xs128 = append(xs128, bid.Uint128{Hi: neg | bid.Inf128Hi}, bid.Uint128{Hi: neg | bid.NaN128Hi, Lo: 5}, bid.Uint128{Hi: neg | bid.SNaN128Hi})
+	}
+	for _, x := range xs128 {
+		kind, neg, c, exp := bid.Unpack128(x)
+		n := new(big.Int).Lsh(new(big.Int).SetUint64(c.Hi), 64)
+		n.Or(n, new(big.Int).SetUint64(c.Lo))
+		if got, w := bid.Key128(x), want(kind, neg, n, exp); got != w {
+			t.Errorf("Key128(%#x) = %+v, want %+v", x, got, w)
+		}
+	}
+}
+
+// TestMagnitudeCompareBounds drives magCmpW, the magnitude comparison of
+// two finite values at different exponents, at its bound: the coefficient
+// with the larger exponent is scaled by the gap and compared, and a scaled
+// coefficient that overflows the coefficient type is the larger. The gaps
+// put the scaled coefficient on both sides of 2^64 and 2^128 and of the
+// table of powers of ten, against coefficients of the other operand that
+// are smaller, equal and larger than the scaled one where it fits, in both
+// orders, both signs, through the comparisons, Compare and TotalOrder,
+// against the reference.
+func TestMagnitudeCompareBounds(t *testing.T) {
+	var k kernel
+	for _, f := range []*format{dec64, dec128} {
+		var xcs []*big.Int
+		for _, s := range []string{"1", "9", "4294967295", "4294967296", "9999999999999999", "10000000000000000", "9999999999999999999", "10000000000000000000", "18446744073709551615", "18446744073709551616", "340282366920938463463374607431768211455"} {
+			c, _ := new(big.Int).SetString(s, 10)
+			if c.Cmp(f.maxCoeff) <= 0 {
+				xcs = append(xcs, c)
+			}
+		}
+		xcs = append(xcs, pow10(f.prec-1), new(big.Int).Sub(pow10(f.prec), bigOne))
+		gaps := []int{0, 1, 2, 4, 5, 18, 19, 20, 21, 37, 38, 39, 40, 77, 78, 100, f.maxExp - f.minExp}
+		n := 0
+		for _, xc := range xcs {
+			for _, g := range gaps {
+				for _, xe := range []int{0, f.maxExp, f.minExp + g} {
+					ye := xe - g
+					if xe > f.maxExp || ye < f.minExp {
+						continue
+					}
+					scaled := new(big.Int).Mul(xc, pow10(g))
+					ycs := []*big.Int{bigOne, xc, pow10(f.prec - 1), new(big.Int).Sub(pow10(f.prec), bigOne)}
+					for _, d := range []int64{-1, 0, 1} {
+						if c := new(big.Int).Add(scaled, big.NewInt(d)); c.Sign() >= 0 && c.Cmp(f.maxCoeff) <= 0 {
+							ycs = append(ycs, c)
+						}
+					}
+					for _, yc := range ycs {
+						for _, xneg := range []bool{false, true} {
+							for _, yneg := range []bool{false, true} {
+								x := f.encode(value{kind: finite, neg: xneg, coeff: xc, exp: xe})
+								y := f.encode(value{kind: finite, neg: yneg, coeff: yc, exp: ye})
+								for _, p := range [][2]bits{{x, y}, {y, x}} {
+									n++
+									a, b := p[0], p[1]
+									gc, gok := k.compare(f, a, b)
+									wc, wok := f.compare(a, b)
+									if gc != wc || gok != wok {
+										t.Fatalf("%s compare(%s, %s) = %d %v, want %d %v", f.name, f.format(a), f.format(b), gc, gok, wc, wok)
+									}
+									if got, want := k.less(f, a, b), (reference{}).less(f, a, b); got != want {
+										t.Fatalf("%s less(%s, %s) = %v, want %v", f.name, f.format(a), f.format(b), got, want)
+									}
+									if got, want := k.totalOrder(f, a, b), f.totalOrder(a, b); got != want {
+										t.Fatalf("%s totalOrder(%s, %s) = %v, want %v", f.name, f.format(a), f.format(b), got, want)
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		t.Logf("%s: %d ordered pairs", f.name, n)
+	}
+}

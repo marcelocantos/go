@@ -1,0 +1,158 @@
+// Copyright 2026 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package bid_test
+
+import (
+	"internal/bid"
+	"math/big"
+	"math/rand"
+	"testing"
+)
+
+// Tests of the reciprocal division by powers of ten (recip128.go) against
+// math/big. The oracle's powers of ten and reciprocals come from big.Int,
+// not from the package's tables.
+
+// recip128Inputs returns, for the power 10^k, the values the reciprocal
+// division is most likely to get wrong: each side of multiples j·10^k for
+// small, random and extreme j, the ends of the type and of the coefficient
+// range, and random values.
+func recip128Inputs(k int, rng *rand.Rand, nrand int) []bid.Uint128 {
+	limit := new(big.Int).Lsh(big.NewInt(1), 128)
+	p := bigPow10(k)
+	jmax := new(big.Int).Quo(new(big.Int).Sub(limit, big.NewInt(1)), p)
+	var out []bid.Uint128
+	add := func(b *big.Int) {
+		if b.Sign() >= 0 && b.Cmp(limit) < 0 {
+			out = append(out, from128(b))
+		}
+	}
+	around := func(b *big.Int) {
+		for d := int64(-2); d <= 2; d++ {
+			add(new(big.Int).Add(b, big.NewInt(d)))
+		}
+	}
+	js := []*big.Int{big.NewInt(1), big.NewInt(2), big.NewInt(9), big.NewInt(10),
+		jmax, new(big.Int).Sub(jmax, big.NewInt(1)), new(big.Int).Rsh(jmax, 1)}
+	for range 64 {
+		js = append(js, new(big.Int).Rand(rng, new(big.Int).Add(jmax, big.NewInt(1))))
+	}
+	for _, j := range js {
+		m := new(big.Int).Mul(j, p)
+		around(m)
+		// The half point of each multiple, where the class changes.
+		around(new(big.Int).Add(m, new(big.Int).Rsh(p, 1)))
+	}
+	around(new(big.Int).Sub(limit, big.NewInt(1)))
+	around(new(big.Int).Lsh(big.NewInt(1), 64))
+	around(bigPow10(34))
+	around(bigPow10(38))
+	for range nrand {
+		add(new(big.Int).Rand(rng, limit))
+	}
+	return out
+}
+
+// TestRecip128 checks divPow10Recip128, cDivPow10128 and cShift128 at every
+// k against math/big, including the class, which class128 computes from the
+// remainder.
+func TestRecip128(t *testing.T) {
+	rng := rand.New(rand.NewSource(1))
+	nrand := 1_000_000 / len(bid.Pow10tab128)
+	if testing.Short() {
+		nrand = 1000
+	}
+	for k := range bid.Pow10tab128 {
+		p := bigPow10(k)
+		half := new(big.Int).Rsh(p, 1)
+		for _, c := range recip128Inputs(k, rng, nrand) {
+			bq, br := new(big.Int).QuoRem(bigOf(c), p, new(big.Int))
+			q, r := bid.DivPow10Recip128(c, k)
+			if bigOf(q).Cmp(bq) != 0 || bigOf(r).Cmp(br) != 0 {
+				t.Fatalf("bid.DivPow10Recip128(%#x, %d) = %#x, %#x, want %#x, %#x", bigOf(c), k, bigOf(q), bigOf(r), bq, br)
+			}
+			q2, r2 := bid.CDivPow10128(c, k)
+			if q2 != q || r2 != r {
+				t.Fatalf("bid.CDivPow10128(%#x, %d) = %#x, %#x, want %#x, %#x", bigOf(c), k, bigOf(q2), bigOf(r2), bq, br)
+			}
+			want := bid.ClassZero
+			if br.Sign() != 0 {
+				switch br.Cmp(half) {
+				case -1:
+					want = bid.ClassBelowHalf
+				case 0:
+					want = bid.ClassHalf
+				default:
+					want = bid.ClassAboveHalf
+				}
+			}
+			sq, class := bid.CShift128(c, k)
+			if sq != q || class != want {
+				t.Fatalf("bid.CShift128(%#x, %d) = %#x, %v, want %#x, %v", bigOf(c), k, bigOf(sq), class, bq, want)
+			}
+		}
+	}
+}
+
+// TestDivExactPow10 checks cDivExactPow10128 and cDivExactPow1064 against
+// math/big at every k of their tables and beyond, at exact multiples j·10^k
+// and one either side, at multiples of 2^k and 5^k that are not multiples
+// of 10^k (where one half of the test passes and the other must not), at
+// the ends of each type and at random. The tables themselves are checked
+// through the results: a wrong inverse or limit fails the multiples or the
+// near misses.
+func TestDivExactPow10(t *testing.T) {
+	rng := rand.New(rand.NewSource(3))
+	limit := new(big.Int).Lsh(big.NewInt(1), 128)
+	for k := range 42 {
+		p := bigPow10(k)
+		var cs []*big.Int
+		add := func(b *big.Int) {
+			if b.Sign() >= 0 && b.Cmp(limit) < 0 {
+				cs = append(cs, b)
+			}
+		}
+		around := func(b *big.Int) {
+			for d := int64(-1); d <= 1; d++ {
+				add(new(big.Int).Add(b, big.NewInt(d)))
+			}
+		}
+		for _, f := range []*big.Int{p,
+			new(big.Int).Lsh(big.NewInt(1), uint(k)),
+			new(big.Int).Exp(big.NewInt(5), big.NewInt(int64(k)), nil)} {
+			if f.Cmp(limit) >= 0 {
+				continue
+			}
+			jmax := new(big.Int).Quo(new(big.Int).Sub(limit, big.NewInt(1)), f)
+			js := []*big.Int{big.NewInt(1), big.NewInt(2), big.NewInt(3), jmax}
+			for range 200 {
+				js = append(js, new(big.Int).Add(new(big.Int).Rand(rng, jmax), big.NewInt(1)))
+			}
+			for _, j := range js {
+				around(new(big.Int).Mul(j, f))
+			}
+		}
+		around(new(big.Int).Sub(limit, big.NewInt(1)))
+		around(bigPow10(34))
+		add(new(big.Int))
+		for range 2000 {
+			add(new(big.Int).Rand(rng, limit))
+		}
+		for _, c := range cs {
+			bq, br := new(big.Int).QuoRem(c, p, new(big.Int))
+			wantOK := br.Sign() == 0
+			q, ok := bid.CDivExactPow10128(from128(c), k)
+			if ok != wantOK || ok && bigOf(q).Cmp(bq) != 0 {
+				t.Fatalf("cDivExactPow10128(%#x, %d) = %#x, %v, want %#x, %v", c, k, bigOf(q), ok, bq, wantOK)
+			}
+			if c.BitLen() <= 64 && k < len(bid.Pow10tab64) {
+				q, ok := bid.CDivExactPow1064(c.Uint64(), k)
+				if ok != wantOK || ok && q != bq.Uint64() {
+					t.Fatalf("cDivExactPow1064(%#x, %d) = %#x, %v, want %#x, %v", c, k, q, ok, bq, wantOK)
+				}
+			}
+		}
+	}
+}

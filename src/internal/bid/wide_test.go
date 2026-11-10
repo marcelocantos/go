@@ -186,6 +186,53 @@ func checkU128Mul(t *testing.T, a, b bid.Uint128) {
 	}
 
 	eq256(t, "u128Mul", bid.U128Mul(a, b), new(big.Int).Mul(A, B))
+	checkU128MulFits(t, a, b)
+}
+
+// checkU128MulFits checks u128MulFits(a, b): the product and true below
+// 2^128, false at 2^128 and above.
+func checkU128MulFits(t *testing.T, a, b bid.Uint128) {
+	t.Helper()
+	P := new(big.Int).Mul(bigOf(a), bigOf(b))
+	got, ok := bid.U128MulFits(a, b)
+	if fits := P.BitLen() <= 128; ok != fits || fits && bigOf(got).Cmp(P) != 0 {
+		t.Errorf("u128MulFits(%v, %v) = %v %v, want %v %v", bigOf(a), bigOf(b), bigOf(got), ok, P, fits)
+	}
+}
+
+// TestU128MulFits checks u128MulFits at the bound 2^128 in the way the
+// coefficient helpers use it, c × 10^k for the largest c whose product
+// fits and the next, in both orders, and at products of two factors that
+// each need a high word (never below 2^128) and of factors on either side
+// of 2^64.
+func TestU128MulFits(t *testing.T) {
+	max := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 128), big.NewInt(1))
+	ten := big.NewInt(10)
+	pow := big.NewInt(1)
+	for k := 0; k <= 38; k++ {
+		c := new(big.Int).Quo(max, pow)
+		for _, v := range []*big.Int{c, new(big.Int).Add(c, big.NewInt(1)), new(big.Int).Sub(c, big.NewInt(1))} {
+			if v.BitLen() > 128 {
+				continue
+			}
+			a, b := u128Of(v), u128Of(pow)
+			checkU128MulFits(t, a, b)
+			checkU128MulFits(t, b, a)
+		}
+		pow.Mul(pow, ten)
+	}
+	words := []bid.Uint128{{Lo: 1}, {Lo: ^uint64(0)}, {Hi: 1}, {Hi: 1, Lo: 1}, {Hi: ^uint64(0), Lo: ^uint64(0)}, {Hi: 1 << 63}, {Lo: 1 << 63}, {Lo: 2}}
+	for _, a := range words {
+		for _, b := range words {
+			checkU128MulFits(t, a, b)
+		}
+	}
+}
+
+// u128Of returns v, below 2^128, as a Uint128.
+func u128Of(v *big.Int) bid.Uint128 {
+	lo := new(big.Int).And(v, new(big.Int).SetUint64(^uint64(0))).Uint64()
+	return bid.Uint128{Hi: new(big.Int).Rsh(v, 64).Uint64(), Lo: lo}
 }
 
 func TestU128Mul(t *testing.T) {

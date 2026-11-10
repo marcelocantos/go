@@ -94,8 +94,10 @@ func opsFromImpl(im impl) conformanceOps {
 		Float32From64:  func(x uint64, m bid.Mode) float32 { return im.float32From(d64, lo(x), m) },
 		Float32From128: func(x bid.Uint128, m bid.Mode) float32 { return im.float32From(d128, x, m) },
 
-		Append64:  func(dst []byte, x uint64) []byte { return append(dst, im.appendTo(d64, lo(x))...) },
-		Append128: func(dst []byte, x bid.Uint128) []byte { return append(dst, im.appendTo(d128, x)...) },
+		Append64:     func(dst []byte, x uint64) []byte { return append(dst, im.appendGo(d64, lo(x))...) },
+		Append128:    func(dst []byte, x bid.Uint128) []byte { return append(dst, im.appendGo(d128, x)...) },
+		AppendSci64:  func(dst []byte, x uint64) []byte { return append(dst, im.appendTo(d64, lo(x))...) },
+		AppendSci128: func(dst []byte, x bid.Uint128) []byte { return append(dst, im.appendTo(d128, x)...) },
 		Parse64: func(s string, m bid.Mode) (uint64, bid.Status) {
 			x, st := im.parse(d64, s, m)
 			return x.Lo, st

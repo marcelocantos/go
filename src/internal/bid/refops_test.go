@@ -10,6 +10,7 @@ package bid_test
 // comments are those of the contract in the package documentation.
 
 import (
+	"fmt"
 	"internal/bid"
 	"math"
 	"math/big"
@@ -779,6 +780,50 @@ func (f *format) format(x bits) string {
 		}
 		sb.WriteString(big.NewInt(int64(adj)).String())
 	}
+	return sb.String()
+}
+
+// formatGo is Go's canonical form of x, as strconv's 'g' at precision -1
+// writes it (see "Character conversions"): plain notation when the
+// exponent is at most zero and the leading digit's power of ten is from -4
+// to 20, and otherwise exponential notation with a lowercase "e", a sign
+// and at least two exponent digits; "NaN", "+Inf" and "-Inf".
+func (f *format) formatGo(x bits) string {
+	a := f.decode(x)
+	switch a.kind {
+	case notANumber:
+		return "NaN"
+	case infinite:
+		if a.neg {
+			return "-Inf"
+		}
+		return "+Inf"
+	}
+	var sb strings.Builder
+	if a.neg {
+		sb.WriteByte('-')
+	}
+	c := a.coeff.String()
+	adj := a.exp + len(c) - 1
+	if a.exp <= 0 && adj >= -4 && adj < 21 {
+		if p := len(c) + a.exp; p >= len(c) {
+			sb.WriteString(c)
+		} else if p > 0 {
+			sb.WriteString(c[:p] + "." + c[p:])
+		} else {
+			sb.WriteString("0." + strings.Repeat("0", -p) + c)
+		}
+		return sb.String()
+	}
+	sb.WriteString(c[:1])
+	if len(c) > 1 {
+		sb.WriteString("." + c[1:])
+	}
+	sign := "+"
+	if adj < 0 {
+		sign, adj = "-", -adj
+	}
+	fmt.Fprintf(&sb, "e%s%02d", sign, adj)
 	return sb.String()
 }
 

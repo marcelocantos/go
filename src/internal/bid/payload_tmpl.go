@@ -70,7 +70,7 @@ func nanWithPayloadW(p coefW, signaling bool) coefW {
 		}
 		c = q
 	}
-	if cCmpW(c, cPow10W(PrecisionW-1)) >= 0 {
+	if !cLtW(c, cPow10W(PrecisionW-1)) {
 		return plusZero
 	}
 	return cNaNPayloadW(c, signaling)

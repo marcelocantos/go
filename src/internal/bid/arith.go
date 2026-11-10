@@ -4,7 +4,9 @@
 
 package bid
 
-//go:generate go run gen_arith.go
+import "math/bits"
+
+//go:generate go run -tags bidgen gen_arith.go
 
 // The arithmetic operations of IEEE 754-2019 clause 5.4.1 and the
 // homogeneous operations of clause 5.3, for both widths. Each computes its
@@ -32,18 +34,12 @@ func Add128(x, y Uint128, mode Mode) Uint128 {
 // negated: the result for it is y made quiet, with the sign of y (see
 // "NaN results" in the package documentation).
 func Sub64(x, y uint64, mode Mode) uint64 {
-	if y&(SpecialMask64|NaNBit64) != SpecialMask64|NaNBit64 {
-		y ^= SignMask64
-	}
-	return add64(x, y, mode)
+	return sub64(x, y, mode)
 }
 
 // Sub128 is Sub64 for decimal128.
 func Sub128(x, y Uint128, mode Mode) Uint128 {
-	if y.Hi&(SpecialMask128Hi|NaNBit128Hi) != SpecialMask128Hi|NaNBit128Hi {
-		y.Hi ^= SignMask128Hi
-	}
-	return add128(x, y, mode)
+	return sub128(x, y, mode)
 }
 
 // Mul64 returns x × y rounded in mode (IEEE 754-2019 clause 5.4.1,
@@ -55,6 +51,29 @@ func Mul64(x, y uint64, mode Mode) uint64 {
 // Mul128 is Mul64 for decimal128.
 func Mul128(x, y Uint128, mode Mode) Uint128 {
 	return mul128(x, y, mode)
+}
+
+// AddSlow128, SubSlow128 and MulSlow128 are Add128, Sub128 and Mul128
+// without the inline front of each (see "Inline fast paths" in the package
+// documentation), for a caller that has already decided the operands the
+// front decides. That caller is the compiler on the targets where it
+// lowers the decimal128 operators to integer fast paths, which accept
+// every operand pair that addSameQuantum128, subSameQuantum128 and
+// mulShort128 accept; it calls the unexported functions behind these
+// directly, and these export them for the tests and the benchmark rows.
+// The general paths take every operand, those included, so the result is
+// the same for every caller; only the cost of a test that cannot succeed is
+// left out.
+func AddSlow128(x, y Uint128, mode Mode) Uint128 {
+	return addSlow128(x, y, mode)
+}
+
+func SubSlow128(x, y Uint128, mode Mode) Uint128 {
+	return subSlow128(x, y, mode)
+}
+
+func MulSlow128(x, y Uint128, mode Mode) Uint128 {
+	return mulSlow128(x, y, mode)
 }
 
 // Div64 returns x / y rounded in mode (IEEE 754-2019 clause 5.4.1,
@@ -212,3 +231,41 @@ func Max64(x, y uint64) uint64 {
 func Max128(x, y Uint128) Uint128 {
 	return max128(x, y)
 }
+
+// compareWords compares finite values with uint64 coefficients, returning
+// -1, 0 or +1. Signs of zeros are irrelevant. The coefficient with the
+// larger exponent is scaled by the difference of the exponents, one exact
+// 64-by-64 product, and compared with the other: a non-zero high word
+// exceeds every word. A difference of at least len(pow10tab64) decides the
+// magnitude for a non-zero coefficient, because 10^20 exceeds every
+// uint64; it is taken as the last power of the table and counted with the
+// high word. Exponents come from the bounded fields of unpackWord64/128.
+// No digit count, general division or rounding is needed, and nothing is
+// a branch: see magCmpW, whose word form this is.
+func compareWords(xneg bool, xc uint64, xe int, yneg bool, yc uint64, ye int) int {
+	// The sign that counts: a zero is not negative.
+	xs := int(b2u(xneg) & ((xc | -xc) >> 63))
+	ys := int(b2u(yneg) & ((yc | -yc) >> 63))
+	gap := xe - ye
+	m := gap >> intSign // all ones if x has the smaller exponent, and y is scaled
+	a, b := xc^(xc^yc)&uint64(m), yc^(xc^yc)&uint64(m)
+	g := (gap ^ m) - m
+	hi, lo := bits.Mul64(a, pow10tab64[min(g, len(pow10tab64)-1)])
+	far := uint64(len(pow10tab64)-1-g) >> 63 & ((a | -a) >> 63)
+	_, lt := bits.Sub64(lo, b, 0)
+	_, gt := bits.Sub64(b, lo, 0)
+	h := (hi|-hi)>>63 | far
+	c := int(gt|h) - int(lt&^h)
+	c = (c ^ m) - m    // reversed if the operands were swapped
+	c = (c ^ -xs) + xs // reversed for a negative x
+	if d := ys - xs; d != 0 {
+		c = d // signs differ: the negative one is the lesser
+	}
+	return c
+}
+
+// maxWordGap is the largest exponent gap the word fast paths align across:
+// pow10tab64 holds 10^0 through 10^19. A word coefficient scaled by 10^19 is
+// below 2^64 × 10^19 and, with a word added, below (2^64-1)(10^19+1) < 2^128,
+// so the aligned value always fits the two words that bits.Mul64 returns.
+const maxWordGap = uint(len(pow10tab64) - 1)

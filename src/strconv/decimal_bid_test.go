@@ -8,10 +8,13 @@ package strconv_test
 
 import (
 	"internal/bid"
+	"math"
 	"math/big"
 	"math/decimal"
 	"math/rand"
+	"slices"
 	. "strconv"
+	"strings"
 	"testing"
 )
 
@@ -102,10 +105,10 @@ var dtoaTests = []dtoaTest{
 	{decimal.Inf[decimal64](-1), 'f', 6, "-Inf"},
 
 	// Negative zero
-	{decimal.BID64frombits(1 << 63), 'g', -1, "-0e-398"},
-	{decimal.BID64frombits(1 << 63), 'e', 6, "-0.000000e+00"},
-	{decimal.BID64frombits(1 << 63), 'f', 6, "-0.000000"},
-	{decimal.BID64frombits(1 << 63), 'f', 1, "-0.0"},
+	{math.Decimal64frombits(1 << 63), 'g', -1, "-0e-398"},
+	{math.Decimal64frombits(1 << 63), 'e', 6, "-0.000000e+00"},
+	{math.Decimal64frombits(1 << 63), 'f', 6, "-0.000000"},
+	{math.Decimal64frombits(1 << 63), 'f', 1, "-0.0"},
 
 	// Decimal-specific: exact representation (unlike float)
 	{decimal64(0.1), 'f', 20, "0.10000000000000000000"},
@@ -144,7 +147,7 @@ var dtoaTests = []dtoaTest{
 	{decimal64(1225), 'g', 3, "1.22e+03"},
 	{decimal64(1e-5), 'g', 3, "1e-05"},
 	{decimal64(-0.0001234), 'g', 2, "-0.00012"},
-	{decimal.BID64frombits(1<<63 | 0x31c0000000000001), 'g', 3, "-1"}, // -1E+0 (exponent at the bias)
+	{math.Decimal64frombits(1<<63 | 0x31c0000000000001), 'g', 3, "-1"}, // -1E+0 (exponent at the bias)
 }
 
 func zeros(n int) string {
@@ -733,6 +736,172 @@ func TestFormatDecimalRounding(t *testing.T) {
 	}
 }
 
+// A carry can discard a trailing zero after rounding at any precision. Exercise
+// every retained length, including overlapping moves of a full-width coefficient.
+func TestFormatDecimalCarryDigits(t *testing.T) {
+	for _, width := range []struct{ bits, digits int }{{64, 16}, {128, 34}} {
+		for n := 2; n <= width.digits; n++ {
+			coeff := strings.Repeat("9", n)
+			for _, exp := range []int{-2 * n, 0, 20} {
+				for _, neg := range []bool{false, true} {
+					input := coeff + "e" + Itoa(exp)
+					if neg {
+						input = "-" + input
+					}
+					x, err := ParseDecimal(input, width.bits)
+					if err != nil {
+						t.Fatal(err)
+					}
+					for prec := 0; prec < n-1; prec++ {
+						want := refFormat(neg, coeff, exp, 'e', prec)
+						if got := FormatDecimal(x, 'e', prec, width.bits); got != want {
+							t.Fatalf("decimal%d %s, precision %d: got %q, want %q", width.bits, input, prec, got, want)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// Exercise every coefficient length and canonical notation boundary while
+// appending to empty and prefixed buffers, with growth and spare capacity.
+// Expected digits and placement come from the independent formatter, not
+// another invocation of AppendDecimal with a different buffer size.
+func TestAppendDecimalCanonicalCapacity(t *testing.T) {
+	for _, width := range []struct{ bits, digits, minExp, maxExp int }{
+		{64, bid.Precision64, bid.MinExp64, bid.MaxExp64},
+		{128, bid.Precision128, bid.MinExp128, bid.MaxExp128},
+	} {
+		for n := 1; n <= width.digits; n++ {
+			coeff := strings.Repeat("1234567890", 4)[:n]
+			c, _ := new(big.Int).SetString(coeff, 10)
+			exponents := []int{width.minExp, -n - 6, -n - 5, -n, 1 - n, -1, 0, 1, 21 - n, 22 - n, width.maxExp}
+			// Every interior point position exercises both digit-copy spans,
+			// including word boundaries and overlapping head/tail stores.
+			for exp := 1 - n; exp < 0; exp++ {
+				if !slices.Contains(exponents, exp) {
+					exponents = append(exponents, exp)
+				}
+			}
+			for _, exp := range exponents {
+				for _, neg := range []bool{false, true} {
+					var x decimal128
+					if width.bits == 64 {
+						bits, _ := bid.Pack64(neg, c.Uint64(), exp)
+						x = decimal128(math.Decimal64frombits(bits))
+					} else {
+						hi := new(big.Int).Rsh(new(big.Int).Set(c), 64).Uint64()
+						bits, _ := bid.Pack128(neg, bid.Uint128{Hi: hi, Lo: c.Uint64()}, exp)
+						x = math.Decimal128frombits(bits.Hi, bits.Lo)
+					}
+					for _, format := range []byte{'e', 'E', 'g', 'G', 'f', '?'} {
+						e := exp + n - 1
+						scientific := format == 'e' || format == 'E' || format != 'f' && (e < -4 || e >= 21 || exp > 0)
+						want := ""
+						if scientific {
+							want = refFormat(neg, coeff, exp, 'e', n-1)
+							if format == 'E' || format == 'G' {
+								want = strings.ReplaceAll(want, "e", "E")
+							}
+						} else {
+							want = refFormat(neg, coeff, exp, 'f', max(-exp, 0))
+						}
+						for _, prefix := range []string{"", "prefix:"} {
+							for _, spare := range []int{0, bid.MaxLen128 - 1, bid.MaxLen128, bid.MaxLen128 + 1, 2 * bid.MaxLen128} {
+								// The byte outside the exposed capacity is a bounds sentinel.
+								buf := []byte(strings.Repeat("~", len(prefix)+spare+1))
+								copy(buf, prefix)
+								dst := buf[: len(prefix) : len(prefix)+spare]
+								got := AppendDecimal(dst, x, format, -1, width.bits)
+								if string(got) != prefix+want || buf[len(buf)-1] != '~' {
+									t.Fatalf("decimal%d %s e%d neg=%v format=%c spare=%d prefix=%q: got %q, want %q; sentinel=%c", width.bits, coeff, exp, neg, format, spare, prefix, got, prefix+want, buf[len(buf)-1])
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// TestAppendDecimalShort drives the short values, a coefficient below 10^8
+// at an exponent from -4 to 0, which the kernel lays out in registers and
+// stores straight into the buffer: every coefficient length, with the
+// point at each place inside the digits and to their left, zeros of each
+// quantum, both signs and the values just outside the range. Each is
+// appended with no spare capacity, with less than the short path needs,
+// with exactly that and with more, to an empty and a prefixed buffer, in
+// every notation and also at a precision, which the general path rounds
+// and lays out; the expected text comes from the independent formatter,
+// and every byte after the result must be untouched, because a buffer's
+// spare capacity may hold the caller's data.
+func TestAppendDecimalShort(t *testing.T) {
+	coeffs := []string{"0", "1", "5", "9", "10", "12", "99", "100", "123", "999", "1000", "1234", "9999",
+		"12345", "99999", "100000", "123456", "999999", "1234567", "9999999", "10000000", "12345678", "99999999",
+		"100000000", "123456789"}
+	for _, coeff := range coeffs {
+		c, _ := new(big.Int).SetString(coeff, 10)
+		for exp := -8; exp <= 2; exp++ {
+			for _, neg := range []bool{false, true} {
+				bits, _ := bid.Pack128(neg, bid.Uint128{Lo: c.Uint64()}, exp)
+				x := math.Decimal128frombits(bits.Hi, bits.Lo)
+				n := len(coeff)
+				for _, format := range []byte{'e', 'E', 'g', 'G', 'f', '?'} {
+					for _, prec := range []int{-1, 2} {
+						want := ""
+						if prec < 0 {
+							e := exp + n - 1
+							scientific := format == 'e' || format == 'E' || format != 'f' && (e < -4 || e >= 21 || exp > 0)
+							switch {
+							case scientific && coeff == "0":
+								// The reference has no exponent form of
+								// zero, and neither has the short path:
+								// the general path's result stands.
+								want = string(AppendDecimal(nil, x, format, prec, 128))
+							case scientific:
+								want = refFormat(neg, coeff, exp, 'e', n-1)
+								if format == 'E' || format == 'G' {
+									want = strings.ReplaceAll(want, "e", "E")
+								}
+							default:
+								want = refFormat(neg, coeff, exp, 'f', max(-exp, 0))
+							}
+						} else {
+							// A precision rounds; the general path's own
+							// result with no spare capacity is the reference.
+							want = string(AppendDecimal(nil, x, format, prec, 128))
+						}
+						// The second prefix holds a point, zeros and an
+						// exponent mark of its own, which are not the
+						// number's: a layout that edits what it appended
+						// must not read them.
+						for _, prefix := range []string{"", "v1.0e5:"} {
+							for _, spare := range []int{0, len(want), bid.ShortLen128 - 1, bid.ShortLen128, bid.ShortLen128 + 1, 64} {
+								buf := []byte(strings.Repeat("~", len(prefix)+spare+1))
+								copy(buf, prefix)
+								got := AppendDecimal(buf[:len(prefix):len(prefix)+spare], x, format, prec, 128)
+								if string(got) != prefix+want {
+									t.Fatalf("%s e%d neg=%v format=%c prec=%d spare=%d prefix=%q: got %q, want %q", coeff, exp, neg, format, prec, spare, prefix, got, prefix+want)
+								}
+								if &got[0] != &buf[0] {
+									continue // the result did not fit and was reallocated
+								}
+								for i := len(got); i < len(buf); i++ {
+									if buf[i] != '~' {
+										t.Fatalf("%s e%d neg=%v format=%c prec=%d spare=%d prefix=%q: byte %d after the %d-byte result %q was written", coeff, exp, neg, format, prec, spare, prefix, i, len(got), got)
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 // --- Quantum-preserving format tests ---
 
 func TestFormatDecimal64Quantum(t *testing.T) {
@@ -782,7 +951,7 @@ func FuzzDecimal64RoundTrip(f *testing.F) {
 		if !bid.IsCanonical64(b) {
 			t.Skip("not an encoding Format produces from")
 		}
-		d := decimal.BID64frombits(b)
+		d := math.Decimal64frombits(b)
 		for _, prec := range []int{-1, -2} {
 			s := FormatDecimal(decimal128(d), 'e', prec, 64)
 			d2, err := parseDecimal64(s)
@@ -791,12 +960,12 @@ func FuzzDecimal64RoundTrip(f *testing.F) {
 			}
 			if decimal.IsNaN[decimal64](d) {
 				if !decimal.IsNaN[decimal64](d2) {
-					t.Fatalf("%#x: NaN came back as %q (%#x)", b, s, decimal.BID64bits(d2))
+					t.Fatalf("%#x: NaN came back as %q (%#x)", b, s, math.Decimal64bits(d2))
 				}
 				continue
 			}
-			if !bid.Equal64(decimal.BID64bits(d2), b) {
-				t.Fatalf("%#x: %q parses to %#x", b, s, decimal.BID64bits(d2))
+			if !bid.Equal64(math.Decimal64bits(d2), b) {
+				t.Fatalf("%#x: %q parses to %#x", b, s, math.Decimal64bits(d2))
 			}
 			// -2 keeps the quantum, so formatting again gives the same text.
 			if prec == -2 {
@@ -821,7 +990,7 @@ func FuzzDecimal128RoundTrip(f *testing.F) {
 		if !bid.IsCanonical128(x) {
 			t.Skip("not an encoding Format produces from")
 		}
-		d := decimal.BID128frombits(hi, lo)
+		d := math.Decimal128frombits(hi, lo)
 		for _, prec := range []int{-1, -2} {
 			s := FormatDecimal(d, 'e', prec, 128)
 			d2, err := ParseDecimal(s, 128)
@@ -834,7 +1003,7 @@ func FuzzDecimal128RoundTrip(f *testing.F) {
 				}
 				continue
 			}
-			hi2, lo2 := decimal.BID128bits(d2)
+			hi2, lo2 := math.Decimal128bits(d2)
 			if !bid.Equal128(bid.Uint128{Hi: hi2, Lo: lo2}, x) {
 				t.Fatalf("%#x:%#x: %q parses to %#x:%#x", hi, lo, s, hi2, lo2)
 			}
@@ -848,6 +1017,18 @@ func FuzzDecimal128RoundTrip(f *testing.F) {
 }
 
 // --- Benchmarks ---
+
+var formatDecimalSink string
+
+func TestFormatDecimalAllocs(t *testing.T) {
+	for _, x := range []decimal128{123.45, 1.50, 1e100, -1e-6000, 1234567890123456789012345678901234} {
+		if n := testing.AllocsPerRun(100, func() {
+			formatDecimalSink = FormatDecimal(x, 'g', -1, 128)
+		}); n != 1 {
+			t.Errorf("FormatDecimal(%v) allocated %v times; want one result string", x, n)
+		}
+	}
+}
 
 func BenchmarkFormatDecimal64(b *testing.B) {
 	benchmarks := []struct {
@@ -909,9 +1090,14 @@ func TestFormatDecimalCanonical(t *testing.T) {
 		{coeff: 0, exp: 0, neg: true, g: "-0", e: "-0e+00", f: "-0"},
 		{coeff: 0, exp: -2, g: "0.00", e: "0e-02", f: "0.00"},
 		{coeff: 0, exp: 3, g: "0e+03", e: "0e+03", f: "0"},
-		{coeff: 0, exp: -6, g: "0.000000", e: "0e-06", f: "0.000000"},
+		{coeff: 0, exp: -4, g: "0.0000", e: "0e-04", f: "0.0000"},
+		{coeff: 0, exp: -5, g: "0e-05", e: "0e-05", f: "0.00000"},
+		{coeff: 0, exp: -6, g: "0e-06", e: "0e-06", f: "0.000000"},
 		{coeff: 0, exp: -7, g: "0e-07", e: "0e-07", f: "0.0000000"},
-		{coeff: 1, exp: -6, g: "0.000001", e: "1e-06", f: "0.000001"},
+		{coeff: 1, exp: -4, g: "0.0001", e: "1e-04", f: "0.0001"},
+		{coeff: 1, exp: -5, g: "1e-05", e: "1e-05", f: "0.00001"},
+		{coeff: 12, exp: -5, g: "0.00012", e: "1.2e-04", f: "0.00012"},
+		{coeff: 1, exp: -6, g: "1e-06", e: "1e-06", f: "0.000001"},
 		{coeff: 1, exp: -7, g: "1e-07", e: "1e-07", f: "0.0000001"},
 		{coeff: 10, exp: -8, g: "1.0e-07", e: "1.0e-07", f: "0.00000010"},
 		{coeff: 1000000000000000, exp: 5, g: "1.000000000000000e+20", e: "1.000000000000000e+20", f: "100000000000000000000"},
@@ -921,7 +1107,7 @@ func TestFormatDecimalCanonical(t *testing.T) {
 	for _, tt := range tests {
 		// bid.Pack64 is the kernel's packer; the digits here don't come from it.
 		bits, _ := bid.Pack64(tt.neg, tt.coeff, tt.exp)
-		d := decimal.BID64frombits(bits)
+		d := math.Decimal64frombits(bits)
 		for _, c := range []struct {
 			fmt  byte
 			want string
@@ -937,8 +1123,57 @@ func TestFormatDecimalCanonical(t *testing.T) {
 		if err != nil {
 			t.Errorf("ParseDecimal(%q): %v", tt.g, err)
 		}
-		if decimal.BID64bits(back) != bits {
-			t.Errorf("ParseDecimal(%q) = %#x, want %#x", tt.g, decimal.BID64bits(back), bits)
+		if math.Decimal64bits(back) != bits {
+			t.Errorf("ParseDecimal(%q) = %#x, want %#x", tt.g, math.Decimal64bits(back), bits)
+		}
+	}
+}
+
+func TestFormatDecimalCanonicalNotation(t *testing.T) {
+	for _, tt := range []struct{ in, want string }{
+		{"100000000000000000000", "100000000000000000000"},
+		{"-100000000000000000000", "-100000000000000000000"},
+		{"1000000000000000000000", "1.000000000000000000000e+21"},
+		{"1.234567890123456789012", "1.234567890123456789012"},
+		{"-123456789012345678901.2345678901234", "-123456789012345678901.2345678901234"},
+		{"1.234567890123456789012345678901234", "1.234567890123456789012345678901234"},
+		{"0.0001", "0.0001"},
+		{"0.00001", "1e-05"},
+		{"0.000012", "1.2e-05"},
+		{"0.00012", "0.00012"},
+		{"0.000001", "1e-06"},
+		{"0.0000001", "1e-07"},
+		{"0.00", "0.00"},
+		{"-0.00", "-0.00"},
+		{"0e3", "0e+03"},
+		{"1e3", "1e+03"},
+		{"1.50", "1.50"},
+		{"NaN", "NaN"},
+		{"Infinity", "+Inf"},
+		{"-Infinity", "-Inf"},
+	} {
+		x, err := ParseDecimal(tt.in, 128)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, format := range []byte{'g', 'G'} {
+			want := tt.want
+			if format == 'G' {
+				want = strings.ReplaceAll(want, "e", "E")
+			}
+			if got := FormatDecimal(x, format, -1, 128); got != want {
+				t.Errorf("FormatDecimal(%s, %c) = %q, want %q", tt.in, format, got, want)
+			}
+			// Exercise every capacity boundary, including growth, exact fit,
+			// and spare capacity. The prefix must survive all of them.
+			const prefix = "prefix:"
+			for spare := 0; spare <= len(want)+1; spare++ {
+				dst := make([]byte, len(prefix), len(prefix)+spare)
+				copy(dst, prefix)
+				if got := string(AppendDecimal(dst, x, format, -1, 128)); got != prefix+want {
+					t.Errorf("AppendDecimal(%s, %c, spare=%d) = %q, want %q", tt.in, format, spare, got, prefix+want)
+				}
+			}
 		}
 	}
 }
@@ -946,4 +1181,84 @@ func TestFormatDecimalCanonical(t *testing.T) {
 func parseDecimal64(s string) (decimal64, error) {
 	d, err := ParseDecimal(s, 64)
 	return decimal64(d), err
+}
+
+// TestFormatDecimalMatchesKernel checks that the canonical string, which
+// FormatDecimal writes with 'g' at precision -1 and fmt's %v writes through
+// it, is the text println writes, which comes from the kernel's Append64
+// and Append128: every coefficient length at every exponent around the
+// thresholds of plain notation, zeros, both signs, the specials, the
+// extremes of the exponent range and random encodings of both widths.
+func TestFormatDecimalMatchesKernel(t *testing.T) {
+	check128 := func(x bid.Uint128) {
+		t.Helper()
+		d := math.Decimal128frombits(x.Hi, x.Lo)
+		if got, want := FormatDecimal(d, 'g', -1, 128), string(bid.Append128(nil, x)); got != want {
+			t.Fatalf("FormatDecimal(%#016x%016x, 'g', -1, 128) = %q, kernel %q", x.Hi, x.Lo, got, want)
+		}
+	}
+	check64 := func(x uint64) {
+		t.Helper()
+		d := decimal128(math.Decimal64frombits(x))
+		if got, want := FormatDecimal(d, 'g', -1, 64), string(bid.Append64(nil, x)); got != want {
+			t.Fatalf("FormatDecimal(%#016x, 'g', -1, 64) = %q, kernel %q", x, got, want)
+		}
+	}
+	n := 0
+	for digits := 0; digits <= bid.Precision128; digits++ {
+		c := bid.Uint128{}
+		for i := 0; i < digits; i++ {
+			// 1, 12, 123, ... with the digits cycling, so that no
+			// coefficient has trailing zeros to hide a misplaced point.
+			hi, lo := bits128mul10(c)
+			c = bid.Uint128{Hi: hi, Lo: lo + uint64(i%9+1)}
+		}
+		for exp := -digits - 8; exp <= 24; exp++ {
+			for _, neg := range []bool{false, true} {
+				x, ok := bid.Pack128(neg, c, exp)
+				if !ok {
+					continue
+				}
+				check128(x)
+				n++
+				if digits <= bid.Precision64 {
+					if y, ok := bid.Pack64(neg, c.Lo, exp); ok {
+						check64(y)
+						n++
+					}
+				}
+			}
+		}
+	}
+	for _, x := range []bid.Uint128{
+		{Hi: bid.Inf128Hi}, {Hi: bid.Inf128Hi | bid.SignMask128Hi}, {Hi: bid.NaN128Hi}, {Hi: bid.SNaN128Hi},
+	} {
+		check128(x)
+	}
+	for _, x := range []uint64{bid.Inf64, bid.Inf64 | bid.SignMask64, bid.NaN64, bid.SNaN64} {
+		check64(x)
+	}
+	r := rand.New(rand.NewSource(1))
+	for range 200000 {
+		check128(bid.Uint128{Hi: r.Uint64(), Lo: r.Uint64()})
+		check64(r.Uint64())
+	}
+	t.Logf("%d values and 400,008 random encodings", n)
+}
+
+// bits128mul10 returns c × 10 as two words, for coefficients that fit.
+func bits128mul10(c bid.Uint128) (hi, lo uint64) {
+	hi = c.Hi*10 + mulhi64(c.Lo, 10)
+	return hi, c.Lo * 10
+}
+
+func mulhi64(a, b uint64) uint64 {
+	const mask = 1<<32 - 1
+	a0, a1 := a&mask, a>>32
+	b0, b1 := b&mask, b>>32
+	w0 := a0 * b0
+	t := a1*b0 + w0>>32
+	w1, w2 := t&mask, t>>32
+	w1 += a0 * b1
+	return a1*b1 + w2 + w1>>32
 }

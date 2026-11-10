@@ -251,22 +251,64 @@ func FuzzRound128(f *testing.F) {
 // TestRoundIsTheOnlyPacker enforces the fourth criterion of the rounding
 // routine by reading the package source: the raw encoders Pack64, Pack128
 // and PackW (in the template) are called only by packW and its
-// instantiations; those are called only by roundW and overflowW and their
+// instantiations; those are called only by roundW, roundFiniteW, overflowW and their
 // instantiations; and the field layout constants that would let a function
 // assemble an encoding by hand are referenced only in encoding.go. The
 // exact fast paths that roundW's comment enumerates are the allowlist
-// here; a new one is added to both or the test fails.
+// here; a new one is added to both or the test fails. So is roundFaceW,
+// the face-value rounding of a swamped or aligned addend and of an inexact
+// quotient, and addLongW and divLongW, its only callers.
 func TestRoundIsTheOnlyPacker(t *testing.T) {
 	// Callers of the raw encoder.
-	// Widen and the DPD decoders are the exact fast paths: see the end of
-	// roundW's comment.
+	// Widen, the DPD decoders and the 128-bit integer conversions are exact
+	// fast paths: see the end of roundW's comment.
 	rawPackers := map[string]bool{"packW": true, "pack64": true, "pack128": true, "Widen": true,
-		"BIDFromDPD64": true, "BIDFromDPD128": true}
+		"BIDFromDPD64": true, "BIDFromDPD128": true,
+		"Int64To128": true, "Uint64To128": true}
 	// Callers of packW, the checked encoder: the rounding routine, its
-	// overflow result (no exact fast path uses the checked encoder).
+	// overflow result and the face-value rounding (no exact fast path
+	// uses the checked encoder).
 	checkedPackers := map[string]bool{
 		"roundW": true, "round64": true, "round128": true,
+		"roundFiniteW": true, "roundFinite64": true, "roundFinite128": true,
 		"overflowW": true, "overflow64": true, "overflow128": true,
+		"roundFaceW": true, "roundFace64": true, "roundFace128": true,
+	}
+	// The face-value rounding is the one exception to roundW as the
+	// rounding routine, and its proof holds only for the swamped and the
+	// aligned addend of addLongW and the quotient of divLongW inside the exponent range divLongW
+	// tests: see roundFaceW and "Face-value rounding" in the package
+	// documentation. It has those two callers.
+	faceRounder := map[string]bool{"roundFaceW": true, "roundFace64": true, "roundFace128": true}
+	faceCallers := map[string]bool{"addLongW": true, "addLong64": true, "addLong128": true, "divLongW": true, "divLong64": true, "divLong128": true}
+	// Callers of the word packers, which encode the exact results of the
+	// word fast paths of addition, multiplication, fused multiply-add,
+	// quantize and division: see the comments of those functions and the
+	// end of roundW's.
+	wordPackers := map[string]bool{
+		"addLongW": true, "addLong64": true, "addLong128": true, "addSlow128": true,
+		"mulLongW": true, "mulLong64": true, "mulLong128": true, "mulSlow128": true,
+		"fmaW": true, "fma64": true, "fma128": true,
+		"quantizeSlowW": true, "quantizeSlow64": true, "quantizeSlow128": true,
+		// The word path of division: a quotient of exactly Precision
+		// digits rounded by its biased remainder, or an exact quotient
+		// with its zeros stripped, in range or turned away.
+		"div128": true, "divWide128": true,
+	}
+	wordEncoder := map[string]bool{"packWord64": true, "packWord128": true, "packWordW": true}
+	// Callers of the inline encoders, which encode the exact results of the
+	// inline paths of addition, subtraction and multiplication in front of
+	// the general paths: see "Inline fast paths" in the package
+	// documentation.
+	inlinePackers := map[string]bool{
+		"addW": true, "add64": true, "add128": true,
+		"subW": true, "sub64": true, "sub128": true,
+		"mulW": true, "mul64": true, "mul128": true,
+	}
+	inlineEncoder := map[string]bool{
+		"addSameQuantum64": true, "addSameQuantum128": true, "addSameQuantumW": true,
+		"subSameQuantum64": true, "subSameQuantum128": true, "subSameQuantumW": true,
+		"mulShort64": true, "mulShort128": true, "mulShortW": true,
 	}
 	rawEncoder := map[string]bool{"Pack64": true, "Pack128": true, "PackW": true}
 	checkedEncoder := map[string]bool{"packW": true, "pack64": true, "pack128": true}
@@ -322,7 +364,13 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 					switch {
 					case rawEncoder[id.Name] && !rawPackers[caller]:
 						violations = append(violations, fset.Position(n.Pos()).String()+": "+caller+" calls "+id.Name)
+					case inlineEncoder[id.Name] && !inlinePackers[caller]:
+						violations = append(violations, fset.Position(n.Pos()).String()+": "+caller+" calls "+id.Name)
+					case wordEncoder[id.Name] && !wordPackers[caller]:
+						violations = append(violations, fset.Position(n.Pos()).String()+": "+caller+" calls "+id.Name)
 					case checkedEncoder[id.Name] && !checkedPackers[caller]:
+						violations = append(violations, fset.Position(n.Pos()).String()+": "+caller+" calls "+id.Name)
+					case faceRounder[id.Name] && !faceCallers[caller]:
 						violations = append(violations, fset.Position(n.Pos()).String()+": "+caller+" calls "+id.Name)
 					}
 				case *ast.Ident:
@@ -339,5 +387,116 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 	}
 	if len(violations) > 0 {
 		t.Errorf("%d call(s) reach the encoder outside the rounding routine; see roundW in arith_tmpl.go for the exact fast paths allowed", len(violations))
+	}
+}
+
+// TestRoundWideHalfBound checks roundW where it counts digits: in the
+// coefficient type when the high half of the value is zero, and over the
+// whole double-width value otherwise. Products reach it on both sides: the
+// factor pairs below multiply to 2^n - 1, 2^n and 2^n + 1 for the width n
+// of the coefficient type (64 and 128 bits), and to powers of ten and
+// their neighbours below and above it, at exponents in the middle of the
+// range, at the subnormal edge and at overflow, both signs and every mode,
+// against the reference.
+func TestRoundWideHalfBound(t *testing.T) {
+	var k kernel
+	pairs := map[*format][][2]string{
+		dec64: {
+			{"4294967295", "4294967297"},             // 2^64 - 1
+			{"4294967296", "4294967296"},             // 2^64
+			{"4294967297", "4294967297"},             // 2^64 + 2^33 + 1
+			{"1844674407370955", "10000"},            // just below 2^64, 20 digits
+			{"1844674407370956", "10000"},            // just above 2^64
+			{"1000000000", "1000000000"},             // 10^18
+			{"10000000000", "1000000000"},            // 10^19
+			{"9999999999", "1000000001"},             // 10^19 - 1 + 10^9 - 10^10
+			{"9999999999999999", "9999999999999999"}, // 32 digits
+		},
+		dec128: {
+			{"18446744073709551615", "18446744073709551617"}, // 2^128 - 1
+			{"18446744073709551616", "18446744073709551616"}, // 2^128
+			{"18446744073709551617", "18446744073709551617"}, // above 2^128
+			{"3402823669209384634633746074317682", "100000"}, // just below 2^128, 39 digits
+			{"3402823669209384634633746074317683", "100000"}, // just above 2^128
+			{"10000000000000000000", "1000000000000000000"},  // 10^37
+			{"10000000000000000000", "10000000000000000000"}, // 10^38
+			{"9999999999999999999999999999999999", "9999999999999999999999999999999999"},
+		},
+	}
+	for _, f := range []*format{dec64, dec128} {
+		n := 0
+		for _, p := range pairs[f] {
+			for _, e := range [][2]int{{0, 0}, {-10, 3}, {f.minExp, 0}, {f.minExp, 5}, {f.maxExp, 0}, {f.maxExp / 2, f.maxExp / 2}} {
+				for _, neg := range []bool{false, true} {
+					x, ok := wordOperand(f, neg, p[0], e[0])
+					if !ok {
+						t.Fatalf("%s: %s is not a coefficient", f.name, p[0])
+					}
+					y, ok := wordOperand(f, false, p[1], e[1])
+					if !ok {
+						t.Fatalf("%s: %s is not a coefficient", f.name, p[1])
+					}
+					for _, m := range allModes {
+						n++
+						if got, want := k.mul(f, x, y, m), f.mul(x, y, m); got != want {
+							t.Fatalf("%s mul(%s, %s, %s) = %s, want %s", f.name, f.format(x), f.format(y), modeName(m), f.format(got), f.format(want))
+						}
+						if got, want := k.mul(f, y, x, m), f.mul(y, x, m); got != want {
+							t.Fatalf("%s mul(%s, %s, %s) = %s, want %s", f.name, f.format(y), f.format(x), modeName(m), f.format(got), f.format(want))
+						}
+					}
+				}
+			}
+		}
+		t.Logf("%s: %d products", f.name, n)
+	}
+}
+
+// TestRoundFaceValue checks roundW where it takes a coefficient of exactly
+// Precision digits at an exponent inside the format without counting its
+// digits: the swamped addend of add, whose class is known at face value.
+// The larger operand's coefficient runs from one digit to Precision digits,
+// the largest (whose increment carries to 10^(Precision-1) one place up)
+// and the power of ten whose difference needs one more place included; its
+// exponent runs up to the largest, where the carry overflows; the smaller
+// operand is far enough below to be swamped, of either sign and of one to
+// Precision digits; every mode, against the reference.
+func TestRoundFaceValue(t *testing.T) {
+	var k kernel
+	for _, f := range []*format{dec64, dec128} {
+		nines := strings.Repeat("9", f.prec)
+		one := "1" + strings.Repeat("0", f.prec-1)
+		xs := []string{"1", "7", "5" + strings.Repeat("0", f.prec-2), one, nines[1:], nines}
+		ys := []string{"1", "5", nines}
+		n := 0
+		for _, xc := range xs {
+			for _, xe := range []int{0, f.maxExp - 1, f.maxExp, f.minExp + 2*f.prec + 2} {
+				for _, yc := range ys {
+					// A gap of 2·prec+2 swamps every y below x scaled to
+					// prec digits; prec+3 is the least that does for a
+					// one-digit y and x of prec digits.
+					for _, gap := range []int{f.prec + 3, 2*f.prec + 2, 3 * f.prec} {
+						ye := xe - gap
+						for _, sign := range [][2]bool{{false, false}, {false, true}, {true, false}, {true, true}} {
+							x, ok1 := wordOperand(f, sign[0], xc, xe)
+							y, ok2 := wordOperand(f, sign[1], yc, ye)
+							if !ok1 || !ok2 {
+								continue
+							}
+							for _, m := range allModes {
+								n++
+								if got, want := k.add(f, x, y, m), f.add(x, y, m); got != want {
+									t.Fatalf("%s add(%s, %s, %s) = %s, want %s", f.name, f.format(x), f.format(y), modeName(m), f.format(got), f.format(want))
+								}
+								if got, want := k.add(f, y, x, m), f.add(y, x, m); got != want {
+									t.Fatalf("%s add(%s, %s, %s) = %s, want %s", f.name, f.format(y), f.format(x), modeName(m), f.format(got), f.format(want))
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		t.Logf("%s: %d sums", f.name, n)
 	}
 }

@@ -21,6 +21,10 @@ import "math/bits"
 // math/bits panic (a run-time divide error) instead.
 const errDivideByZero = "internal/bid: division by zero"
 
+// intSign is the shift that spreads the sign of an int over the word: the
+// mask of a negative value, at the int's own width.
+const intSign = bits.UintSize - 1
+
 // u128Add returns a + b modulo 2^128 and the carry out of bit 127 (0 or 1).
 func u128Add(a, b Uint128) (sum Uint128, carry uint64) {
 	sum.Lo, carry = bits.Add64(a.Lo, b.Lo, 0)
@@ -38,27 +42,20 @@ func u128Sub(a, b Uint128) (diff Uint128, borrow uint64) {
 
 // u128Cmp returns -1, 0 or +1 as a is less than, equal to or greater than b.
 func u128Cmp(a, b Uint128) int {
-	if a.Hi != b.Hi {
-		if a.Hi < b.Hi {
-			return -1
-		}
-		return 1
-	}
-	if a.Lo != b.Lo {
-		if a.Lo < b.Lo {
-			return -1
-		}
-		return 1
-	}
-	return 0
+	// The two borrows, of a - b and of b - a: operands with no pattern
+	// make a branch on either word a coin toss, and this has none.
+	_, lt := bits.Sub64(a.Lo, b.Lo, 0)
+	_, lt = bits.Sub64(a.Hi, b.Hi, lt)
+	_, gt := bits.Sub64(b.Lo, a.Lo, 0)
+	_, gt = bits.Sub64(b.Hi, a.Hi, gt)
+	return int(gt) - int(lt)
 }
 
-// u128Lt reports whether a < b.
+// u128Lt reports whether a < b: the borrow of a - b, without a branch.
 func u128Lt(a, b Uint128) bool {
-	if a.Hi != b.Hi {
-		return a.Hi < b.Hi
-	}
-	return a.Lo < b.Lo
+	_, c := bits.Sub64(a.Lo, b.Lo, 0)
+	_, c = bits.Sub64(a.Hi, b.Hi, c)
+	return c != 0
 }
 
 // u128Or returns a | b.
@@ -109,23 +106,59 @@ func u128Mul64(a Uint128, b uint64) (p Uint128, hi uint64) {
 
 // u128Mul returns the exact 256-bit product a × b.
 func u128Mul(a, b Uint128) Uint256 {
-	// a × b = a × b.Lo + (a × b.Hi) << 64, each a 192-bit product.
-	p, p2 := u128Mul64(a, b.Lo)
-	q, q2 := u128Mul64(a, b.Hi)
+	if a.Hi|b.Hi == 0 {
+		// Two word-sized factors have an exact two-word product.
+		hi, lo := bits.Mul64(a.Lo, b.Lo)
+		return Uint256{Lo: Uint128{Hi: hi, Lo: lo}}
+	}
+	// Form all four word products, then add the two cross products to
+	// the diagonal product as two independent carry chains.
+	h00, l00 := bits.Mul64(a.Lo, b.Lo)
+	h01, l01 := bits.Mul64(a.Lo, b.Hi)
+	h10, l10 := bits.Mul64(a.Hi, b.Lo)
+	h11, l11 := bits.Mul64(a.Hi, b.Hi)
 	var r Uint256
 	var c uint64
-	r.Lo.Lo = p.Lo
-	r.Lo.Hi, c = bits.Add64(p.Hi, q.Lo, 0)
-	r.Hi.Lo, c = bits.Add64(p2, q.Hi, c)
-	r.Hi.Hi = q2 + c // cannot overflow: the product is below 2^256
+	r.Lo.Lo = l00
+	r.Lo.Hi, c = bits.Add64(h00, l01, 0)
+	r.Hi.Lo, c = bits.Add64(l11, h01, c)
+	r.Hi.Hi = h11 + c
+	r.Lo.Hi, c = bits.Add64(r.Lo.Hi, l10, 0)
+	r.Hi.Lo, c = bits.Add64(r.Hi.Lo, h10, c)
+	r.Hi.Hi += c // cannot overflow: the product is below 2^256
 	return r
+}
+
+// u128MulFits returns a × b and true when the product is below 2^128, and
+// false otherwise. A product below 2^128 has a factor below 2^64 (two
+// factors of 2^64 or more make at least 2^128), so after ordering the
+// factors it is a.Lo × b, two word products: a.Lo·b.Lo + a.Lo·b.Hi·2^64,
+// which fits exactly when the high word of a.Lo·b.Hi and the carry into
+// it are zero.
+func u128MulFits(a, b Uint128) (Uint128, bool) {
+	if a.Hi != 0 {
+		if b.Hi != 0 {
+			return Uint128{}, false
+		}
+		a, b = b, a
+	}
+	h0, l0 := bits.Mul64(a.Lo, b.Lo)
+	h1, l1 := bits.Mul64(a.Lo, b.Hi)
+	hi, c := bits.Add64(h0, l1, 0)
+	return Uint128{Hi: hi, Lo: l0}, h1|c == 0
 }
 
 // u128Div64 returns the quotient and remainder of a / d. The quotient is a
 // full 128 bits: a / d < 2^128 always, so there is no precondition beyond
-// d != 0. It panics with the math/bits divide error if d is zero.
+// d != 0. It panics with an integer divide error if d is zero.
 func u128Div64(a Uint128, d uint64) (q Uint128, r uint64) {
-	q.Hi, r = bits.Div64(0, a.Hi, d)
+	if a.Hi == 0 {
+		// A one-word coefficient needs one native divide, without either
+		// of the software wide divides on architectures such as ARM64.
+		q.Lo, r = a.Lo/d, a.Lo%d
+		return q, r
+	}
+	q.Hi, r = a.Hi/d, a.Hi%d
 	q.Lo, r = bits.Div64(r, a.Lo, d)
 	return q, r
 }
@@ -146,13 +179,7 @@ func u128Div(a, d Uint128) (q, r Uint128) {
 // u128GtMaxCoeff reports whether c exceeds the largest decimal128
 // coefficient, 10^34 - 1.
 func u128GtMaxCoeff(c Uint128) bool {
-	if c.Hi > MaxCoeff128Hi {
-		return true
-	}
-	if c.Hi < MaxCoeff128Hi {
-		return false
-	}
-	return c.Lo > MaxCoeff128Lo
+	return c.Hi > MaxCoeff128Hi || c.Hi == MaxCoeff128Hi && c.Lo > MaxCoeff128Lo
 }
 
 // u128GePow10 reports whether c >= 10^n. A negative n is treated as 0. For

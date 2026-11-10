@@ -48,6 +48,38 @@ func cCmp64(a, b coef64) int {
 	return 0
 }
 
+// cCmpFinite64 compares two finite values, returning -1, 0 or +1: a zero of
+// either sign is below every positive value, above every negative one and
+// equal to every zero; then the signs decide, and within one sign the
+// magnitudes, reversed for negative values. A decimal64 coefficient is a
+// word, so this is compareWords, which see.
+func cCmpFinite64(xneg bool, xc coef64, xe int, yneg bool, yc coef64, ye int) int {
+	return compareWords(xneg, xc, xe, yneg, yc, ye)
+}
+
+// cSel64 returns a if m is zero and b if m is all ones: a choice by a
+// mask, for the choices that depend on the operands' values.
+func cSel64(m uint64, a, b coef64) coef64 {
+	return a ^ (a^b)&m
+}
+
+// cLt64 reports whether a < b.
+func cLt64(a, b coef64) bool {
+	return a < b
+}
+
+// cEq64 reports whether a == b.
+func cEq64(a, b coef64) bool {
+	return a == b
+}
+
+// cClass64 returns the class of the fraction r / (r + rest), for a
+// non-zero r: classBelowHalf, classHalf or classAboveHalf as r is below,
+// equal to or above rest. It is class64, whose half is rest here.
+func cClass64(r, rest coef64) digitClass {
+	return class64(r, rest)
+}
+
 // cAdd64 returns a + b modulo 2^64 and whether the sum carried out of the
 // type, in which case the true sum is 2^64 + sum.
 func cAdd64(a, b coef64) (sum coef64, carry bool) {
@@ -124,9 +156,15 @@ func cReduce64(p wide64, k int) (q coef64, sticky bool) {
 	return q, r != 0
 }
 
-// cLenFull64 returns the number of decimal digits of p: 0 for zero.
+// cLenFull64 returns the number of decimal digits of p: 0 for zero. It is
+// cDigits128, whose body is repeated here because a call to it would not
+// inline: see its comment.
 func cLenFull64(p wide64) int {
-	return cDigits128(p)
+	t := u128Len(p) * 1233 >> 12
+	q := &pow10tab128[t]
+	_, b := bits.Sub64(p.Lo, q.Lo, 0)
+	_, b = bits.Sub64(p.Hi, q.Hi, b)
+	return t + 1 - int(b)
 }
 
 // cAddFull64 returns a + b modulo 2^128 and whether the sum carried out of
@@ -165,6 +203,14 @@ func cShift64(c coef64, k int) (q coef64, class digitClass) {
 	return q, class64(c-q*d, d>>1)
 }
 
+// cDivExactPow1064 returns c / 10^k and true when 10^k divides c, and false
+// otherwise. Precondition: 0 <= k <= 19. The division is the hardware's: the
+// inverse method of cDivExactPow10128 measured slower for a word.
+func cDivExactPow1064(c coef64, k int) (q coef64, ok bool) {
+	p := pow10tab64[k]
+	return c / p, c%p == 0
+}
+
 // cShiftFull64 is cShift64 for a double-width value, which may keep a
 // quotient too large for a coefficient.
 func cShiftFull64(p wide64, k int) (q wide64, class digitClass) {
@@ -184,6 +230,11 @@ func cScale64(c coef64, k int) (r coef64, overflow bool) {
 	if k >= len(pow10tab64) {
 		return 0, c != 0
 	}
+	return cScaleTab64(c, k)
+}
+
+// cScaleTab64 is cScale64 for a k within the table of powers, 0 <= k <= 19.
+func cScaleTab64(c coef64, k int) (r coef64, overflow bool) {
 	hi, lo := bits.Mul64(c, pow10tab64[k])
 	if hi != 0 {
 		return 0, true
@@ -267,6 +318,17 @@ func cModFull64(p wide64, m coef64) coef64 {
 	return bits.Rem64(p.Hi, p.Lo, m)
 }
 
+// cModulus64 is cModulus128 for a word, which has nothing to prepare.
+type cModulus64 struct{ m coef64 }
+
+// cModPrepare64 returns m prepared.
+func cModPrepare64(m coef64) cModulus64 { return cModulus64{m} }
+
+// cModPrepared64 is cModFull64 for a prepared modulus.
+func cModPrepared64(p wide64, pm *cModulus64) coef64 {
+	return cModFull64(p, pm.m)
+}
+
 // cLo64 returns the coefficient held in the low word of p. Precondition:
 // the high word is zero, that is, p fits a coefficient; a p that does not
 // panics rather than truncates.
@@ -275,6 +337,21 @@ func cLo64(p wide64) coef64 {
 		panic(errQuotientOverflow)
 	}
 	return p.Lo
+}
+
+// cHalf64 returns ⌊c / 2⌋.
+func cHalf64(c coef64) coef64 {
+	return c >> 1
+}
+
+// cEven64 returns c with its low bit clear: c itself if even, c - 1 if odd.
+func cEven64(c coef64) coef64 {
+	return c &^ 1
+}
+
+// cAddU6464 returns c + u modulo 2^64.
+func cAddU6464(c coef64, u uint64) coef64 {
+	return c + u
 }
 
 // cInc64 returns c + 1. Precondition: c is below the largest value of the
@@ -294,6 +371,12 @@ func cInf64(neg bool) coef64 {
 		return Inf64 | SignMask64
 	}
 	return Inf64
+}
+
+// cWords64 returns c as the two words that packWord64 encodes, most
+// significant first: the high word of a coefficient is always zero.
+func cWords64(c coef64) (hi, lo uint64) {
+	return 0, c
 }
 
 // cFromU6464 returns the coefficient with the value m.

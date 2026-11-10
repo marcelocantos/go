@@ -27,9 +27,9 @@ import (
 func TestGenerated(t *testing.T) {
 	testenv.MustHaveGoRun(t)
 	dir := t.TempDir()
-	cmd := testenv.Command(t, testenv.GoToolPath(t), "run", "gen_arith.go", "-out", dir)
+	cmd := testenv.Command(t, testenv.GoToolPath(t), "run", "-tags", "bidgen", "gen_arith.go", "-out", dir)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("go run gen_arith.go: %v\n%s", err, out)
+		t.Fatalf("go run -tags bidgen gen_arith.go: %v\n%s", err, out)
 	}
 	// Compare in both directions, so that a generated file whose template
 	// was removed is reported too.
@@ -304,6 +304,8 @@ func checkCoef128(t *testing.T, a, b bid.Uint128, k int) {
 
 	if m, _ := bid.U128Add(b, bid.Uint128{Lo: 1}); m != (bid.Uint128{}) {
 		eq128(t, "cModFull128", bid.CModFull128(p, m), new(big.Int).Mod(prod, bigOf(m)))
+		pm := bid.CModPrepare128(m)
+		eq128(t, "cModPrepared128", bid.CModPrepared128(p, &pm), new(big.Int).Mod(prod, bigOf(m)))
 	}
 
 	// cReduce128 over its whole range of k, including the multi-step
