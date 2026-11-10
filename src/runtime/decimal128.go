@@ -5,7 +5,10 @@
 // Soft-decimal entry points for decimal128; see decimal64.go. A decimal128
 // passes as the two uint64 halves of its BID bit pattern, high first. The
 // operators that the compiler also lowers to integer fast paths, + - * and
-// the comparisons, are in decimal128_inline.go and decimal128_call.go.
+// the comparisons, are in decimal128_call.go for the targets without those
+// paths. On amd64 and arm64 the compiler calls internal/bid for the
+// operands its fast paths refuse, and for division, with no function here
+// between them (cmd/compile/internal/ssagen.bidKernelOp).
 
 package runtime
 

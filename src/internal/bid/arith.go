@@ -56,9 +56,11 @@ func Mul128(x, y Uint128, mode Mode) Uint128 {
 // AddSlow128, SubSlow128 and MulSlow128 are Add128, Sub128 and Mul128
 // without the inline front of each (see "Inline fast paths" in the package
 // documentation), for a caller that has already decided the operands the
-// front decides: the runtime on targets where the compiler lowers the
-// decimal128 operators to integer fast paths, which accept every operand
-// pair that addSameQuantum128, subSameQuantum128 and mulShort128 accept.
+// front decides. That caller is the compiler on the targets where it
+// lowers the decimal128 operators to integer fast paths, which accept
+// every operand pair that addSameQuantum128, subSameQuantum128 and
+// mulShort128 accept; it calls the unexported functions behind these
+// directly, and these export them for the tests and the benchmark rows.
 // The general paths take every operand, those included, so the result is
 // the same for every caller; only the cost of a test that cannot succeed is
 // left out.
@@ -230,50 +232,36 @@ func Max128(x, y Uint128) Uint128 {
 	return max128(x, y)
 }
 
-// compareWords compares finite values with uint64 coefficients. Signs of
-// zeros are irrelevant. For nonzero coefficients, an exponent gap of at least
-// len(pow10tab64) decides magnitude because 10^20 exceeds every uint64. Smaller
-// gaps need one exact 64-by-64 product; a nonzero high word exceeds the other
-// coefficient. Exponents come from the bounded fields of unpackWord64/128.
-// No digit count, general division or rounding is needed.
+// compareWords compares finite values with uint64 coefficients, returning
+// -1, 0 or +1. Signs of zeros are irrelevant. The coefficient with the
+// larger exponent is scaled by the difference of the exponents, one exact
+// 64-by-64 product, and compared with the other: a non-zero high word
+// exceeds every word. A difference of at least len(pow10tab64) decides the
+// magnitude for a non-zero coefficient, because 10^20 exceeds every
+// uint64; it is taken as the last power of the table and counted with the
+// high word. Exponents come from the bounded fields of unpackWord64/128.
+// No digit count, general division or rounding is needed, and nothing is
+// a branch: see magCmpW, whose word form this is.
 func compareWords(xneg bool, xc uint64, xe int, yneg bool, yc uint64, ye int) int {
-	xneg = xneg && xc != 0
-	yneg = yneg && yc != 0
-	if xneg != yneg {
-		if xneg {
-			return -1
-		}
-		return 1
+	// The sign that counts: a zero is not negative.
+	xs := int(b2u(xneg) & ((xc | -xc) >> 63))
+	ys := int(b2u(yneg) & ((yc | -yc) >> 63))
+	gap := xe - ye
+	m := gap >> 63 // all ones if x has the smaller exponent, and y is scaled
+	a, b := xc^(xc^yc)&uint64(m), yc^(xc^yc)&uint64(m)
+	g := (gap ^ m) - m
+	hi, lo := bits.Mul64(a, pow10tab64[min(g, len(pow10tab64)-1)])
+	far := uint64(len(pow10tab64)-1-g) >> 63 & ((a | -a) >> 63)
+	_, lt := bits.Sub64(lo, b, 0)
+	_, gt := bits.Sub64(b, lo, 0)
+	h := (hi|-hi)>>63 | far
+	c := int(gt|h) - int(lt&^h)
+	c = (c ^ m) - m    // reversed if the operands were swapped
+	c = (c ^ -xs) + xs // reversed for a negative x
+	if d := ys - xs; d != 0 {
+		c = d // signs differ: the negative one is the lesser
 	}
-	direction := 1
-	if xneg {
-		direction = -1
-	}
-	if xc != 0 && yc != 0 {
-		gap := xe - ye
-		if gap < 0 {
-			xc, yc = yc, xc
-			gap = -gap
-			direction = -direction
-		}
-		if gap >= len(pow10tab64) {
-			return direction
-		}
-		if gap != 0 {
-			hi, lo := bits.Mul64(xc, pow10tab64[gap])
-			if hi != 0 {
-				return direction
-			}
-			xc = lo
-		}
-	}
-	if xc < yc {
-		return -direction
-	}
-	if xc > yc {
-		return direction
-	}
-	return 0
+	return c
 }
 
 // maxWordGap is the largest exponent gap the word fast paths align across:

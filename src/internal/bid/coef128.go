@@ -29,6 +29,62 @@ func cCmp128(a, b coef128) int {
 	return u128Cmp(a, b)
 }
 
+// cCmpFinite128 is cCmpFinite64 for decimal128: the comparison of two
+// finite values with coefficients of two words, at most MaxCoeff128.
+//
+// The coefficient with the larger exponent is scaled by the difference of
+// the exponents, which aligns the two at the smaller exponent, and the
+// aligned coefficients compare. The scaled coefficient is a product of
+// four words, of which the upper two are only tested for zero: if they are
+// not, it exceeds every coefficient. A difference beyond the table of
+// powers is taken as its last power, 10^38, which already puts any
+// non-zero coefficient above every other. A zero coefficient needs no
+// case: its product is zero. One multiplication and one comparison decide
+// every pair, with no digit count, however far apart the exponents are.
+//
+// Nothing here is a branch, and nothing is a call. Which operand has the
+// larger exponent, whether the scaled one then exceeds the other, and the
+// signs are in the operands' values: comparing values with no pattern, a
+// branch on any of them is a coin toss ("Operands without a pattern" in
+// the package documentation). The operands are swapped by a mask, the
+// comparison is borrows, and the signs are arithmetic.
+//
+// The compiler calls this function directly for two finite operands it has
+// decoded, with the exponents as stored (only their difference counts), so
+// its parameters and result are a contract with it: see the end of "Inline
+// fast paths" in the package documentation.
+func cCmpFinite128(xneg bool, xc coef128, xe int, yneg bool, yc coef128, ye int) int {
+	// The sign that counts: a zero is not negative.
+	xs := int(b2u(xneg) &^ b2u(xc == coef128{}))
+	ys := int(b2u(yneg) &^ b2u(yc == coef128{}))
+	gap := xe - ye
+	m := gap >> 63 // all ones if x has the smaller exponent, and y is scaled
+	dLo, dHi := (xc.Lo^yc.Lo)&uint64(m), (xc.Hi^yc.Hi)&uint64(m)
+	aLo, aHi := xc.Lo^dLo, xc.Hi^dHi
+	bLo, bHi := yc.Lo^dLo, yc.Hi^dHi
+	p := &pow10tab128[min((gap^m)-m, len(pow10tab128)-1)]
+	h00, l00 := bits.Mul64(aLo, p.Lo)
+	h01, l01 := bits.Mul64(aLo, p.Hi)
+	h10, l10 := bits.Mul64(aHi, p.Lo)
+	h11, l11 := bits.Mul64(aHi, p.Hi)
+	w1, c1 := bits.Add64(h00, l01, 0)
+	w1, c2 := bits.Add64(w1, l10, 0)
+	// The upper two words are a sum of these terms, zero only if all are.
+	over := h01 | h10 | l11 | h11 | c1 | c2
+	_, lt := bits.Sub64(l00, bLo, 0)
+	_, lt = bits.Sub64(w1, bHi, lt)
+	_, gt := bits.Sub64(bLo, l00, 0)
+	_, gt = bits.Sub64(bHi, w1, gt)
+	h := (over | -over) >> 63
+	c := int(gt|h) - int(lt&^h)
+	c = (c ^ m) - m    // reversed if the operands were swapped
+	c = (c ^ -xs) + xs // reversed for a negative x
+	if d := ys - xs; d != 0 {
+		c = d // signs differ: the negative one is the lesser
+	}
+	return c
+}
+
 // cLt128 reports whether a < b, without a branch (u128Lt).
 func cLt128(a, b coef128) bool {
 	return u128Lt(a, b)

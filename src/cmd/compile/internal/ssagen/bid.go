@@ -15,6 +15,7 @@ import (
 	"cmd/compile/internal/staticdata"
 	"cmd/compile/internal/types"
 	"cmd/internal/obj"
+	"cmd/internal/sys"
 )
 
 const (
@@ -152,6 +153,94 @@ func (s *state) bidCompareZero(op ir.Op, x *ssa.Value, zeroOnLeft bool) *ssa.Val
 		s.Fatalf("unexpected decimal zero comparison %v", op)
 	}
 	return s.newValue2(ssaop.OpAndB, boolT, ordered, result)
+}
+
+// The kernel's general paths, which the compiler calls directly on the
+// targets where it lowers the decimal128 operators to integer fast paths
+// (bidKernelDirect). The runtime's functions for these operators are
+// wrappers there: they pass the same four words on, add the rounding
+// mode, and return what the kernel returns, at the cost of a frame and a
+// second call on every operand pair the fast paths refuse. A decimal128
+// is two words, high first, in the calling convention as in
+// internal/bid.Uint128, so the kernel's functions take the operands as
+// the wrappers did, with the mode as a fifth argument; the comparison
+// returns its ordering and whether the operands are ordered, and the
+// operator is decided here from the two.
+var (
+	bidKernelAdd, bidKernelMul, bidKernelDiv, bidKernelCmp, bidKernelCmpFinite *obj.LSym
+)
+
+func initBIDKernelSyms() {
+	if !bidKernelDirect() {
+		return
+	}
+	bidKernelAdd = base.PkgLinksym("internal/bid", "addSlow128", obj.ABIInternal)
+	bidKernelMul = base.PkgLinksym("internal/bid", "mulSlow128", obj.ABIInternal)
+	bidKernelDiv = base.PkgLinksym("internal/bid", "div128", obj.ABIInternal)
+	bidKernelCmp = base.PkgLinksym("internal/bid", "quietCmpSlow128", obj.ABIInternal)
+	bidKernelCmpFinite = base.PkgLinksym("internal/bid", "cCmpFinite128", obj.ABIInternal)
+}
+
+// bidKernelDirect reports whether the target takes the decimal128
+// operators' general cases straight to internal/bid: the BID targets with
+// the integer fast paths, where the native encoding is the kernel's.
+func bidKernelDirect() bool {
+	return !ir.DecimalDPD() && (Arch.LinkArch.Family == sys.ARM64 || Arch.LinkArch.Family == sys.AMD64)
+}
+
+// bidKernelOp calls the kernel's general path for the decimal128 operator
+// op, or returns nil for an operator it does not take (minimum and
+// maximum, which stay with the runtime). Operators round to nearest, ties
+// to even.
+func (s *state) bidKernelOp(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value {
+	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
+	// A decimal value in SSA is its encoding XORed with that of 0E+0: see
+	// softDecimalCall.
+	zeroHi := s.constInt64(u64, int64(ir.DecimalZero128Hi()))
+	xhi := s.newValue2(ssaop.OpXor64, u64, s.newValue1(ssaop.OpDecimal128Hi, u64, x), zeroHi)
+	yhi := s.newValue2(ssaop.OpXor64, u64, s.newValue1(ssaop.OpDecimal128Hi, u64, y), zeroHi)
+	xlo, ylo := s.newValue1(ssaop.OpDecimal128Lo, u64, x), s.newValue1(ssaop.OpDecimal128Lo, u64, y)
+	var fn *obj.LSym
+	switch op {
+	case ir.OEQ, ir.ONE, ir.OLT, ir.OLE:
+		res := s.rtcall(bidKernelCmp, true, []*types.Type{types.Types[types.TINT64], boolT}, xhi, xlo, yhi, ylo)
+		zero := s.constInt64(types.Types[types.TINT64], 0)
+		var r *ssa.Value
+		switch op {
+		case ir.OLT:
+			r = s.newValue2(ssaop.OpLess64, boolT, res[0], zero)
+		case ir.OLE:
+			r = s.newValue2(ssaop.OpLeq64, boolT, res[0], zero)
+		default:
+			r = s.newValue2(ssaop.OpEq64, boolT, res[0], zero)
+		}
+		// Unordered operands, a NaN among them, satisfy only !=.
+		r = s.newValue2(ssaop.OpAndB, boolT, res[1], r)
+		if op == ir.ONE {
+			r = s.newValue1(ssaop.OpNot, boolT, r)
+		}
+		return r
+	case ir.OADD:
+		fn = bidKernelAdd
+	case ir.OSUB:
+		// x - y is x + (-y), except that a NaN y keeps its sign, so
+		// that the result for it is y made quiet with its own sign.
+		fn = bidKernelAdd
+		nanMask := s.constInt64(u64, int64(bid.NaN64))
+		nan := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpAnd64, u64, yhi, nanMask), nanMask)
+		signMask := bid.SignMask128Hi
+		negated := s.newValue2(ssaop.OpXor64, u64, yhi, s.constInt64(u64, int64(signMask)))
+		yhi = s.newValue3(ssaop.OpCondSelect, u64, yhi, negated, nan)
+	case ir.OMUL:
+		fn = bidKernelMul
+	case ir.ODIV:
+		fn = bidKernelDiv
+	default:
+		return nil
+	}
+	mode := s.constInt8(types.Types[types.TUINT8], int8(bid.ToNearestEven))
+	res := s.rtcall(fn, true, []*types.Type{u64, u64}, xhi, xlo, yhi, ylo, mode)
+	return s.newValue2(ssaop.OpDecimal128Make, rt, res[1], s.newValue2(ssaop.OpXor64, u64, res[0], zeroHi))
 }
 
 var bidAddVar = ssaMarker("bidadd")

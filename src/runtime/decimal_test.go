@@ -135,6 +135,150 @@ func TestDecimal128Operators(t *testing.T) {
 	}
 }
 
+// decimalWordOperands returns decimal128 operands for the compiler's integer
+// fast paths, which take coefficients of one word: coefficients at the
+// bounds of a word and of the paths' products, of both signs, zeros of
+// both signs, at exponents equal, adjacent, at each side of the largest
+// gaps the paths align across (14 for addition, 19 for comparison) and far
+// apart, and at the ends of the exponent range.
+func decimalWordOperands() []bid.Uint128 {
+	var xs []bid.Uint128
+	coeffs := []uint64{0, 1, 2, 5, 9, 10, 99, 123456, 99999999, 1 << 32, 1<<53 - 1, 1 << 53, 9999999999999999, 1e18, 1e19 - 1, 1e19, 1 << 63, 1<<64 - 1}
+	for _, exp := range []int{-6176, -6175, -40, -20, -19, -15, -14, -2, -1, 0, 1, 14, 15, 19, 20, 40, 6110, 6111} {
+		for _, c := range coeffs {
+			for _, neg := range []bool{false, true} {
+				x, st := bid.Round128(neg, bid.Uint128{Lo: c}, exp, false, bid.ToNearestEven)
+				if st != 0 {
+					panic("decimalWordOperands: an operand is not exact")
+				}
+				xs = append(xs, x)
+			}
+		}
+	}
+	// Coefficients of two words, so that the paths' refusal is among the
+	// pairs, and the specials: NaNs of both signs, quiet and signaling,
+	// with and without a payload, and the infinities.
+	return append(xs,
+		bid.Uint128{Hi: 0x3040000000000005, Lo: 0x6bc75e2d63100001},
+		bid.Uint128{Hi: 0xb040000000000005, Lo: 0x6bc75e2d63100002},
+		bid.Uint128{Hi: 0x3008ed09bead87c0, Lo: 0x378d8e63ffffffff},
+		bid.Uint128{Hi: 0x7c00000000000000}, bid.Uint128{Hi: 0xfc00000000000000},
+		bid.Uint128{Hi: 0x7e00000000000000, Lo: 7}, bid.Uint128{Hi: 0xfe00000000000000},
+		bid.Uint128{Hi: 0x7c00000000000000, Lo: 12345},
+		bid.Uint128{Hi: 0x7800000000000000}, bid.Uint128{Hi: 0xf800000000000000})
+}
+
+// TestDecimal128WordOperators compares every operator on every pair of
+// decimalWordOperands with the kernel's entry points, which the kernel's
+// own tests check against the reference model. The pairs reach each
+// branch of the compiler's lowering and each combination of signs in it.
+func TestDecimal128WordOperators(t *testing.T) {
+	const mode = bid.ToNearestEven
+	bits := func(d decimal128) bid.Uint128 {
+		hi, lo := decimal.BID128bits(d)
+		return bid.Uint128{Hi: hi, Lo: lo}
+	}
+	operands := decimalWordOperands()
+	n := 0
+	for _, xb := range operands {
+		x := decimal.BID128frombits(xb.Hi, xb.Lo)
+		for _, yb := range operands {
+			y := decimal.BID128frombits(yb.Hi, yb.Lo)
+			n++
+			for _, c := range []struct {
+				op        string
+				got, want bid.Uint128
+			}{
+				{"+", bits(x + y), bid.Add128(xb, yb, mode)},
+				{"-", bits(x - y), bid.Sub128(xb, yb, mode)},
+				{"*", bits(x * y), bid.Mul128(xb, yb, mode)},
+				{"/", bits(x / y), bid.Div128(xb, yb, mode)},
+			} {
+				if c.got != c.want {
+					t.Fatalf("%#x %s %#x = %#x, want %#x", xb, c.op, yb, c.got, c.want)
+				}
+			}
+			for _, c := range []struct {
+				op        string
+				got, want bool
+			}{
+				{"==", x == y, bid.Equal128(xb, yb)},
+				{"!=", x != y, !bid.Equal128(xb, yb)},
+				{"<", x < y, bid.Less128(xb, yb)},
+				{"<=", x <= y, bid.LessEqual128(xb, yb)},
+				{">", x > y, bid.Less128(yb, xb)},
+				{">=", x >= y, bid.LessEqual128(yb, xb)},
+			} {
+				if c.got != c.want {
+					t.Fatalf("%#x %s %#x = %v, want %v", xb, c.op, yb, c.got, c.want)
+				}
+			}
+		}
+	}
+	t.Logf("%d pairs", n)
+}
+
+// TestDecimal64WordOperators is TestDecimal128WordOperators for decimal64,
+// whose every coefficient is a word: coefficients of both forms of the
+// encoding and both signs, zeros of both signs, at exponents equal,
+// adjacent, at each side of the largest gap the comparison aligns across
+// and far apart, and the special values.
+func TestDecimal64WordOperators(t *testing.T) {
+	const mode = bid.ToNearestEven
+	var operands []uint64
+	for _, exp := range []int{-398, -397, -40, -20, -19, -2, -1, 0, 1, 19, 20, 40, 368, 369} {
+		for _, c := range []uint64{0, 1, 2, 5, 9, 10, 99, 123456, 99999999, 1 << 32, 1<<53 - 1, 1 << 53, 1<<53 + 1, 9999999999999998, 9999999999999999} {
+			for _, neg := range []bool{false, true} {
+				x, st := bid.Round64(neg, c, exp, false, bid.ToNearestEven)
+				if st != 0 {
+					t.Fatalf("operand %d E%d is not exact", c, exp)
+				}
+				operands = append(operands, x)
+			}
+		}
+	}
+	operands = append(operands, 0x7c00000000000000, 0xfc00000000000000, 0x7e00000000000007, 0xfe00000000000000,
+		0x7c00000000003039, 0x7800000000000000, 0xf800000000000000,
+		0x6c7386f26fc10000) // a second form above the largest coefficient: it reads as zero
+	n := 0
+	for _, xb := range operands {
+		x := decimal.BID64frombits(xb)
+		for _, yb := range operands {
+			y := decimal.BID64frombits(yb)
+			n++
+			for _, c := range []struct {
+				op        string
+				got, want uint64
+			}{
+				{"+", decimal.BID64bits(x + y), bid.Add64(xb, yb, mode)},
+				{"-", decimal.BID64bits(x - y), bid.Sub64(xb, yb, mode)},
+				{"*", decimal.BID64bits(x * y), bid.Mul64(xb, yb, mode)},
+				{"/", decimal.BID64bits(x / y), bid.Div64(xb, yb, mode)},
+			} {
+				if c.got != c.want {
+					t.Fatalf("%#x %s %#x = %#x, want %#x", xb, c.op, yb, c.got, c.want)
+				}
+			}
+			for _, c := range []struct {
+				op        string
+				got, want bool
+			}{
+				{"==", x == y, bid.Equal64(xb, yb)},
+				{"!=", x != y, !bid.Equal64(xb, yb)},
+				{"<", x < y, bid.Less64(xb, yb)},
+				{"<=", x <= y, bid.LessEqual64(xb, yb)},
+				{">", x > y, bid.Less64(yb, xb)},
+				{">=", x >= y, bid.LessEqual64(yb, xb)},
+			} {
+				if c.got != c.want {
+					t.Fatalf("%#x %s %#x = %v, want %v", xb, c.op, yb, c.got, c.want)
+				}
+			}
+		}
+	}
+	t.Logf("%d pairs", n)
+}
+
 func TestDecimalConversions(t *testing.T) {
 	const mode = bid.ToNearestEven
 	bits := func(d decimal128) bid.Uint128 {

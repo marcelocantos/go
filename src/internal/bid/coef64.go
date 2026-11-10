@@ -48,6 +48,15 @@ func cCmp64(a, b coef64) int {
 	return 0
 }
 
+// cCmpFinite64 compares two finite values, returning -1, 0 or +1: a zero of
+// either sign is below every positive value, above every negative one and
+// equal to every zero; then the signs decide, and within one sign the
+// magnitudes, reversed for negative values. A decimal64 coefficient is a
+// word, so this is compareWords, which see.
+func cCmpFinite64(xneg bool, xc coef64, xe int, yneg bool, yc coef64, ye int) int {
+	return compareWords(xneg, xc, xe, yneg, yc, ye)
+}
+
 // cLt64 reports whether a < b.
 func cLt64(a, b coef64) bool {
 	return a < b

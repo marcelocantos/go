@@ -1800,11 +1800,19 @@
 // Max call quietCmpSlowW directly.
 //
 // The compiler's own integer fast paths for the decimal128 operators on
-// amd64 and arm64 accept every operand pair that these fronts accept, so the
-// runtime there calls AddSlow128, SubSlow128, MulSlow128, EqualSlow128,
-// LessSlow128 and LessEqualSlow128, the general paths without the front, and
-// does not test the operands a second time (runtime/decimal128_inline.go).
-// The general paths take every operand, so no result depends on that.
+// amd64 and arm64 accept every operand pair that these fronts accept, so
+// the compiler there calls the general paths without the front and does
+// not test the operands a second time: addSlow128, mulSlow128 and div128
+// with the rounding mode as an argument, quietCmpSlow128 for the
+// comparisons, and for two finite operands it has decoded itself,
+// cCmpFinite128 (cmd/compile/internal/ssagen.bidKernelOp and bidCompare).
+// No runtime function stands between the operator and the kernel there:
+// one cost a frame and a second call on every such operand pair, 0.6 to
+// 0.8 ns of an addition's 9. Those functions' parameters are therefore a
+// contract with the compiler, which passes a decimal128 as its two words,
+// high first, as Uint128 lays them out. AddSlow128 and its relatives export
+// the same paths for the tests and the benchmark rows. The general paths
+// take every operand, so no result depends on any of this.
 //
 // # Face-value rounding
 //

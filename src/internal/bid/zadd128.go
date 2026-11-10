@@ -91,6 +91,10 @@ func subSlow128(x, y coef128, mode Mode) coef128 {
 // agree, that of the larger magnitude when they differ, and for an exact
 // cancellation the zero of "Sign of a result", negative only in
 // TowardNegative.
+//
+// The compiler calls the decimal128 instantiation of this function
+// directly, so its parameters and results are a contract with it: see the
+// end of "Inline fast paths" in the package documentation.
 func addSlow128(x, y coef128, mode Mode) coef128 {
 	var yneg, yok bool
 	var yw uint64

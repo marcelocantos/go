@@ -6,8 +6,9 @@
 
 // The decimal128 operators on targets where the compiler calls the runtime
 // for every operand (or, on linux/ppc64le, uses the hardware): the kernel's
-// inline fronts decide the money cases here. decimal128_inline.go has the
-// targets whose compiler decides those itself.
+// inline fronts decide the money cases here. On amd64 and arm64 the
+// compiler decides those itself and calls the kernel directly for the
+// rest, so these functions do not exist there.
 
 package runtime
 

@@ -85,6 +85,10 @@ package bid
 // PrecisionW trailing zeros, and the attempt and the steps stay within the
 // smaller of k and PrecisionW+1, which keeps every power of ten within the
 // coefficient table.
+//
+// The compiler calls the decimal128 instantiation of this function
+// directly, so its parameters and results are a contract with it: see the
+// end of "Inline fast paths" in the package documentation.
 func divW(x, y coefW, mode Mode) coefW {
 	xneg, xc, xe, xok := unpackFirstW(x)
 	xk := KindFinite

@@ -76,6 +76,10 @@ package bid
 // Precision64 trailing zeros, and the attempt and the steps stay within the
 // smaller of k and Precision64+1, which keeps every power of ten within the
 // coefficient table.
+//
+// The compiler calls the decimal128 instantiation of this function
+// directly, so its parameters and results are a contract with it: see the
+// end of "Inline fast paths" in the package documentation.
 func div64(x, y coef64, mode Mode) coef64 {
 	xneg, xc, xe, xok := unpackFirst64(x)
 	xk := KindFinite

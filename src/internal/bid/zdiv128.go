@@ -76,6 +76,10 @@ package bid
 // Precision128 trailing zeros, and the attempt and the steps stay within the
 // smaller of k and Precision128+1, which keeps every power of ten within the
 // coefficient table.
+//
+// The compiler calls the decimal128 instantiation of this function
+// directly, so its parameters and results are a contract with it: see the
+// end of "Inline fast paths" in the package documentation.
 func div128(x, y coef128, mode Mode) coef128 {
 	xneg, xc, xe, xok := unpackFirst128(x)
 	xk := KindFinite

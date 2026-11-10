@@ -44,9 +44,10 @@ func LessEqual128(x, y Uint128) bool {
 }
 
 // EqualSlow128, LessSlow128 and LessEqualSlow128 are Equal128, Less128 and
-// LessEqual128 without the inline front of each, for the runtime where the
-// compiler has already compared the operands that sameQuantumKeys128
-// accepts (word operands of one sign and one exponent); see AddSlow128.
+// LessEqual128 without the inline front of each: the general comparison,
+// which the compiler calls where it has already compared the operands that
+// sameQuantumKeys128 accepts (word operands of one sign and one exponent);
+// see AddSlow128.
 func EqualSlow128(x, y Uint128) bool {
 	c, ok := quietCmpSlow128(x, y)
 	return ok && c == 0

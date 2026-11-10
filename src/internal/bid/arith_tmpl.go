@@ -17,28 +17,12 @@
 // identifier with that capital letter unless it is meant to be replaced.
 package bid
 
-// magCmpW compares the magnitudes of two non-zero finite values, returning
-// -1, 0 or +1. The coefficient with the larger exponent is scaled by the
-// difference of the exponents, which aligns the two at the smaller exponent,
-// and the aligned coefficients compare. If the scaled coefficient does not
-// fit the coefficient type that value is the larger: it is then at least 2^64
-// (2^128 for decimal128), above every coefficient; and beyond the table of
-// powers it does not fit for any non-zero coefficient, so no multiply is
-// needed there. One multiply and one comparison decide every pair, with no
-// digit count, however far apart the exponents are.
+// magCmpW compares the magnitudes of two finite values, returning -1, 0 or
+// +1: cCmpFiniteW with both signs positive, which see.
 //
-// Precondition: xc and yc are non-zero and at most MaxCoeffW.
+// Precondition: xc and yc are at most MaxCoeffW.
 func magCmpW(xc coefW, xe int, yc coefW, ye int) int {
-	c, gap := 1, xe-ye
-	if gap < 0 {
-		xc, yc, c, gap = yc, xc, -1, -gap
-	}
-	if gap < len(pow10tabW) {
-		if s, overflow := cScaleTabW(xc, gap); !overflow {
-			return c * cCmpW(s, yc)
-		}
-	}
-	return c
+	return cCmpFiniteW(false, xc, xe, false, yc, ye)
 }
 
 // nanW returns the NaN result of an operation whose operands x, y and z,
@@ -64,54 +48,38 @@ func nanW(x, y, z coefW) coefW {
 // maxW, where such a front would not pay: Compare64 and Compare128 miss the
 // inlining budget with it, and out of line it costs every operand it refuses
 // a second call.
+//
+// The compiler calls the decimal128 instantiation of this function
+// directly, so its parameters and results are a contract with it: see the
+// end of "Inline fast paths" in the package documentation.
 func quietCmpSlowW(x, y coefW) (c int, ok bool) {
 	if xn, xc, xe, ok := unpackWordW(x); ok {
 		if yn, yc, ye, ok := unpackWordW(y); ok {
 			return compareWords(xn, xc, xe, yn, yc, ye), true
 		}
 	}
+	// Two finite values in the first form, the pair that is not word
+	// operands and not special: one call that makes none decides them, and
+	// nothing is kept across it or across the call for the rest.
 	xneg, xc, xe, xok := unpackFirstW(x)
-	xk := KindFinite
-	if !xok {
-		xk, xneg, xc, xe = unpackRestW(x)
-	}
 	yneg, yc, ye, yok := unpackFirstW(y)
-	yk := KindFinite
-	if !yok {
-		yk, yneg, yc, ye = unpackRestW(y)
+	if xok && yok {
+		return cCmpFiniteW(xneg, xc, xe, yneg, yc, ye), true
 	}
+	return quietCmpRestW(x, y)
+}
+
+// quietCmpRestW is quietCmpSlowW for a pair with an operand that is not a
+// canonical finite value in the first form: a NaN, an infinity, the second
+// form or a non-canonical encoding.
+func quietCmpRestW(x, y coefW) (c int, ok bool) {
+	xk, xneg, xc, xe := unpackRestW(x)
+	yk, yneg, yc, ye := unpackRestW(y)
 	switch {
 	case xk == KindNaN || yk == KindNaN:
 		return 0, false
 	case xk == KindFinite && yk == KindFinite:
-		// A zero of either sign is below every positive value, above every
-		// negative one and equal to every zero; then the signs decide, and
-		// within one sign the magnitudes, reversed for negative values.
-		xz, yz := cIsZeroW(xc), cIsZeroW(yc)
-		switch {
-		case xz && yz:
-			return 0, true
-		case xz:
-			if yneg {
-				return 1, true
-			}
-			return -1, true
-		case yz:
-			if xneg {
-				return -1, true
-			}
-			return 1, true
-		case xneg != yneg:
-			if xneg {
-				return -1, true
-			}
-			return 1, true
-		}
-		c = magCmpW(xc, xe, yc, ye)
-		if xneg {
-			c = -c
-		}
-		return c, true
+		return cCmpFiniteW(xneg, xc, xe, yneg, yc, ye), true
 	case xk == KindInf && yk == KindInf:
 		// Two infinities: equal if of one sign, else the negative is the lesser.
 		if xneg == yneg {

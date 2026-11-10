@@ -42,6 +42,10 @@ func mulW(x, y coefW, mode Mode) coefW {
 // an exponent within the format is exact there, and the sign of a zero
 // product is the exclusive or of the signs either way. A product or
 // exponent outside the format falls through.
+//
+// The compiler calls the decimal128 instantiation of this function
+// directly, so its parameters and results are a contract with it: see the
+// end of "Inline fast paths" in the package documentation.
 func mulSlowW(x, y coefW, mode Mode) coefW {
 	var yneg, yok bool
 	var yw uint64

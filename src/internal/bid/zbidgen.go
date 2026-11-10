@@ -77,6 +77,10 @@ func quietCmpSlow64(x, y coef64) (c int, ok bool) {
 	return *new(int), *new(bool)
 }
 
+func quietCmpRest64(x, y coef64) (c int, ok bool) {
+	return *new(int), *new(bool)
+}
+
 func equal64(x, y coef64) bool {
 	return *new(bool)
 }
@@ -126,6 +130,10 @@ func nan128(x, y, z coef128) coef128 {
 }
 
 func quietCmpSlow128(x, y coef128) (c int, ok bool) {
+	return *new(int), *new(bool)
+}
+
+func quietCmpRest128(x, y coef128) (c int, ok bool) {
 	return *new(int), *new(bool)
 }
 

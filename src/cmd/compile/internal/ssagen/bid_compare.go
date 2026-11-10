@@ -88,44 +88,43 @@ func (s *state) bidCompare(op ir.Op, x, y *ssa.Value) *ssa.Value {
 		xc, yc = s.variable(bidCompareXC, u64), s.variable(bidCompareYC, u64)
 		xe, ye = s.variable(bidCompareXE, u64), s.variable(bidCompareYE, u64)
 	}
-	// Normalize the sign of zero for numeric comparison. Opposite effective
-	// signs decide the result even when the quanta are far apart.
 	xzero, yzero := s.newValue2(ssaop.OpEq64, boolT, xc, zero), s.newValue2(ssaop.OpEq64, boolT, yc, zero)
-	xneg := s.newValue2(ssaop.OpAndB, boolT, s.newValue2(ssaop.OpLess64, boolT, xh, zero), s.newValue1(ssaop.OpNot, boolT, xzero))
-	yneg := s.newValue2(ssaop.OpAndB, boolT, s.newValue2(ssaop.OpLess64, boolT, yh, zero), s.newValue1(ssaop.OpNot, boolT, yzero))
-	differentSigns := s.newValue2(ssaop.OpNeqB, boolT, xneg, yneg)
-	bSign, bMagnitude := s.f.NewBlock(block.BlockPlain), s.f.NewBlock(block.BlockPlain)
-	b := s.endBlock()
-	b.Kind = block.BlockIf
-	b.SetControl(differentSigns)
-	b.AddEdgeTo(bSign)
-	b.AddEdgeTo(bMagnitude)
-	s.startBlock(bSign)
-	if op == ir.OEQ || op == ir.ONE {
-		s.vars[bidCompareVar] = s.constBool(op == ir.ONE)
-	} else {
-		s.vars[bidCompareVar] = xneg
-	}
-	s.endBlock().AddEdgeTo(bAfter)
-	s.startBlock(bMagnitude)
-	finish := func(less, equal, reverse *ssa.Value) {
-		var result *ssa.Value
+	var xneg, differentSigns, sameSigns *ssa.Value // set in bScale, which dominates their uses
+	// order is the result for two values of one effective sign, or for
+	// the infinities, whose result the caller has already decided.
+	order := func(less, equal, reverse *ssa.Value) *ssa.Value {
 		switch op {
 		case ir.OEQ:
-			result = equal
+			return equal
 		case ir.ONE:
-			result = s.newValue1(ssaop.OpNot, boolT, equal)
+			return s.newValue1(ssaop.OpNot, boolT, equal)
 		case ir.OLT, ir.OLE:
 			less = s.newValue2(ssaop.OpNeqB, boolT, less, reverse)
 			if op == ir.OLT {
-				result = s.newValue2(ssaop.OpAndB, boolT, less, s.newValue1(ssaop.OpNot, boolT, equal))
-			} else {
-				result = s.newValue2(ssaop.OpOrB, boolT, less, equal)
+				return s.newValue2(ssaop.OpAndB, boolT, less, s.newValue1(ssaop.OpNot, boolT, equal))
 			}
-		default:
-			s.Fatalf("unexpected word decimal comparison %v", op)
+			return s.newValue2(ssaop.OpOrB, boolT, less, equal)
 		}
-		s.vars[bidCompareVar] = result
+		s.Fatalf("unexpected word decimal comparison %v", op)
+		return nil
+	}
+	// finish ends a block of the finite comparison: the order of the
+	// magnitudes if the signs agree, and the signs' own answer if not.
+	finish := func(less, equal, reverse *ssa.Value) {
+		same := s.newValue2(ssaop.OpAndB, boolT, sameSigns, order(less, equal, reverse))
+		var opposite *ssa.Value
+		switch op {
+		case ir.OEQ:
+			opposite = s.constBool(false)
+		case ir.ONE, ir.OLT, ir.OLE:
+			// Not equal; and x is the lesser exactly when it is the
+			// negative one.
+			opposite = differentSigns
+			if op != ir.ONE {
+				opposite = s.newValue2(ssaop.OpAndB, boolT, differentSigns, xneg)
+			}
+		}
+		s.vars[bidCompareVar] = s.newValue2(ssaop.OpOrB, boolT, same, opposite)
 		s.endBlock().AddEdgeTo(bAfter)
 	}
 	if wide {
@@ -133,14 +132,52 @@ func (s *state) bidCompare(op ir.Op, x, y *ssa.Value) *ssa.Value {
 	}
 	direct := s.newValue2(ssaop.OpOrB, boolT, s.newValue2(ssaop.OpEq64, boolT, xe, ye), s.newValue2(ssaop.OpOrB, boolT, xzero, yzero))
 	bDirect, bScale := s.f.NewBlock(block.BlockPlain), s.f.NewBlock(block.BlockPlain)
-	b = s.endBlock()
+	b := s.endBlock()
 	b.Kind = block.BlockIf
 	b.SetControl(direct)
 	b.AddEdgeTo(bDirect)
 	b.AddEdgeTo(bScale)
 	s.startBlock(bDirect)
-	finish(s.newValue2(ssaop.OpLess64U, boolT, xc, yc), s.newValue2(ssaop.OpEq64, boolT, xc, yc), xneg)
+	// One quantum, or a zero, which has no magnitude to scale: the values
+	// order as their signed coefficients, and each coefficient is negated
+	// by its sign with a mask, so that the comparison is one signed
+	// integer comparison whatever the signs are. A negative zero negates
+	// to zero, as it must compare. The negation needs the coefficient
+	// below 2^63, which every decimal64 coefficient is; a decimal128 word
+	// at or above it is left to the runtime.
+	if wide {
+		top := s.newValue2(ssaop.OpRsh64Ux64, u64, s.newValue2(ssaop.OpOr64, u64, xc, yc), s.constInt64(u64, 63))
+		guard(s.newValue2(ssaop.OpEq64, boolT, top, zero), bSlow)
+	}
+	i64 := types.Types[types.TINT64]
+	key := func(h, c *ssa.Value) *ssa.Value {
+		m := s.newValue2(ssaop.OpRsh64x64, i64, h, s.constInt64(u64, 63))
+		return s.newValue2(ssaop.OpSub64, i64, s.newValue2(ssaop.OpXor64, i64, c, m), m)
+	}
+	kx, ky := key(xh, xc), key(yh, yc)
+	switch op {
+	case ir.OEQ:
+		s.vars[bidCompareVar] = s.newValue2(ssaop.OpEq64, boolT, kx, ky)
+	case ir.ONE:
+		s.vars[bidCompareVar] = s.newValue2(ssaop.OpNeq64, boolT, kx, ky)
+	case ir.OLT:
+		s.vars[bidCompareVar] = s.newValue2(ssaop.OpLess64, boolT, kx, ky)
+	case ir.OLE:
+		s.vars[bidCompareVar] = s.newValue2(ssaop.OpLeq64, boolT, kx, ky)
+	default:
+		s.Fatalf("unexpected word decimal comparison %v", op)
+	}
+	s.endBlock().AddEdgeTo(bAfter)
 	s.startBlock(bScale)
+	// Both coefficients are non-zero here. Opposite signs decide the
+	// result whatever the magnitudes: the negative operand is the lesser,
+	// and the two are not equal. finish folds that into each result as
+	// boolean arithmetic; it is not taken as a branch, because the sign of
+	// a value is as unpredictable as its digits, and a branch on it
+	// mispredicts every other time on values of mixed sign.
+	xneg = s.newValue2(ssaop.OpLess64, boolT, xh, zero)
+	differentSigns = s.newValue2(ssaop.OpNeqB, boolT, xneg, s.newValue2(ssaop.OpLess64, boolT, yh, zero))
+	sameSigns = s.newValue1(ssaop.OpNot, boolT, differentSigns)
 	swap := s.newValue2(ssaop.OpLess64U, boolT, xe, ye)
 	gap := s.newValue3(ssaop.OpCondSelect, u64, s.newValue2(ssaop.OpSub64, u64, ye, xe), s.newValue2(ssaop.OpSub64, u64, xe, ye), swap)
 	const maxGap = bidMaxWordPower // 10^19 is the largest power of ten fitting uint64.
@@ -201,9 +238,45 @@ func (s *state) bidCompare(op ir.Op, x, y *ssa.Value) *ssa.Value {
 	less = s.newValue2(ssaop.OpOrB, boolT,
 		s.newValue2(ssaop.OpAndB, boolT, s.newValue2(ssaop.OpAndB, boolT, xinf, xn), s.newValue1(ssaop.OpNot, boolT, equal)),
 		s.newValue2(ssaop.OpAndB, boolT, s.newValue2(ssaop.OpAndB, boolT, yinf, s.newValue1(ssaop.OpNot, boolT, yn)), s.newValue1(ssaop.OpNot, boolT, xinf)))
-	finish(less, equal, s.constBool(false))
+	s.vars[bidCompareVar] = order(less, equal, s.constBool(false))
+	s.endBlock().AddEdgeTo(bAfter)
 	if wide {
+		// Operands the word paths refuse. Two finite values in the first
+		// form with canonical coefficients, which is every such pair but
+		// the special values and the encodings that read as zero, are
+		// decoded here and compared by the kernel's routine for the
+		// parts, which makes no call and has no branch
+		// (internal/bid.cCmpFinite128). It takes the exponents as they
+		// are stored, since only their difference counts. The bound on
+		// the coefficient is unpackFirst128's: the high word below that
+		// of the largest coefficient. Everything else is the kernel's
+		// general comparison.
 		s.startBlock(bSlow)
+		bGeneral := s.f.NewBlock(block.BlockPlain)
+		coeffMask := s.constInt64(u64, int64(bid.CoeffMask128Hi))
+		xch, ych := s.newValue2(ssaop.OpAnd64, u64, xh, coeffMask), s.newValue2(ssaop.OpAnd64, u64, yh, coeffMask)
+		for i, h := range []*ssa.Value{xh, yh} {
+			mask := s.constInt64(u64, int64(formMask))
+			second := s.constInt64(u64, int64(formMask^(storageZero&formMask)))
+			guard(s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, h, mask), second), bGeneral)
+			guard(s.newValue2(ssaop.OpLess64U, boolT, []*ssa.Value{xch, ych}[i], s.constInt64(u64, int64(bid.MaxCoeff128Hi))), bGeneral)
+		}
+		res := s.rtcall(bidKernelCmpFinite, true, []*types.Type{types.Types[types.TINT64]},
+			s.newValue2(ssaop.OpLess64, boolT, xh, zero), xch, xc, exponent(xh),
+			s.newValue2(ssaop.OpLess64, boolT, yh, zero), ych, yc, exponent(yh))
+		izero := s.constInt64(types.Types[types.TINT64], 0)
+		switch op {
+		case ir.OEQ:
+			s.vars[bidCompareVar] = s.newValue2(ssaop.OpEq64, boolT, res[0], izero)
+		case ir.ONE:
+			s.vars[bidCompareVar] = s.newValue2(ssaop.OpNeq64, boolT, res[0], izero)
+		case ir.OLT:
+			s.vars[bidCompareVar] = s.newValue2(ssaop.OpLess64, boolT, res[0], izero)
+		case ir.OLE:
+			s.vars[bidCompareVar] = s.newValue2(ssaop.OpLeq64, boolT, res[0], izero)
+		}
+		s.endBlock().AddEdgeTo(bAfter)
+		s.startBlock(bGeneral)
 		s.vars[bidCompareVar] = s.softDecimalOp(op, boolT, x, y)
 		s.endBlock().AddEdgeTo(bAfter)
 	} else {
