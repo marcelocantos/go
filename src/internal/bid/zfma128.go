@@ -8,6 +8,8 @@
 
 package bid
 
+import "math/bits"
+
 // fmaDigits128 is the number of digits fma128 scales a value up to. Three facts
 // fix it.
 //
@@ -29,11 +31,34 @@ const fmaDigits128 = 2*Precision128 + 3
 
 // fma128 returns x × y + z rounded once in mode.
 //
-// It is add128 over the wide type. The product is computed exactly and is one
-// operand; the other is z. Whichever has the larger exponent, the product or
-// z, is scaled up towards the exponent of the other, as far as fmaDigits128
-// allows. If that reaches it the sum is exact and its exponent is the
-// preferred one, min(Q(x)+Q(y), Q(z)). If it does not, the gap's remainder
+// Three finite operands whose coefficients fit a word, and whose product
+// fits a word too, take a fast path first, and if it refuses them the
+// general path starts from the operands as the fast path decoded them, with
+// the exact product it already holds. The path is the word fast path of
+// addSlow128 over the product, at the sum of the exponents, and z: the operand
+// with the larger exponent is scaled across a gap of at most maxWordGap
+// places, the exact sum or difference is formed in two words at the smaller
+// exponent, which is the preferred one min(Q(x)+Q(y), Q(z)), and packWord128
+// encodes it if it fits the format. That is the exact packing exception
+// round128's comment allows, and the general path gives the same encoding: with
+// the product below 2^64 and the gap at most 19 the scaled operand has at
+// most 39 digits, within fmaDigits128 for decimal128, so the general path
+// scales it by the whole gap, shifts nothing and rounds the same exact sum at
+// the same exponent, which round128 packs unchanged when it fits; for decimal64
+// a scaled operand of more than fmaDigits128 digits is above 10^35 and no sum
+// or difference with a word is below 10^16, so packWord128 refuses every pair
+// on which the general path shifts. The sign is the general path's: that of
+// the operands when they agree, that of the larger magnitude when they
+// differ, and for an exact cancellation the zero of "Sign of a result",
+// negative only in TowardNegative. A sum whose exponent lies outside the
+// format is refused too, and the general path clamps or folds it.
+// TestFMAWordPath drives the bounds against the reference.
+//
+// The general path is add128 over the wide type. The product is computed
+// exactly and is one operand; the other is z. Whichever has the larger
+// exponent, the product or z, is scaled up towards the exponent of the
+// other, as far as fmaDigits128 allows. If that reaches it the sum is exact
+// and its exponent is the preferred one. If it does not, the gap's remainder
 // shifts the other operand right, leaving a fraction f of one unit whose
 // class is known exactly, and the sum still reaches round128 as an exact value
 // and that class, so nothing is rounded before round128 rounds.
@@ -50,39 +75,89 @@ const fmaDigits128 = 2*Precision128 + 3
 // operand at the exponent of the smaller, and two zeros are a zero at the
 // preferred exponent; the signs follow "Sign of a result".
 func fma128(x, y, z coef128, mode Mode) coef128 {
-	xneg, xc, xe, xok := unpackFirst128(x)
-	xk := KindFinite
-	if !xok {
-		xk, xneg, xc, xe = unpackRest128(x)
+	var yneg, zneg, yok, zok bool
+	var yw, zw uint64
+	var ye, ze int
+	xneg, xw, xe, xok := unpackWordCanon128(x)
+	if xok {
+		yneg, yw, ye, yok = unpackWordCanon128(y)
 	}
-	yneg, yc, ye, yok := unpackFirst128(y)
-	yk := KindFinite
-	if !yok {
-		yk, yneg, yc, ye = unpackRest128(y)
+	if yok {
+		zneg, zw, ze, zok = unpackWordCanon128(z)
 	}
-	zneg, zc, ze, zok := unpackFirst128(z)
-	zk := KindFinite
-	if !zok {
-		zk, zneg, zc, ze = unpackRest128(z)
-	}
-	pneg := xneg != yneg
-	if xk != KindFinite || yk != KindFinite || zk != KindFinite {
-		switch {
-		case xk == KindNaN || yk == KindNaN || zk == KindNaN:
-			return nan128(x, y, z)
-		case xk == KindFinite && yk == KindFinite:
-			return cInf128(zneg) // a finite product and an infinite z
-		case xk == KindFinite && cIsZero128(xc) || yk == KindFinite && cIsZero128(yc):
-			return cNaN128() // 0 × ∞, of any exponent
-		case zk == KindInf && zneg != pneg:
-			return cNaN128() // the infinities cancel
-		}
-		return cInf128(pneg)
-	}
-
 	// a is the operand with the larger exponent, and b the other.
-	a, aneg, ae := cMulFull128(xc, yc), pneg, xe+ye
-	b, bneg, be := wide128{Lo: zc}, zneg, ze
+	var a wide128
+	var aneg, bneg bool
+	var ae, be int
+	var zc coef128
+	if zok {
+		phi, plo := bits.Mul64(xw, yw)
+		pneg, pe := xneg != yneg, xe+ye-Bias128
+		if phi == 0 {
+			// h is the operand with the larger exponent, and l the other.
+			hneg, hw, he, lneg, lw, le := pneg, plo, pe, zneg, zw, ze
+			if he < le {
+				hneg, hw, he, lneg, lw, le = lneg, lw, le, hneg, hw, he
+			}
+			if gap := uint(he - le); gap <= maxWordGap {
+				hi, lo := bits.Mul64(hw, pow10tab64[gap])
+				neg := hneg
+				if hneg == lneg {
+					var carry uint64
+					lo, carry = bits.Add64(lo, lw, 0)
+					hi += carry
+				} else if hi == 0 && lo < lw {
+					neg, lo = lneg, lw-lo
+				} else {
+					var borrow uint64
+					lo, borrow = bits.Sub64(lo, lw, 0)
+					hi -= borrow
+					if hi|lo == 0 {
+						neg = mode == TowardNegative
+					}
+				}
+				if r, ok := packWord128(neg, hi, lo, le-Bias128); ok {
+					return r
+				}
+			}
+		}
+		a, aneg, ae = cFromU128128(Uint128{Hi: phi, Lo: plo}), pneg, pe-Bias128
+		zc, bneg, be = cFromU64128(zw), zneg, ze-Bias128
+	} else {
+		var xc, yc coef128
+		xneg, xc, xe, xok = unpackFirst128(x)
+		xk := KindFinite
+		if !xok {
+			xk, xneg, xc, xe = unpackRest128(x)
+		}
+		yneg, yc, ye, yok = unpackFirst128(y)
+		yk := KindFinite
+		if !yok {
+			yk, yneg, yc, ye = unpackRest128(y)
+		}
+		zneg, zc, ze, zok = unpackFirst128(z)
+		zk := KindFinite
+		if !zok {
+			zk, zneg, zc, ze = unpackRest128(z)
+		}
+		pneg := xneg != yneg
+		if xk != KindFinite || yk != KindFinite || zk != KindFinite {
+			switch {
+			case xk == KindNaN || yk == KindNaN || zk == KindNaN:
+				return nan128(x, y, z)
+			case xk == KindFinite && yk == KindFinite:
+				return cInf128(zneg) // a finite product and an infinite z
+			case xk == KindFinite && cIsZero128(xc) || yk == KindFinite && cIsZero128(yc):
+				return cNaN128() // 0 × ∞, of any exponent
+			case zk == KindInf && zneg != pneg:
+				return cNaN128() // the infinities cancel
+			}
+			return cInf128(pneg)
+		}
+		a, aneg, ae = cMulFull128(xc, yc), pneg, xe+ye
+		bneg, be = zneg, ze
+	}
+	b := wide128{Lo: zc}
 	if ae < be {
 		a, aneg, ae, b, bneg, be = b, bneg, be, a, aneg, ae
 	}

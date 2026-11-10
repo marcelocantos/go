@@ -385,11 +385,12 @@ func roundFiniteW(neg bool, c coefW, exp int, mode Mode, floor int) (coefW, digi
 // Uint64To128 encode an exponent-zero magnitude below 2^64, which has at
 // most 20 digits and therefore always fits Precision128's 34 digits.
 // packWord64 and packWord128, in encoding.go, encode the exact results of
-// the word fast paths of addW, mulW and quantizeW, operands whose
-// coefficients fit a uint64: an exact sum, product or rescaled coefficient
-// at its preferred exponent, which roundW would encode unchanged, refusing
-// it when it does not fit the format so that the caller takes its general
-// path. Each of those functions says why the two paths agree.
+// the word fast paths of addW, mulW, fmaW and quantizeW, operands whose
+// coefficients fit a uint64: an exact sum, product, fused sum or rescaled
+// coefficient at its preferred exponent, which roundW would encode
+// unchanged, refusing it when it does not fit the format so that the caller
+// takes its general path. Each of those functions says why the two paths
+// agree.
 func roundW(neg bool, p wideW, exp int, class digitClass, mode Mode, floor int) (coefW, Status) {
 	// An exact coefficient already inside the format keeps its exponent.
 	// Check its bound directly instead of counting wide digits and deriving

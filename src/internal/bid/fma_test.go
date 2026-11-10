@@ -378,3 +378,78 @@ func FuzzFMA128(f *testing.F) {
 		}
 	})
 }
+
+// TestFMAWordPath drives the word fast path of fmaW at its bounds against
+// the reference: coefficients of x and y whose product sits on both sides of
+// a word (2^32-1 squared fits, 2^32 squared does not), word coefficients of
+// z up to the largest and one past it, gaps between the product's exponent
+// and z's on both sides of maxWordGap and in both directions, exponents at
+// both ends of each format so that the product's exponent leaves the format,
+// both signs of the product and of z, and every mode; and, for every gap the
+// path aligns across, the exact cancellation whose zero takes its sign from
+// the mode.
+func TestFMAWordPath(t *testing.T) {
+	var k kernel
+	xcs := []string{"1", "7", "4294967295", "4294967296", "9999999999", "9007199254740992", "9999999999999999", "18446744073709551615"}
+	ycs := []string{"0", "1", "3", "4294967295", "4294967296", "9999999999"}
+	zcs := []string{"0", "1", "5", "99999", "9999999999999999", "9999999999999999999", "18446744073709551615", "18446744073709551616"}
+	gaps := []int{0, 1, 2, 14, 15, 18, 19, 20, 21, 40}
+	for _, f := range []*format{dec64, dec128} {
+		n := 0
+		check := func(x, y, z bits, m bid.Mode) {
+			n++
+			if got, want := k.fma(f, x, y, z, m), f.fma(x, y, z, m); got != want {
+				t.Fatalf("%s fma(%s, %s, %s, %s) = %s, want %s", f.name, f.format(x), f.format(y), f.format(z), modeName(m), f.format(got), f.format(want))
+			}
+		}
+		for _, xc := range xcs {
+			for _, xe := range []int{f.minExp, 0, f.maxExp - 20, f.maxExp} {
+				for _, xneg := range []bool{false, true} {
+					x, ok := wordOperand(f, xneg, xc, xe)
+					if !ok {
+						continue
+					}
+					for _, yc := range ycs {
+						for _, ye := range []int{0, -1} {
+							y, ok := wordOperand(f, false, yc, ye)
+							if !ok {
+								continue
+							}
+							pe := xe + ye
+							for _, g := range gaps {
+								for _, ze := range []int{pe - g, pe + g} {
+									for _, zc := range zcs {
+										for _, zneg := range []bool{false, true} {
+											z, ok := wordOperand(f, zneg, zc, ze)
+											if !ok {
+												continue
+											}
+											for _, m := range allModes {
+												check(x, y, z, m)
+											}
+										}
+									}
+									// The product, scaled to z's exponent when that is
+									// the smaller, as z of either sign: an exact
+									// cancellation or a doubling.
+									if p := f.decode(f.mul(x, y, bid.ToNearestEven)); p.kind == finite && ze <= pe && pe-ze <= 19 {
+										c := new(big.Int).Mul(p.coeff, pow10(pe-ze))
+										if digits(c) <= f.prec && ze >= f.minExp {
+											for _, zneg := range []bool{false, true} {
+												z := f.encode(value{kind: finite, neg: zneg, coeff: c, exp: ze})
+												for _, m := range allModes {
+													check(x, y, z, m)
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		t.Logf("%s: %d cases", f.name, n)
+	}
+}

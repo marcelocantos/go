@@ -282,11 +282,12 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 	faceRounder := map[string]bool{"roundFaceW": true, "roundFace64": true, "roundFace128": true}
 	faceCallers := map[string]bool{"addSlowW": true, "addSlow64": true, "addSlow128": true, "divW": true, "div64": true, "div128": true}
 	// Callers of the word packers, which encode the exact results of the
-	// word fast paths of addition, multiplication and quantize: see the
-	// comments of those functions and the end of roundW's.
+	// word fast paths of addition, multiplication, fused multiply-add and
+	// quantize: see the comments of those functions and the end of roundW's.
 	wordPackers := map[string]bool{
 		"addSlowW": true, "addSlow64": true, "addSlow128": true,
 		"mulSlowW": true, "mulSlow64": true, "mulSlow128": true,
+		"fmaW": true, "fma64": true, "fma128": true,
 		"quantizeSlowW": true, "quantizeSlow64": true, "quantizeSlow128": true,
 	}
 	wordEncoder := map[string]bool{"packWord64": true, "packWord128": true, "packWordW": true}
