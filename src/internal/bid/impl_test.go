@@ -454,7 +454,14 @@ func (kernel) appendTo(f *format, x bits) string {
 	if w64(f) {
 		return string(bid.Append64(nil, x.Lo))
 	}
-	return string(bid.Append128(nil, x))
+	// Append128 takes its short path only with spare capacity. Both
+	// routes must give one string, so every test of the character form
+	// checks the short path wherever it applies.
+	general, roomy := bid.Append128(nil, x), bid.Append128(make([]byte, 0, 2*bid.MaxLen128), x)
+	if string(general) != string(roomy) {
+		panic(fmt.Sprintf("Append128(%016x%016x) = %q without spare capacity, %q with it", x.Hi, x.Lo, general, roomy))
+	}
+	return string(general)
 }
 func (kernel) round(f *format, neg bool, c bid.Uint128, exp int, sticky bool, m bid.Mode) (bits, bid.Status) {
 	if w64(f) {

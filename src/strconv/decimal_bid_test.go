@@ -825,6 +825,82 @@ func TestAppendDecimalCanonicalCapacity(t *testing.T) {
 	}
 }
 
+// TestAppendDecimalShort drives the short values, a coefficient below 10^8
+// at an exponent from -6 to 0, which the kernel lays out in registers and
+// stores straight into the buffer: every coefficient length, with the
+// point at each place inside the digits and to their left, zeros of each
+// quantum, both signs and the values just outside the range. Each is
+// appended with no spare capacity, with less than the short path needs,
+// with exactly that and with more, to an empty and a prefixed buffer, in
+// every notation and also at a precision, which the general path rounds
+// and lays out; the expected text comes from the independent formatter,
+// and every byte after the result must be untouched, because a buffer's
+// spare capacity may hold the caller's data.
+func TestAppendDecimalShort(t *testing.T) {
+	coeffs := []string{"0", "1", "5", "9", "10", "12", "99", "100", "123", "999", "1000", "1234", "9999",
+		"12345", "99999", "100000", "123456", "999999", "1234567", "9999999", "10000000", "12345678", "99999999",
+		"100000000", "123456789"}
+	for _, coeff := range coeffs {
+		c, _ := new(big.Int).SetString(coeff, 10)
+		for exp := -8; exp <= 2; exp++ {
+			for _, neg := range []bool{false, true} {
+				bits, _ := bid.Pack128(neg, bid.Uint128{Lo: c.Uint64()}, exp)
+				x := decimal.BID128frombits(bits.Hi, bits.Lo)
+				n := len(coeff)
+				for _, format := range []byte{'e', 'E', 'g', 'G', 'f', '?'} {
+					for _, prec := range []int{-1, 2} {
+						want := ""
+						if prec < 0 {
+							e := exp + n - 1
+							scientific := format == 'e' || format == 'E' || format != 'f' && (e < -6 || e >= 21 || exp > 0)
+							switch {
+							case scientific && coeff == "0":
+								// The reference has no exponent form of
+								// zero, and neither has the short path:
+								// the general path's result stands.
+								want = string(AppendDecimal(nil, x, format, prec, 128))
+							case scientific:
+								want = refFormat(neg, coeff, exp, 'e', n-1)
+								if format == 'E' || format == 'G' {
+									want = strings.ReplaceAll(want, "e", "E")
+								}
+							default:
+								want = refFormat(neg, coeff, exp, 'f', max(-exp, 0))
+							}
+						} else {
+							// A precision rounds; the general path's own
+							// result with no spare capacity is the reference.
+							want = string(AppendDecimal(nil, x, format, prec, 128))
+						}
+						// The second prefix holds a point, zeros and an
+						// exponent mark of its own, which are not the
+						// number's: a layout that edits what it appended
+						// must not read them.
+						for _, prefix := range []string{"", "v1.0e5:"} {
+							for _, spare := range []int{0, len(want), bid.ShortLen128 - 1, bid.ShortLen128, bid.ShortLen128 + 1, 64} {
+								buf := []byte(strings.Repeat("~", len(prefix)+spare+1))
+								copy(buf, prefix)
+								got := AppendDecimal(buf[:len(prefix):len(prefix)+spare], x, format, prec, 128)
+								if string(got) != prefix+want {
+									t.Fatalf("%s e%d neg=%v format=%c prec=%d spare=%d prefix=%q: got %q, want %q", coeff, exp, neg, format, prec, spare, prefix, got, prefix+want)
+								}
+								if &got[0] != &buf[0] {
+									continue // the result did not fit and was reallocated
+								}
+								for i := len(got); i < len(buf); i++ {
+									if buf[i] != '~' {
+										t.Fatalf("%s e%d neg=%v format=%c prec=%d spare=%d prefix=%q: byte %d after the %d-byte result %q was written", coeff, exp, neg, format, prec, spare, prefix, i, len(got), got)
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 // --- Quantum-preserving format tests ---
 
 func TestFormatDecimal64Quantum(t *testing.T) {

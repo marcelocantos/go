@@ -53,6 +53,15 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 	hi, lo := decimal.BID128bits(d)
 	x := bid.Uint128{Hi: hi, Lo: lo}
 
+	// A short coefficient at or just below the units place (money and most
+	// quantities) is plain digits around a point in every notation that
+	// keeps all the digits, which is each verb but 'e' and 'E' at
+	// precision -1. The kernel lays those out in registers and stores
+	// them straight into dst, exactly the bytes appended.
+	if i := len(dst); bid.IsShort128(x) && prec < 0 && fmt != 'e' && fmt != 'E' && cap(dst)-i >= bid.ShortLen128 {
+		return dst[:i+bid.PutShort128((*[bid.ShortLen128]byte)(dst[i:i+bid.ShortLen128]), x)]
+	}
+
 	var digs [bid.Precision128]byte
 	kind, neg, n, exp := bid.UnpackDigits128(&digs, x)
 	switch kind {
@@ -329,18 +338,27 @@ func formatDigits(dst []byte, neg bool, exp int, digits []byte, format byte, pre
 		return appendFixed(dst, digits, exp, prec)
 	}
 
-	// 'g' uses 'e' for large/small exponents, 'f' otherwise.
-	// Trailing zeros and trailing decimal points are stripped.
+	// 'g' uses 'e' for large/small exponents, 'f' otherwise, and shows no
+	// trailing zeros after the point and no point without digits after
+	// it. The zeros come off the digits before anything is laid out, so
+	// that nothing is appended only to be removed: dst may carry a prefix
+	// that is not this function's to read, and its spare capacity is not
+	// this function's to write beyond the result.
 	ef := byte('e')
 	if format == 'G' {
 		ef = 'E'
 	}
 	e := exp + ndigits - 1
 	p := max(prec, 1)
-	if e >= -4 && e < p {
-		return stripTrailingZeros(appendFixed(dst, digits, exp, p-ndigits-exp))
+	for ndigits > 1 && digits[ndigits-1] == '0' {
+		ndigits--
+		exp++
 	}
-	return stripTrailingZeros(appendExp(dst, digits, exp, ef, p-1))
+	digits = digits[:ndigits]
+	if e >= -4 && e < p {
+		return appendFixed(dst, digits, exp, max(-exp, 0))
+	}
+	return appendExp(dst, digits, exp, ef, ndigits-1)
 }
 
 // appendFixed formats in fixed-point notation. If prec is not negative the
@@ -440,58 +458,5 @@ func appendExp(dst []byte, digits []byte, exp int, format byte, prec int) []byte
 		dst = append(dst, '0')
 	}
 	dst = append(dst, byte(e%10)+'0')
-	return dst
-}
-
-// stripTrailingZeros removes trailing zeros after a decimal point,
-// and the decimal point itself if no fractional digits remain.
-// It handles scientific notation (e.g., "1.230e+02" → "1.23e+02").
-func stripTrailingZeros(dst []byte) []byte {
-	// Find the exponent part if present.
-	expIdx := -1
-	for i := len(dst) - 1; i >= 0; i-- {
-		if dst[i] == 'e' || dst[i] == 'E' {
-			expIdx = i
-			break
-		}
-	}
-
-	// Find decimal point.
-	dotIdx := -1
-	end := len(dst)
-	if expIdx >= 0 {
-		end = expIdx
-	}
-	for i := 0; i < end; i++ {
-		if dst[i] == '.' {
-			dotIdx = i
-			break
-		}
-	}
-	if dotIdx < 0 {
-		return dst // no decimal point, nothing to strip
-	}
-
-	// Strip trailing zeros from fractional part (before exponent if present).
-	stripTo := end
-	for stripTo > dotIdx+1 && dst[stripTo-1] == '0' {
-		stripTo--
-	}
-	// Remove decimal point if no fractional digits remain.
-	if stripTo == dotIdx+1 {
-		stripTo = dotIdx
-	}
-
-	if stripTo == end {
-		return dst // nothing stripped
-	}
-
-	// Rebuild: dst[:stripTo] + dst[expIdx:]
-	if expIdx >= 0 {
-		tail := append([]byte(nil), dst[expIdx:]...)
-		dst = append(dst[:stripTo], tail...)
-	} else {
-		dst = dst[:stripTo]
-	}
 	return dst
 }

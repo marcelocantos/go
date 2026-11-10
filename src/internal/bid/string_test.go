@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"internal/bid"
 	"math/big"
+	"math/rand/v2"
 	"strings"
 	"testing"
 )
@@ -148,6 +149,100 @@ func TestParseLongExponentCompensation(t *testing.T) {
 			t.Errorf("Parse64(%.40q...) = %s %s, want %s %s", tt.s, got, showStatus(st), tt.want, showStatus(tt.st))
 		}
 	}
+}
+
+// TestShort128 checks the short form of decimal128 against the reference
+// and against the general formatter: IsShort128 accepts exactly the finite
+// encodings with a coefficient below 10^8 and an exponent from -6 to 0;
+// for those, PutShort128 writes the reference's character form and no byte
+// after it; and Append128 returns the same string with spare capacity (the
+// short path) and without (the general one). The coefficients are every
+// value below 2000, every length's bounds and a random sample of each
+// length, at every exponent from -8 to 2 and both signs; the encodings
+// IsShort128 must refuse include those one bit away from a short one, the
+// second form and the special values.
+func TestShort128(t *testing.T) {
+	f := dec128
+	r := rand.New(rand.NewPCG(*seedFlag, streamSeed("short128")))
+	var coeffs []uint64
+	for c := uint64(0); c < 2000; c++ {
+		coeffs = append(coeffs, c)
+	}
+	for p := uint64(1000); p <= 1_000_000_000; p *= 10 {
+		coeffs = append(coeffs, p-1, p, p+1, p/2, 5*p-1)
+		for range 200 {
+			coeffs = append(coeffs, p+r.Uint64N(9*p))
+		}
+	}
+	coeffs = append(coeffs, 99_999_999, 100_000_000, 100_000_001, 1<<32, 1<<63, ^uint64(0))
+	check := func(x bits) {
+		t.Helper()
+		v := f.decode(x)
+		want := v.kind == finite && v.coeff.IsUint64() && v.coeff.Uint64() < 100_000_000 && v.exp >= -6 && v.exp <= 0 && bid.IsCanonical128(x)
+		if got := bid.IsShort128(x); got != want {
+			t.Fatalf("IsShort128(%s) = %t, want %t", hex128(x), got, want)
+		}
+		general := string(bid.Append128(nil, x))
+		if ref := f.format(x); general != ref {
+			t.Fatalf("Append128(nil, %s) = %q, reference %q", hex128(x), general, ref)
+		}
+		// Spare capacity from none to more than the short path asks for,
+		// with a prefix and with the bytes after the result in use.
+		for _, room := range []int{0, len(general), bid.ShortLen128 - 1, bid.ShortLen128, bid.ShortLen128 + 9} {
+			buf := make([]byte, 2+room+1)
+			for i := range buf {
+				buf[i] = '#'
+			}
+			out := bid.Append128(buf[:2:2+room], x)
+			if string(out) != "##"+general {
+				t.Fatalf("Append128(%s) with room %d = %q, want %q", hex128(x), room, out, "##"+general)
+			}
+			if &out[0] == &buf[0] {
+				for i := len(out); i < len(buf); i++ {
+					if buf[i] != '#' {
+						t.Fatalf("Append128(%s) with room %d wrote byte %d, after its %d-byte result", hex128(x), room, i, len(out))
+					}
+				}
+			}
+		}
+		if !want {
+			return
+		}
+		var buf [bid.ShortLen128]byte
+		for i := range buf {
+			buf[i] = '#'
+		}
+		n := bid.PutShort128(&buf, x)
+		if n < 0 || n > len(buf) || string(buf[:n]) != general {
+			t.Fatalf("PutShort128(%s) = %q (n = %d), want %q", hex128(x), buf[:max(0, min(n, len(buf)))], n, general)
+		}
+		for i := n; i < len(buf); i++ {
+			if buf[i] != '#' {
+				t.Fatalf("PutShort128(%s) wrote byte %d, after its %d-byte result %q", hex128(x), i, n, general)
+			}
+		}
+	}
+	n := 0
+	for _, c := range coeffs {
+		for exp := -8; exp <= 2; exp++ {
+			for _, neg := range []bool{false, true} {
+				x := f.encode(value{kind: finite, neg: neg, coeff: new(big.Int).SetUint64(c), exp: exp})
+				check(x)
+				n++
+				// One bit of the high coefficient word, and of each field
+				// above it, away from this encoding.
+				for _, bit := range []uint{0, 17, 48, 49, 52, 61, 62} {
+					check(bits{Hi: x.Hi ^ 1<<bit, Lo: x.Lo})
+				}
+			}
+		}
+	}
+	for _, hi := range []uint64{0x78 << 56, 0xf8 << 56, 0x7c << 56, 0x7e << 56, 0xfc << 56, 3 << 61, 3<<61 | 1<<60, 0, 1 << 63, ^uint64(0)} {
+		for _, lo := range []uint64{0, 1, 123456, 99_999_999, 100_000_000, ^uint64(0)} {
+			check(bits{Hi: hi, Lo: lo})
+		}
+	}
+	t.Logf("%d values, each with seven neighbouring encodings", n)
 }
 
 // TestAppendLongest checks that the longest forms fit MaxLen.

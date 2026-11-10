@@ -38,7 +38,112 @@ func Append64(dst []byte, x uint64) []byte {
 // Append128 is Append64 for decimal128; it needs MaxLen128 bytes of spare
 // capacity to avoid allocating.
 func Append128(dst []byte, x Uint128) []byte {
+	if i := len(dst); IsShort128(x) && cap(dst)-i >= ShortLen128 {
+		return dst[:i+PutShort128((*[ShortLen128]byte)(dst[i:i+ShortLen128]), x)]
+	}
 	return append128(dst, x)
+}
+
+// The short values, which dominate formatting (money and quantities): a
+// coefficient below shortCoeff, of at most eight digits, which eightASCII
+// converts as one word, at an exponent from shortMinExp to 0. Their
+// character form is plain notation whatever the coefficient ("Values,
+// cohorts and the character form"): the digits, with a point inside them
+// or after a leading "0." and zeros.
+const (
+	shortCoeff  = 100_000_000
+	shortMinExp = -6
+
+	// ShortLen128 is the room PutShort128 is given. The longest form it
+	// writes has ten bytes, a sign, eight digits and a point; the rest is
+	// slack that lets every store be proved inside the buffer.
+	ShortLen128 = 16
+)
+
+// IsShort128 reports whether x is finite with a coefficient below 10^8 and
+// an exponent from -6 to 0: a value PutShort128 formats.
+func IsShort128(x Uint128) bool {
+	return shortExp128(x) <= -shortMinExp && x.Lo < shortCoeff
+}
+
+// PutShort128 writes the character form of x, as Append128 gives it, to
+// the start of buf and returns its length, for an x that IsShort128
+// accepts; for any other x what it writes is unspecified. It writes
+// exactly the bytes of the result, none after them, so buf may be the
+// spare capacity of a buffer whose later bytes are in use.
+//
+// Every notation that keeps all the digits of the coefficient and does
+// not ask for an exponent agrees on the form of these values, so strconv
+// calls this for its canonical and its fixed forms.
+//
+// The digits never pass through memory, and no branch depends on the
+// value. eightASCII gives all eight digits, zeros on the left, with the
+// last in the top byte of a word. The tail of the output, its last eight bytes
+// right-aligned, is the word with the digits before the point moved down
+// a byte to open its place; the head, its first bytes left-aligned, is
+// the word shifted down past the digits not shown, with the digits after
+// the point moved up a byte. A value without a point moves nothing: the
+// distance is the count of points, 0 or 1. The stores write exactly the
+// bytes of the result: three single bytes at the start, the middle and
+// the end cover every length up to three, and three words of four bytes
+// at the same places every length from four to nine. Both sets are always
+// stored; a result too short for words sends them to a scratch buffer
+// instead, by a selected address. The masks on the offsets change no
+// value; they bound each store for the compiler, which then needs no
+// check. See "Digit conversion" in the package documentation.
+func PutShort128(buf *[ShortLen128]byte, x Uint128) int {
+	sign, frac := shortParts128(x)
+	w := eightASCII(x.Lo)
+	// Significant digits, one for a zero coefficient: c|1 has the digit
+	// count of c, because an even c is not one below a power of ten. The
+	// count comes from the coefficient, not from the zero bytes of w,
+	// which would cost nothing more to read: every store address below
+	// depends on it, and the addresses must not wait for the digits.
+	n := uint(cDigits64(x.Lo | 1))
+	// Digits shown: the significant ones, and zeros up to the units place
+	// when the point is to the left of them (0.05, 0.00).
+	shown := max(n, frac+1)
+	dot := (frac + 7) >> 3 // points in the output: 1 if frac is not zero
+	total := shown + dot
+	pt := uint64('.') * uint64(dot)
+
+	// Tail: the fraction digits stay in the top bytes, the point goes
+	// below them, the digits before it move down.
+	m := ^uint64(0) >> (8 * frac & 63) // the bytes of the digits before the point
+	tail := w&^m | w&m>>(8*dot&63) | pt<<(8*(7-frac)&63)
+
+	// Head: the shown digits from the bottom byte, the point after the
+	// first shown-frac of them, the rest moved up.
+	hw := w >> (8 * (8 - shown) & 63)
+	before := shown - frac
+	lm := ^uint64(0) >> ((64 - 8*before) & 63)
+	head := hw&lm | hw&^lm<<8 | pt<<(8*before&63)
+
+	buf[0] = '-' // overwritten by the first digit unless the sign is set
+	half := total / 2
+	buf[sign] = byte(head)
+	buf[(sign+half)&7] = byte(head >> (8 * half & 63))
+	buf[(sign+total-1)&15] = byte(tail >> 56)
+	var scratch [ShortLen128]byte
+	q := buf
+	if total < 4 {
+		q = &scratch
+	}
+	t := (total - 4) & 7
+	putFour(q, sign, uint32(head))
+	putFour(q, sign+t/2, uint32(head>>(8*(t/2))))
+	putFour(q, sign+t, uint32(tail>>32))
+	return int(sign + total)
+}
+
+// putFour stores w little-endian in buf[i:i+4]; the caller bounds i so that
+// the compiler proves the four indexes and emits one store.
+func putFour(buf *[ShortLen128]byte, i uint, w uint32) {
+	i &= 7
+	buf[i] = byte(w)
+	buf[i+1] = byte(w >> 8)
+	buf[i+2] = byte(w >> 16)
+	buf[i+3] = byte(w >> 24)
 }
 
 // Parse64 converts the character sequence s to decimal64, rounded once in
@@ -169,7 +274,12 @@ func writeWordDigits(buf []byte, lo uint64) int {
 // every product stays inside its lane:
 //
 //   - Halves. t = v / 10^4 and u = v - 10^4 t are below 10^4. z holds t in
-//     bits 0–31 and u in bits 32–63.
+//     bits 0–31 and u in bits 32–63. The quotient is (v × 109951163) >> 40:
+//     109951163 = ⌈2^40 / 10^4⌉, and the error v × (109951163 × 10^4 − 2^40)
+//     / 2^40 = 2224 v / 2^40 is below 1 for v < 4.9 × 10^8. The product is
+//     below 2^54. A division by the constant compiles to the high half of
+//     a 128-bit product with a constant of four instructions; this one is
+//     a low product with a constant of two.
 //   - Pairs. For q < 10^4, q / 100 = (q × 10486) >> 20: 10486 = ⌈2^20 / 100⌉,
 //     and the error q × (10486 × 100 − 2^20) / 2^20 = 24 q / 2^20 is below
 //     1 for q < 43691. q × 10486 < 2^27 stays inside a 32-bit lane; after
@@ -189,7 +299,7 @@ func writeWordDigits(buf []byte, lo uint64) int {
 //
 // TestEightASCII checks every value below 10^8 against the division loop.
 func eightASCII(v uint64) uint64 {
-	t := v / 10_000
+	t := v * 109951163 >> 40
 	z := t | (v-t*10_000)<<32
 	hundreds := ((z * 10486) >> 20) & 0x0000_007F_0000_007F
 	y := hundreds | (z-hundreds*100)<<16

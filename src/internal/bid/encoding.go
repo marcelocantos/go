@@ -245,6 +245,26 @@ func unpackWord128(x Uint128) (neg bool, coeff uint64, exp int, ok bool) {
 	return x.Hi&SignMask128Hi != 0, x.Lo, int(x.Hi >> ExpShift128 & ExpMask128), true
 }
 
+// shortExp128 returns the exponent of x less shortMinExp, a value from 0
+// to -shortMinExp, if x is a finite first-form encoding whose coefficient
+// fits its low word and whose exponent is from shortMinExp to 0; for every
+// other encoding it returns a larger value. It is one comparison for the
+// caller: without its sign, and less the high word of 0E-6, the high word
+// is k << ExpShift128 with k from 0 to 6 exactly when the exponent is
+// -6 + k and every coefficient bit of the word is clear, and rotated, k is
+// the whole value. Every other finite encoding, and every special one,
+// leaves a set bit above it.
+func shortExp128(x Uint128) uint64 {
+	return bits.RotateLeft64(x.Hi&^SignMask128Hi-(Bias128+shortMinExp)<<ExpShift128, 64-ExpShift128)
+}
+
+// shortParts128 returns the sign of a short x as 0 or 1 and the number of
+// its digits after the point, the negation of its exponent: the fields
+// PutShort128 lays out, with the coefficient in the low word.
+func shortParts128(x Uint128) (sign, frac uint) {
+	return uint(x.Hi >> 63), uint(Bias128 - int(x.Hi>>ExpShift128&ExpMask128))
+}
+
 // unpackWordCanon64 and unpackWordCanon128 recognize every finite canonical
 // encoding whose coefficient fits uint64, for the word fast paths of the
 // arithmetic: for decimal64 that is every finite canonical encoding, the

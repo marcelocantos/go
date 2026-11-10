@@ -1860,4 +1860,44 @@ BenchmarkKernel/UnpackDigits/128/mixed-16                    	13867353	         
 BenchmarkKernel/UnpackDigits/128/mixed-16                    	14033720	         8.670 ns/op	       0 B/op	       0 allocs/op
 BenchmarkKernel/UnpackDigits/128/mixed-16                    	13748394	         8.849 ns/op	       0 B/op	       0 allocs/op
 BenchmarkKernel/UnpackDigits/128/mixed-16                    	13150864	         8.931 ns/op	       0 B/op	       0 allocs/op
+
+# Appended for the short-form rows (IsShort, PutShort, Append/128/short and
+# Append/128/shuffled), measured separately on 2026-11-10 with the same
+# command restricted to
+#   -test.bench 'Kernel/^(IsShort|PutShort|Append)$/^128$/^(mixed|short|shuffled)$'
+# on the same machine (the Append/128/mixed row that pattern also matches is
+# not repeated), load average 8.16 5.00 6.27 at the start and
+# 7.83 4.99 6.25 at the end.
+BenchmarkKernel/IsShort/128/mixed-16        	88495574	         1.380 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/IsShort/128/mixed-16        	82777630	         1.384 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/IsShort/128/mixed-16        	85803643	         1.388 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/IsShort/128/mixed-16        	82533332	         1.427 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/IsShort/128/mixed-16        	87410421	         1.429 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/IsShort/128/mixed-16        	82715835	         1.433 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/IsShort/128/mixed-16        	80033347	         1.342 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/IsShort/128/mixed-16        	86757482	         1.399 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/PutShort/128/short-16       	21701125	         5.588 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/PutShort/128/short-16       	21697036	         5.589 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/PutShort/128/short-16       	21651528	         5.661 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/PutShort/128/short-16       	21149566	         5.654 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/PutShort/128/short-16       	21197046	         5.659 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/PutShort/128/short-16       	21522250	         5.584 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/PutShort/128/short-16       	21441972	         5.609 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/PutShort/128/short-16       	21304298	         5.589 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Append/128/short-16         	17862346	         6.749 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Append/128/short-16         	17939118	         6.748 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Append/128/short-16         	17931636	         6.769 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Append/128/short-16         	17454014	         6.786 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Append/128/short-16         	17822001	         6.762 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Append/128/short-16         	17812082	         6.763 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Append/128/short-16         	17795134	         6.926 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Append/128/short-16         	15030530	         7.231 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Append/128/shuffled-16      	15266041	         7.888 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Append/128/shuffled-16      	15368031	         8.173 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Append/128/shuffled-16      	13438225	         8.882 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Append/128/shuffled-16      	13975900	         7.948 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Append/128/shuffled-16      	14918492	         8.399 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Append/128/shuffled-16      	13474567	         8.618 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Append/128/shuffled-16      	15241482	         7.828 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/Append/128/shuffled-16      	15368359	         7.595 ns/op	       0 B/op	       0 allocs/op
 PASS

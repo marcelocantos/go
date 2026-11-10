@@ -1893,6 +1893,49 @@
 // appends with fixed-size copies was measured in the same pass and did not
 // pay either.
 //
+// The short values, a decimal128 coefficient below 10^8 at an exponent
+// from -6 to 0 (money and most quantities), have their own conversion,
+// PutShort128, and it is the chunk of eight after all, without the branch
+// that sank it above. The eight digits stay in a register; the leading
+// zeros the value does not show are dropped by a shift, the point is
+// opened by another, and the result is stored in overlapping words, three
+// of four bytes for a length from four to nine and three single bytes for
+// a shorter one, both always stored, with the words of a short result
+// sent to a scratch buffer by a selected address. Nothing in it is a
+// branch on the value. Two findings shaped it (Apple M4 Max, 2026-11-10).
+//
+// First, a pool of operands that repeats, as every benchmark here has,
+// trains the branch predictor on the operands themselves: a pool of 4096
+// mixed lengths runs the digit-at-a-time writer's exit branch as if it
+// were predictable. Drawn in an order the predictor cannot learn, that
+// writer and its copies took 12.5 to 16.7 ns on mixed short values against
+// 7.0 on values of one length, and the branch-free form 6.5 to 6.9 on
+// every mix (all include about 1.4 ns of the generator that draws the
+// order). The rows of a repeating pool therefore understate what a
+// data-dependent branch costs on real input, here by a factor of two. The
+// row Append/128/shuffled draws its operands that way, and -bid.shuffle
+// does it for every one- and two-operand row. The same routine with
+// branches (on the point, on the nine-byte result, between the two shapes
+// of store) is the faster on values of one shape, 3.8 ns against 5.2 on a
+// walked pool, and the slower on mixed ones, up to 9.4 against 6.9 drawn:
+// the branch-free form was kept because its time does not depend on the
+// data.
+//
+// Second, the number of digits must not be read from the converted word,
+// although the zero bytes of the word give it for nothing. Every store
+// address depends on the count, and a count that waits for the
+// multiplications of the conversion holds every address back with it:
+// measured on a walked pool, the routine took 6.6 to 7.0 ns with the
+// count from the word and 5.2 to 5.6 with the count from the coefficient
+// through the digit-count table, on which the addresses resolve while the
+// digits are still being multiplied (with branches, 4.8 to 5.7 against 3.6
+// to 4.3).
+//
+// Through strconv, the canonical form of a money value fell from 7.4 ns
+// appended and 14.5 as a new string, and 34-digit values are unchanged
+// (the numbers are in the commit that added the path); a test for the
+// short encodings is one rotation and two comparisons (IsShort128).
+//
 // # No assembly
 //
 // The package is pure Go, and was measured against assembly before staying

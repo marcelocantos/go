@@ -59,6 +59,7 @@ var (
 	ratchetFlag  = flag.Bool("bid.ratchet", false, "run TestBenchRatchet: compare short benchmark runs with the baseline in testdata")
 	ratchetTime  = flag.Duration("bid.ratchet.time", 50*time.Millisecond, "benchmark time of each measurement of TestBenchRatchet")
 	ratchetCount = flag.Int("bid.ratchet.count", 3, "measurements of each row of TestBenchRatchet before it retries; the row's time is the smallest")
+	shuffleFlag  = flag.Bool("bid.shuffle", false, "draw the operands of one- and two-operand benchmark rows in an order the branch predictor cannot learn")
 	ratchetRetry = flag.Int("bid.ratchet.retry", 5, "further measurements of a row over the band before TestBenchRatchet fails it")
 )
 
@@ -74,6 +75,10 @@ var benchSink any
 // pair is a pool of length one.
 
 func loop1[A, R any](b *testing.B, xs []A, f func(x A) R) {
+	if *shuffleFlag {
+		loop1s(b, xs, f)
+		return
+	}
 	var s R
 	m := len(xs) - 1
 	for i := 0; i < b.N; i++ {
@@ -83,10 +88,57 @@ func loop1[A, R any](b *testing.B, xs []A, f func(x A) R) {
 }
 
 func loop2[A, R any](b *testing.B, xs, ys []A, f func(x, y A) R) {
+	if *shuffleFlag {
+		loop2s(b, xs, ys, f)
+		return
+	}
 	var s R
 	m := len(xs) - 1
 	for i := 0; i < b.N; i++ {
 		s = f(xs[i&m], ys[i&m])
+	}
+	benchSink = s
+}
+
+// The shuffled loops draw each operand by a generator instead of walking
+// the pool. A pool that repeats trains the branch predictor on the
+// operands themselves, however long it is (a pool of 4096 was learned),
+// so a row of a walking loop shows a branch on the data as if it were
+// predictable; a drawn order shows what it costs on input that has no
+// pattern. The generator adds its own time to every row, about 2 ns: it
+// is a chain from each iteration to the next, where the walking loop has
+// none. Rows named shuffled always use these; -bid.shuffle uses them for
+// every one- and two-operand row, to find the rows that depend on their
+// operands' order. See "Digit conversion" in the package documentation.
+
+// xorshift is one step of Marsaglia's 64-bit generator (13, 7, 17).
+func xorshift(r uint64) uint64 {
+	r ^= r << 13
+	r ^= r >> 7
+	r ^= r << 17
+	return r
+}
+
+const xorshiftSeed = 88172645463325252
+
+func loop1s[A, R any](b *testing.B, xs []A, f func(x A) R) {
+	var s R
+	m := uint64(len(xs) - 1)
+	r := uint64(xorshiftSeed)
+	for i := 0; i < b.N; i++ {
+		r = xorshift(r)
+		s = f(xs[r>>32&m])
+	}
+	benchSink = s
+}
+
+func loop2s[A, R any](b *testing.B, xs, ys []A, f func(x, y A) R) {
+	var s R
+	m := uint64(len(xs) - 1)
+	r := uint64(xorshiftSeed)
+	for i := 0; i < b.N; i++ {
+		r = xorshift(r)
+		s = f(xs[r>>32&m], ys[r>>32&m])
 	}
 	benchSink = s
 }
@@ -695,6 +747,24 @@ func benchRowList() benchRows {
 	})
 	rs.add("Append", "128", "mixed", "Append128", func(b *testing.B) {
 		loop1(b, mixed.x128, func(x bits) int { return len(bid.Append128(buf[:0], x)) })
+	})
+	// The short form: money and small quantities, the lengths and the
+	// places of the point mixed so that a branch on either would show.
+	var shorts []bits
+	for _, str := range []string{"0", "0.00", "0.05", "7", "17", "250", "1.5", "12.34", "1234.56", "-3.25", "12345.67", "999999.99", "1000", "123456", "-42", "0.000001"} {
+		x, _ := bid.Parse128(str, rne)
+		shorts = append(shorts, x)
+	}
+	var short [bid.ShortLen128]byte
+	rs.add("IsShort", "128", "mixed", "IsShort128", func(b *testing.B) { loop1(b, mixed.x128, bid.IsShort128) })
+	rs.add("PutShort", "128", "short", "PutShort128", func(b *testing.B) {
+		loop1(b, shorts, func(x bits) int { return bid.PutShort128(&short, x) })
+	})
+	rs.add("Append", "128", "short", "Append128", func(b *testing.B) {
+		loop1(b, shorts, func(x bits) int { return len(bid.Append128(buf[:0], x)) })
+	})
+	rs.add("Append", "128", "shuffled", "Append128", func(b *testing.B) {
+		loop1s(b, shorts, func(x bits) int { return len(bid.Append128(buf[:0], x)) })
 	})
 	rs.add("Append", "float64", "mixed", "", func(b *testing.B) {
 		loop1(b, mixed.xf, func(x float64) int { return len(strconv.AppendFloat(buf[:0], x, 'E', -1, 64)) })
