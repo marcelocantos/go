@@ -1938,6 +1938,25 @@
 // are operands of one kind, 34 digits at nearby exponents or money
 // amounts, with digits, signs and order in no pattern.
 //
+// The comparison shows the trade most plainly, because the branches it
+// gives up are cheap when predicted. Timed against the branching form it
+// replaced, each on one machine in interleaved rounds (2026-11-11), the
+// comparison of two decimal128 values took, in ns:
+//
+//	                                  branch-free   branching
+//	Apple M4 Max, a pool repeated            5.9         6.7
+//	Apple M4 Max, drawn at random            7.0        12.7
+//	AMD EPYC 9V45, a pool repeated           7.6         5.0
+//	AMD EPYC 9V45, drawn at random           8.8        14.9
+//
+// On amd64 the branching form wins by about 2.5 ns on operands that
+// repeat and loses by 6 on operands that do not. The branch-free form is
+// kept on both: operands that repeat in a pattern a predictor learns are
+// a property of benchmarks more than of programs, and the comparisons of
+// money amounts at one quantum, the homogeneous case where branches would
+// be predicted, are decided in line by the compiler and never reach this
+// code.
+//
 // Not every such decision is worth computing. A branch that resolves at
 // the start of an operation, from the signs or the exponents just
 // decoded, costs little when it mispredicts: the processor has started
