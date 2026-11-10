@@ -279,6 +279,60 @@ func TestDecimal64WordOperators(t *testing.T) {
 	t.Logf("%d pairs", n)
 }
 
+// TestDecimal128QuantizeGrid compares math/decimal's Quantize, QuantizeMode
+// and the rounding functions on decimalWordOperands, through the
+// compiler's lowering of them, with the kernel's entry points: every pair
+// of operands as value and quantum, which reaches the unchanged value,
+// digits dropped and rounded, a word scaled up to more places with and
+// without overflowing the word, the results that do not fit and the
+// special values, in every rounding mode and in one that is none of them.
+func TestDecimal128QuantizeGrid(t *testing.T) {
+	bits := func(d decimal128) bid.Uint128 {
+		hi, lo := decimal.BID128bits(d)
+		return bid.Uint128{Hi: hi, Lo: lo}
+	}
+	modes := []struct {
+		public decimal.RoundingMode
+		kernel bid.Mode
+	}{
+		{decimal.ToNearestEven, bid.ToNearestEven}, {decimal.ToNearestAway, bid.ToNearestAway},
+		{decimal.ToZero, bid.TowardZero}, {decimal.ToPositiveInf, bid.TowardPositive},
+		{decimal.ToNegativeInf, bid.TowardNegative}, {decimal.RoundingMode(9), bid.ToNearestEven},
+	}
+	operands := decimalWordOperands()
+	n := 0
+	for _, xb := range operands {
+		x := decimal.BID128frombits(xb.Hi, xb.Lo)
+		for _, c := range []struct {
+			op        string
+			got, want bid.Uint128
+		}{
+			{"Trunc", bits(decimal.Trunc(x)), bid.RoundToIntegral128(xb, bid.TowardZero)},
+			{"Floor", bits(decimal.Floor(x)), bid.RoundToIntegral128(xb, bid.TowardNegative)},
+			{"Ceil", bits(decimal.Ceil(x)), bid.RoundToIntegral128(xb, bid.TowardPositive)},
+			{"Round", bits(decimal.Round(x)), bid.RoundToIntegral128(xb, bid.ToNearestAway)},
+			{"RoundToEven", bits(decimal.RoundToEven(x)), bid.RoundToIntegral128(xb, bid.ToNearestEven)},
+		} {
+			if c.got != c.want {
+				t.Fatalf("%s(%#x) = %#x, want %#x", c.op, xb, c.got, c.want)
+			}
+		}
+		for _, yb := range operands {
+			y := decimal.BID128frombits(yb.Hi, yb.Lo)
+			n++
+			if got, want := bits(decimal.Quantize(x, y)), bid.Quantize128(xb, yb, bid.ToNearestEven); got != want {
+				t.Fatalf("Quantize(%#x, %#x) = %#x, want %#x", xb, yb, got, want)
+			}
+			for _, m := range modes {
+				if got, want := bits(decimal.QuantizeMode(x, y, m.public)), bid.Quantize128(xb, yb, m.kernel); got != want {
+					t.Fatalf("QuantizeMode(%#x, %#x, %d) = %#x, want %#x", xb, yb, m.public, got, want)
+				}
+			}
+		}
+	}
+	t.Logf("%d pairs", n)
+}
+
 func TestDecimalConversions(t *testing.T) {
 	const mode = bid.ToNearestEven
 	bits := func(d decimal128) bid.Uint128 {

@@ -95,6 +95,38 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 	s.vars[bidRoundVar] = x
 	s.endBlock().AddEdgeTo(bAfter)
 	s.startBlock(bShift)
+	header := func() *ssa.Value {
+		signMask := uint64(bid.SignMask64)
+		h := s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpAnd64, u64, native, s.constInt64(u64, int64(signMask))), s.newValue2(ssaop.OpLsh64x64, u64, ye, s.constInt64(u64, int64(shift))))
+		return s.newValue2(ssaop.OpXor64, u64, h, s.constInt64(u64, int64(zeroEncoding)))
+	}
+	if !integral && !is64 {
+		// A decimal128 word at a larger exponent than y's by at most 19
+		// places is scaled up to it, exactly, when the product is still a
+		// word: 5 quantized to cents is 5.00. One multiplication by a
+		// power of ten from the table, with the high word as the test. A
+		// word is below 10^34, so the result is canonical, and a zero
+		// stays a zero at the exponent of y. Whether x is above or below
+		// y's exponent is a property of the data's kind, and a branch.
+		above := s.newValue2(ssaop.OpLess64U, boolT, ye, xe)
+		b := s.endBlock()
+		b.Kind = block.BlockIf
+		b.SetControl(above)
+		bUp, bDown := s.f.NewBlock(block.BlockPlain), s.f.NewBlock(block.BlockPlain)
+		b.AddEdgeTo(bUp)
+		b.AddEdgeTo(bDown)
+		s.startBlock(bUp)
+		up := s.newValue2(ssaop.OpSub64, u64, xe, ye)
+		guard(s.newValue2(ssaop.OpLeq64U, boolT, up, s.constInt64(u64, bidMaxWordPower)))
+		ptrT := types.NewPtr(u64)
+		table := s.newValue1A(ssaop.OpAddr, ptrT, bidComparePowers, s.sb)
+		power := s.rawLoad(u64, s.newValue2(ssaop.OpAddPtr, ptrT, table, s.newValue2(ssaop.OpMul64, u64, up, s.constInt64(u64, bidWordBytes))))
+		product := s.newValue2(ssaop.OpMul64uhilo, types.NewTuple(u64, u64), coeff, power)
+		guard(s.newValue2(ssaop.OpEq64, boolT, s.newValue1(ssaop.OpSelect0, u64, product), zero))
+		s.vars[bidRoundVar] = s.newValue2(ssaop.OpDecimal128Make, n.Type(), s.newValue1(ssaop.OpSelect1, u64, product), header())
+		s.endBlock().AddEdgeTo(bAfter)
+		s.startBlock(bDown)
+	}
 	gap := s.newValue2(ssaop.OpSub64, u64, ye, xe)
 	const maxShift = bidMaxWordPower // 10^19 is the largest power of ten fitting uint64.
 	guard(s.newValue2(ssaop.OpLeq64U, boolT, s.newValue2(ssaop.OpSub64, u64, gap, one), s.constInt64(u64, maxShift-1)))
@@ -126,17 +158,30 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 	selectMode(bid.TowardPositive, s.newValue2(ssaop.OpAndB, boolT, nonzero, s.newValue1(ssaop.OpNot, boolT, negative)))
 	selectMode(bid.TowardNegative, s.newValue2(ssaop.OpAndB, boolT, nonzero, negative))
 	q = s.newValue2(ssaop.OpAdd64, u64, q, increment)
-	signMask := uint64(bid.SignMask64)
-	header := s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpAnd64, u64, native, s.constInt64(u64, int64(signMask))), s.newValue2(ssaop.OpLsh64x64, u64, ye, s.constInt64(u64, int64(shift))))
-	header = s.newValue2(ssaop.OpXor64, u64, header, s.constInt64(u64, int64(zeroEncoding)))
 	if is64 {
-		s.vars[bidRoundVar] = s.newValue1(ssaop.OpCopy, n.Type(), s.newValue2(ssaop.OpOr64, u64, header, q))
+		s.vars[bidRoundVar] = s.newValue1(ssaop.OpCopy, n.Type(), s.newValue2(ssaop.OpOr64, u64, header(), q))
 	} else {
-		s.vars[bidRoundVar] = s.newValue2(ssaop.OpDecimal128Make, n.Type(), q, header)
+		s.vars[bidRoundVar] = s.newValue2(ssaop.OpDecimal128Make, n.Type(), q, header())
 	}
 	s.endBlock().AddEdgeTo(bAfter)
 	s.startBlock(bSlow)
-	s.vars[bidRoundVar] = s.rtcall(fallback, true, []*types.Type{n.Type()}, args...)[0]
+	if !is64 && bidKernelDirect() {
+		// The kernel's general path, called directly as the operators'
+		// are (bidKernelOp): the typed helper would only convert the
+		// operands and the mode, whose values the public and the kernel
+		// modes share, and call it.
+		zeroHi := s.constInt64(u64, int64(zeroEncoding))
+		kargs := []*ssa.Value{s.newValue2(ssaop.OpXor64, u64, xh, zeroHi), s.newValue1(ssaop.OpDecimal128Lo, u64, x)}
+		fn := bidKernelIntegral
+		if !integral {
+			fn = bidKernelQuantize
+			kargs = append(kargs, s.newValue2(ssaop.OpXor64, u64, high(args[1]), zeroHi), s.newValue1(ssaop.OpDecimal128Lo, u64, args[1]))
+		}
+		res := s.rtcall(fn, true, []*types.Type{u64, u64}, append(kargs, mode)...)
+		s.vars[bidRoundVar] = s.newValue2(ssaop.OpDecimal128Make, n.Type(), res[1], s.newValue2(ssaop.OpXor64, u64, res[0], zeroHi))
+	} else {
+		s.vars[bidRoundVar] = s.rtcall(fallback, true, []*types.Type{n.Type()}, args...)[0]
+	}
 	s.endBlock().AddEdgeTo(bAfter)
 	s.startBlock(bAfter)
 	return s.variable(bidRoundVar, n.Type())

@@ -168,6 +168,7 @@ func (s *state) bidCompareZero(op ir.Op, x *ssa.Value, zeroOnLeft bool) *ssa.Val
 // operator is decided here from the two.
 var (
 	bidKernelAdd, bidKernelMul, bidKernelDiv, bidKernelCmp, bidKernelCmpFinite *obj.LSym
+	bidKernelQuantize, bidKernelIntegral                                       *obj.LSym
 )
 
 func initBIDKernelSyms() {
@@ -179,6 +180,8 @@ func initBIDKernelSyms() {
 	bidKernelDiv = base.PkgLinksym("internal/bid", "div128", obj.ABIInternal)
 	bidKernelCmp = base.PkgLinksym("internal/bid", "quietCmpSlow128", obj.ABIInternal)
 	bidKernelCmpFinite = base.PkgLinksym("internal/bid", "cCmpFinite128", obj.ABIInternal)
+	bidKernelQuantize = base.PkgLinksym("internal/bid", "quantizeSlow128", obj.ABIInternal)
+	bidKernelIntegral = base.PkgLinksym("internal/bid", "roundToIntegral128", obj.ABIInternal)
 }
 
 // bidKernelDirect reports whether the target takes the decimal128
