@@ -70,3 +70,43 @@ func BenchmarkDivPowersOfTen(b *testing.B) {
 		})
 	}
 }
+
+// TestDivExactStrip drives the strip of an exact quotient's trailing zeros
+// at its two first attempts against the reference: a dividend over a power
+// of ten whose coefficient has no trailing zero, one, and more than one
+// (the attempt at one place), and a long division whose quotient has all k
+// zeros (the divisor divides the coefficient), some of them (a divisor of a
+// power of ten that does not) and none (an inexact quotient), including the
+// widest k, at exponents at both ends of each format and in every mode.
+func TestDivExactStrip(t *testing.T) {
+	var k kernel
+	for _, f := range []*format{dec64, dec128} {
+		nines := new(big.Int).Sub(pow10(f.prec), bigOne)
+		pairs := [][2]*big.Int{
+			{big.NewInt(123456789), big.NewInt(1000)}, {big.NewInt(1234567890), big.NewInt(1000)}, {big.NewInt(12300), big.NewInt(100)},
+			{pow10(f.prec - 1), big.NewInt(10)}, {pow10(f.prec - 1), pow10(f.prec - 1)},
+			{big.NewInt(8), big.NewInt(2)}, {big.NewInt(800), big.NewInt(2)}, {big.NewInt(1), big.NewInt(4)}, {big.NewInt(1), big.NewInt(8)},
+			{big.NewInt(3), big.NewInt(4)}, {big.NewInt(5), big.NewInt(25)}, {big.NewInt(1), new(big.Int).Mul(big.NewInt(5), pow10(f.prec-1))},
+			{big.NewInt(1), nines}, {nines, big.NewInt(3)}, {nines, big.NewInt(7)}, {new(big.Int).Sub(pow10(f.prec), big.NewInt(1)), big.NewInt(9)},
+			{big.NewInt(1), big.NewInt(3)}, {big.NewInt(2), big.NewInt(3)},
+		}
+		n := 0
+		for _, p := range pairs {
+			for _, xe := range []int{0, f.minExp, f.maxExp} {
+				for _, ye := range []int{0, -5, 5, f.maxExp, f.minExp} {
+					for _, neg := range []bool{false, true} {
+						x := f.encode(value{kind: finite, neg: neg, coeff: p[0], exp: xe})
+						y := f.encode(value{kind: finite, coeff: p[1], exp: ye})
+						for _, m := range allModes {
+							n++
+							if got, want := k.div(f, x, y, m), f.div(x, y, m); got != want {
+								t.Fatalf("%s div(%s, %s, %s) = %s, want %s", f.name, f.format(x), f.format(y), modeName(m), f.format(got), f.format(want))
+							}
+						}
+					}
+				}
+			}
+		}
+		t.Logf("%s: %d cases", f.name, n)
+	}
+}

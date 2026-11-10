@@ -60,15 +60,18 @@ package bid
 // never passes xe - ye, and only when the remainder is zero, so that no
 // non-zero fraction is lost. round64 then raises the exponent further only
 // if the stripped q still has more than Precision64 digits, which is the
-// cohort rule. For an exact general quotient the strip first tries all k
-// zeros at once, by the modular inverse of 10^k (cDivExactPow1064), which
-// settles the usual short exact quotient in one step; what that does not
-// settle, and the power-of-ten divisor's quotient, take a binary search on
-// the number of zeros, as in key64: q has at most Precision64+1 digits
+// cohort rule. The strip first tries the likely count of zeros by one exact
+// division through the modular inverse of a power of ten (cDivExactPow1064,
+// which tests divisibility without a remainder): all k of them for the
+// long division's quotient, which has them whenever yc divides xc (8.00 /
+// 2), and one for a dividend over a power of ten, whose quotient is x's
+// own coefficient and as a rule has none. Only when that attempt leaves
+// the count open does the binary search on the number of zeros run, as in
+// key64, by the same exact divisions: q has at most Precision64+1 digits
 // (Precision64, or one more after the round-digit step), so at most
-// Precision64 trailing zeros, and the steps start at the largest power of
-// two not above the smaller of k and Precision64+1, which keeps every power
-// of ten within the coefficient table.
+// Precision64 trailing zeros, and the attempt and the steps stay within the
+// smaller of k and Precision64+1, which keeps every power of ten within the
+// coefficient table.
 func div64(x, y coef64, mode Mode) coef64 {
 	xneg, xc, xe, xok := unpackFirst64(x)
 	xk := KindFinite
@@ -109,6 +112,7 @@ func div64(x, y coef64, mode Mode) coef64 {
 
 	dy := cDigits64(yc)
 	k, q, class := dy-1, xc, classZero
+	first := 1 // the likely count of zeros to strip from an exact quotient
 	if cCmp64(yc, cPow1064(k)) != 0 {
 		// Scale so that q has exactly Precision64 digits: xc × 10^k / yc
 		// lies in [10^(dx+k-dy-1), 10^(dx+k-dy+1)) and reaches 10^(dx+k-dy)
@@ -150,30 +154,46 @@ func div64(x, y coef64, mode Mode) coef64 {
 			if !cIsZero64(rem2) {
 				class = classBelowHalf
 			}
-		} else if k > 0 && k < Precision64 {
-			// Most exact quotients are short (8.00 / 2, 10.00 / 4) and
-			// their q is all scaling: the k zeros strip at once, by one
-			// exact division through the modular inverse of 10^k (which
-			// first checks the k low bits, so a q that cannot strip costs
-			// a shift). q has Precision64 digits, so k >= Precision64 cannot
-			// strip whole; the search below takes those, and whatever the
-			// attempt does not settle.
-			if sq, ok := cDivExactPow1064(q, k); ok {
-				q, k = sq, 0
-			}
+		} else if k < Precision64 {
+			// The long division's exact quotient has all k zeros whenever
+			// yc divides xc, the usual exact division (8.00 / 2): try them
+			// at once. q has Precision64 digits, so k >= Precision64 cannot
+			// strip whole; the search takes those.
+			first = k
+		} else {
+			first = 0
 		}
 	}
-	if class == classZero {
-		step := 1
-		for step*2 <= min(k, Precision64+1) {
-			step *= 2
-		}
-		for ; step > 0; step /= 2 {
-			if step > k {
-				continue
+	if class == classZero && k > 0 {
+		// The first attempt is the likely count of zeros, by one exact
+		// division through the modular inverse of 10^first
+		// (cDivExactPow1064, which tests divisibility without a remainder
+		// and refuses by the low bits alone), and the binary search runs
+		// only when the attempt leaves the count open. A dividend over a
+		// power of ten keeps its own coefficient, which as a rule has no
+		// trailing zero: one place is tried, and a failure ends the strip.
+		// The long division's all-at-once attempt ends the strip on success.
+		search := true
+		if first > 0 {
+			if sq, ok := cDivExactPow1064(q, first); ok {
+				q, k = sq, k-first
+				search = first == 1
+			} else {
+				search = first > 1
 			}
-			if sq, sr := cDivPow1064(q, step); cIsZero64(sr) {
-				q, k = sq, k-step
+		}
+		if search && k > 0 {
+			step := 1
+			for step*2 <= min(k, Precision64+1) {
+				step *= 2
+			}
+			for ; step > 0; step /= 2 {
+				if step > k {
+					continue
+				}
+				if sq, ok := cDivExactPow1064(q, step); ok {
+					q, k = sq, k-step
+				}
 			}
 		}
 	}
