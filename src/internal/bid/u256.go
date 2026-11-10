@@ -177,7 +177,7 @@ func reciprocalNewton(d uint64) uint64 {
 	d0 := d & 1
 	d40 := d>>24 + 1
 	d63 := d>>1 + d0
-	v0 := uint64(recipTab[d>>55-256])
+	v0 := uint64(recipTab[d>>55&255]) // the top bit of d is set: the index less 256, with no bound to test
 	v1 := v0<<11 - v0*v0*d40>>40 - 1
 	v2 := v1<<13 + v1*(1<<60-v1*d40)>>47
 	e := (v2>>1)&-d0 - v2*d63 // modulo 2^64, where 2^96 is zero

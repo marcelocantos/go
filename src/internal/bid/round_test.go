@@ -257,7 +257,7 @@ func FuzzRound128(f *testing.F) {
 // exact fast paths that roundW's comment enumerates are the allowlist
 // here; a new one is added to both or the test fails. So is roundFaceW,
 // the face-value rounding of a swamped or aligned addend and of an inexact
-// quotient, and addSlowW and divW, its only callers.
+// quotient, and addSlowW and divLongW, its only callers.
 func TestRoundIsTheOnlyPacker(t *testing.T) {
 	// Callers of the raw encoder.
 	// Widen, the DPD decoders and the 128-bit integer conversions are exact
@@ -276,19 +276,24 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 	}
 	// The face-value rounding is the one exception to roundW as the
 	// rounding routine, and its proof holds only for the swamped and the
-	// aligned addend of addSlowW and the quotient of divW inside the exponent range divW
+	// aligned addend of addSlowW and the quotient of divLongW inside the exponent range divLongW
 	// tests: see roundFaceW and "Face-value rounding" in the package
 	// documentation. It has those two callers.
 	faceRounder := map[string]bool{"roundFaceW": true, "roundFace64": true, "roundFace128": true}
-	faceCallers := map[string]bool{"addSlowW": true, "addSlow64": true, "addSlow128": true, "divW": true, "div64": true, "div128": true}
+	faceCallers := map[string]bool{"addSlowW": true, "addSlow64": true, "addSlow128": true, "divLongW": true, "divLong64": true, "divLong128": true}
 	// Callers of the word packers, which encode the exact results of the
-	// word fast paths of addition, multiplication, fused multiply-add and
-	// quantize: see the comments of those functions and the end of roundW's.
+	// word fast paths of addition, multiplication, fused multiply-add,
+	// quantize and division: see the comments of those functions and the
+	// end of roundW's.
 	wordPackers := map[string]bool{
 		"addSlowW": true, "addSlow64": true, "addSlow128": true,
 		"mulSlowW": true, "mulSlow64": true, "mulSlow128": true,
 		"fmaW": true, "fma64": true, "fma128": true,
 		"quantizeSlowW": true, "quantizeSlow64": true, "quantizeSlow128": true,
+		// The word path of division: a quotient of exactly Precision
+		// digits rounded by its biased remainder, or an exact quotient
+		// with its zeros stripped, in range or turned away.
+		"div128": true,
 	}
 	wordEncoder := map[string]bool{"packWord64": true, "packWord128": true, "packWordW": true}
 	// Callers of the inline encoders, which encode the exact results of the

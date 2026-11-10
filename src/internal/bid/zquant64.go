@@ -113,17 +113,21 @@ func quantizeSlow64(x, y coef64, mode Mode) coef64 {
 		return cNaN64()
 	}
 	if gap := xe - ye; gap > 0 {
-		// cScale64's bound, tested here so that the scale inlines (see
-		// cScaleTab64): beyond the table every non-zero coefficient
-		// overflows, and a zero stays a zero.
-		var overflow bool
-		if gap < len(pow10tab64) {
-			xc, overflow = cScaleTab64(xc, gap)
+		// The scaled coefficient has Precision64 digits or fewer exactly
+		// when the coefficient is below 10^(Precision64-gap), which one
+		// comparison decides before any multiply: the refusal, a NaN,
+		// does not wait for a product, and the product that is taken
+		// needs no test of its own. From Precision64 places up only a
+		// zero fits, and a zero stays a zero.
+		if gap >= Precision64 {
+			if !cIsZero64(xc) {
+				return cNaN64()
+			}
 		} else {
-			overflow = !cIsZero64(xc)
-		}
-		if overflow || cGtMax64(xc) {
-			return cNaN64()
+			if !cLt64(xc, cPow1064(Precision64-gap)) {
+				return cNaN64()
+			}
+			xc = cMulPow1064(xc, gap)
 		}
 		xe = ye
 	}

@@ -265,7 +265,7 @@ func addSlow128(x, y coef128, mode Mode) coef128 {
 
 // roundFace128 returns (-1)^neg × (q + f) × 10^exp rounded in mode, for the
 // swamped and the aligned addend of addSlow128 and the inexact quotient of
-// div128, its only callers: q has exactly Precision128 digits, 10^(Precision128-1)
+// divLong128, its only callers: q has exactly Precision128 digits, 10^(Precision128-1)
 // <= q <= cMax128(), and f is a fraction, not zero, whose class is known at
 // face value (classBelowHalf or classAboveHalf for a swamped addend; an
 // aligned addend's discarded digits and a quotient's remainder can also be
@@ -278,7 +278,7 @@ func addSlow128(x, y coef128, mode Mode) coef128 {
 // (addSlow128 from its operands' exponents: exp = xe - m, or xe - m - 1 for
 // the padded power of ten, with xe <= MaxExp128 and exp > ye >= MinExp128,
 // since the gap xe - ye exceeds m, by s + 1 with s > 0 for a swamped
-// addend; div128 by testing them before the call), so exp is at or above the
+// addend; divLong128 by testing them before the call), so exp is at or above the
 // floor MinExp128 and the value is not tiny: nothing underflows.
 // q has Precision128 digits, so round128's place of the result is exp itself:
 // it pads nothing, discards no digit of q, and its class is the caller's.
@@ -295,7 +295,7 @@ func addSlow128(x, y coef128, mode Mode) coef128 {
 // A caller that has rounded q itself, to nearest, passes classZero in a
 // nearest mode: roundInc adds nothing for it there (in a directed mode it
 // would), and what is left is the encoding, with the carry of a q that the
-// caller's rounding took to 10^Precision128. div128 rounds its quotient that
+// caller's rounding took to 10^Precision128. divLong128 rounds its quotient that
 // way, by biasing the dividend, and the swamped sum of addSlow128 is x
 // itself in a nearest mode.
 // TestRoundFaceValue drives every bound here in every mode against the

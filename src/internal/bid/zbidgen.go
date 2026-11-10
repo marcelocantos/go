@@ -169,12 +169,20 @@ func roundParts128(neg bool, p wide128, exp int, sticky bool, mode Mode) (coef12
 	return *new(coef128), *new(Status)
 }
 
-func div64(x, y coef64, mode Mode) coef64 {
+func divLong64(x, y coef64, mode Mode) coef64 {
 	return *new(coef64)
 }
 
-func div128(x, y coef128, mode Mode) coef128 {
+func strip64(q coef64, k, first int) (coef64, int) {
+	return *new(coef64), *new(int)
+}
+
+func divLong128(x, y coef128, mode Mode) coef128 {
 	return *new(coef128)
+}
+
+func strip128(q coef128, k, first int) (coef128, int) {
+	return *new(coef128), *new(int)
 }
 
 const fmaDigits64 = 2*Precision64 + 3

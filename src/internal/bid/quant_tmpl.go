@@ -119,17 +119,21 @@ func quantizeSlowW(x, y coefW, mode Mode) coefW {
 		return cNaNW()
 	}
 	if gap := xe - ye; gap > 0 {
-		// cScaleW's bound, tested here so that the scale inlines (see
-		// cScaleTabW): beyond the table every non-zero coefficient
-		// overflows, and a zero stays a zero.
-		var overflow bool
-		if gap < len(pow10tabW) {
-			xc, overflow = cScaleTabW(xc, gap)
+		// The scaled coefficient has PrecisionW digits or fewer exactly
+		// when the coefficient is below 10^(PrecisionW-gap), which one
+		// comparison decides before any multiply: the refusal, a NaN,
+		// does not wait for a product, and the product that is taken
+		// needs no test of its own. From PrecisionW places up only a
+		// zero fits, and a zero stays a zero.
+		if gap >= PrecisionW {
+			if !cIsZeroW(xc) {
+				return cNaNW()
+			}
 		} else {
-			overflow = !cIsZeroW(xc)
-		}
-		if overflow || cGtMaxW(xc) {
-			return cNaNW()
+			if !cLtW(xc, cPow10W(PrecisionW-gap)) {
+				return cNaNW()
+			}
+			xc = cMulPow10W(xc, gap)
 		}
 		xe = ye
 	}

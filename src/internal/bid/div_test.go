@@ -110,7 +110,7 @@ func TestDivReproducers(t *testing.T) {
 	}
 }
 
-// TestDivNearest drives the quotient that divW rounds to nearest by biasing
+// TestDivNearest drives the quotient that divLongW rounds to nearest by biasing
 // its dividend with half the divisor, at the places where that can go
 // wrong, in every mode against the reference:
 //
@@ -387,4 +387,127 @@ func FuzzDiv128(f *testing.F) {
 			}
 		}
 	})
+}
+
+// TestDivWords drives divWords128, the division of coefficients that fit a
+// word, against the reference in every mode (the directed modes take the
+// general path, which the same operands then test): every pair of digit
+// counts a word can hold, so that the dividend's scale crosses the last
+// 128-bit power of ten and the leading ratio falls on both sides of one;
+// exact quotients, whose zeros are stripped; divisors that are powers of
+// ten; ties and their neighbours, under small even divisors; the largest
+// words; and exponents that put the quotient at and beyond both ends of
+// the range, where the path must refuse rather than encode.
+func TestDivWords(t *testing.T) {
+	var k kernel
+	f := dec128
+	rng := rand.New(rand.NewPCG(*seedFlag, streamSeed("divwords")))
+	word := new(big.Int).SetUint64(^uint64(0))
+	n := 0
+	check := func(xc, yc *big.Int, xe, ye int) {
+		if xc.Cmp(word) > 0 || yc.Cmp(word) > 0 {
+			return
+		}
+		for _, neg := range []bool{false, true} {
+			x := f.encode(value{kind: finite, neg: neg, coeff: xc, exp: xe})
+			y := f.encode(value{kind: finite, coeff: yc, exp: ye})
+			for _, m := range allModes {
+				n++
+				if got, want := k.div(f, x, y, m), f.div(x, y, m); got != want {
+					t.Fatalf("div(%s, %s, %s) = %s, want %s", f.format(x), f.format(y), modeName(m), f.format(got), f.format(want))
+				}
+			}
+		}
+	}
+	exps := func() (int, int) {
+		switch rng.IntN(8) {
+		case 0: // the quotient near the smallest exponent
+			return f.minExp + rng.IntN(60), rng.IntN(40)
+		case 1: // and near the largest
+			return f.maxExp - rng.IntN(60), -rng.IntN(40)
+		}
+		return rng.IntN(41) - 20, rng.IntN(41) - 20
+	}
+	rounds := 40
+	if *longTest {
+		rounds = 2000
+	}
+	for dx := 1; dx <= 20; dx++ {
+		for dy := 1; dy <= 20; dy++ {
+			for range rounds {
+				xc, yc := randDigits(rng, dx), randDigits(rng, dy)
+				xe, ye := exps()
+				check(xc, yc, xe, ye)
+				// An exact quotient: the dividend is a multiple.
+				if p := new(big.Int).Mul(yc, randDigits(rng, 1+rng.IntN(dx))); p.Cmp(word) <= 0 {
+					check(p, yc, xe, ye)
+				}
+				// A power of ten below and the words either side of it.
+				p10 := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(dy-1)), nil)
+				check(xc, p10, xe, ye)
+				check(xc, new(big.Int).Add(p10, big.NewInt(1)), xe, ye)
+				if dy > 1 {
+					check(xc, new(big.Int).Sub(p10, big.NewInt(1)), xe, ye)
+				}
+			}
+		}
+	}
+	// Ties and the fractions next to them: odd dividends over powers of
+	// two and of two times five, and over small divisors of each parity.
+	for a := 1; a <= 63; a++ {
+		yc := new(big.Int).Lsh(big.NewInt(1), uint(a))
+		for range rounds {
+			xc := new(big.Int).SetUint64(rng.Uint64() | 1)
+			check(xc, yc, 0, 0)
+			check(new(big.Int).SetUint64(rng.Uint64()>>uint(rng.IntN(64))|1), yc, 0, 0)
+		}
+	}
+	for y := uint64(1); y <= 2000; y++ {
+		yc := new(big.Int).SetUint64(y)
+		for range max(rounds/20, 2) {
+			check(new(big.Int).SetUint64(rng.Uint64()>>uint(rng.IntN(64))), yc, 0, 0)
+		}
+	}
+	// The largest words, and divisors at and around each power of two.
+	for _, x := range []uint64{^uint64(0), ^uint64(0) - 1, 1 << 63, 1<<63 - 1, 1<<63 + 1, 9999999999999999999, 10000000000000000000} {
+		for _, y := range []uint64{^uint64(0), ^uint64(0) - 1, 1 << 63, 1<<63 - 1, 1<<63 + 1, 1 << 32, 1<<32 - 1, 1<<32 + 1, 3, 7, 9999999999999999999, 10000000000000000000} {
+			check(new(big.Int).SetUint64(x), new(big.Int).SetUint64(y), 0, 0)
+			check(new(big.Int).SetUint64(y), new(big.Int).SetUint64(x), 0, 0)
+		}
+	}
+	for s := 1; s < 64; s++ {
+		for _, d := range []uint64{0, 1} {
+			yc := new(big.Int).SetUint64(uint64(1)<<s - 1 + d<<1)
+			for range max(rounds/10, 2) {
+				check(new(big.Int).SetUint64(rng.Uint64()), yc, 0, 0)
+			}
+		}
+	}
+	// Zeros, which the word path hands on, with every sort of word beside
+	// them.
+	for _, v := range []uint64{1, 2, 10, 7890, 1 << 32, ^uint64(0)} {
+		for _, e := range []int{-30, 0, 30} {
+			check(new(big.Int), new(big.Int).SetUint64(v), e, 0)
+			check(new(big.Int).SetUint64(v), new(big.Int), e, 0)
+		}
+	}
+	check(new(big.Int), new(big.Int), 0, 0)
+	if n == 0 {
+		t.Fatal("no division checked")
+	}
+}
+
+// TestPow10Word checks the padded copy of the word powers of ten that the
+// word path of division indexes without a bound test.
+func TestPow10Word(t *testing.T) {
+	p := big.NewInt(1)
+	for i, v := range bid.Pow10Word {
+		switch {
+		case p.IsUint64() && v != p.Uint64():
+			t.Errorf("pow10word[%d] = %d, want %v", i, v, p)
+		case !p.IsUint64() && v != 0:
+			t.Errorf("pow10word[%d] = %d, want 0", i, v)
+		}
+		p.Mul(p, big.NewInt(10))
+	}
 }

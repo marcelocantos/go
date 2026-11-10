@@ -245,6 +245,19 @@ func unpackWord128(x Uint128) (neg bool, coeff uint64, exp int, ok bool) {
 	return x.Hi&SignMask128Hi != 0, x.Lo, int(x.Hi >> ExpShift128 & ExpMask128), true
 }
 
+// wordPair128 decodes what a word path of two operands needs. ok reports
+// that x and y are both finite encodings of the first form whose
+// coefficients fit their low words, which are then the coefficients: no
+// coefficient bit is set in either high word, and neither has both bits of
+// the second form and the special values, which x & x<<1 brings together in
+// the upper of the two. exp is the exponent of x less that of y, and neg
+// whether their signs differ.
+func wordPair128(x, y Uint128) (exp int, neg, ok bool) {
+	ok = (x.Hi|y.Hi)&CoeffMask128Hi == 0 && (x.Hi&(x.Hi<<1)|y.Hi&(y.Hi<<1))&(Form2Mask128Hi&(Form2Mask128Hi<<1)) == 0
+	exp = int(x.Hi>>ExpShift128&ExpMask128) - int(y.Hi>>ExpShift128&ExpMask128)
+	return exp, (x.Hi^y.Hi)&SignMask128Hi != 0, ok
+}
+
 // shortExp128 returns the exponent of x less shortMinExp, a value from 0
 // to -shortMinExp, if x is a finite first-form encoding whose coefficient
 // fits its low word and whose exponent is from shortMinExp to 0; for every

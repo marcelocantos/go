@@ -113,17 +113,21 @@ func quantizeSlow128(x, y coef128, mode Mode) coef128 {
 		return cNaN128()
 	}
 	if gap := xe - ye; gap > 0 {
-		// cScale128's bound, tested here so that the scale inlines (see
-		// cScaleTab128): beyond the table every non-zero coefficient
-		// overflows, and a zero stays a zero.
-		var overflow bool
-		if gap < len(pow10tab128) {
-			xc, overflow = cScaleTab128(xc, gap)
+		// The scaled coefficient has Precision128 digits or fewer exactly
+		// when the coefficient is below 10^(Precision128-gap), which one
+		// comparison decides before any multiply: the refusal, a NaN,
+		// does not wait for a product, and the product that is taken
+		// needs no test of its own. From Precision128 places up only a
+		// zero fits, and a zero stays a zero.
+		if gap >= Precision128 {
+			if !cIsZero128(xc) {
+				return cNaN128()
+			}
 		} else {
-			overflow = !cIsZero128(xc)
-		}
-		if overflow || cGtMax128(xc) {
-			return cNaN128()
+			if !cLt128(xc, cPow10128(Precision128-gap)) {
+				return cNaN128()
+			}
+			xc = cMulPow10128(xc, gap)
 		}
 		xe = ye
 	}

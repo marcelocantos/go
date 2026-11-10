@@ -8,7 +8,8 @@
 
 package bid
 
-// div64 is Div64: x / y rounded once in mode, with the special cases of
+// divLong64 is Div64 for every operand (div128 takes operands of one word
+// each by itself first; see divwords.go): x / y rounded once in mode, with the special cases of
 // "NaN and infinity operands" and the zero and infinity results of
 // "Exponent of a result" and "Sign of a result" in the package
 // documentation.
@@ -80,7 +81,7 @@ package bid
 // The compiler calls the decimal128 instantiation of this function
 // directly, so its parameters and results are a contract with it: see the
 // end of "Inline fast paths" in the package documentation.
-func div64(x, y coef64, mode Mode) coef64 {
+func divLong64(x, y coef64, mode Mode) coef64 {
 	xneg, xc, xe, xok := unpackFirst64(x)
 	xk := KindFinite
 	if !xok {
@@ -205,38 +206,46 @@ func div64(x, y coef64, mode Mode) coef64 {
 		}
 	}
 	if class == classZero && k > 0 {
-		// The first attempt is the likely count of zeros, by one exact
-		// division through the modular inverse of 10^first
-		// (cDivExactPow1064, which tests divisibility without a remainder
-		// and refuses by the low bits alone), and the binary search runs
-		// only when the attempt leaves the count open. A dividend over a
-		// power of ten keeps its own coefficient, which as a rule has no
-		// trailing zero: one place is tried, and a failure ends the strip.
-		// The long division's all-at-once attempt ends the strip on success.
-		search := true
-		if first > 0 {
-			if sq, ok := cDivExactPow1064(q, first); ok {
-				q, k = sq, k-first
-				search = first == 1
-			} else {
-				search = first > 1
-			}
-		}
-		if search && k > 0 {
-			step := 1
-			for step*2 <= min(k, Precision64+1) {
-				step *= 2
-			}
-			for ; step > 0; step /= 2 {
-				if step > k {
-					continue
-				}
-				if sq, ok := cDivExactPow1064(q, step); ok {
-					q, k = sq, k-step
-				}
-			}
-		}
+		q, k = strip64(q, k, first)
 	}
 	r, _ := round64(neg, wide64{Lo: q}, xe-ye-k, class, mode, MinExp64)
 	return r
+}
+
+// strip64 removes trailing zeros from the exact quotient q, which is k
+// places below the preferred exponent, up to k of them, and returns the
+// coefficient and the places that remain. k is positive.
+//
+// The first attempt is the likely count of zeros, first, by one exact
+// division through the modular inverse of 10^first (cDivExactPow1064, which
+// tests divisibility without a remainder and refuses by the low bits
+// alone), and the binary search runs only when the attempt leaves the count
+// open. A dividend over a power of ten keeps its own coefficient, which as
+// a rule has no trailing zero: one place is tried, and a failure ends the
+// strip. The long division's all-at-once attempt ends the strip on success.
+func strip64(q coef64, k, first int) (coef64, int) {
+	search := true
+	if first > 0 {
+		if sq, ok := cDivExactPow1064(q, first); ok {
+			q, k = sq, k-first
+			search = first == 1
+		} else {
+			search = first > 1
+		}
+	}
+	if search && k > 0 {
+		step := 1
+		for step*2 <= min(k, Precision64+1) {
+			step *= 2
+		}
+		for ; step > 0; step /= 2 {
+			if step > k {
+				continue
+			}
+			if sq, ok := cDivExactPow1064(q, step); ok {
+				q, k = sq, k-step
+			}
+		}
+	}
+	return q, k
 }

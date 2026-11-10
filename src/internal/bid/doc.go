@@ -1818,7 +1818,7 @@
 //
 // Every rounded result passes through roundW, with one named exception:
 // roundFaceW, which rounds the swamped and the aligned addend of addSlowW
-// and the inexact quotient of divW, and has no other caller. Its input is a
+// and the inexact quotient of divLongW, and has no other caller. Its input is a
 // coefficient q of exactly PrecisionW digits at an exponent inside the
 // format and not tiny, plus a fraction below one unit, not zero, whose
 // class the caller knows exactly: below a half or above it for a swamped
@@ -1870,7 +1870,7 @@
 // directed mode takes the class of the remainder against the divisor and
 // roundFaceW; results near the exponent limits, which may be subnormal,
 // clamped or overflowing, take one more division step and go through
-// roundW with a round digit as before (divW's comment). The oracle's
+// roundW with a round digit as before (divLongW's comment). The oracle's
 // division regimes and the published suites' division cases cover the
 // routes, and TestDivNearest the ties, the fractions next to them, the
 // zero biased remainder of an odd divisor, and the exact quotients, in
@@ -1878,7 +1878,7 @@
 // mode: x + f rounds down to x and (x - 1) + (1 - f) up to it, so
 // addSlowW passes x scaled to full precision to roundFaceW with no class.
 // TestRoundIsTheOnlyPacker allows roundFaceW to call packW and allows
-// only addSlowW and divW to call it.
+// only addSlowW and divLongW to call it.
 //
 // # Operands without a pattern
 //

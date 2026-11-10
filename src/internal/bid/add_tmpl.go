@@ -267,7 +267,7 @@ func addSlowW(x, y coefW, mode Mode) coefW {
 
 // roundFaceW returns (-1)^neg × (q + f) × 10^exp rounded in mode, for the
 // swamped and the aligned addend of addSlowW and the inexact quotient of
-// divW, its only callers: q has exactly PrecisionW digits, 10^(PrecisionW-1)
+// divLongW, its only callers: q has exactly PrecisionW digits, 10^(PrecisionW-1)
 // <= q <= cMaxW(), and f is a fraction, not zero, whose class is known at
 // face value (classBelowHalf or classAboveHalf for a swamped addend; an
 // aligned addend's discarded digits and a quotient's remainder can also be
@@ -280,7 +280,7 @@ func addSlowW(x, y coefW, mode Mode) coefW {
 // (addSlowW from its operands' exponents: exp = xe - m, or xe - m - 1 for
 // the padded power of ten, with xe <= MaxExpW and exp > ye >= MinExpW,
 // since the gap xe - ye exceeds m, by s + 1 with s > 0 for a swamped
-// addend; divW by testing them before the call), so exp is at or above the
+// addend; divLongW by testing them before the call), so exp is at or above the
 // floor MinExpW and the value is not tiny: nothing underflows.
 // q has PrecisionW digits, so roundW's place of the result is exp itself:
 // it pads nothing, discards no digit of q, and its class is the caller's.
@@ -297,7 +297,7 @@ func addSlowW(x, y coefW, mode Mode) coefW {
 // A caller that has rounded q itself, to nearest, passes classZero in a
 // nearest mode: roundInc adds nothing for it there (in a directed mode it
 // would), and what is left is the encoding, with the carry of a q that the
-// caller's rounding took to 10^PrecisionW. divW rounds its quotient that
+// caller's rounding took to 10^PrecisionW. divLongW rounds its quotient that
 // way, by biasing the dividend, and the swamped sum of addSlowW is x
 // itself in a nearest mode.
 // TestRoundFaceValue drives every bound here in every mode against the

@@ -29,6 +29,7 @@ const (
 
 // Tables.
 var (
+	Pow10Word       = pow10word
 	EightASCII      = eightASCII
 	WriteDigits     = writeDigits
 	WriteWordDigits = writeWordDigits

@@ -265,7 +265,7 @@ func addSlow64(x, y coef64, mode Mode) coef64 {
 
 // roundFace64 returns (-1)^neg × (q + f) × 10^exp rounded in mode, for the
 // swamped and the aligned addend of addSlow64 and the inexact quotient of
-// div64, its only callers: q has exactly Precision64 digits, 10^(Precision64-1)
+// divLong64, its only callers: q has exactly Precision64 digits, 10^(Precision64-1)
 // <= q <= cMax64(), and f is a fraction, not zero, whose class is known at
 // face value (classBelowHalf or classAboveHalf for a swamped addend; an
 // aligned addend's discarded digits and a quotient's remainder can also be
@@ -278,7 +278,7 @@ func addSlow64(x, y coef64, mode Mode) coef64 {
 // (addSlow64 from its operands' exponents: exp = xe - m, or xe - m - 1 for
 // the padded power of ten, with xe <= MaxExp64 and exp > ye >= MinExp64,
 // since the gap xe - ye exceeds m, by s + 1 with s > 0 for a swamped
-// addend; div64 by testing them before the call), so exp is at or above the
+// addend; divLong64 by testing them before the call), so exp is at or above the
 // floor MinExp64 and the value is not tiny: nothing underflows.
 // q has Precision64 digits, so round64's place of the result is exp itself:
 // it pads nothing, discards no digit of q, and its class is the caller's.
@@ -295,7 +295,7 @@ func addSlow64(x, y coef64, mode Mode) coef64 {
 // A caller that has rounded q itself, to nearest, passes classZero in a
 // nearest mode: roundInc adds nothing for it there (in a directed mode it
 // would), and what is left is the encoding, with the carry of a q that the
-// caller's rounding took to 10^Precision64. div64 rounds its quotient that
+// caller's rounding took to 10^Precision64. divLong64 rounds its quotient that
 // way, by biasing the dividend, and the swamped sum of addSlow64 is x
 // itself in a nearest mode.
 // TestRoundFaceValue drives every bound here in every mode against the
