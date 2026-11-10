@@ -1879,6 +1879,24 @@ BenchmarkKernel/Append/128/mixed-4                          	 6077996	        19
 BenchmarkKernel/Append/128/mixed-4                          	 6047476	        19.76 ns/op	       0 B/op	       0 allocs/op
 BenchmarkKernel/Append/128/mixed-4                          	 6067123	        19.71 ns/op	       0 B/op	       0 allocs/op
 BenchmarkKernel/Append/128/mixed-4                          	 6075518	        19.72 ns/op	       0 B/op	       0 allocs/op
+# AppendSci/64 and AppendSci/128 (added 2026-11-11): the samples of the Append rows
+# above, copied, NOT a runner measurement; the next bench run replaces them.
+BenchmarkKernel/AppendSci/64/mixed-4                           	 9220340	        13.03 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/AppendSci/64/mixed-4                           	 8955784	        13.03 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/AppendSci/64/mixed-4                           	 9216504	        13.00 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/AppendSci/64/mixed-4                           	 9161326	        12.98 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/AppendSci/64/mixed-4                           	 9097755	        12.98 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/AppendSci/64/mixed-4                           	 9179926	        12.98 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/AppendSci/64/mixed-4                           	 9235890	        13.04 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/AppendSci/64/mixed-4                           	 9220588	        13.03 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/AppendSci/128/mixed-4                          	 6071996	        19.72 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/AppendSci/128/mixed-4                          	 6076080	        19.69 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/AppendSci/128/mixed-4                          	 5722873	        19.89 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/AppendSci/128/mixed-4                          	 6071168	        19.74 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/AppendSci/128/mixed-4                          	 6077996	        19.96 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/AppendSci/128/mixed-4                          	 6047476	        19.76 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/AppendSci/128/mixed-4                          	 6067123	        19.71 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/AppendSci/128/mixed-4                          	 6075518	        19.72 ns/op	       0 B/op	       0 allocs/op
 BenchmarkKernel/IsShort/128/mixed-4                         	134793394	         0.8975 ns/op	       0 B/op	       0 allocs/op
 BenchmarkKernel/IsShort/128/mixed-4                         	134607576	         0.8910 ns/op	       0 B/op	       0 allocs/op
 BenchmarkKernel/IsShort/128/mixed-4                         	134337976	         0.8967 ns/op	       0 B/op	       0 allocs/op
