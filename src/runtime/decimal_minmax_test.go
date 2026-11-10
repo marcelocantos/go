@@ -7,6 +7,7 @@
 package runtime_test
 
 import (
+	"math"
 	"math/decimal"
 	"strconv"
 	"testing"
@@ -15,7 +16,7 @@ import (
 // decimal64 min/max tests, mirroring TestMinFloat/TestMaxFloat.
 var (
 	d64zero    = decimal64(0)
-	d64negZero = decimal.BID64frombits(1 << 63) // -0
+	d64negZero = math.Decimal64frombits(1 << 63) // -0
 	d64inf     = decimal.Inf[decimal64](1)
 	d64negInf  = decimal.Inf[decimal64](-1)
 	d64nan     = decimal.NaN[decimal64]()
@@ -35,7 +36,7 @@ var d64tests = []struct{ min, max decimal64 }{
 var d64all = []decimal64{1, 2, -1, -2, d64zero, d64negZero, d64inf, d64negInf, d64nan}
 
 func d64eq(x, y decimal64) bool {
-	return x == y && decimal.BID64bits(x) == decimal.BID64bits(y)
+	return x == y && math.Decimal64bits(x) == math.Decimal64bits(y)
 }
 
 func TestMinDecimal64(t *testing.T) {

@@ -11,7 +11,6 @@ import (
 	"flag"
 	"fmt"
 	"internal/bid"
-	"internal/decimal"
 	"internal/decimalreflect"
 	"math"
 	"math/bits"
@@ -81,18 +80,18 @@ func randDecimal64(rand *rand.Rand) decimal64 {
 		if !ok {
 			panic("quick: randDecimal64 produced an out-of-range value")
 		}
-		return decimal.BID64frombits(x)
+		return math.Decimal64frombits(x)
 	}
 	if rand.Intn(100) < decimalSpecialPercent {
 		switch rand.Intn(14) {
 		case 0:
-			return decimal.BID64frombits(bid.NaN64)
+			return math.Decimal64frombits(bid.NaN64)
 		case 1:
-			return decimal.BID64frombits(bid.SNaN64)
+			return math.Decimal64frombits(bid.SNaN64)
 		case 2:
-			return decimal.BID64frombits(bid.Inf64)
+			return math.Decimal64frombits(bid.Inf64)
 		case 3:
-			return decimal.BID64frombits(bid.Inf64 | bid.SignMask64)
+			return math.Decimal64frombits(bid.Inf64 | bid.SignMask64)
 		case 4:
 			return pack(false, 0, 0)
 		case 5:
@@ -154,7 +153,7 @@ func randDecimal128(rand *rand.Rand) decimal128 {
 		if !ok {
 			panic("quick: randDecimal128 produced an out-of-range value")
 		}
-		return decimal.BID128frombits(x.Hi, x.Lo)
+		return math.Decimal128frombits(x.Hi, x.Lo)
 	}
 	small := func(c uint64) bid.Uint128 { return bid.Uint128{Lo: c} }
 	maxCoeff := bid.Uint128{Hi: bid.MaxCoeff128Hi, Lo: bid.MaxCoeff128Lo}
@@ -162,13 +161,13 @@ func randDecimal128(rand *rand.Rand) decimal128 {
 	if rand.Intn(100) < decimalSpecialPercent {
 		switch rand.Intn(14) {
 		case 0:
-			return decimal.BID128frombits(bid.NaN128Hi, 0)
+			return math.Decimal128frombits(bid.NaN128Hi, 0)
 		case 1:
-			return decimal.BID128frombits(bid.SNaN128Hi, 0)
+			return math.Decimal128frombits(bid.SNaN128Hi, 0)
 		case 2:
-			return decimal.BID128frombits(bid.Inf128Hi, 0)
+			return math.Decimal128frombits(bid.Inf128Hi, 0)
 		case 3:
-			return decimal.BID128frombits(bid.Inf128Hi|bid.SignMask128Hi, 0)
+			return math.Decimal128frombits(bid.Inf128Hi|bid.SignMask128Hi, 0)
 		case 4:
 			return pack(false, small(0), 0)
 		case 5:

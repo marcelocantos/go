@@ -264,7 +264,7 @@ func TestComparable(t *testing.T) {
 	testComparable(t, float64(0), negativeZero[float64]())
 	testComparable(t, decimal64(9))
 	testComparable(t, decimal128(42))
-	testComparable(t, decimal64(0), decimal.BID64frombits(1<<63)) // +0 == -0
+	testComparable(t, decimal64(0), math.Decimal64frombits(1<<63)) // +0 == -0
 	testComparableNoEqual(t, decimal.NaN[decimal64](), decimal.NaN[decimal64]())
 	testComparableNoEqual(t, math.NaN(), math.NaN())
 	testComparableNoEqual(t, [2]string{"a", ""}, [2]string{"", "a"})
@@ -356,7 +356,7 @@ func TestWriteComparable(t *testing.T) {
 	testWriteComparable(t, float64(0), negativeZero[float64]())
 	testWriteComparable(t, decimal64(9))
 	testWriteComparable(t, decimal128(42))
-	testWriteComparable(t, decimal64(0), decimal.BID64frombits(1<<63)) // +0 == -0
+	testWriteComparable(t, decimal64(0), math.Decimal64frombits(1<<63)) // +0 == -0
 	testWriteComparableNoEqual(t, decimal.NaN[decimal64](), decimal.NaN[decimal64]())
 	testWriteComparableNoEqual(t, math.NaN(), math.NaN())
 	testWriteComparableNoEqual(t, [2]string{"a", ""}, [2]string{"", "a"})
@@ -574,14 +574,14 @@ func TestComparableDecimal(t *testing.T) {
 		if !ok {
 			t.Fatalf("Pack64(%v, %d, %d) failed", neg, coeff, exp)
 		}
-		return decimal.BID64frombits(x)
+		return math.Decimal64frombits(x)
 	}
 	pack128 := func(neg bool, coeff uint64, exp int) decimal128 {
 		x, ok := bid.Pack128(neg, bid.Uint128{Lo: coeff}, exp)
 		if !ok {
 			t.Fatalf("Pack128(%v, %d, %d) failed", neg, coeff, exp)
 		}
-		return decimal.BID128frombits(x.Hi, x.Lo)
+		return math.Decimal128frombits(x.Hi, x.Lo)
 	}
 	// Non-canonical encodings read as zero: a first-form coefficient above
 	// 10^16-1 (or 10^34-1), and every second-form encoding.
@@ -590,17 +590,17 @@ func TestComparableDecimal(t *testing.T) {
 		if neg {
 			bits |= bid.SignMask64
 		}
-		return decimal.BID64frombits(bits)
+		return math.Decimal64frombits(bits)
 	}
-	form2Zero64 := decimal.BID64frombits(bid.Form2Mask64 | 5<<bid.Form2ExpShift64)
+	form2Zero64 := math.Decimal64frombits(bid.Form2Mask64 | 5<<bid.Form2ExpShift64)
 	nonCanonZero128 := func(neg bool, biasedExp uint64) decimal128 {
 		hi := bid.MaxCoeff128Hi + 1 | biasedExp<<bid.ExpShift128
 		if neg {
 			hi |= bid.SignMask128Hi
 		}
-		return decimal.BID128frombits(hi, 0)
+		return math.Decimal128frombits(hi, 0)
 	}
-	form2Zero128 := decimal.BID128frombits(bid.Form2Mask128Hi|9<<bid.Form2ExpShift128, 7)
+	form2Zero128 := math.Decimal128frombits(bid.Form2Mask128Hi|9<<bid.Form2ExpShift128, 7)
 
 	classes64 := [][]decimal64{
 		{pack64(false, 0, 0), pack64(true, 0, 0), pack64(false, 0, -398), pack64(true, 0, 369),
@@ -610,8 +610,8 @@ func TestComparableDecimal(t *testing.T) {
 		{pack64(false, 1, 0), pack64(false, 10, -1), pack64(false, 1000000000000000, -15)},
 		{pack64(false, 1, 1), pack64(false, 10, 0), pack64(false, 100, -1)},
 		{pack64(false, 1, 369), pack64(false, 10, 368)},
-		{decimal.Inf[decimal64](1), decimal.BID64frombits(bid.Inf64 | 1<<50)},
-		{decimal.Inf[decimal64](-1), decimal.BID64frombits(bid.Inf64 | bid.SignMask64 | 1<<50)},
+		{decimal.Inf[decimal64](1), math.Decimal64frombits(bid.Inf64 | 1<<50)},
+		{decimal.Inf[decimal64](-1), math.Decimal64frombits(bid.Inf64 | bid.SignMask64 | 1<<50)},
 	}
 	classes128 := [][]decimal128{
 		{pack128(false, 0, 0), pack128(true, 0, 0), pack128(false, 0, -6176), pack128(true, 0, 6111),
@@ -621,8 +621,8 @@ func TestComparableDecimal(t *testing.T) {
 		{pack128(false, 1, 0), pack128(false, 10, -1)},
 		{pack128(false, 1, 1), pack128(false, 10, 0)},
 		{pack128(false, 1, 6111), pack128(false, 10, 6110)},
-		{decimal128(decimal.Inf[decimal64](1)), decimal.BID128frombits(bid.Inf128Hi|1<<40, 5)},
-		{decimal128(decimal.Inf[decimal64](-1)), decimal.BID128frombits(bid.Inf128Hi|bid.SignMask128Hi|1<<40, 5)},
+		{decimal128(decimal.Inf[decimal64](1)), math.Decimal128frombits(bid.Inf128Hi|1<<40, 5)},
+		{decimal128(decimal.Inf[decimal64](-1)), math.Decimal128frombits(bid.Inf128Hi|bid.SignMask128Hi|1<<40, 5)},
 	}
 
 	type S64 [1]decimal64

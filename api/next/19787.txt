@@ -18,12 +18,6 @@ pkg math, func Decimal128bits(decimal128) (uint64, uint64) #19787
 pkg math, func Decimal128frombits(uint64, uint64) decimal128 #19787
 pkg math, func Decimal64bits(decimal64) uint64 #19787
 pkg math, func Decimal64frombits(uint64) decimal64 #19787
-pkg math/decimal, const BIDXOR = 0 #19787
-pkg math/decimal, const BIDXOR Representation #19787
-pkg math/decimal, const DPDXOR = 1 #19787
-pkg math/decimal, const DPDXOR Representation #19787
-pkg math/decimal, const NativeRepresentation = 0 #19787
-pkg math/decimal, const NativeRepresentation Representation #19787
 pkg math/decimal, const ToNearestAway = 1 #19787
 pkg math/decimal, const ToNearestAway RoundingMode #19787
 pkg math/decimal, const ToNearestEven = 0 #19787
@@ -35,16 +29,8 @@ pkg math/decimal, const ToPositiveInf RoundingMode #19787
 pkg math/decimal, const ToZero = 2 #19787
 pkg math/decimal, const ToZero RoundingMode #19787
 pkg math/decimal, func Abs[$0 Decimal]($0) $0 #19787
-pkg math/decimal, func BID128bits(decimal128) (uint64, uint64) #19787
-pkg math/decimal, func BID128frombits(uint64, uint64) decimal128 #19787
-pkg math/decimal, func BID64bits(decimal64) uint64 #19787
-pkg math/decimal, func BID64frombits(uint64) decimal64 #19787
 pkg math/decimal, func Ceil[$0 Decimal]($0) $0 #19787
 pkg math/decimal, func Copysign[$0 Decimal]($0, $0) $0 #19787
-pkg math/decimal, func DPD128bits(decimal128) (uint64, uint64) #19787
-pkg math/decimal, func DPD128frombits(uint64, uint64) decimal128 #19787
-pkg math/decimal, func DPD64bits(decimal64) uint64 #19787
-pkg math/decimal, func DPD64frombits(uint64) decimal64 #19787
 pkg math/decimal, func Dim[$0 Decimal]($0, $0) $0 #19787
 pkg math/decimal, func FMA[$0 Decimal]($0, $0, $0) $0 #19787
 pkg math/decimal, func Floor[$0 Decimal]($0) $0 #19787
@@ -67,7 +53,6 @@ pkg math/decimal, func SignalingNaNWithPayload[$0 Decimal]($0) $0 #19787
 pkg math/decimal, func Signbit[$0 Decimal]($0) bool #19787
 pkg math/decimal, func Trunc[$0 Decimal]($0) $0 #19787
 pkg math/decimal, type Decimal interface {} #19787
-pkg math/decimal, type Representation uint8 #19787
 pkg math/decimal, type RoundingMode uint8 #19787
 pkg reflect, const Decimal128 = 28 #19787
 pkg reflect, const Decimal128 Kind #19787

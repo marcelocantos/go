@@ -904,12 +904,6 @@ that use a base-10 representation as defined by
 Decimal floating-point types can represent decimal fractions exactly, unlike binary
 floating-point types where values such as 0.1 have no exact representation.
 Both binary and decimal floating-point types support the same arithmetic and comparison operators.
-The stored representation of a decimal value is implementation-specific.
-The decimal <code>bits</code> and <code>frombits</code> functions in package
-<code>math</code> expose that exact representation, including any zero-value
-adjustment, and preserve every bit pattern. Package <code>math/decimal</code>
-reports the native representation and provides explicit conversions to and from
-both IEEE BID and DPD interchange encodings.
 </p>
 
 <p>
