@@ -1990,6 +1990,85 @@
 // The two-word reciprocal is extended beside that step and serves the
 // second word, which needs it.
 //
+// # Straight paths
+//
+// The time of a decimal128 operation on two-word coefficients, and of a
+// division on any, was set less by what the operation computes than by
+// what the general routines do around it. The processor's own counters say
+// so (on macOS, "/usr/bin/time -l" reports instructions retired and cycles
+// for a process, and a benchmark run at a fixed count, less the same run
+// at a count of one, gives both per operation; unlike a timing, the
+// instruction count does not move with the machine's load). A division of
+// two money amounts retired 470 instructions, at more than six to the
+// cycle; the arithmetic it needs is under 150. The rest was the general
+// path's glue: decoding in a form that serves every operand, calls to
+// helpers too large to inline, each of which sends every live value
+// through memory because the Go calling convention saves no register
+// across a call, digit counts and comparisons at the width of the widest
+// case, and a rounding routine that begins by finding out what its caller
+// knew.
+//
+// So the three operators have, for decimal128, an entry written by hand in
+// front of the routine that the template generates, which keeps every
+// operand and is renamed for it: div128 and divWide128 in front of
+// divLong128, addSlow128 in front of addLong128, mulSlow128 in front of
+// mulLong128 (div128.go, add128.go, mul128.go). Each takes finite operands
+// of the first form in a mode that rounds to nearest, computes one result
+// in one pass with as few calls as its arithmetic allows, and hands
+// everything else to the general routine by calling it with the original
+// operands: the special values, the directed modes, and any result that
+// packWord128 refuses, which covers the subnormal range, overflow, a
+// clamped exponent and a coefficient that a rounding carried to 10^34. A
+// decimal64 operation is word arithmetic throughout and has no such entry.
+//
+// All three round the same way. The value whose digits are to go is
+// biased by half of the power of ten it is divided by (half the divisor,
+// in a division), so that the quotient is already rounded half up; the
+// remainder of that division is zero exactly on a tie, which then takes
+// the even neighbour by its low bit, and nothing else about the direction
+// of the rounding is computed or branched on.
+//
+// Measured on operands drawn without a pattern (Apple M4 Max, 2026-11-10,
+// instructions and cycles per operation, net of the loop):
+//
+//	                                       before        after
+//	amount / amount                      505  98.9     188  46.2
+//	34 digits / amount                   490  81.0     173  32.3
+//	34 digits / 34 digits                580  88.6     425  80.5
+//	34 digits + 34 digits                353  55.1     207  27.2
+//	34 digits × 34 digits                486  62.0     203  42.3
+//	34 digits × amount                   442  67.6     201  42.9
+//
+// Three things learned on the way govern how these functions are written.
+//
+// A function that calls nothing spills nothing. Where a helper was too
+// large to inline and the path is hot, its body is written out in the
+// caller (the digit count and the division by a power of ten in
+// mulSlow128 and addSlow128): the same instructions without the call, the
+// frame and the stores and loads either side.
+//
+// The order of the text is the order of the work. The processor starts
+// what it reads first, and these paths are long enough that what is
+// written last waits for room. The longest chain is therefore written
+// first: asking for a divisor's reciprocal before the digit counts, which
+// left less to save across its calls, made divWide128 a tenth slower,
+// because the chain that ends in the quotient then started ninety
+// instructions late.
+//
+// A division instruction can beat a reciprocal even where it is slow. A
+// divisor below 2^32, which the divisors of money are, divides a dividend
+// of three words half a word at a time by four word divisions: a chain
+// some twelve cycles longer than the reciprocal's, in a tenth of its
+// instructions, and faster by a fifth.
+//
+// Not everything computed is better than a branch. In addSlow128 the exact
+// sum and the rounded one, and the sum and the difference, stay separate
+// branches: dividing always (by one when nothing is dropped) and adding
+// under a mask of the signs made the function indifferent to operands
+// that mix those cases, and a third slower on operands that do not. The
+// cost is that sums at one exponent or one apart, which alternate between
+// the cases and carry often, run a sixth slower than before this section.
+//
 // # Short numerals
 //
 // A numeral of at most eight characters after its sign, digits and at most

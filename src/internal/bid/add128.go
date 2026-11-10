@@ -104,9 +104,34 @@ func addSlow128(x, y Uint128, mode Mode) Uint128 {
 		var q, rb, half Uint128
 		rb.Lo = 1
 		if d <= Precision128 {
-			half = u128Shr(pow10tab128[d], 1)
+			// divPow10Recip128's method (see recip128.go), written
+			// out so that the usual sum calls nothing and keeps its
+			// operands in registers: the estimate is the high half
+			// of t times the reciprocal, at most one short, and the
+			// remainder against it says which.
+			pd := &pow10tab128[d]
+			half = u128Shr(*pd, 1)
 			t, _ := u128Add(b, half)
-			q, rb = divPow10Recip128(t, d)
+			rm := &recip10tab128[d].t
+			h00, _ := bits.Mul64(t.Lo, rm.Lo)
+			h01, l01 := bits.Mul64(t.Lo, rm.Hi)
+			h10, l10 := bits.Mul64(t.Hi, rm.Lo)
+			h11, l11 := bits.Mul64(t.Hi, rm.Hi)
+			mid, c1 := bits.Add64(h00, l01, 0)
+			_, c2 := bits.Add64(mid, l10, 0)
+			q.Lo, c1 = bits.Add64(l11, h01, c1)
+			q.Hi = h11 + c1
+			q.Lo, c2 = bits.Add64(q.Lo, h10, c2)
+			q.Hi += c2
+			ph, pl := bits.Mul64(q.Lo, pd.Lo)
+			ph += q.Lo*pd.Hi + q.Hi*pd.Lo
+			var bw uint64
+			rb.Lo, bw = bits.Sub64(t.Lo, pl, 0)
+			rb.Hi, _ = bits.Sub64(t.Hi, ph, bw)
+			if !u128Lt(rb, *pd) {
+				q, _ = u128Add(q, Uint128{Lo: 1})
+				rb, _ = u128Sub(rb, *pd)
+			}
 		}
 		tie := uint64(0)
 		if rb == (Uint128{}) {
