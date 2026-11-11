@@ -64,6 +64,20 @@ func div128(x, y Uint128, mode Mode) Uint128 {
 		return divWide128(x, y, mode)
 	}
 	if a|xhi == 0 || b == 0 {
+		// A zero operand has its result without a division, and these
+		// are the two that data holds: a zero amount divided, which is
+		// a zero at the preferred exponent, and a division by zero,
+		// which is an infinity. Both have the sign of the quotient.
+		// The rest are divLong128's: 0 / 0, an exponent outside the
+		// format, and a dividend that only reads as zero, because its
+		// coefficient is not canonical.
+		if b != 0 {
+			if r, ok := packWord128(neg, 0, 0, exp); ok {
+				return r
+			}
+		} else if a|xhi != 0 && !u128GtMaxCoeff(Uint128{Hi: xhi, Lo: a}) {
+			return cInf128(neg)
+		}
 		return divLong128(x, y, mode)
 	}
 	db := wordDigits(b)
