@@ -65,6 +65,19 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 		return dst[:i+bid.PutShort128((*[bid.ShortLen128]byte)(dst[i:i+bid.ShortLen128]), x)]
 	}
 
+	// A coefficient of nine digits or more, in the canonical form: the
+	// kernel converts the digits eight at a time and stores the whole form
+	// in place, exactly the bytes appended. It asks for the room of the
+	// longest form, which formatDecimal's buffer and fmt's have; with less
+	// it lays the form out in a buffer of its own.
+	if prec < 0 && bid.IsLong128(x) && fmt != 'e' && fmt != 'E' && fmt != 'f' && fmt != 'G' {
+		if i := len(dst); cap(dst)-i >= bid.LongLen128 {
+			return dst[:i+bid.PutLong128((*[bid.LongLen128]byte)(dst[i:i+bid.LongLen128]), x)]
+		}
+		var buf [bid.LongLen128]byte
+		return append(dst, buf[:bid.PutLong128(&buf, x)]...)
+	}
+
 	var digs [bid.Precision128]byte
 	kind, neg, n, exp := bid.UnpackDigits128(&digs, x)
 	switch kind {

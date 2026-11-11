@@ -814,6 +814,29 @@ func benchRowList() benchRows {
 	rs.add("Append", "128", "short", "Append128", func(b *testing.B) {
 		loop1(b, shorts, func(x bits) int { return len(bid.Append128(buf[:0], x)) })
 	})
+	// The long form: coefficients of nine digits and more, the lengths,
+	// the places of the point and the notations mixed, and the two ends
+	// alone: an amount of eleven digits and a coefficient of thirty-four.
+	var longs []bits
+	for _, str := range []string{"123456789.12", "1234567890123456.78", "-98765432101.5", "100000000", "123456789012", "0.000123456789012", "1.2345678901E+30", "12345678901234567890.25", "1234567890123456789012345678901234", "9876543210987654321098765432109876E-4", "-12345678901234567890123.4567", "5.5000000000E-9", "1234567890.1234", "99999999999999.99", "-4321098765432.1", "123456789012345678"} {
+		x, _ := bid.Parse128(str, rne)
+		longs = append(longs, x)
+	}
+	var long [bid.LongLen128]byte
+	lbuf := make([]byte, 0, bid.LongLen128)
+	rs.add("IsLong", "128", "mixed", "IsLong128", func(b *testing.B) { loop1(b, mixed.x128, bid.IsLong128) })
+	rs.add("PutLong", "128", "long", "PutLong128", func(b *testing.B) {
+		loop1(b, longs, func(x bits) int { return bid.PutLong128(&long, x) })
+	})
+	rs.add("Append", "128", "long", "Append128", func(b *testing.B) {
+		loop1(b, longs, func(x bits) int { return len(bid.Append128(lbuf[:0], x)) })
+	})
+	rs.add("Append", "128", "amount11", "Append128", func(b *testing.B) {
+		loop1(b, longs[:1], func(x bits) int { return len(bid.Append128(lbuf[:0], x)) })
+	})
+	rs.add("Append", "128", "digits34", "Append128", func(b *testing.B) {
+		loop1(b, longs[8:9], func(x bits) int { return len(bid.Append128(lbuf[:0], x)) })
+	})
 	rs.add("Append", "128", "shuffled", "Append128", func(b *testing.B) {
 		loop1s(b, shorts, func(x bits) int { return len(bid.Append128(buf[:0], x)) })
 	})

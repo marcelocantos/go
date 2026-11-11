@@ -31,6 +31,8 @@ const (
 var (
 	Pow10Word       = pow10word
 	EightASCII      = eightASCII
+	EightPairs      = eightPairs
+	PairTab         = pairTab
 	WriteDigits     = writeDigits
 	WriteWordDigits = writeWordDigits
 	Bin2DPD         = bin2dpd

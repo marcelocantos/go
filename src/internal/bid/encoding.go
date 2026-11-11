@@ -293,6 +293,19 @@ func shortParts128(x Uint128) (sign, frac uint) {
 	return uint(x.Hi >> 63), uint(Bias128 - int(x.Hi>>ExpShift128&ExpMask128))
 }
 
+// longCoeff128 returns the coefficient of x and whether x is a finite
+// encoding of the first form, the one a canonical decimal128 has: what
+// IsLong128 tests, and the coefficient PutLong128 formats.
+func longCoeff128(x Uint128) (c Uint128, first bool) {
+	return Uint128{Hi: x.Hi & CoeffMask128Hi, Lo: x.Lo}, x.Hi&Form2Mask128Hi != Form2Mask128Hi
+}
+
+// longParts128 returns the sign of a long x as 0 or 1 and its exponent:
+// the fields PutLong128 lays out beside the coefficient of longCoeff128.
+func longParts128(x Uint128) (sign uint, exp int) {
+	return uint(x.Hi >> 63), int(x.Hi>>ExpShift128&ExpMask128) - Bias128
+}
+
 // unpackWordCanon64 and unpackWordCanon128 recognize every finite canonical
 // encoding whose coefficient fits uint64, for the word fast paths of the
 // arithmetic: for decimal64 that is every finite canonical encoding, the
