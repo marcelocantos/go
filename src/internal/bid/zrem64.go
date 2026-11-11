@@ -8,6 +8,8 @@
 
 package bid
 
+import "math/bits"
+
 // remStep64 is the exponent of the largest power of ten a coefficient word
 // holds, the stride of remScaled64. The product of two such words fits wide64.
 const remStep64 = len(pow10tab64) - 1
@@ -55,7 +57,43 @@ func mod64(x, y coef64) coef64 {
 // so that Y - r <= r. Since X = xc when e = Q(x) and Y = yc when e = Q(y), M is
 // at most a coefficient, and e is within the format, so round64 has nothing to
 // round.
+//
+// The word path. Finite canonical operands whose coefficients fit a word
+// each, and whose X and Y both fit one, are the amounts and counts this
+// operation is mostly asked about (is 1234.56 a multiple of 0.05), and need
+// one division instruction: the truncated quotient q = X / Y, its remainder
+// r, and for the nearest quotient the comparison of r with Y - r, which is
+// that of 2r with Y without the doubling. packWord64 encodes the result,
+// which the argument above shows fits, at the exponent e; that is the
+// exact packing exception round64's comment allows, and remExact64 gives the
+// same encoding. A zero divisor, and an X or a Y that leaves the word, take
+// the general path: for decimal128 a Y beyond the word is not yet beyond
+// twice X, as it is beyond the coefficient type.
 func remainder64(x, y coef64, nearest bool) coef64 {
+	if xneg, X, xb, ok := unpackWordCanon64(x); ok {
+		if _, Y, yb, ok := unpackWordCanon64(y); ok && Y != 0 {
+			var hi uint64
+			e := yb
+			if k := uint(xb - yb); k < uint(len(pow10tab64)) {
+				hi, X = bits.Mul64(X, pow10tab64[k])
+			} else if k = uint(yb - xb); k < uint(len(pow10tab64)) {
+				hi, Y = bits.Mul64(Y, pow10tab64[k])
+				e = xb
+			} else {
+				hi = 1
+			}
+			if hi == 0 {
+				q := X / Y
+				r := X - q*Y
+				if d := Y - r; nearest && (r > d || r == d && q&1 != 0) {
+					r, xneg = d, !xneg
+				}
+				if z, ok := packWord64(xneg, 0, r, e-Bias64); ok {
+					return z
+				}
+			}
+		}
+	}
 	neg, xc, xe, xok := unpackFirst64(x)
 	xk := KindFinite
 	if !xok {
@@ -113,23 +151,28 @@ func remainder64(x, y coef64, nearest bool) coef64 {
 //
 // Precondition: m is not zero.
 func remScaled64(c coef64, k int, m coef64) coef64 {
-	r := cModFull64(cMulFull64(c, cPow1064(k%remStep64)), m)
 	if k < remStep64 {
-		return r
+		return cModFull64(cMulFull64(c, cPow1064(k)), m)
 	}
 	// Beyond one stride every reduction is by the one modulus, prepared
 	// once: its reciprocals are part of every division. A gap within one
 	// stride, the usual one, has the one division above and prepares
-	// nothing.
+	// nothing. The residues are in the prepared modulus's own form from
+	// here to the return.
 	pm := cModPrepare64(m)
-	b := cPow1064(remStep64)
-	for k /= remStep64; k > 0; k >>= 1 {
+	r := cMulMod64(cModEnter64(c, &pm), cModEnter64(cPow1064(k%remStep64), &pm), &pm)
+	b := cModEnter64(cPow1064(remStep64), &pm)
+	for k /= remStep64; ; {
 		if k&1 != 0 {
-			r = cModPrepared64(cMulFull64(r, b), &pm)
+			r = cMulMod64(r, b, &pm)
 		}
-		b = cModPrepared64(cMulFull64(b, b), &pm)
+		// The square after the last bit would be computed and thrown
+		// away, and the squares are the chain that sets the time.
+		if k >>= 1; k == 0 {
+			return cModLeave64(r, &pm)
+		}
+		b = cMulMod64(b, b, &pm)
 	}
-	return r
 }
 
 // remExact64 encodes an exact result, which remainder64 has shown fits.

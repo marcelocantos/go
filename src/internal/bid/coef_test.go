@@ -12,6 +12,7 @@ import (
 	"internal/testenv"
 	"math"
 	"math/big"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"testing"
@@ -305,7 +306,10 @@ func checkCoef128(t *testing.T, a, b bid.Uint128, k int) {
 	if m, _ := bid.U128Add(b, bid.Uint128{Lo: 1}); m != (bid.Uint128{}) {
 		eq128(t, "cModFull128", bid.CModFull128(p, m), new(big.Int).Mod(prod, bigOf(m)))
 		pm := bid.CModPrepare128(m)
-		eq128(t, "cModPrepared128", bid.CModPrepared128(p, &pm), new(big.Int).Mod(prod, bigOf(m)))
+		M := bigOf(m)
+		am, bm := bid.CModEnter128(a, &pm), bid.CModEnter128(b, &pm)
+		eq128(t, "cModEnter128", bid.CModLeave128(am, &pm), new(big.Int).Mod(A, M))
+		eq128(t, "cMulMod128", bid.CModLeave128(bid.CMulMod128(am, bm, &pm), &pm), new(big.Int).Mod(prod, M))
 	}
 
 	// cReduce128 over its whole range of k, including the multi-step
@@ -379,6 +383,105 @@ func TestCoefZeroAllocs(t *testing.T) {
 	for _, tt := range tests {
 		if got := testing.AllocsPerRun(100, tt.f); got != 0 {
 			t.Errorf("%s allocates %v times per call, want 0", tt.name, got)
+		}
+	}
+}
+
+// TestMulModPrepared checks the modular product of a long exponentiation
+// (cModEnterW, cMulModW, cModLeaveW) against math/big for moduli and
+// residues that random operands do not reach: moduli of every length with
+// their leading and trailing words at the extremes, where the reciprocal
+// is at its largest and smallest and the divisor's low word is all ones or
+// zero, and residues at zero, one, next to the modulus and next to its
+// half. Those are the operands on which a division step's candidate
+// quotient is one too small and its last correction runs; the function
+// keeps that correction as a branch because it almost never does.
+func TestMulModPrepared(t *testing.T) {
+	r := rand.New(rand.NewPCG(*seedFlag, streamSeed("mulmod")))
+	edge := func(bits int) *big.Int {
+		// A value of at most bits bits: random, or runs of ones and
+		// zeros from either end.
+		v := new(big.Int)
+		switch r.IntN(6) {
+		case 0:
+			v.Lsh(bigOne, uint(bits)).Sub(v, bigOne)
+		case 1:
+			v.Lsh(bigOne, uint(bits-1))
+		case 2:
+			v.Lsh(bigOne, uint(bits-1)).Add(v, big.NewInt(int64(r.IntN(4))))
+		case 3:
+			v.Lsh(bigOne, uint(bits)).Sub(v, big.NewInt(int64(1+r.IntN(4))))
+		case 4:
+			k := uint(r.IntN(bits))
+			v.Lsh(bigOne, uint(bits)).Sub(v, bigOne).Rsh(v, k).Lsh(v, k)
+		default:
+			for i := 0; i < bits; i += 32 {
+				v.Lsh(v, 32).Or(v, big.NewInt(int64(r.Uint32())))
+			}
+			v.Rsh(v, uint(v.BitLen()-min(v.BitLen(), bits)))
+		}
+		return v.Abs(v)
+	}
+	residue := func(M *big.Int) *big.Int {
+		v := new(big.Int)
+		switch r.IntN(8) {
+		case 0:
+		case 1:
+			v.SetInt64(int64(1 + r.IntN(3)))
+		case 2:
+			v.Sub(M, big.NewInt(int64(1+r.IntN(3))))
+		case 3:
+			v.Rsh(M, 1).Add(v, big.NewInt(int64(r.IntN(3)-1)))
+		case 4:
+			v.Rsh(M, uint(1+r.IntN(M.BitLen())))
+		default:
+			v = edge(M.BitLen())
+		}
+		return v.Mod(v.Abs(v), M)
+	}
+	check := func(M, A, B *big.Int) {
+		t.Helper()
+		want := new(big.Int).Mul(A, B)
+		want.Mod(want, M)
+		pm := bid.CModPrepare128(toUint128(M))
+		a, b := bid.CModEnter128(toUint128(A), &pm), bid.CModEnter128(toUint128(B), &pm)
+		if got := bigOf(bid.CModLeave128(bid.CMulMod128(a, b, &pm), &pm)); got.Cmp(want) != 0 {
+			t.Fatalf("cMulMod128(%v, %v) mod %v = %v, want %v", A, B, M, got, want)
+		}
+		// Entering reduces: a value above the modulus, at most a word.
+		C := edge(128)
+		if got, want := bigOf(bid.CModLeave128(bid.CModEnter128(toUint128(C), &pm), &pm)), new(big.Int).Mod(C, M); got.Cmp(want) != 0 {
+			t.Fatalf("cModEnter128(%v) mod %v = %v, want %v", C, M, got, want)
+		}
+		if M.BitLen() <= 64 {
+			pm := bid.CModPrepare64(M.Uint64())
+			a, b := bid.CModEnter64(A.Uint64(), &pm), bid.CModEnter64(B.Uint64(), &pm)
+			if got := bid.CModLeave64(bid.CMulMod64(a, b, &pm), &pm); got != want.Uint64() {
+				t.Fatalf("cMulMod64(%v, %v) mod %v = %v, want %v", A, B, M, got, want)
+			}
+		}
+	}
+	n := 400000
+	if testing.Short() {
+		n = 40000
+	}
+	for i := 0; i < n; i++ {
+		if M := edge(1 + r.IntN(128)); M.Sign() != 0 {
+			check(M, residue(M), residue(M))
+		}
+	}
+	// The last correction of a step runs for a modulus a little above a
+	// power of two and residues a little below the modulus: every such
+	// triple near each length of one word and of two.
+	for _, bits := range []int{8, 31, 32, 33, 63, 64, 65, 96, 127, 128} {
+		for c := int64(0); c < 12; c++ {
+			M := new(big.Int).Lsh(bigOne, uint(bits-1))
+			M.Add(M, big.NewInt(c))
+			for i := int64(1); i <= 12; i++ {
+				for j := i; j <= 12; j++ {
+					check(M, new(big.Int).Sub(M, big.NewInt(i)), new(big.Int).Sub(M, big.NewInt(j)))
+				}
+			}
 		}
 	}
 }

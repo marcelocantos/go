@@ -318,16 +318,57 @@ func cModFull64(p wide64, m coef64) coef64 {
 	return bits.Rem64(p.Hi, p.Lo, m)
 }
 
-// cModulus64 is cModulus128 for a word, which has nothing to prepare.
-type cModulus64 struct{ m coef64 }
-
-// cModPrepare64 returns m prepared.
-func cModPrepare64(m coef64) cModulus64 { return cModulus64{m} }
-
-// cModPrepared64 is cModFull64 for a prepared modulus.
-func cModPrepared64(p wide64, pm *cModulus64) coef64 {
-	return cModFull64(p, pm.m)
+// cModulus64 is cModulus128 for a word: the modulus, and where the target
+// has no division instruction for two words by one, the modulus normalised
+// and its reciprocal, as divisor128 holds them.
+type cModulus64 struct {
+	m    coef64
+	d, v uint64 // m << s and reciprocal2by1(d)
+	s    uint
 }
+
+// cModPrepare64 returns m prepared. Precondition: m is not zero.
+func cModPrepare64(m coef64) cModulus64 {
+	if div64Native {
+		return cModulus64{m: m}
+	}
+	s := uint(bits.LeadingZeros64(m)) & 63
+	d := m << s
+	return cModulus64{m: m, d: d, v: reciprocal2by1(d), s: s}
+}
+
+// cModEnter64 returns c mod m for a prepared modulus, in the form that
+// cMulMod64 takes and returns and cModLeave64 undoes: the residue shifted
+// as the modulus is normalised, as u128ModEnter's is.
+func cModEnter64(c coef64, pm *cModulus64) coef64 { return c % pm.m << pm.s }
+
+// cMulMod64 returns a × b mod m for a prepared modulus, a, b and the
+// result in the form of cModEnter64. Precondition, not checked: a and b
+// are such residues. It is one division instruction where there is one,
+// and elsewhere div2by1 for the remainder alone, its first correction a
+// selection and its last a loop of one trip, as in u128MulMod.
+func cMulMod64(a, b coef64, pm *cModulus64) coef64 {
+	if div64Native {
+		hi, lo := bits.Mul64(a, b)
+		return bits.Rem64(hi, lo, pm.m)
+	}
+	d, v := pm.d, pm.v
+	u1, u0 := bits.Mul64(a, b>>(pm.s&63))
+	q, q0 := bits.Mul64(v, u1)
+	q0, c := bits.Add64(q0, u0, 0)
+	q += u1 + c + 1
+	r := u0 - q*d
+	if p := r + d; r > q0 {
+		r = p
+	}
+	for r >= d {
+		r -= d
+	}
+	return r
+}
+
+// cModLeave64 returns the residue itself.
+func cModLeave64(a coef64, pm *cModulus64) coef64 { return a >> (pm.s & 63) }
 
 // cLo64 returns the coefficient held in the low word of p. Precondition:
 // the high word is zero, that is, p fits a coefficient; a p that does not

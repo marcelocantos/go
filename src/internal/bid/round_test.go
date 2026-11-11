@@ -290,6 +290,9 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 		"mulLongW": true, "mulLong64": true, "mulLong128": true, "mulSlow128": true,
 		"fmaW": true, "fma64": true, "fma128": true,
 		"quantizeSlowW": true, "quantizeSlow64": true, "quantizeSlow128": true,
+		// The word path of the remainder: an exact remainder of one
+		// word at the smaller exponent.
+		"remainderW": true, "remainder64": true, "remainder128": true,
 		// The word path of division: a quotient of exactly Precision
 		// digits rounded by its biased remainder, or an exact quotient
 		// with its zeros stripped, in range or turned away.

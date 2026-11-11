@@ -60,8 +60,14 @@ var (
 	CLenFull64       = cLenFull64
 	CModFull128      = cModFull128
 	CModPrepare128   = cModPrepare128
-	CModPrepared128  = cModPrepared128
+	CModEnter128     = cModEnter128
+	CModLeave128     = cModLeave128
+	CMulMod128       = cMulMod128
 	CModFull64       = cModFull64
+	CModPrepare64    = cModPrepare64
+	CModEnter64      = cModEnter64
+	CModLeave64      = cModLeave64
+	CMulMod64        = cMulMod64
 	CMulFull128      = cMulFull128
 	CMulFull64       = cMulFull64
 	CMulPow10128     = cMulPow10128

@@ -8,6 +8,8 @@
 
 package bid
 
+import "math/bits"
+
 // remStep128 is the exponent of the largest power of ten a coefficient word
 // holds, the stride of remScaled128. The product of two such words fits wide128.
 const remStep128 = len(pow10tab128) - 1
@@ -55,7 +57,43 @@ func mod128(x, y coef128) coef128 {
 // so that Y - r <= r. Since X = xc when e = Q(x) and Y = yc when e = Q(y), M is
 // at most a coefficient, and e is within the format, so round128 has nothing to
 // round.
+//
+// The word path. Finite canonical operands whose coefficients fit a word
+// each, and whose X and Y both fit one, are the amounts and counts this
+// operation is mostly asked about (is 1234.56 a multiple of 0.05), and need
+// one division instruction: the truncated quotient q = X / Y, its remainder
+// r, and for the nearest quotient the comparison of r with Y - r, which is
+// that of 2r with Y without the doubling. packWord128 encodes the result,
+// which the argument above shows fits, at the exponent e; that is the
+// exact packing exception round128's comment allows, and remExact128 gives the
+// same encoding. A zero divisor, and an X or a Y that leaves the word, take
+// the general path: for decimal128 a Y beyond the word is not yet beyond
+// twice X, as it is beyond the coefficient type.
 func remainder128(x, y coef128, nearest bool) coef128 {
+	if xneg, X, xb, ok := unpackWordCanon128(x); ok {
+		if _, Y, yb, ok := unpackWordCanon128(y); ok && Y != 0 {
+			var hi uint64
+			e := yb
+			if k := uint(xb - yb); k < uint(len(pow10tab64)) {
+				hi, X = bits.Mul64(X, pow10tab64[k])
+			} else if k = uint(yb - xb); k < uint(len(pow10tab64)) {
+				hi, Y = bits.Mul64(Y, pow10tab64[k])
+				e = xb
+			} else {
+				hi = 1
+			}
+			if hi == 0 {
+				q := X / Y
+				r := X - q*Y
+				if d := Y - r; nearest && (r > d || r == d && q&1 != 0) {
+					r, xneg = d, !xneg
+				}
+				if z, ok := packWord128(xneg, 0, r, e-Bias128); ok {
+					return z
+				}
+			}
+		}
+	}
 	neg, xc, xe, xok := unpackFirst128(x)
 	xk := KindFinite
 	if !xok {
@@ -113,23 +151,28 @@ func remainder128(x, y coef128, nearest bool) coef128 {
 //
 // Precondition: m is not zero.
 func remScaled128(c coef128, k int, m coef128) coef128 {
-	r := cModFull128(cMulFull128(c, cPow10128(k%remStep128)), m)
 	if k < remStep128 {
-		return r
+		return cModFull128(cMulFull128(c, cPow10128(k)), m)
 	}
 	// Beyond one stride every reduction is by the one modulus, prepared
 	// once: its reciprocals are part of every division. A gap within one
 	// stride, the usual one, has the one division above and prepares
-	// nothing.
+	// nothing. The residues are in the prepared modulus's own form from
+	// here to the return.
 	pm := cModPrepare128(m)
-	b := cPow10128(remStep128)
-	for k /= remStep128; k > 0; k >>= 1 {
+	r := cMulMod128(cModEnter128(c, &pm), cModEnter128(cPow10128(k%remStep128), &pm), &pm)
+	b := cModEnter128(cPow10128(remStep128), &pm)
+	for k /= remStep128; ; {
 		if k&1 != 0 {
-			r = cModPrepared128(cMulFull128(r, b), &pm)
+			r = cMulMod128(r, b, &pm)
 		}
-		b = cModPrepared128(cMulFull128(b, b), &pm)
+		// The square after the last bit would be computed and thrown
+		// away, and the squares are the chain that sets the time.
+		if k >>= 1; k == 0 {
+			return cModLeave128(r, &pm)
+		}
+		b = cMulMod128(b, b, &pm)
 	}
-	return r
 }
 
 // remExact128 encodes an exact result, which remainder128 has shown fits.

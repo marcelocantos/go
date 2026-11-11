@@ -471,6 +471,140 @@ func u256ModPrepared(n Uint256, p *divisor128) Uint128 {
 	return Uint128{Hi: r1 >> s, Lo: r0>>s | r1<<(64-s)}
 }
 
+// The three functions below are the arithmetic of a long exponentiation
+// modulo p.d, the remainder of operands whose exponents are far apart. Its
+// squarings are a chain, each waiting for the one before, so what they
+// spend between one product and the next is the time of the operation, and
+// three things about them follow from that.
+//
+// Residues stay normalised. A residue r is held as r << p.s, a multiple of
+// 2^p.s below the normalised divisor D = p.d << p.s, which is the form in
+// which a division step leaves it: (x × y) mod p.d, shifted, is
+// ((x << s) × y) mod D. Only one factor of each product is shifted back,
+// and nothing is shifted up again.
+//
+// Nothing is called. A call in the chain sends the words through memory.
+//
+// The correction of a division step is a selection between the two
+// candidate remainders, both formed, and not the masked addition of
+// div3by2: it is the shorter chain, and no quotient word is wanted here
+// to share the mask with. The last, rare correction is written as a loop
+// of at most one trip so that it stays a branch, which is predicted, and
+// is not made a third selection on the chain.
+
+// u128ModEnter returns (c mod p.d) << p.s, the normalised residue of c.
+func u128ModEnter(c Uint128, p *divisor128) Uint128 {
+	s := p.s & 63
+	w2 := c.Hi >> 1 >> (63 - s)
+	w1 := c.Hi<<s | c.Lo>>1>>(63-s)
+	w0 := c.Lo << s
+	if p.d.Hi == 0 {
+		d := p.v1
+		if div64Native {
+			_, r := bits.Div64(w2, w1, d)
+			_, r = bits.Div64(r, w0, d)
+			return Uint128{Lo: r}
+		}
+		_, r := div2by1(w2, w1, d, p.v)
+		_, r = div2by1(r, w0, d, p.v)
+		return Uint128{Lo: r}
+	}
+	// w2 is below 2^s and so below d1: one step of three words by two.
+	d1, d0, v := p.v1, p.v0, p.vv
+	q, q0 := bits.Mul64(v, w2)
+	q0, c0 := bits.Add64(q0, w1, 0)
+	q += w2 + c0
+	t1, t0 := bits.Mul64(d0, q)
+	p0, bw := bits.Sub64(w0, t0, 0)
+	p1, _ := bits.Sub64(w1-q*d1, t1, bw)
+	r0, bw := bits.Sub64(p0, d0, 0)
+	r1, _ := bits.Sub64(p1, d1, bw)
+	if r1 >= q0 {
+		r1, r0 = p1, p0
+	}
+	for r1 > d1 || r1 == d1 && r0 >= d0 {
+		r0, bw = bits.Sub64(r0, d0, 0)
+		r1, _ = bits.Sub64(r1, d1, bw)
+	}
+	return Uint128{Hi: r1, Lo: r0}
+}
+
+// u128ModLeave returns the residue that x is the normalised form of.
+func u128ModLeave(x Uint128, p *divisor128) Uint128 {
+	s := p.s & 63
+	return Uint128{Hi: x.Hi >> s, Lo: x.Lo>>s | x.Hi<<1<<(63-s)}
+}
+
+// u128MulMod returns the normalised residue of the product of the residues
+// that x and y are the normalised forms of. Precondition, not checked: x
+// and y are normalised residues, multiples of 2^p.s below p.d << p.s; the
+// three leading words of the product x × (y >> s) are then below the
+// divisor's two, as a division step requires.
+func u128MulMod(x, y Uint128, p *divisor128) Uint128 {
+	s := p.s & 63
+	if p.d.Hi == 0 {
+		// A one-word modulus has one-word residues and one division step.
+		d := p.v1
+		hi, lo := bits.Mul64(x.Lo, y.Lo>>s)
+		if div64Native {
+			_, r := bits.Div64(hi, lo, d)
+			return Uint128{Lo: r}
+		}
+		_, r := div2by1(hi, lo, d, p.v)
+		return Uint128{Lo: r}
+	}
+	yh, yl := y.Hi>>s, y.Lo>>s|y.Hi<<1<<(63-s)
+	h00, n0 := bits.Mul64(x.Lo, yl)
+	h01, l01 := bits.Mul64(x.Lo, yh)
+	h10, l10 := bits.Mul64(x.Hi, yl)
+	h11, l11 := bits.Mul64(x.Hi, yh)
+	n1, c := bits.Add64(h00, l01, 0)
+	n2, c := bits.Add64(l11, h01, c)
+	n3 := h11 + c
+	n1, c = bits.Add64(n1, l10, 0)
+	n2, c = bits.Add64(n2, h10, c)
+	n3 += c
+
+	// First step: (n3, n2, n1) mod (d1, d0). (p1, p0) is the remainder
+	// against the candidate quotient q and (r1, r0) the one against q + 1,
+	// both modulo 2^128; the fraction word q0 says which is the remainder.
+	d1, d0, v := p.v1, p.v0, p.vv
+	q, q0 := bits.Mul64(v, n3)
+	q0, c = bits.Add64(q0, n2, 0)
+	q += n3 + c
+	t1, t0 := bits.Mul64(d0, q)
+	p0, bw := bits.Sub64(n1, t0, 0)
+	p1, _ := bits.Sub64(n2-q*d1, t1, bw)
+	r0, bw := bits.Sub64(p0, d0, 0)
+	r1, _ := bits.Sub64(p1, d1, bw)
+	if r1 >= q0 {
+		r1, r0 = p1, p0
+	}
+	for r1 > d1 || r1 == d1 && r0 >= d0 {
+		r0, bw = bits.Sub64(r0, d0, 0)
+		r1, _ = bits.Sub64(r1, d1, bw)
+	}
+
+	// Second step: (r1, r0, n0) mod (d1, d0).
+	u2, u1 := r1, r0
+	q, q0 = bits.Mul64(v, u2)
+	q0, c = bits.Add64(q0, u1, 0)
+	q += u2 + c
+	t1, t0 = bits.Mul64(d0, q)
+	p0, bw = bits.Sub64(n0, t0, 0)
+	p1, _ = bits.Sub64(u1-q*d1, t1, bw)
+	r0, bw = bits.Sub64(p0, d0, 0)
+	r1, _ = bits.Sub64(p1, d1, bw)
+	if r1 >= q0 {
+		r1, r0 = p1, p0
+	}
+	for r1 > d1 || r1 == d1 && r0 >= d0 {
+		r0, bw = bits.Sub64(r0, d0, 0)
+		r1, _ = bits.Sub64(r1, d1, bw)
+	}
+	return Uint128{Hi: r1, Lo: r0}
+}
+
 // u256DivMod128 returns the full quotient and the remainder of n / d, with
 // 0 <= r < d. The quotient is up to 256 bits and nothing is discarded: this
 // is the primitive for a caller that cannot bound the quotient by 2^128.
