@@ -582,3 +582,46 @@ func TestPow10Word(t *testing.T) {
 		p.Mul(p, big.NewInt(10))
 	}
 }
+
+// TestDivZeroOperands checks the quotients that div128 decides without a
+// division, a zero dividend over a divisor of one word and a dividend
+// over zero, and the neighbours it leaves to divLong128: 0 / 0, a
+// dividend of two words, a zero whose exponent takes the quotient's
+// outside the format, and a dividend whose coefficient is not canonical,
+// which reads as zero and so over zero is invalid. The reference decides,
+// in every mode and for every pair of signs.
+func TestDivZeroOperands(t *testing.T) {
+	var k kernel
+	f := dec128
+	fin := func(c *big.Int, exp int) bits {
+		return f.encode(value{kind: finite, coeff: c, exp: exp})
+	}
+	// A first-form encoding with a coefficient above the largest: 10^34.
+	nonCanonical := toUint128(pow10(f.prec))
+	nonCanonical.Hi |= uint64(bid.Bias128) << bid.ExpShift128
+	xs := []bits{
+		fin(new(big.Int), 0), fin(new(big.Int), -2), fin(new(big.Int), f.maxExp), fin(new(big.Int), f.minExp),
+		fin(big.NewInt(1), 0), fin(big.NewInt(123456), -2), fin(new(big.Int).SetUint64(1<<64-1), 7),
+		fin(f.maxCoeff, 0), fin(pow10(20), f.minExp), nonCanonical,
+	}
+	ys := []bits{
+		fin(new(big.Int), 0), fin(new(big.Int), -2), fin(new(big.Int), f.maxExp), fin(new(big.Int), f.minExp),
+		fin(big.NewInt(3), 0), fin(big.NewInt(789), -2), fin(big.NewInt(1), f.minExp), fin(big.NewInt(1), f.maxExp),
+		fin(f.maxCoeff, 0),
+	}
+	neg := bits{Hi: 1 << 63}
+	for _, x := range xs {
+		for _, y := range ys {
+			for _, sx := range []bits{{}, neg} {
+				for _, sy := range []bits{{}, neg} {
+					x, y := bits{Hi: x.Hi | sx.Hi, Lo: x.Lo}, bits{Hi: y.Hi | sy.Hi, Lo: y.Lo}
+					for _, m := range allModes {
+						if got, want := k.div(f, x, y, m), f.div(x, y, m); got != want {
+							t.Errorf("div(%s, %s, %s) = %s, want %s", f.format(x), f.format(y), modeName(m), f.format(got), f.format(want))
+						}
+					}
+				}
+			}
+		}
+	}
+}
