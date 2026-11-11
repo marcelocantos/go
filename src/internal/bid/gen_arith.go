@@ -289,6 +289,19 @@ package bid
 		w := words(m)
 		return fmt.Sprintf("{m: Uint128{Hi: %#016x, Lo: %#016x}, t: Uint128{Hi: %#016x, Lo: %#016x}, s: %d}", w[1], w[0], t[1], t[0], s)
 	})
+
+	// The four characters of each number below 10^4, the thousands in
+	// the low byte, as eightQuads reads them (putlong.go).
+	sb.WriteString("\n// quadTab[n] is the four characters of n, below 10^4, with leading zeros,\n// the thousands in the low byte: four digits as putEight stores them.\nvar quadTab = [10000]uint32{")
+	for n := 0; n < 10000; n++ {
+		if n%8 == 0 {
+			sb.WriteString("\n\t")
+		} else {
+			sb.WriteString(" ")
+		}
+		fmt.Fprintf(&sb, "%#08x,", uint32('0'+n/1000)|uint32('0'+n/100%10)<<8|uint32('0'+n/10%10)<<16|uint32('0'+n%10)<<24)
+	}
+	sb.WriteString("\n}\n")
 	return sb.String()
 }
 

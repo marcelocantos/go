@@ -97,7 +97,7 @@ func AppendSci128(dst []byte, x Uint128) []byte {
 }
 
 // The short values, which dominate formatting (money and quantities): a
-// coefficient below shortCoeff, of at most eight digits, which eightPairs
+// coefficient below shortCoeff, of at most eight digits, which eightQuads
 // converts as one word, at an exponent from shortMinExp to 0. Their
 // character form is plain notation whatever the coefficient ("Values,
 // cohorts and the character form"): the digits, with a point inside them
@@ -131,7 +131,7 @@ func IsShort128(x Uint128) bool {
 // calls this for its canonical and its fixed forms.
 //
 // The digits are laid out in a register, and no branch depends on the
-// value. eightPairs gives all eight digits, zeros on the left, with the
+// value. eightQuads gives all eight digits, zeros on the left, with the
 // last in the top byte of a word. The tail of the output, its last eight bytes
 // right-aligned, is the word with the digits before the point moved down
 // a byte to open its place; the head, its first bytes left-aligned, is
@@ -147,7 +147,7 @@ func IsShort128(x Uint128) bool {
 // check. See "Digit conversion" in the package documentation.
 func PutShort128(buf *[ShortLen128]byte, x Uint128) int {
 	sign, frac := shortParts128(x)
-	w := eightPairs(x.Lo)
+	w := eightQuads(x.Lo)
 	// Significant digits, one for a zero coefficient: c|1 has the digit
 	// count of c, because an even c is not one below a power of ten. The
 	// count comes from the coefficient, not from the zero bytes of w,

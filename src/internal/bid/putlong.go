@@ -48,7 +48,7 @@ func IsLong128(x Uint128) bool {
 // three parts.
 //
 // Digits. The coefficient is cut into five lanes of eight digits, the first
-// holding at most two, and eightPairs converts each: the forty characters
+// holding at most two, and eightQuads converts each: the forty characters
 // of the coefficient with zeros on its left, stored in d. A coefficient of
 // n digits is the last n of them, so its character i is d[40-n+i], and any
 // eight consecutive characters are one load. A coefficient of sixteen
@@ -120,13 +120,13 @@ func PutLong128(buf *[LongLen128]byte, x Uint128) int {
 		hq := q1 / e8
 		h2 := hq / e8
 		putLane(&d, 0, 0x3030_3030_3030|uint64(pairTab[h2&127])<<48)
-		putLane(&d, 8, eightPairs(hq-h2*e8))
-		putLane(&d, 16, eightPairs(q1-hq*e8))
+		putLane(&d, 8, eightQuads(hq-h2*e8))
+		putLane(&d, 16, eightQuads(q1-hq*e8))
 		n = cDigits128(c)
 	}
 	l1 := l / e8
-	putLane(&d, 24, eightPairs(l1))
-	last := eightPairs(l - l1*e8)
+	putLane(&d, 24, eightQuads(l1))
+	last := eightQuads(l - l1*e8)
 	putLane(&d, 32, last)
 
 	sign, exp := longParts128(x)
@@ -205,7 +205,8 @@ func PutLong128(buf *[LongLen128]byte, x Uint128) int {
 }
 
 // pairTab[p] is the two characters of p, below 100, the tens in the low
-// byte: a pair as putEightAt stores it. The entries from 100 are never
+// byte: a pair as putEightAt stores it, for the two leading digits of a
+// long coefficient and for an exponent. The entries from 100 are never
 // read; they make an index of seven bits a proof. It is a literal, not
 // computed, so that it is data in the binary: the runtime prints with it
 // before any package is initialized. TestPairTab recomputes it.
@@ -222,23 +223,24 @@ var pairTab = [128]uint16{
 	0x3039, 0x3139, 0x3239, 0x3339, 0x3439, 0x3539, 0x3639, 0x3739, 0x3839, 0x3939,
 }
 
-// eightPairs returns the eight decimal digits of v, which is below 10^8,
-// packed as eightASCII packs them, and is eightASCII for a caller whose
-// digits are wanted soon: the four pairs of digits are cut out of v side by
-// side, three multiplications deep in eightASCII and one here, and each
-// pair is its two characters by pairTab.
+// eightQuads returns the eight decimal digits of v, which is below 10^8,
+// packed as eightASCII packs them: v is cut once, into its two halves of
+// four digits, and each half is its four characters by quadTab.
 //
-// The quotients are those of a 32-bit division by a constant: for v below
-// 2^32, v / 10^6 = (v × 1125899907) >> 50, v / 10^4 = (v × 3518437209) >> 45
-// and v / 100 = (v × 1374389535) >> 37, each multiplier the ceiling of its
-// power of two over the divisor and each product below 2^64.
-// TestEightPairs checks every value below 10^8 against eightASCII.
-func eightPairs(v uint64) uint64 {
-	a := v * 1125899907 >> 50
-	b := v * 3518437209 >> 45
-	c := v * 1374389535 >> 37
-	return uint64(pairTab[a&127]) | uint64(pairTab[(b-a*100)&127])<<16 |
-		uint64(pairTab[(c-b*100)&127])<<32 | uint64(pairTab[(v-c*100)&127])<<48
+// The quotient is that of a 32-bit division by a constant: for v below
+// 2^32, v / 10^4 = (v × 3518437209) >> 45, the multiplier the ceiling of
+// 2^45 / 10^4 and the product below 2^64. The halves are below 10^4 for a v
+// below 10^8, which the compiler cannot see: the two bounds checks stand,
+// and are never taken. TestEightQuads checks every value below 10^8
+// against eightASCII, and the table against the digits of each index.
+//
+// A table of pairs of digits, 200 bytes, did this with three quotients and
+// four loads; quadTab is 40 KB and takes one quotient and two loads. See
+// "Digit conversion" in the package documentation for what that bought and
+// where it was measured.
+func eightQuads(v uint64) uint64 {
+	a := v * 3518437209 >> 45
+	return uint64(quadTab[a]) | uint64(quadTab[v-a*10000])<<32
 }
 
 // loadEightAt returns the word putEightAt stores at d[o:o+8].
