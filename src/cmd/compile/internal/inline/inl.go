@@ -543,6 +543,26 @@ opSwitch:
 					if strings.HasSuffix(fn, "Slow64") || strings.HasSuffix(fn, "Slow128") {
 						cheap = true
 					}
+				case "internal/decimal":
+					// The two concrete functions, one for each width,
+					// that a generic function of math/decimal chooses
+					// between by the size of its type parameter. Only
+					// one of the two calls is live in an instantiation,
+					// but the cost of a generic body counts both, and
+					// two full calls (57 each of the budget of 80) keep
+					// every such function out of its callers: it is then
+					// compiled as a function of its own in the caller's
+					// package, whose calls into internal/decimal and
+					// internal/bid are not inlined either, so that
+					// decimal.Abs was four calls deep around one
+					// instruction. Charged as cheap, the generic
+					// function inlines and leaves the concrete one's
+					// body, or one call to it. The rule is by the names'
+					// endings, as the one above; see the comment at the
+					// head of internal/decimal's arithmetic.go.
+					if strings.HasSuffix(fn, "64") || strings.HasSuffix(fn, "128") {
+						cheap = true
+					}
 				case "internal/runtime/sys":
 					switch fn {
 					case "GetCallerPC", "GetCallerSP":
