@@ -7,6 +7,7 @@ package bid_test
 import (
 	"internal/bid"
 	"math/big"
+	"math/rand/v2"
 	"testing"
 )
 
@@ -80,7 +81,7 @@ func BenchmarkQuantizeCases(b *testing.B) {
 	}
 }
 
-// TestQuantizeWordScale drives the word fast path of quantizeSlowW at its
+// TestQuantizeWordScale drives the word fast path of quantizeLongW at its
 // bounds against the reference: word coefficients of x up to the largest
 // word and one past it, scaled to the exponent of y across gaps on both
 // sides of the word table (19, 20), of the format's precision, of the
@@ -124,5 +125,88 @@ func TestQuantizeWordScale(t *testing.T) {
 			}
 		}
 		t.Logf("%s: %d cases", f.name, n)
+	}
+}
+
+// TestQuantizeWide drives quantizeSlow128, the quantize of a coefficient
+// of two words, against the reference in every mode and for both signs:
+// coefficients of every length from 20 digits, the least and the greatest
+// of each length and the first value above a word; the exponent of y from
+// 40 places below that of x to 40 above, so that the coefficient is
+// scaled up until it no longer fits, kept, and cut by every number of
+// digits to none; ties, a five and zeros in the digits cut, with the
+// values one unit either side; and a coefficient that is not canonical.
+func TestQuantizeWide(t *testing.T) {
+	var k kernel
+	f := dec128
+	p := f.prec
+	rng := rand.New(rand.NewPCG(*seedFlag, streamSeed("quantwide")))
+	check := func(x bits, ye int) {
+		if ye < f.minExp || ye > f.maxExp {
+			return
+		}
+		for _, yneg := range []bool{false, true} {
+			y := f.encode(value{kind: finite, neg: yneg, coeff: big.NewInt(1 + int64(rng.IntN(9))), exp: ye})
+			for _, m := range allModes {
+				if got, want := k.quantize(f, x, y, m), f.quantize(x, y, m); got != want {
+					t.Fatalf("quantize(%s, %s, %s) = %s, want %s", f.format(x), f.format(y), modeName(m), f.format(got), f.format(want))
+				}
+			}
+		}
+	}
+	fin := func(neg bool, c *big.Int, exp int) bits {
+		return f.encode(value{kind: finite, neg: neg, coeff: c, exp: exp})
+	}
+	word := new(big.Int).Lsh(big.NewInt(1), 64)
+	rounds := 1
+	if *longTest {
+		rounds = 20
+	}
+	for range rounds {
+		for dx := 20; dx <= p; dx++ {
+			lo, hi := pow10(dx-1), new(big.Int).Sub(pow10(dx), big.NewInt(1))
+			cs := []*big.Int{randDigits(rng, dx), randDigits(rng, dx), lo, hi, new(big.Int).Add(lo, big.NewInt(1))}
+			if dx == 20 {
+				cs = append(cs, word, new(big.Int).Add(word, big.NewInt(1)))
+			}
+			for _, c := range cs {
+				if c.Cmp(word) < 0 {
+					continue // a word is not this path's
+				}
+				for _, neg := range []bool{false, true} {
+					for gap := -40; gap <= 40; gap++ {
+						check(fin(neg, c, -10), -10-gap)
+					}
+					check(fin(neg, c, f.maxExp), f.maxExp)
+					check(fin(neg, c, f.minExp), f.minExp+3)
+					check(fin(neg, c, f.maxExp-1), f.maxExp)
+				}
+			}
+			// Ties: the d digits cut are a five and zeros, for an even
+			// and an odd digit above them.
+			for d := 1; d < dx; d++ {
+				for _, top := range []int64{2, 3} {
+					c := big.NewInt(top)
+					if dx-d > 1 {
+						c.Add(c, new(big.Int).Mul(randDigits(rng, dx-d-1), big.NewInt(10)))
+					}
+					c.Mul(c, pow10(d))
+					c.Add(c, new(big.Int).Mul(big.NewInt(5), pow10(d-1)))
+					for _, delta := range []int64{-1, 0, 1} {
+						v := new(big.Int).Add(c, big.NewInt(delta))
+						if v.Cmp(word) >= 0 && v.Cmp(f.maxCoeff) <= 0 {
+							check(fin(false, v, -20), -20+d)
+							check(fin(true, v, -20), -20+d)
+						}
+					}
+				}
+			}
+		}
+		// A coefficient that is not canonical reads as zero.
+		bad := toUint128(pow10(p))
+		bad.Hi |= uint64(bid.Bias128-10) << bid.ExpShift128
+		for gap := -3; gap <= 3; gap++ {
+			check(bad, -10-gap)
+		}
 	}
 }

@@ -317,7 +317,7 @@ func quantize64(x, y coef64, mode Mode) coef64 {
 	return *new(coef64)
 }
 
-func quantizeSlow64(x, y coef64, mode Mode) coef64 {
+func quantizeLong64(x, y coef64, mode Mode) coef64 {
 	return *new(coef64)
 }
 
@@ -341,7 +341,7 @@ func quantize128(x, y coef128, mode Mode) coef128 {
 	return *new(coef128)
 }
 
-func quantizeSlow128(x, y coef128, mode Mode) coef128 {
+func quantizeLong128(x, y coef128, mode Mode) coef128 {
 	return *new(coef128)
 }
 

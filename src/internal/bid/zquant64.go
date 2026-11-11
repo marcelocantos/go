@@ -38,16 +38,18 @@ func roundToIntegral64(x coef64, mode Mode) coef64 {
 
 // quantize64 returns x with the exponent of y, rounded in mode. A word x
 // with the exponent of y is x itself, decided inline by quantizeSame64, and
-// every other operand takes quantizeSlow64; see "Inline fast paths" in the
+// every other operand takes quantizeSlow64, which for decimal128 decides
+// the coefficients of two words itself and hands the rest to
+// quantizeLong64 (quant128.go); see "Inline fast paths" in the
 // package documentation.
 func quantize64(x, y coef64, mode Mode) coef64 {
 	if quantizeSame64(x, y) {
 		return x
 	}
-	return quantizeSlow64(x, y, mode)
+	return quantizeSlow64(x, y, mode) // quant128.go
 }
 
-// quantizeSlow64 returns x with the exponent of y, rounded in mode, or the
+// quantizeLong64 returns x with the exponent of y, rounded in mode, or the
 // canonical NaN when the coefficient at that exponent has more than
 // Precision64 digits. The exponent of y is in range, so a finite result
 // never needs its exponent adjusted.
@@ -76,7 +78,7 @@ func quantize64(x, y coef64, mode Mode) coef64 {
 // a word multiply that overflows two words cannot happen. A word x below
 // the exponent of y, which needs rounding, or beyond the table above it,
 // takes the general path from x as the fast path decoded it.
-func quantizeSlow64(x, y coef64, mode Mode) coef64 {
+func quantizeLong64(x, y coef64, mode Mode) coef64 {
 	xneg, xw, xe, xok := unpackWordCanon64(x)
 	yk, ye := kindExp64(y)
 	var xc coef64
