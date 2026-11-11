@@ -7,6 +7,7 @@ package bid_test
 import (
 	"internal/bid"
 	"math/big"
+	"math/rand/v2"
 	"testing"
 )
 
@@ -379,7 +380,7 @@ func FuzzFMA128(f *testing.F) {
 	})
 }
 
-// TestFMAWordPath drives the word fast path of fmaW at its bounds against
+// TestFMAWordPath drives the word fast path of fmaLongW at its bounds against
 // the reference: coefficients of x and y whose product sits on both sides of
 // a word (2^32-1 squared fits, 2^32 squared does not), word coefficients of
 // z up to the largest and one past it, gaps between the product's exponent
@@ -451,5 +452,110 @@ func TestFMAWordPath(t *testing.T) {
 			}
 		}
 		t.Logf("%s: %d cases", f.name, n)
+	}
+}
+
+// TestFMAWide drives fmaSlow128, the fused multiply-add of operands of
+// which one at least has two words, with z at the exponent of the product
+// or above it, against the reference in every mode and for every
+// combination of signs:
+//
+//   - x, y and z of every pairing of short, word-sized and full lengths;
+//   - z from two places below the product, which the path refuses, through
+//     every distance it takes, to beyond the last, 38;
+//   - a z that cancels the product to a few digits, to one and to nothing,
+//     and one that exceeds it, so that the sum takes its sign;
+//   - ties: a product with a run of zeros under its 34 digits and a z that
+//     is a five in the first of them, and one unit either side of that;
+//   - sums of 34 digits and fewer, which are exact, and of 73, beyond the
+//     powers that divide;
+//   - exponents at both ends of the range, where the path must refuse
+//     rather than encode;
+//   - an operand whose coefficient is not canonical, which is a zero.
+func TestFMAWide(t *testing.T) {
+	var k kernel
+	f := dec128
+	p := f.prec
+	rng := rand.New(rand.NewPCG(*seedFlag, streamSeed("fmawide")))
+	check := func(xc, yc, zc *big.Int, xe, ye, ze int) {
+		if xc.Sign() < 0 || yc.Sign() < 0 || zc.Sign() < 0 || xc.Cmp(f.maxCoeff) > 0 || yc.Cmp(f.maxCoeff) > 0 || zc.Cmp(f.maxCoeff) > 0 ||
+			xe < f.minExp || xe > f.maxExp || ye < f.minExp || ye > f.maxExp || ze < f.minExp || ze > f.maxExp {
+			return
+		}
+		for signs := 0; signs < 8; signs++ {
+			x := f.encode(value{kind: finite, neg: signs&1 != 0, coeff: xc, exp: xe})
+			y := f.encode(value{kind: finite, neg: signs&2 != 0, coeff: yc, exp: ye})
+			z := f.encode(value{kind: finite, neg: signs&4 != 0, coeff: zc, exp: ze})
+			for _, m := range allModes {
+				if got, want := k.fma(f, x, y, z, m), f.fma(x, y, z, m); got != want {
+					t.Fatalf("fma(%s, %s, %s, %s) = %s, want %s", f.format(x), f.format(y), f.format(z), modeName(m), f.format(got), f.format(want))
+				}
+			}
+		}
+	}
+	lengths := []int{1, 7, 19, 20, 21, 33, 34}
+	gaps := []int{-2, -1, 0, 1, 2, 5, 17, 33, 34, 37, 38, 39, 40}
+	rounds := 1
+	if *longTest {
+		rounds = 20
+	}
+	for range rounds {
+		for _, dx := range lengths {
+			for _, dy := range lengths {
+				if dx < 20 && dy < 20 {
+					continue // operands of one word each are not this path's
+				}
+				xc, yc := randDigits(rng, dx), randDigits(rng, dy)
+				prod := new(big.Int).Mul(xc, yc)
+				for _, g := range gaps {
+					for _, dz := range lengths {
+						check(xc, yc, randDigits(rng, dz), -10, -12, -22+g)
+					}
+					// z cancels the product, to within a few units of
+					// its own last place, and exceeds it.
+					if g >= 0 {
+						q := new(big.Int).Quo(prod, pow10(g))
+						for _, d := range []int64{-3, -1, 0, 1, 3, 1000} {
+							check(xc, yc, new(big.Int).Add(q, big.NewInt(d)), -10, -12, -22+g)
+						}
+					}
+					// The ends of the range.
+					check(xc, yc, randDigits(rng, p), f.maxExp, 0, f.maxExp)
+					check(xc, yc, randDigits(rng, p), f.minExp, 0, min(f.minExp+g, f.maxExp))
+					check(xc, yc, randDigits(rng, p), f.maxExp-dx, dx-dy, min(f.maxExp-dy+g, f.maxExp))
+				}
+			}
+		}
+		// A z, and an x, whose coefficient is not canonical and reads
+		// as zero, at the exponent of the product and above it.
+		for _, g := range []int{0, 3, 20} {
+			xc, yc := randDigits(rng, p), randDigits(rng, p)
+			bad := toUint128(pow10(p))
+			bad.Hi |= uint64(bid.Bias128-22+g) << bid.ExpShift128
+			x := f.encode(value{kind: finite, coeff: xc, exp: -10})
+			y := f.encode(value{kind: finite, coeff: yc, exp: -12})
+			z := f.encode(value{kind: finite, coeff: randDigits(rng, p), exp: -22 + g})
+			for _, m := range allModes {
+				for _, ops := range [][3]bits{{x, y, bad}, {bad, y, z}, {x, bad, z}} {
+					if got, want := k.fma(f, ops[0], ops[1], ops[2], m), f.fma(ops[0], ops[1], ops[2], m); got != want {
+						t.Fatalf("fma(%s, %s, %s, %s) = %s, want %s", f.format(ops[0]), f.format(ops[1]), f.format(ops[2]), modeName(m), f.format(got), f.format(want))
+					}
+				}
+			}
+		}
+		// Ties. x × 10^j has j zeros under the digits of x; a five in the
+		// first of them is half a unit of the 34th digit when x has 34.
+		for _, dx := range []int{34, 33, 30} {
+			xc := randDigits(rng, dx)
+			for j := p + 1 - dx; j <= 19; j++ {
+				drop := dx + j - p // digits the sum loses
+				half := new(big.Int).Mul(big.NewInt(5), pow10(drop-1))
+				for _, d := range []int64{-1, 0, 1} {
+					zc := new(big.Int).Add(half, big.NewInt(d))
+					check(xc, pow10(j), zc, -5, -7, -12)
+					check(new(big.Int).Add(xc, big.NewInt(1)), pow10(j), zc, -5, -7, -12)
+				}
+			}
+		}
 	}
 }

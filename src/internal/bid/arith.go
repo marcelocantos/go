@@ -92,12 +92,21 @@ func Div128(x, y Uint128, mode Mode) Uint128 {
 // clause 5.4.1, fusedMultiplyAdd). The product is exact; no rounding
 // happens between it and the addition.
 func FMA64(x, y, z uint64, mode Mode) uint64 {
-	return fma64(x, y, z, mode)
+	return fmaLong64(x, y, z, mode)
 }
 
 // FMA128 is FMA64 for decimal128.
 func FMA128(x, y, z Uint128, mode Mode) Uint128 {
-	return fma128(x, y, z, mode)
+	// Three coefficients of one word each are fmaLong128's, whose word
+	// paths are in front of it; the rest take the path of fmaSlow128
+	// first. The test is here, and not in fmaSlow128, so that it costs
+	// the word operands no call: this function inlines, both of its
+	// calls being charged as cheap ones ("Inline fast paths" in the
+	// package documentation), and fmaWordSlow128 inlines in turn.
+	if wordTriple128(x, y, z) {
+		return fmaWordSlow128(x, y, z, mode)
+	}
+	return fmaSlow128(x, y, z, mode)
 }
 
 // Rem64 returns the IEEE remainder x - y × n, where n is the integer

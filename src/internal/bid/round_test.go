@@ -288,7 +288,7 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 	wordPackers := map[string]bool{
 		"addLongW": true, "addLong64": true, "addLong128": true, "addSlow128": true,
 		"mulLongW": true, "mulLong64": true, "mulLong128": true, "mulSlow128": true,
-		"fmaW": true, "fma64": true, "fma128": true,
+		"fmaLongW": true, "fmaLong64": true, "fmaLong128": true, "fmaSlow128": true,
 		"quantizeSlowW": true, "quantizeSlow64": true, "quantizeSlow128": true,
 		// The word path of the remainder: an exact remainder of one
 		// word at the smaller exponent.
