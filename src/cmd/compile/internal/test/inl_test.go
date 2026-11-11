@@ -129,6 +129,7 @@ func TestIntendedInlining(t *testing.T) {
 			"add64", "add128", "sub64", "sub128", "mul64", "mul128",
 			"quantize64", "quantize128", "equal64", "equal128",
 			"less64", "less128", "lessEqual64", "lessEqual128",
+			"FMA128", "fmaWordSlow128",
 		},
 		"compress/flate": {
 			"(*dictDecoder).tryWriteCopy",

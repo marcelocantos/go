@@ -187,13 +187,13 @@ func strip128(q coef128, k, first int) (coef128, int) {
 
 const fmaDigits64 = 2*Precision64 + 3
 
-func fma64(x, y, z coef64, mode Mode) coef64 {
+func fmaLong64(x, y, z coef64, mode Mode) coef64 {
 	return *new(coef64)
 }
 
 const fmaDigits128 = 2*Precision128 + 3
 
-func fma128(x, y, z coef128, mode Mode) coef128 {
+func fmaLong128(x, y, z coef128, mode Mode) coef128 {
 	return *new(coef128)
 }
 

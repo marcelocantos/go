@@ -11,7 +11,7 @@ package bid
 
 import "math/bits"
 
-// fmaDigitsW is the number of digits fmaW scales a value up to. Three facts
+// fmaDigitsW is the number of digits fmaLongW scales a value up to. Three facts
 // fix it.
 //
 // Fit. The aligned values and their sum must fit the wide type: this is 35
@@ -30,7 +30,8 @@ import "math/bits"
 // non-zero difference; the two digits above it are the margin addW also keeps.
 const fmaDigitsW = 2*PrecisionW + 3
 
-// fmaW returns x × y + z rounded once in mode.
+// fmaLongW returns x × y + z rounded once in mode, for every operand
+// (fmaSlow128 takes the usual operands of two words first: see fma128.go).
 //
 // Three finite operands whose coefficients fit a word, and whose product
 // fits a word too, take a fast path first, and if it refuses them the
@@ -83,7 +84,7 @@ const fmaDigitsW = 2*PrecisionW + 3
 // A zero product or a zero z has nothing to scale, so the sum is the other
 // operand at the exponent of the smaller, and two zeros are a zero at the
 // preferred exponent; the signs follow "Sign of a result".
-func fmaW(x, y, z coefW, mode Mode) coefW {
+func fmaLongW(x, y, z coefW, mode Mode) coefW {
 	var yneg, zneg, yok, zok bool
 	var yw, zw uint64
 	var ye, ze int

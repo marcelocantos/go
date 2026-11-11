@@ -264,6 +264,11 @@ func wordPair128(x, y Uint128) bool {
 	return (x.Hi|y.Hi)&CoeffMask128Hi == 0
 }
 
+// wordTriple128 is wordPair128 for three operands.
+func wordTriple128(x, y, z Uint128) bool {
+	return (x.Hi|y.Hi|z.Hi)&CoeffMask128Hi == 0
+}
+
 // addPair128 decodes what addSlow128's own path needs. ok reports that x
 // and y are both finite encodings of the first form (see divPair128). xhi
 // and yhi are the high words of the coefficients, whose low words are those
@@ -271,6 +276,15 @@ func wordPair128(x, y Uint128) bool {
 func addPair128(x, y Uint128) (xhi, yhi uint64, xe, ye int, ok bool) {
 	ok = (x.Hi&(x.Hi<<1)|y.Hi&(y.Hi<<1))&(Form2Mask128Hi&(Form2Mask128Hi<<1)) == 0
 	return x.Hi & CoeffMask128Hi, y.Hi & CoeffMask128Hi, int(x.Hi >> ExpShift128 & ExpMask128), int(y.Hi >> ExpShift128 & ExpMask128), ok
+}
+
+// finite128 decodes what fmaSlow128's own path needs of its third operand. ok
+// reports that z is a finite encoding of the first form (see divPair128).
+// zhi is the high word of the coefficient, whose low word is that of z,
+// and ze the exponent, biased.
+func finite128(z Uint128) (zhi uint64, ze int, ok bool) {
+	ok = z.Hi&(z.Hi<<1)&(Form2Mask128Hi&(Form2Mask128Hi<<1)) == 0
+	return z.Hi & CoeffMask128Hi, int(z.Hi >> ExpShift128 & ExpMask128), ok
 }
 
 // shortExp128 returns the exponent of x less shortMinExp, a value from 0

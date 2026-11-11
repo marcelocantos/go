@@ -341,7 +341,7 @@ func roundFinite64(neg bool, c coef64, exp int, mode Mode, floor int) (coef64, d
 // Uint64To128 encode an exponent-zero magnitude below 2^64, which has at
 // most 20 digits and therefore always fits Precision128's 34 digits.
 // packWord64 and packWord128, in encoding.go, encode the exact results of
-// the word fast paths of add64, mul64, fma64, quantize64 and remainder64,
+// the word fast paths of add64, mul64, fmaLong64, quantize64 and remainder64,
 // operands whose coefficients fit a uint64: an exact sum, product, fused
 // sum, rescaled coefficient or remainder at its preferred exponent, which
 // round64 would encode
