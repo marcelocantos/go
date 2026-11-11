@@ -120,13 +120,13 @@ func PutLong128(buf *[LongLen128]byte, x Uint128) int {
 		hq := q1 / e8
 		h2 := hq / e8
 		putLane(&d, 0, 0x3030_3030_3030|uint64(pairTab[h2&127])<<48)
-		putLane(&d, 8, eightPairs(hq-h2*e8))
-		putLane(&d, 16, eightPairs(q1-hq*e8))
+		putLane(&d, 8, eightQuads(hq-h2*e8))
+		putLane(&d, 16, eightQuads(q1-hq*e8))
 		n = cDigits128(c)
 	}
 	l1 := l / e8
-	putLane(&d, 24, eightPairs(l1))
-	last := eightPairs(l - l1*e8)
+	putLane(&d, 24, eightQuads(l1))
+	last := eightQuads(l - l1*e8)
 	putLane(&d, 32, last)
 
 	sign, exp := longParts128(x)

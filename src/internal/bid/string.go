@@ -147,7 +147,7 @@ func IsShort128(x Uint128) bool {
 // check. See "Digit conversion" in the package documentation.
 func PutShort128(buf *[ShortLen128]byte, x Uint128) int {
 	sign, frac := shortParts128(x)
-	w := eightPairs(x.Lo)
+	w := eightQuads(x.Lo)
 	// Significant digits, one for a zero coefficient: c|1 has the digit
 	// count of c, because an even c is not one below a power of ten. The
 	// count comes from the coefficient, not from the zero bytes of w,
