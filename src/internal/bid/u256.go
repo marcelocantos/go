@@ -239,11 +239,10 @@ func div2by1(u1, u0, d, v uint64) (q, r uint64) {
 	q0, c := bits.Add64(q0, u0, 0)
 	q += u1 + c + 1
 	r = u0 - q*d
-	_, gt := bits.Sub64(q0, r, 0) // 1 when r > q0
-	m := -gt
-	q += m
-	r += d & m
-	if r >= d {
+	if qa, ra := q-1, r+d; r > q0 {
+		q, r = qa, ra
+	}
+	for r >= d {
 		q++
 		r -= d
 	}
@@ -268,23 +267,24 @@ func div3by2(u2, u1, u0, d1, d0, v uint64) (q, r1, r0 uint64) {
 	q, q0 := bits.Mul64(v, u2)
 	q0, c := bits.Add64(q0, u1, 0)
 	q += u2 + c
-	r1 = u1 - q*d1
 	t1, t0 := bits.Mul64(d0, q)
-	// (r1, r0) = (r1, u0) - (t1, t0) - (d1, d0), modulo 2^128.
-	var b uint64
-	r0, b = bits.Sub64(u0, t0, 0)
-	r1, _ = bits.Sub64(r1, t1, b)
-	r0, b = bits.Sub64(r0, d0, 0)
-	r1, _ = bits.Sub64(r1, d1, b)
+	// (p1, p0) = (u1 - q d1, u0) - (t1, t0), the remainder against the
+	// candidate q, and (r1, r0) = (p1, p0) - (d1, d0), the one against
+	// q + 1, both modulo 2^128.
+	p0, b := bits.Sub64(u0, t0, 0)
+	p1, _ := bits.Sub64(u1-q*d1, t1, b)
+	r0, b = bits.Sub64(p0, d0, 0)
+	r1, _ = bits.Sub64(p1, d1, b)
 	// The candidate q + 1 is right or one too large, as r1 compares with
 	// the fraction word, and on operands with no pattern that is a coin
-	// toss: the correction is a mask, not a branch (the paper says as
-	// much). m is all ones when r1 >= q0.
-	_, lt := bits.Sub64(r1, q0, 0)
-	m := lt - 1
-	q += 1 + m
-	r0, c = bits.Add64(r0, d0&m, 0)
-	r1, _ = bits.Add64(r1, d1&m, c)
+	// toss: both candidates are formed and one is selected, which is not
+	// a branch (the paper says as much) and is a shorter chain than
+	// adding the divisor back under a mask.
+	qn := q + 1
+	if r1 >= q0 {
+		qn, r1, r0 = q, p1, p0
+	}
+	q = qn
 	if r1 > d1 || r1 == d1 && r0 >= d0 {
 		q++
 		r0, b = bits.Sub64(r0, d0, 0)
