@@ -7,6 +7,7 @@ package bid_test
 import (
 	"internal/bid"
 	"math/big"
+	"math/rand/v2"
 	"strings"
 	"testing"
 )
@@ -373,5 +374,63 @@ func TestAddAlignBound(t *testing.T) {
 			}
 		}
 		t.Logf("%s: %d cases", f.name, n)
+	}
+}
+
+// TestAddFarWord drives the word path of a swamped addend (addLongW:
+// coefficients of one word each, further apart than farWordGap beyond the
+// places that scale x to full precision) at and around its bound, against
+// the reference in every mode: x of every length, at the powers of ten,
+// whose differences round one place lower, next to them, and zero; y zero, one,
+// and the largest word; the gaps either side of the bound and of the last
+// gap the exact word path aligns; and exponents at both ends of the range.
+func TestAddFarWord(t *testing.T) {
+	var k kernel
+	maxWord := new(big.Int).SetUint64(1<<64 - 1)
+	for _, f := range both {
+		rng := rand.New(rand.NewPCG(*seedFlag, streamSeed("addfar"+f.name)))
+		top := maxWord
+		if f.maxCoeff.Cmp(top) < 0 {
+			top = f.maxCoeff
+		}
+		check := func(xc, yc *big.Int, xe, ye int) {
+			if xc.Cmp(top) > 0 || yc.Cmp(top) > 0 || xe < f.minExp || xe > f.maxExp || ye < f.minExp || ye > f.maxExp {
+				return
+			}
+			for _, signs := range [][2]bool{{false, false}, {false, true}, {true, false}, {true, true}} {
+				x := f.encode(value{kind: finite, neg: signs[0], coeff: xc, exp: xe})
+				y := f.encode(value{kind: finite, neg: signs[1], coeff: yc, exp: ye})
+				for _, m := range allModes {
+					for _, pair := range [][2]bits{{x, y}, {y, x}} {
+						if got, want := k.add(f, pair[0], pair[1], m), f.add(pair[0], pair[1], m); got != want {
+							t.Fatalf("add(%s, %s, %s) = %s, want %s", f.format(pair[0]), f.format(pair[1]), modeName(m), f.format(got), f.format(want))
+						}
+						if got, want := k.sub(f, pair[0], pair[1], m), f.sub(pair[0], pair[1], m); got != want {
+							t.Fatalf("sub(%s, %s, %s) = %s, want %s", f.format(pair[0]), f.format(pair[1]), modeName(m), f.format(got), f.format(want))
+						}
+					}
+				}
+			}
+		}
+		ys := []*big.Int{new(big.Int), big.NewInt(1), big.NewInt(5), big.NewInt(9), top, new(big.Int).Rsh(top, 1), new(big.Int).Sub(top, big.NewInt(1))}
+		for dx := 1; dx <= len(top.String()); dx++ {
+			lo := pow10(dx - 1)
+			hi := new(big.Int).Sub(pow10(dx), big.NewInt(1))
+			xs := []*big.Int{lo, hi, new(big.Int).Add(lo, big.NewInt(1)), new(big.Int).Sub(hi, big.NewInt(1)), randDigits(rng, dx)}
+			if dx == 1 {
+				// A zero x: the sum is y, whatever the gap.
+				xs = append(xs, new(big.Int))
+			}
+			m := f.prec - dx
+			for _, gap := range []int{19, 20, 21, m + 18, m + 19, m + 20, m + 21, m + 22, m + 23, m + 24, m + 40, m + 300} {
+				for _, xc := range xs {
+					for _, yc := range append(ys, randDigits(rng, 1+rng.IntN(len(top.String())))) {
+						check(xc, yc, 0, -gap)
+						check(xc, yc, f.maxExp, f.maxExp-gap)
+						check(xc, yc, f.minExp+gap, f.minExp)
+					}
+				}
+			}
+		}
 	}
 }
