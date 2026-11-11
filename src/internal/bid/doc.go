@@ -1839,7 +1839,11 @@
 // cost counts both widths. Before, decimal.Abs of a decimal128 was four
 // calls around one instruction (9.1 cycles; 3.1 after), and
 // decimal.Remainder of two amounts 61.8 cycles, of which the kernel's
-// were 48 (12.8 after, with the word path of "Remainder" below).
+// were 48 (12.8 after, with the word path of "Remainder" below). The
+// functions that only read or set the sign and the class (Abs, Signbit,
+// IsNaN, IsInf, Copysign) go further: those bits are in one word, the
+// same in both encodings and at both widths, and the generic function
+// works on it where it is stored and calls nothing (Abs 0.9 cycles).
 //
 // # Face-value rounding
 //
@@ -2103,12 +2107,14 @@
 // div2by1 where the target has no instruction for two words by one, 938
 // and 214 to 612 and 118.
 //
-// Not built: Montgomery's product in place of the reciprocal step. Its
-// chain is about 23 cycles a step against 36, which is some 130 of the 520
-// at the widest gap, less the entry into and out of its form and the
-// separation of the modulus's factor of two (twice the divisor is always
-// even): a quarter of an operation that only operands 38 places apart
-// reach, for about a hundred lines.
+// The reduction of each product is then one quotient step with words of
+// 128 bits, by a 128-bit reciprocal of the normalised modulus, where it
+// was two steps with words of 64, the second waiting for the first's
+// remainder: more instructions and a shorter chain, 516 cycles to 467 at
+// the widest gap (2026-11-12). Montgomery's product was weighed for this
+// and not built: its chain is about as short, and it needs an odd modulus
+// (twice the divisor never is), a change of domain at each end and a
+// correction for the factor of two.
 //
 // # Straight paths
 //
@@ -2336,7 +2342,7 @@
 //	money (PutShort128)              185 i  23.5 c 193 i  21 c
 //
 // Three findings shaped it. First, the conversion of a lane is by a
-// table of pairs of digits, eightPairs, not by eightASCII. eightASCII is
+// table of digits, at first of pairs (eightPairs), not by eightASCII. eightASCII is
 // three multiplications one after another, each waiting for the last, and
 // with five lanes behind a division the chain was long enough that one
 // call could not overlap the next: the 34-digit form took 68 cycles at 6.2
@@ -2357,6 +2363,24 @@
 // MaxLen128 bytes of capacity are enough: fmt's buffer of 68 and a
 // caller's of 64 take the path in place.
 //
+// The lanes are converted by a table of four digits an entry, quadTab
+// (2026-11-12): one quotient and two loads for eight digits, where the
+// table of pairs took three quotients and four loads. The table is 40 KB
+// where the pairs were 200 bytes, and was first set aside on that ground
+// with an estimate of 15 percent of the conversion; measured, it is more.
+// Instructions and cycles through strconv, pairs and then fours: 34 digits
+// 393 and 47.6 to 344 and 37.2; 34 digits drawn at random, so that the
+// entries read have no pattern, 411 and 57.5 to 363 and 43.8; an 11-digit
+// amount 284 and 30.0 to 259 and 26.5; a money amount 193 and 20.9 to 181
+// and 19.4. The application benchmarks, where formatting shares the cache
+// with the rest of a program, read 0.3 to 3 percent lower for the built-in
+// type with the table and within 1.3 percent either way for the library
+// measured beside it as a control. On amd64, where the first level of
+// cache is smaller than the table, both forms on one runner in interleaved
+// rounds (Intel Xeon 8573C): 34 digits 29.4 to 23.4 ns, an 11-digit amount
+// 17.7 to 14.7, short values 15.5 to 14.2 and in no pattern 17.1 to 15.5,
+// no row up.
+//
 // # Examined and left
 //
 // What a last survey of every row found that was not changed, with the
@@ -2375,26 +2399,25 @@
 // the long ones saved one instruction of the 193 and cost the long forms
 // 13.
 //
-// Formatting 34 digits: 12.9 ns against 6.4 for decQuad, whose encoding
-// holds the digits. A table of four digits an entry would save about
-// eight instructions of each lane of eight digits, some 15% of the
-// conversion, for 40 KB that the first level of cache of most amd64
-// processors does not hold beside the caller's data.
+// Formatting 34 digits: decQuad's encoding holds the digits, three to
+// each ten bits, and a binary coefficient has to be divided. The table of
+// four digits an entry ("Digit conversion") took the row from 12.9 ns to
+// about 10 against decQuad's 6.
 //
 // Sums of 34-digit values at one exponent or one apart, a sixth slower
 // than before "Straight paths": three branch-free formulations, the last
 // computing the carried sum beside the plain one, each cost the other
 // sums more than they gained here.
 //
-// The remainder at the widest gap by Montgomery's product ("Remainder").
+// A decimal64 division is 297 instructions and 33 cycles, of which the
+// software division of two words by one is 28 percent and the general
+// routine around it the rest. decimal64 was not this work's subject, and
+// its division has no entry of its own.
 //
-// A decimal64 division is 297 instructions and 34 cycles: it has no
-// entry of its own, being word arithmetic throughout.
-//
-// The sign and class functions of math/decimal (Abs, Signbit, IsNaN,
-// IsInf, Copysign) are one call each from a user's package, about three
-// cycles: written on the stored words in the generic function they would
-// inline to an instruction or two.
+// A word quantized to a quantum twenty or more places finer, which scales
+// it by a power of two words: 113 instructions through math/decimal, 3.3
+// ns against 3.0 for Intel's library. The compiler's inline scaling stops
+// at the powers of one word, and beyond them the kernel is called.
 //
 // The conversion from binary floating point. Its exact path, which the
 // interval argument of fromfloat_fast.go hands about one float64 in 300

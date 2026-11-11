@@ -137,11 +137,11 @@ func TestLong128(t *testing.T) {
 	t.Logf("%d encodings", count)
 }
 
-// TestEightPairs checks eightPairs against eightASCII, which TestEightASCII
+// TestEightQuads checks eightQuads against eightASCII, which TestEightASCII
 // checks against the division loop, for every value below 10^8 (a stride of
-// 7919 under -short), and the table it reads against the digits of each
-// index.
-func TestEightPairs(t *testing.T) {
+// 7919 under -short), and the tables it and the exponent read against the
+// digits of each index.
+func TestEightQuads(t *testing.T) {
 	for p, w := range bid.PairTab {
 		want := uint16(0)
 		if p < 100 {
@@ -151,18 +151,23 @@ func TestEightPairs(t *testing.T) {
 			t.Fatalf("pairTab[%d] = %#04x, want %#04x", p, w, want)
 		}
 	}
+	for n, w := range bid.QuadTab {
+		if want := uint32('0'+n/1000) | uint32('0'+n/100%10)<<8 | uint32('0'+n/10%10)<<16 | uint32('0'+n%10)<<24; w != want {
+			t.Fatalf("quadTab[%d] = %#08x, want %#08x", n, w, want)
+		}
+	}
 	step := uint64(1)
 	if testing.Short() {
 		step = 7919
 	}
 	for v := uint64(0); v < 100_000_000; v += step {
-		if got, want := bid.EightPairs(v), bid.EightASCII(v); got != want {
-			t.Fatalf("eightPairs(%d) = %#016x, want %#016x", v, got, want)
+		if got, want := bid.EightQuads(v), bid.EightASCII(v); got != want {
+			t.Fatalf("eightQuads(%d) = %#016x, want %#016x", v, got, want)
 		}
 	}
-	for _, v := range []uint64{0, 9, 10, 99, 100, 9_999, 10_000, 999_999, 1_000_000, 99_999_999} {
-		if got, want := bid.EightPairs(v), bid.EightASCII(v); got != want {
-			t.Fatalf("eightPairs(%d) = %#016x, want %#016x", v, got, want)
+	for _, v := range []uint64{0, 9, 10, 99, 100, 9_999, 10_000, 19_999, 999_999, 1_000_000, 99_990_000, 99_999_999} {
+		if got, want := bid.EightQuads(v), bid.EightASCII(v); got != want {
+			t.Fatalf("eightQuads(%d) = %#016x, want %#016x", v, got, want)
 		}
 	}
 }
