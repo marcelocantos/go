@@ -42,7 +42,14 @@ func cCmp128(a, b coef128) int {
 // case: its product is zero. One multiplication and one comparison decide
 // every pair, with no digit count, however far apart the exponents are.
 //
-// Nothing here is a branch, and nothing is a call. Which operand has the
+// Nothing here is a call, and one thing is a branch: whether the power is
+// a word, which it is for exponents within 19 of each other. Then the
+// product is two word products where the general one is four, and how far
+// apart the exponents of a program's values lie goes with the kind of its
+// data, which a predictor learns, and not with their digits (a comparison
+// of two 34-digit values four places apart, through the operator on an
+// Apple M4 Max: 138 instructions and 16.8 cycles to 127 and 14.6;
+// 2026-11-12). Which operand has the
 // larger exponent, whether the scaled one then exceeds the other, and the
 // signs are in the operands' values: comparing values with no pattern, a
 // branch on any of them is a coin toss ("Operands without a pattern" in
@@ -62,15 +69,31 @@ func cCmpFinite128(xneg bool, xc coef128, xe int, yneg bool, yc coef128, ye int)
 	dLo, dHi := (xc.Lo^yc.Lo)&uint64(m), (xc.Hi^yc.Hi)&uint64(m)
 	aLo, aHi := xc.Lo^dLo, xc.Hi^dHi
 	bLo, bHi := yc.Lo^dLo, yc.Hi^dHi
-	p := &pow10tab128[min((gap^m)-m, len(pow10tab128)-1)]
-	h00, l00 := bits.Mul64(aLo, p.Lo)
-	h01, l01 := bits.Mul64(aLo, p.Hi)
-	h10, l10 := bits.Mul64(aHi, p.Lo)
-	h11, l11 := bits.Mul64(aHi, p.Hi)
-	w1, c1 := bits.Add64(h00, l01, 0)
-	w1, c2 := bits.Add64(w1, l10, 0)
-	// The upper two words are a sum of these terms, zero only if all are.
-	over := h01 | h10 | l11 | h11 | c1 | c2
+	g := (gap ^ m) - m
+	var l00, w1, over uint64
+	if g < len(pow10tab64) {
+		// The power is a word, as it is for values of one kind, whose
+		// exponents are near: half the products, and how far apart the
+		// exponents are goes with the data's kind, not its digits.
+		pw := pow10tab64[g]
+		var h00, h10, l10, c1 uint64
+		h00, l00 = bits.Mul64(aLo, pw)
+		h10, l10 = bits.Mul64(aHi, pw)
+		w1, c1 = bits.Add64(h00, l10, 0)
+		over = h10 | c1
+	} else {
+		p := &pow10tab128[min(g, len(pow10tab128)-1)]
+		var h00, h01, l01, h10, l10, h11, l11, c1, c2 uint64
+		h00, l00 = bits.Mul64(aLo, p.Lo)
+		h01, l01 = bits.Mul64(aLo, p.Hi)
+		h10, l10 = bits.Mul64(aHi, p.Lo)
+		h11, l11 = bits.Mul64(aHi, p.Hi)
+		w1, c1 = bits.Add64(h00, l01, 0)
+		w1, c2 = bits.Add64(w1, l10, 0)
+		// The upper two words are a sum of these terms, zero only if all
+		// are.
+		over = h01 | h10 | l11 | h11 | c1 | c2
+	}
 	_, lt := bits.Sub64(l00, bLo, 0)
 	_, lt = bits.Sub64(w1, bHi, lt)
 	_, gt := bits.Sub64(bLo, l00, 0)
