@@ -120,6 +120,13 @@ const coeffExactPow10 = 55
 func coeffScale(hi, lo uint64, p int, flt *floatInfo) (b uint64, ok bool) {
 	cut := false
 	if p < pow10Min {
+		// A coefficient is below 2^128, which is below 10^39. At a p
+		// that puts 10^39 under half of the smallest subnormal the
+		// value is a zero, whatever the coefficient: every p below the
+		// table for float32, which then has nothing to cut.
+		if p+39 <= log10Pow2(flt.bias-int(flt.mantbits)) {
+			return 0, true
+		}
 		j := pow10Min - p
 		if j >= len(uint64pow10) {
 			return 0, false
