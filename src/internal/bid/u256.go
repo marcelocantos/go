@@ -429,7 +429,11 @@ type divisor128 struct {
 	v1, v0 uint64 // d shifted left by s: both words, or v1 alone for a one-word d
 	v      uint64 // reciprocal2by1(v1)
 	vv     uint64 // reciprocal3by2(v1, v0), for a two-word d
-	s      uint
+	// v2 is the reciprocal of the two normalised words taken as one word
+	// of 128 bits, ⌊(2^256 - 1) / (v1, v0)⌋ - 2^128, which u128MulMod
+	// divides by, for a two-word d.
+	v2 Uint128
+	s  uint
 }
 
 // prepareDivisor128 returns d prepared. Precondition: d is not zero.
@@ -443,7 +447,14 @@ func prepareDivisor128(d Uint128) divisor128 {
 	v1 := d.Hi<<s | d.Lo>>(64-s)
 	v0 := d.Lo << s
 	v := reciprocal2by1(v1)
-	return divisor128{d: d, v1: v1, v0: v0, v: v, vv: reciprocalExtend(v, v1, v0), s: s}
+	vv := reciprocalExtend(v, v1, v0)
+	// The 128-bit reciprocal is the quotient of 2^256 - 1 - D × 2^128 by
+	// D, whose words are the complements of D's and then all ones: two
+	// steps by the reciprocal just made. D is normalised, so its
+	// complement is below it, as the first step requires.
+	qh, r1, r0 := div3by2(^v1, ^v0, ^uint64(0), v1, v0, vv)
+	ql, _, _ := div3by2(r1, r0, ^uint64(0), v1, v0, vv)
+	return divisor128{d: d, v1: v1, v0: v0, v: v, vv: vv, v2: Uint128{Hi: qh, Lo: ql}, s: s}
 }
 
 // u256ModPrepared returns n mod p.d for an n whose quotient fits 128 bits,
@@ -565,37 +576,42 @@ func u128MulMod(x, y Uint128, p *divisor128) Uint128 {
 	n2, c = bits.Add64(n2, h10, c)
 	n3 += c
 
-	// First step: (n3, n2, n1) mod (d1, d0). (p1, p0) is the remainder
-	// against the candidate quotient q and (r1, r0) the one against q + 1,
-	// both modulo 2^128; the fraction word q0 says which is the remainder.
-	d1, d0, v := p.v1, p.v0, p.vv
-	q, q0 := bits.Mul64(v, n3)
-	q0, c = bits.Add64(q0, n2, 0)
-	q += n3 + c
-	t1, t0 := bits.Mul64(d0, q)
-	p0, bw := bits.Sub64(n1, t0, 0)
-	p1, _ := bits.Sub64(n2-q*d1, t1, bw)
-	r0, bw := bits.Sub64(p0, d0, 0)
-	r1, _ := bits.Sub64(p1, d1, bw)
-	if r1 >= q0 {
-		r1, r0 = p1, p0
-	}
-	for r1 > d1 || r1 == d1 && r0 >= d0 {
-		r0, bw = bits.Sub64(r0, d0, 0)
-		r1, _ = bits.Sub64(r1, d1, bw)
-	}
-
-	// Second step: (r1, r0, n0) mod (d1, d0).
-	u2, u1 := r1, r0
-	q, q0 = bits.Mul64(v, u2)
-	q0, c = bits.Add64(q0, u1, 0)
-	q += u2 + c
-	t1, t0 = bits.Mul64(d0, q)
-	p0, bw = bits.Sub64(n0, t0, 0)
-	p1, _ = bits.Sub64(u1-q*d1, t1, bw)
-	r0, bw = bits.Sub64(p0, d0, 0)
-	r1, _ = bits.Sub64(p1, d1, bw)
-	if r1 >= q0 {
+	// One division step with words of 128 bits: (n3, n2 | n1, n0) by D
+	// = (d1, d0) and its reciprocal v2, which is div2by1 (Möller and
+	// Granlund, Algorithm 4) at twice the width. The candidate quotient
+	// is the high half of v2 × (n3, n2) + (n3, n2, n1, n0), plus one;
+	// the remainder against it, modulo 2^128, exceeds the fraction half
+	// q0 exactly when the candidate is one too large. Two steps of words
+	// of 64 bits by the reciprocal of both words did the same in a chain
+	// a third longer: each waited for the other's remainder.
+	d1, d0 := p.v1, p.v0
+	vh, vl := p.v2.Hi, p.v2.Lo
+	k00, w0 := bits.Mul64(vl, n2)
+	k01, m01 := bits.Mul64(vl, n3)
+	k10, m10 := bits.Mul64(vh, n2)
+	k11, m11 := bits.Mul64(vh, n3)
+	w1, c := bits.Add64(k00, m01, 0)
+	w2, c := bits.Add64(m11, k01, c)
+	w3 := k11 + c
+	w1, c = bits.Add64(w1, m10, 0)
+	w2, c = bits.Add64(w2, k10, c)
+	w3 += c
+	q0l, c := bits.Add64(w0, n0, 0)
+	q0h, c := bits.Add64(w1, n1, c)
+	ql, c := bits.Add64(w2, n2, c)
+	qh, _ := bits.Add64(w3, n3, c)
+	ql, c = bits.Add64(ql, 1, 0)
+	qh += c
+	// r = (n1, n0) - q × D, and p = r + D, both modulo 2^128.
+	th, tl := bits.Mul64(ql, d0)
+	th += ql*d1 + qh*d0
+	r0, bw := bits.Sub64(n0, tl, 0)
+	r1, _ := bits.Sub64(n1, th, bw)
+	p0, c := bits.Add64(r0, d0, 0)
+	p1, _ := bits.Add64(r1, d1, c)
+	_, bw = bits.Sub64(q0l, r0, 0)
+	_, bw = bits.Sub64(q0h, r1, bw)
+	if bw != 0 { // r > q0: the candidate was one too large
 		r1, r0 = p1, p0
 	}
 	for r1 > d1 || r1 == d1 && r0 >= d0 {
