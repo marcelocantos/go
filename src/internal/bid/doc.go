@@ -2144,7 +2144,7 @@
 // pay either.
 //
 // The short values, a decimal128 coefficient below 10^8 at an exponent
-// from -6 to 0 (money and most quantities), have their own conversion,
+// from -4 to 0 (money and most quantities), have their own conversion,
 // PutShort128, and it is the chunk of eight after all, without the branch
 // that sank it above. The eight digits stay in a register; the leading
 // zeros the value does not show are dropped by a shift, the point is
@@ -2181,9 +2181,58 @@
 // to 4.3).
 //
 // Through strconv, the canonical form of a money value fell from 7.4 ns
-// appended and 14.5 as a new string, and 34-digit values are unchanged
-// (the numbers are in the commit that added the path); a test for the
-// short encodings is one rotation and two comparisons (IsShort128).
+// appended and 14.5 as a new string (the numbers are in the commit that
+// added the path); a test for the short encodings is one rotation and two
+// comparisons (IsShort128).
+//
+// The long values, every finite canonical decimal128 with a coefficient
+// of nine digits or more, have PutLong128, which writes Go's canonical
+// form in place as PutShort128 does: a sign, the digits with their point,
+// and an exponent. Its coefficient is cut into lanes of eight digits, two
+// for a coefficient of sixteen digits or fewer and five for a longer one,
+// the lanes are converted side by side and kept in a buffer of forty
+// characters, and the form is stored as whole words: the digits before
+// the point from the left, those after it from the right, a word that
+// would cross an end of its part sent to a scratch buffer by a selected
+// address, and the final eight bytes last. It takes three branches on the
+// value, on the width of the coefficient, on the notation and on an
+// exponent of two digits, which operands of one kind take one way. Append64 formats a coefficient of
+// nine digits or more as the decimal128 of the same value. The counts
+// below are instructions retired and cycles for one call through
+// strconv's canonical form on an Apple M4 Max (2026-11-11), which a
+// loaded machine does not move:
+//
+//	                                    before        after
+//	34 digits, exponential           665 i  80 c   393 i  47 c
+//	34 digits, 18 before the point   592 i  73 c   408 i  52 c
+//	11 digits, exponential           411 i  48 c   274 i  30 c
+//	16 digits, two decimals          419 i  48 c   284 i  30 c
+//	11 digits, two decimals          359 i  39 c   284 i  30 c
+//	12 digits, an integer            309 i  34 c   284 i  30 c
+//	15 digits after "0.000"          397 i  51 c   280 i  30 c
+//	money (PutShort128)              185 i  23.5 c 193 i  21 c
+//
+// Three findings shaped it. First, the conversion of a lane is by a
+// table of pairs of digits, eightPairs, not by eightASCII. eightASCII is
+// three multiplications one after another, each waiting for the last, and
+// with five lanes behind a division the chain was long enough that one
+// call could not overlap the next: the 34-digit form took 68 cycles at 6.2
+// instructions a cycle with eightASCII and 52 at 8.0 with the table, for
+// the same number of instructions. eightPairs cuts the four pairs out of
+// the lane side by side, one multiplication deep, and reads each pair's two
+// characters from a table of 100 entries. The same change to PutShort128
+// took a money value from 23.5 cycles to 21 for eight more
+// instructions. Second, the digit-at-a-time writer was the whole cost of
+// the old path: fifteen digits of a high word are fifteen dependent
+// divisions. Third, the form is written where it goes or not at all: an
+// earlier version asked for 72 bytes, so that an index of six bits proved
+// a word store, and otherwise wrote into a buffer of its own and copied.
+// The copy reads what the overlapping stores have just written, and an
+// 11-digit amount took 44 cycles that way against 30 in place, more than
+// the 39 of the path it replaced. The form is laid out after its sign in
+// 41 bytes, in which an index of five bits is the proof, so that
+// MaxLen128 bytes of capacity are enough: fmt's buffer of 68 and a
+// caller's of 64 take the path in place.
 //
 // # No assembly
 //

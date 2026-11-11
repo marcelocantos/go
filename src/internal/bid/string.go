@@ -49,6 +49,18 @@ const (
 // It does not allocate when dst has MaxLen64 bytes of spare capacity. The
 // output is exactly what Parse64 reads back to the canonical encoding of x.
 func Append64(dst []byte, x uint64) []byte {
+	// A coefficient of nine digits or more is formatted as the decimal128
+	// with the same sign, coefficient and exponent, which has the same
+	// form. The shorter ones stay with the digit loop of append64: this
+	// width has no short form of its own.
+	if _, c, _, ok := unpackWordCanon64(x); ok && c >= shortCoeff {
+		w := Widen(x)
+		if i := len(dst); cap(dst)-i >= LongLen128 {
+			return dst[:i+PutLong128((*[LongLen128]byte)(dst[i:i+LongLen128]), w)]
+		}
+		var buf [LongLen128]byte
+		return append(dst, buf[:PutLong128(&buf, w)]...)
+	}
 	return append64(dst, x, false)
 }
 
@@ -57,6 +69,13 @@ func Append64(dst []byte, x uint64) []byte {
 func Append128(dst []byte, x Uint128) []byte {
 	if i := len(dst); IsShort128(x) && cap(dst)-i >= ShortLen128 {
 		return dst[:i+PutShort128((*[ShortLen128]byte)(dst[i:i+ShortLen128]), x)]
+	}
+	if IsLong128(x) {
+		if i := len(dst); cap(dst)-i >= LongLen128 {
+			return dst[:i+PutLong128((*[LongLen128]byte)(dst[i:i+LongLen128]), x)]
+		}
+		var buf [LongLen128]byte
+		return append(dst, buf[:PutLong128(&buf, x)]...)
 	}
 	return append128(dst, x, false)
 }
@@ -78,7 +97,7 @@ func AppendSci128(dst []byte, x Uint128) []byte {
 }
 
 // The short values, which dominate formatting (money and quantities): a
-// coefficient below shortCoeff, of at most eight digits, which eightASCII
+// coefficient below shortCoeff, of at most eight digits, which eightPairs
 // converts as one word, at an exponent from shortMinExp to 0. Their
 // character form is plain notation whatever the coefficient ("Values,
 // cohorts and the character form"): the digits, with a point inside them
@@ -111,8 +130,8 @@ func IsShort128(x Uint128) bool {
 // not ask for an exponent agrees on the form of these values, so strconv
 // calls this for its canonical and its fixed forms.
 //
-// The digits never pass through memory, and no branch depends on the
-// value. eightASCII gives all eight digits, zeros on the left, with the
+// The digits are laid out in a register, and no branch depends on the
+// value. eightPairs gives all eight digits, zeros on the left, with the
 // last in the top byte of a word. The tail of the output, its last eight bytes
 // right-aligned, is the word with the digits before the point moved down
 // a byte to open its place; the head, its first bytes left-aligned, is
@@ -128,7 +147,7 @@ func IsShort128(x Uint128) bool {
 // check. See "Digit conversion" in the package documentation.
 func PutShort128(buf *[ShortLen128]byte, x Uint128) int {
 	sign, frac := shortParts128(x)
-	w := eightASCII(x.Lo)
+	w := eightPairs(x.Lo)
 	// Significant digits, one for a zero coefficient: c|1 has the digit
 	// count of c, because an even c is not one below a power of ten. The
 	// count comes from the coefficient, not from the zero bytes of w,

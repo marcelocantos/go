@@ -363,6 +363,12 @@ func allocCases() map[string]func() {
 		x, _ := bid.Parse128(str, bid.ToNearestEven)
 		shorts = append(shorts, x)
 	}
+	var long128 [bid.LongLen128]byte
+	var longs []bid.Uint128
+	for _, str := range []string{"123456789.12", "-1234567890123456.78", "100000000", "0.000123456789012", "1.2345678901E+30", "1234567890123456789012345678901234", "9876543210987654321098765432109876E-4", "-1E-6143", "9.999999999999999999999999999999999E+6144"} {
+		x, _ := bid.Parse128(str, bid.ToNearestEven)
+		longs = append(longs, x)
+	}
 
 	// Float operands. The largest and the smallest subnormal float64 are the
 	// multiword paths of Float64To; the exactly representable ties and the
@@ -607,6 +613,8 @@ func allocCases() map[string]func() {
 		"AppendSci128": each(all128, func(x bid.Uint128) { asBuf = bid.AppendSci128(buf[:0], x) }),
 		"IsShort128":   each(all128, func(x bid.Uint128) { asBool = bid.IsShort128(x) }),
 		"PutShort128":  each(shorts, func(x bid.Uint128) { asInt = bid.PutShort128(&short128, x) }),
+		"IsLong128":    each(all128, func(x bid.Uint128) { asBool = bid.IsLong128(x) }),
+		"PutLong128":   each(longs, func(x bid.Uint128) { asInt = bid.PutLong128(&long128, x) }),
 		"UnpackDigits64": each(all64, func(x uint64) {
 			asKind, asBool, asInt, _ = bid.UnpackDigits64(&digs64, x)
 		}),
