@@ -81,6 +81,39 @@ func b128(x decimal128) bid.Uint128 {
 
 func d128(b bid.Uint128) decimal128 { return BID128frombits(b.Hi, b.Lo) }
 
+// The sign and the class of a value are in the same bits of one word of
+// its encoding, whichever of the two IEEE encodings the target stores and
+// whichever the width: the sign in the top bit, and four bits below it all
+// set for an infinity or a NaN, with the next telling the two apart. The
+// functions that only read or set those bits (Signbit, IsNaN, IsInf, Abs,
+// Copysign) work on that word where it lies, in the generic function
+// itself, which calls nothing and so inlines into its caller whole: they
+// are an instruction or two there, where a concrete function was a call.
+
+// signWord returns the word of x that holds its sign and class, as stored:
+// the last eight bytes of the value, which are the value itself for a
+// decimal64 and the high word of a decimal128, the second in memory on
+// every target (see Bits128).
+func signWord[D Decimal](x *D) *uint64 {
+	return (*uint64)(unsafe.Add(unsafe.Pointer(x), unsafe.Sizeof(*x)-8))
+}
+
+// classMask selects the five bits under the sign that are all set for a
+// NaN and all but the last for an infinity. classZero is those bits of the
+// mask that makes the zero value all bits clear, which a stored word is
+// compared through; they are the same for both widths, and the mask has
+// no sign bit, which is why Abs and Copysign work on the stored word as it
+// is. The array lengths below are negative if either stops being so.
+const (
+	classMask = bid.SpecialMask64 | bid.NaNBit64
+	classZero = bid.NativeZero64 & classMask
+)
+
+var (
+	_ [0 - int((bid.NativeZero64|bid.NativeZero128Hi)>>63)]struct{}
+	_ [0 - int((bid.NativeZero64^bid.NativeZero128Hi)&classMask>>58)]struct{}
+)
+
 // NaN returns an IEEE 754 "not-a-number" value of type D.
 func NaN[D Decimal]() D {
 	var x D
@@ -120,34 +153,16 @@ func inf128(sign int) decimal128 {
 
 // IsNaN reports whether x is an IEEE 754 "not-a-number" value.
 func IsNaN[D Decimal](x D) bool {
-	if is64(x) {
-		return isNaN64(decimal64(x))
-	}
-	return isNaN128(decimal128(x))
+	return (*signWord(&x)^classZero)&classMask == classMask
 }
-
-func isNaN64(x decimal64) bool   { return bid.IsNaN64(BID64bits(x)) }
-func isNaN128(x decimal128) bool { return bid.IsNaN128(b128(x)) }
 
 // IsInf reports whether x is an infinity, according to sign.
 // If sign > 0, IsInf reports whether x is positive infinity.
 // If sign < 0, IsInf reports whether x is negative infinity.
 // If sign == 0, IsInf reports whether x is either infinity.
 func IsInf[D Decimal](x D, sign int) bool {
-	if is64(x) {
-		return isInf64(decimal64(x), sign)
-	}
-	return isInf128(decimal128(x), sign)
-}
-
-func isInf64(x decimal64, sign int) bool {
-	b := BID64bits(x)
-	return bid.IsInf64(b) && (sign == 0 || (sign > 0) != bid.Signbit64(b))
-}
-
-func isInf128(x decimal128, sign int) bool {
-	b := b128(x)
-	return bid.IsInf128(b) && (sign == 0 || (sign > 0) != bid.Signbit128(b))
+	t := *signWord(&x)
+	return (t^classZero)&classMask == bid.SpecialMask64 && (sign == 0 || (sign > 0) != (t&bid.SignMask64 != 0))
 }
 
 // Payload returns the payload of the NaN x (the getPayload operation of
@@ -206,15 +221,7 @@ func signalingNaNWithPayload128(x decimal128) decimal128 {
 }
 
 // Signbit reports whether x is negative or negative zero.
-func Signbit[D Decimal](x D) bool {
-	if is64(x) {
-		return signbit64(decimal64(x))
-	}
-	return signbit128(decimal128(x))
-}
-
-func signbit64(x decimal64) bool   { return bid.Signbit64(BID64bits(x)) }
-func signbit128(x decimal128) bool { return bid.Signbit128(b128(x)) }
+func Signbit[D Decimal](x D) bool { return *signWord(&x)&bid.SignMask64 != 0 }
 
 // Abs returns the absolute value of x, keeping its quantum.
 //
@@ -223,29 +230,17 @@ func signbit128(x decimal128) bool { return bid.Signbit128(b128(x)) }
 //	Abs(±Inf) = +Inf
 //	Abs(NaN) = NaN
 func Abs[D Decimal](x D) D {
-	if is64(x) {
-		return D(abs64(decimal64(x)))
-	}
-	return D(abs128(decimal128(x)))
+	*signWord(&x) &^= bid.SignMask64
+	return x
 }
-
-func abs64(x decimal64) decimal64    { return BID64frombits(bid.Abs64(BID64bits(x))) }
-func abs128(x decimal128) decimal128 { return d128(bid.Abs128(b128(x))) }
 
 // Copysign returns a value with the magnitude and quantum of f and the sign
 // of sign.
 func Copysign[D Decimal](f, sign D) D {
-	if is64(f) {
-		return D(copysign64(decimal64(f), decimal64(sign)))
-	}
-	return D(copysign128(decimal128(f), decimal128(sign)))
+	p := signWord(&f)
+	*p = *p&^bid.SignMask64 | *signWord(&sign)&bid.SignMask64
+	return f
 }
-
-func copysign64(x, y decimal64) decimal64 {
-	return BID64frombits(bid.CopySign64(BID64bits(x), BID64bits(y)))
-}
-
-func copysign128(x, y decimal128) decimal128 { return d128(bid.CopySign128(b128(x), b128(y))) }
 
 // Dim returns the maximum of x-y or 0.
 //
