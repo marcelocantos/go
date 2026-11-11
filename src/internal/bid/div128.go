@@ -327,17 +327,18 @@ func divWide128(x, y Uint128, mode Mode) Uint128 {
 		q, qf := bits.Mul64(vv, u2)
 		qf, c := bits.Add64(qf, u1, 0)
 		q += u2 + c
-		r1 = u1 - q*v1
 		t1, t0 := bits.Mul64(v0, q)
-		r0, c = bits.Sub64(u0, t0, 0)
-		r1, _ = bits.Sub64(r1, t1, c)
-		r0, c = bits.Sub64(r0, v0, 0)
-		r1, _ = bits.Sub64(r1, v1, c)
-		_, lt := bits.Sub64(r1, qf, 0)
-		m := lt - 1
-		q += 1 + m
-		r0, c = bits.Add64(r0, v0&m, 0)
-		r1, _ = bits.Add64(r1, v1&m, c)
+		p0, c := bits.Sub64(u0, t0, 0)
+		p1, _ := bits.Sub64(u1-q*v1, t1, c)
+		r0, c = bits.Sub64(p0, v0, 0)
+		r1, _ = bits.Sub64(p1, v1, c)
+		// (p1, p0) is the remainder against q and (r1, r0) the one
+		// against q + 1: both are formed and one is selected.
+		qn := q + 1
+		if r1 >= qf {
+			qn, r1, r0 = q, p1, p0
+		}
+		q = qn
 		if r1 > v1 || r1 == v1 && r0 >= v0 {
 			q++
 			r0, c = bits.Sub64(r0, v0, 0)
@@ -350,17 +351,16 @@ func divWide128(x, y Uint128, mode Mode) Uint128 {
 		q, qf := bits.Mul64(vv, u2)
 		qf, c := bits.Add64(qf, u1, 0)
 		q += u2 + c
-		r1 = u1 - q*v1
 		t1, t0 := bits.Mul64(v0, q)
-		r0, c = bits.Sub64(u0, t0, 0)
-		r1, _ = bits.Sub64(r1, t1, c)
-		r0, c = bits.Sub64(r0, v0, 0)
-		r1, _ = bits.Sub64(r1, v1, c)
-		_, lt := bits.Sub64(r1, qf, 0)
-		m := lt - 1
-		q += 1 + m
-		r0, c = bits.Add64(r0, v0&m, 0)
-		r1, _ = bits.Add64(r1, v1&m, c)
+		p0, c := bits.Sub64(u0, t0, 0)
+		p1, _ := bits.Sub64(u1-q*v1, t1, c)
+		r0, c = bits.Sub64(p0, v0, 0)
+		r1, _ = bits.Sub64(p1, v1, c)
+		qn := q + 1
+		if r1 >= qf {
+			qn, r1, r0 = q, p1, p0
+		}
+		q = qn
 		if r1 > v1 || r1 == v1 && r0 >= v0 {
 			q++
 			r0, c = bits.Sub64(r0, v0, 0)
