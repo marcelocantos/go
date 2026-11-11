@@ -340,3 +340,204 @@ func TestCoeffAllocs(t *testing.T) {
 	}
 	_, _ = s64, s32
 }
+
+// TestCoeffScale compares coeffScale with the exact path wherever it
+// decides, for both formats, and checks that it does decide what it is
+// there for and declines what it cannot know.
+//
+// The inputs: coefficients of every bit length at exponents across each
+// format's range and past both ends of it; the midpoints of two adjacent
+// floats and the values one unit of the coefficient either side of them,
+// at powers of ten the table holds exactly, where a tie must be decided,
+// and as a multiple of a power of five at a negative exponent, where the
+// same tie cannot be and must be declined; and the same around the
+// smallest subnormals and the largest finite value.
+func TestCoeffScale(t *testing.T) {
+	r := rand.New(rand.NewPCG(1, 2))
+	check := func(bitSize int, hi, lo uint64, p int) (decided bool) {
+		t.Helper()
+		got, ok := CoeffScale(hi, lo, p, bitSize)
+		if !ok {
+			return false
+		}
+		if want := CoeffExact(hi, lo, p, bitSize); got != want {
+			t.Fatalf("coeffScale(%#x, %#x, %d, %d) = %#x, exact path %#x", hi, lo, p, bitSize, got, want)
+		}
+		return true
+	}
+	words := func(c *big.Int) (hi, lo uint64) {
+		return new(big.Int).Rsh(c, 64).Uint64(), new(big.Int).And(c, new(big.Int).SetUint64(math.MaxUint64)).Uint64()
+	}
+	n := 2000000
+	if testing.Short() {
+		n = 200000
+	}
+	for _, bitSize := range []int{64, 32} {
+		maxOrder, minOrder := 309, -324
+		if bitSize == 32 {
+			maxOrder, minOrder = 39, -46
+		}
+		decided, total := 0, 0
+		for i := 0; i < n; i++ {
+			in := randomCoeffInput(r, maxOrder, minOrder)
+			if in.hi|in.lo == 0 {
+				continue
+			}
+			total++
+			if check(bitSize, in.hi, in.lo, in.exp10) {
+				decided++
+			}
+		}
+		if decided < total*3/4 {
+			t.Errorf("float%d: coeffScale decided %d of %d random values", bitSize, decided, total)
+		}
+
+		// Ties and their neighbours. A midpoint is (2m+1) × 2^j with m a
+		// significand; c = (2m+1) × 2^j × 5^q at exponent -q, or
+		// (2m+1) × 2^j / 10^q at exponent q when that divides, is the
+		// same value.
+		mant := 53
+		if bitSize == 32 {
+			mant = 24
+		}
+		ties, tiesDecided := 0, 0
+		for i := 0; i < n/20; i++ {
+			m := new(big.Int).SetUint64(1<<(mant-1) | r.Uint64N(1<<(mant-1)))
+			mid := m.Lsh(m, 1).Or(m, big.NewInt(1))
+			mid.Lsh(mid, uint(r.IntN(128-mant-1)))
+			for _, q := range []int{0, 1, 2, 5, 17, 30} {
+				// At exponent -q.
+				c := new(big.Int).Mul(mid, new(big.Int).Exp(big.NewInt(5), big.NewInt(int64(q)), nil))
+				if c.BitLen() <= 128 {
+					for _, d := range []int64{-1, 0, 1} {
+						hi, lo := words(new(big.Int).Add(c, big.NewInt(d)))
+						// The value is c × 10^-q × 2^q: the tie itself
+						// when q is zero, and otherwise the tie scaled by
+						// a power of two, a tie still.
+						ok := check(bitSize, hi, lo, -q)
+						if d == 0 {
+							ties++
+							if ok {
+								tiesDecided++
+							}
+							if ok != (q == 0) {
+								t.Fatalf("float%d: tie %#x %#x e-%d: decided = %t", bitSize, hi, lo, q, ok)
+							}
+						}
+					}
+				}
+				// At exponent +q, when 10^q divides.
+				if c, rem := new(big.Int).QuoRem(mid, new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(q)), nil), new(big.Int)); rem.Sign() == 0 && c.Sign() != 0 && q > 0 {
+					hi, lo := words(c)
+					if !check(bitSize, hi, lo, q) {
+						t.Fatalf("float%d: tie %#x %#x e+%d not decided", bitSize, hi, lo, q)
+					}
+				}
+			}
+		}
+		if tiesDecided == 0 || tiesDecided == ties {
+			t.Errorf("float%d: %d of %d ties decided", bitSize, tiesDecided, ties)
+		}
+
+		// The ends of the range: every coefficient length against the
+		// exponents that put the value at the smallest subnormals, where
+		// the significand's place rises through the product, and at the
+		// largest finite value.
+		for bl := 1; bl <= 128; bl++ {
+			for i := 0; i < 50; i++ {
+				c := new(big.Int).SetUint64(r.Uint64())
+				c.Lsh(c, 64).Or(c, new(big.Int).SetUint64(r.Uint64()))
+				c.Rsh(c, uint(128-bl)).SetBit(c, bl-1, 1)
+				hi, lo := words(c)
+				digits := len(c.String())
+				for _, order := range []int{minOrder - 3, minOrder - 2, minOrder - 1, minOrder, minOrder + 1, minOrder + 2, minOrder + 20, maxOrder - 2, maxOrder - 1, maxOrder, maxOrder + 1} {
+					check(bitSize, hi, lo, order-digits)
+					check(bitSize, hi, lo, order-digits+1)
+				}
+			}
+		}
+	}
+}
+
+// coeffBandInputs are coefficients built to land where coeffScale cannot
+// decide from its product alone, which random values reach once in 2^74:
+// the low bits of the product are within 2^128 above the half ("band"),
+// or, for a coefficient cut below the table's last power, under the half
+// by less than the cut may have dropped ("cut"). Each was found by
+// solving for the coefficient modulo a power of two and checked against
+// an exact model of the conversion.
+var coeffBandInputs = []struct {
+	bitSize int
+	hi, lo  uint64
+	exp10   int
+}{
+	{64, 0x8000000c7, 0x5c1c6dc68aa649aa, -300},      // band
+	{64, 0x800000270, 0x5ab651dae71dd8b, -200},       // band
+	{64, 0x800000000, 0x5ffc00000000, -5},            // band
+	{64, 0x800000000, 0x480000000000, -1},            // band
+	{64, 0x800000000, 0x400000000000, 0},             // band
+	{64, 0x800000000, 0x1000000000000, 1},            // band
+	{64, 0x800000000, 0x4000000000000, 2},            // band
+	{64, 0x8000000ae, 0x703331aa0f006f45, 17},        // band
+	{64, 0x800000168, 0x1aeb1c5b585b317c, 30},        // band
+	{64, 0x80000071a, 0x9020231e080de337, 54},        // band
+	{64, 0x8000002dd, 0x33c2416209da2d92, 55},        // band
+	{64, 0x800000030, 0x4aa62790b95fce6b, 56},        // band
+	{64, 0x8000003c1, 0xc9dad1a3109c2f70, 57},        // band
+	{64, 0x8000002ae, 0x60f9d2aafbbe6794, 60},        // band
+	{64, 0x8000000b9, 0xe2fb2fa378a06a4e, 100},       // band
+	{64, 0x8000004b1, 0x28b3fb26ba15c885, 200},       // band
+	{64, 0x8000003ae, 0x585c66726609eb33, 270},       // band
+	{32, 0x20, 0xada00000000, -5},                    // band
+	{32, 0x20, 0x1c0000000000, -1},                   // band
+	{32, 0x20, 0x200000000000, 0},                    // band
+	{32, 0x20, 0x800000000000, 1},                    // band
+	{32, 0x20, 0x2000000000000, 2},                   // band
+	{32, 0x20, 0x2000000000000000, 7},                // band
+	{32, 0x20, 0x8000000000000000, 8},                // band
+	{64, 0x1408f3ff, 0xb9404909c2ee4137, -349},       // cut
+	{64, 0x14000015b56be, 0x2530d53903817c55, -349},  // cut
+	{64, 0x7d37f4fe4, 0x5d1c87d0251179df, -351},      // cut
+	{64, 0x7d000087ade246, 0x87134a455e949197, -351}, // cut
+	{64, 0x131b59d20c875, 0x2a7932a7faa8bdff, -355},  // cut
+}
+
+// TestCoeffScaleBand checks coeffScale where its bounds bind. In the band
+// it must decline unless the table holds the power of ten exactly, when it
+// must decide, correctly; a cut coefficient under the half by less than
+// its cut it must decline. And a significand of all ones that rounds up
+// must carry into the exponent.
+func TestCoeffScaleBand(t *testing.T) {
+	for _, in := range coeffBandInputs {
+		got, ok := CoeffScale(in.hi, in.lo, in.exp10, in.bitSize)
+		exact := 0 <= in.exp10 && in.exp10 <= CoeffExactPow10
+		if ok != exact {
+			t.Errorf("coeffScale(%#x, %#x, %d, %d): decided = %t, want %t", in.hi, in.lo, in.exp10, in.bitSize, ok, exact)
+		}
+		if want := CoeffExact(in.hi, in.lo, in.exp10, in.bitSize); ok && got != want {
+			t.Errorf("coeffScale(%#x, %#x, %d, %d) = %#x, exact path %#x", in.hi, in.lo, in.exp10, in.bitSize, got, want)
+		}
+	}
+	for _, bitSize := range []int{64, 32} {
+		for n := 20; n <= 128; n++ {
+			// 2^n - 1 at 10^0, and at 10^3 as its multiple of 125
+			// that is nearest below a power of two.
+			c := new(big.Int).Lsh(big.NewInt(1), uint(n))
+			c.Sub(c, big.NewInt(1))
+			for _, p := range []int{0, 3} {
+				c := new(big.Int).Set(c)
+				if p > 0 {
+					c.Quo(c, big.NewInt(1000))
+				}
+				hi, lo := new(big.Int).Rsh(c, 64).Uint64(), new(big.Int).And(c, new(big.Int).SetUint64(math.MaxUint64)).Uint64()
+				if hi == 0 && lo < 1e19 {
+					continue
+				}
+				got, ok := CoeffScale(hi, lo, p, bitSize)
+				if want := CoeffExact(hi, lo, p, bitSize); !ok || got != want {
+					t.Errorf("coeffScale(%#x, %#x, %d, %d) = %#x, %t, exact path %#x", hi, lo, p, bitSize, got, ok, want)
+				}
+			}
+		}
+	}
+}

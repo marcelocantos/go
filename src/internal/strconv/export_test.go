@@ -34,3 +34,21 @@ func CoeffDecimalExact(hi, lo uint64, exp10 int, bitSize int) bool {
 	d.floatBits(flt, RoundTowardZero)
 	return !d.trunc
 }
+
+// CoeffScale is coeffScale, and CoeffExact the exact path it stands in
+// front of, both for a positive value rounded to nearest, ties to even.
+func CoeffScale(hi, lo uint64, exp10 int, bitSize int) (uint64, bool) {
+	if bitSize == 32 {
+		return coeffScale(hi, lo, exp10, &float32info)
+	}
+	return coeffScale(hi, lo, exp10, &float64info)
+}
+
+func CoeffExact(hi, lo uint64, exp10 int, bitSize int) uint64 {
+	if bitSize == 32 {
+		return coeffFloatBits(hi, lo, exp10, false, RoundNearestEven, &float32info)
+	}
+	return coeffFloatBits(hi, lo, exp10, false, RoundNearestEven, &float64info)
+}
+
+const CoeffExactPow10 = coeffExactPow10

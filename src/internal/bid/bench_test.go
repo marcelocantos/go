@@ -767,6 +767,24 @@ func benchRowList() benchRows {
 			loop1(b, x128, func(x bits) float32 { return bid.Float32From128(x, c.mode) })
 		})
 	}
+	// Coefficients of 34 digits with no pattern, at an ordinary exponent
+	// and at a large one. A fixed coefficient shows the usual path only:
+	// before the whole coefficient was scaled, about one of these in a few
+	// hundred took the exact path, at a cost that grows with the exponent.
+	// They have a generator of their own, like the drawn pools above.
+	rf := rand.New(rand.NewPCG(5, 6))
+	for _, c := range []struct {
+		class string
+		exp   int
+	}{{"drawn", -30}, {"drawn-large", 270}} {
+		var pool []bits
+		for range poolSize {
+			pool = append(pool, dec128.encode(value{kind: finite, coeff: randDigits(rf, dec128.prec), exp: c.exp}))
+		}
+		rs.add("Float64From", "128", c.class, "Float64From128", func(b *testing.B) {
+			loop1(b, pool, func(x bits) float64 { return bid.Float64From128(x, rne) })
+		})
+	}
 
 	// Text. The reference rows are strconv.
 	parseCases := []struct{ class, s string }{

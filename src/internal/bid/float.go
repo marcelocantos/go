@@ -25,11 +25,17 @@ import (
 //   - A coefficient of up to 19 digits, which is every decimal64 and any
 //     short decimal128, goes straight to strconv's fast unrounded scaling
 //     (parseFloat64 and parseFloat32), which is correctly rounded.
-//   - A longer decimal128 is cut to a 19-digit prefix d and a sticky. If
-//     scaling rounds d and d+1 to the same binary value then the exact value,
-//     which lies between them, rounds to it too. With some 60 bits in d
-//     against float64's 53 only a small share of random 34-digit coefficients
-//     stays undecided, and float32 almost none.
+//   - A longer decimal128 is scaled whole: its coefficient times the
+//     128-bit power of ten is a product of 256 bits that brackets the exact
+//     value to within 2^128, which decides the rounding unless the bits
+//     under the significand are within that of a half (strconv's
+//     coeffScale). That is one value in 2^74, and a value that is a tie
+//     exactly. Before this the coefficient was cut to 19 digits and decided
+//     when the prefix and its successor rounded alike, which left about one
+//     random 34-digit coefficient in a few hundred to the exact path: 19 ns
+//     a conversion on average at ordinary exponents against 12 now, and
+//     200 ns against 12 at an exponent of 270, where the exact path takes
+//     tens of microseconds (Apple M4 Max, 2026-11-11).
 //   - The rest, and everything beyond the exponent bounds of atof64 and
 //     atof32, takes the exact path: the
 //     value is written into strconv's multiprecision decimal and shifted until
