@@ -204,7 +204,7 @@ type benchOperands struct {
 	divInexact, divExact, divWidest    *opnds
 	divByZero                          *opnds
 	drawn, drawnMoney                  *opnds
-	remSmall, remMax                   *opnds
+	remMoney, remSmall, remMax         *opnds
 	fracSigned, fracPositive, integers *opnds
 	ints                               []int64
 	uints                              []uint64
@@ -299,6 +299,9 @@ func buildBenchOperands() *benchOperands {
 	bo.remSmall = fixedOpnds(
 		[3]string{"1234567890123456", "1234567890123456789012345678901234"}, [3]string{"9876543", "98765432109876543210"}, [3]string{},
 		1234567890123456, 9876543, 0)
+	bo.remMoney = fixedOpnds(
+		[3]string{"1234.56", "1234.56"}, [3]string{"0.05", "0.05"}, [3]string{},
+		1234.56, 0.05, 0)
 	bo.remMax = fixedOpnds(
 		[3]string{"9999999999999999E+369", "9999999999999999999999999999999999E+6111"},
 		[3]string{"9999999999999997E-398", "9999999999999999999999999999999997E-6176"}, [3]string{},
@@ -505,7 +508,7 @@ func benchRowList() benchRows {
 	for _, c := range []struct {
 		class string
 		o     *opnds
-	}{{"smallgap", bo.remSmall}, {"maxgap", bo.remMax}} {
+	}{{"money", bo.remMoney}, {"smallgap", bo.remSmall}, {"maxgap", bo.remMax}} {
 		reg2(&rs, "Rem", c.class, c.o, bid.Rem64, bid.Rem128, math.Remainder)
 		reg2(&rs, "Mod", c.class, c.o, bid.Mod64, bid.Mod128, math.Mod)
 	}

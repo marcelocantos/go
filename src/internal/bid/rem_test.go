@@ -174,6 +174,83 @@ func TestRemModScaledDivisor(t *testing.T) {
 	}
 }
 
+// TestRemModWord drives the word path of the remainder, operands whose
+// coefficients fit a word each, at and around every bound it tests: each
+// gap in both directions up to the last one at which a scaled word still
+// fits, with coefficients at the edges of the word and of the format, so
+// that the scaled operand fits, just fits and overflows; and at each gap
+// an exact tie with an even and an odd quotient, a remainder next to the
+// tie on each side, a multiple, and both signs. The reference decides.
+func TestRemModWord(t *testing.T) {
+	maxWord := new(big.Int).SetUint64(1<<64 - 1)
+	for _, f := range both {
+		t.Run(fmt.Sprint(f.width), func(t *testing.T) {
+			g := &gen{f: f, r: rand.New(rand.NewPCG(*seedFlag, streamSeed("remword"+f.name)))}
+			top := maxWord
+			if f.maxCoeff.Cmp(top) < 0 {
+				top = f.maxCoeff
+			}
+			word := func() *big.Int {
+				switch g.r.IntN(6) {
+				case 0:
+					return new(big.Int).Sub(top, big.NewInt(int64(g.r.IntN(3))))
+				case 1:
+					return big.NewInt(int64(g.r.IntN(10)))
+				case 2:
+					return new(big.Int).Rsh(top, uint(g.r.IntN(64)))
+				}
+				c := g.randDigits(1 + g.r.IntN(20))
+				if c.Cmp(top) > 0 {
+					c.Rsh(c, 8)
+				}
+				return c
+			}
+			check := func(xc *big.Int, xe int, yc *big.Int, ye int) {
+				if xc.Cmp(f.maxCoeff) > 0 || yc.Cmp(f.maxCoeff) > 0 || xc.Sign() < 0 || yc.Sign() < 0 {
+					return
+				}
+				for _, neg := range []bool{false, true} {
+					checkRemMod(t, f, remFin(f, neg, xc, xe), remFin(f, !neg, yc, ye))
+					checkRemMod(t, f, remFin(f, neg, xc, xe), remFin(f, neg, yc, ye))
+				}
+			}
+			n := 2000
+			if testing.Short() {
+				n = 200
+			}
+			for gap := -24; gap <= 24; gap++ {
+				xe, ye := gap, 0
+				if gap < 0 {
+					xe, ye = 0, -gap
+				}
+				for i := 0; i < n; i++ {
+					check(word(), xe, word(), ye)
+				}
+				// Around a tie: X = Y × q + Y/2 for an even Y, formed at
+				// the smaller exponent and split back where it divides.
+				for i := 0; i < n/10; i++ {
+					yc := word()
+					yc.And(yc, new(big.Int).Not(big.NewInt(1)))
+					if yc.Sign() == 0 {
+						continue
+					}
+					Y := new(big.Int).Mul(yc, pow10(max(-gap, 0)))
+					q := big.NewInt(int64(g.r.IntN(1000)))
+					X := new(big.Int).Mul(Y, q)
+					X.Add(X, new(big.Int).Rsh(Y, 1))
+					for _, d := range []int64{-1, 0, 1} {
+						xs := new(big.Int).Add(X, big.NewInt(d))
+						if p := pow10(max(gap, 0)); new(big.Int).Rem(xs, p).Sign() == 0 {
+							check(new(big.Int).Quo(xs, p), xe, yc, ye)
+						}
+					}
+					check(new(big.Int).Mul(yc, q), 0, yc, 0)
+				}
+			}
+		})
+	}
+}
+
 // TestRemModZeros fixes the sign and exponent of a zero result, which the
 // reference and the contract agree on but a mistake in the rounding branch
 // of Rem would disturb: r = 0 must never be replaced by Y.

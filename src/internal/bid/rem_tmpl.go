@@ -9,6 +9,8 @@
 // gen_arith.go generates both files from it.
 package bid
 
+import "math/bits"
+
 // remStepW is the exponent of the largest power of ten a coefficient word
 // holds, the stride of remScaledW. The product of two such words fits wideW.
 const remStepW = len(pow10tabW) - 1
@@ -56,7 +58,43 @@ func modW(x, y coefW) coefW {
 // so that Y - r <= r. Since X = xc when e = Q(x) and Y = yc when e = Q(y), M is
 // at most a coefficient, and e is within the format, so roundW has nothing to
 // round.
+//
+// The word path. Finite canonical operands whose coefficients fit a word
+// each, and whose X and Y both fit one, are the amounts and counts this
+// operation is mostly asked about (is 1234.56 a multiple of 0.05), and need
+// one division instruction: the truncated quotient q = X / Y, its remainder
+// r, and for the nearest quotient the comparison of r with Y - r, which is
+// that of 2r with Y without the doubling. packWordW encodes the result,
+// which the argument above shows fits, at the exponent e; that is the
+// exact packing exception roundW's comment allows, and remExactW gives the
+// same encoding. A zero divisor, and an X or a Y that leaves the word, take
+// the general path: for decimal128 a Y beyond the word is not yet beyond
+// twice X, as it is beyond the coefficient type.
 func remainderW(x, y coefW, nearest bool) coefW {
+	if xneg, X, xb, ok := unpackWordCanonW(x); ok {
+		if _, Y, yb, ok := unpackWordCanonW(y); ok && Y != 0 {
+			var hi uint64
+			e := yb
+			if k := uint(xb - yb); k < uint(len(pow10tab64)) {
+				hi, X = bits.Mul64(X, pow10tab64[k])
+			} else if k = uint(yb - xb); k < uint(len(pow10tab64)) {
+				hi, Y = bits.Mul64(Y, pow10tab64[k])
+				e = xb
+			} else {
+				hi = 1
+			}
+			if hi == 0 {
+				q := X / Y
+				r := X - q*Y
+				if d := Y - r; nearest && (r > d || r == d && q&1 != 0) {
+					r, xneg = d, !xneg
+				}
+				if z, ok := packWordW(xneg, 0, r, e-BiasW); ok {
+					return z
+				}
+			}
+		}
+	}
 	neg, xc, xe, xok := unpackFirstW(x)
 	xk := KindFinite
 	if !xok {
@@ -114,23 +152,28 @@ func remainderW(x, y coefW, nearest bool) coefW {
 //
 // Precondition: m is not zero.
 func remScaledW(c coefW, k int, m coefW) coefW {
-	r := cModFullW(cMulFullW(c, cPow10W(k%remStepW)), m)
 	if k < remStepW {
-		return r
+		return cModFullW(cMulFullW(c, cPow10W(k)), m)
 	}
 	// Beyond one stride every reduction is by the one modulus, prepared
 	// once: its reciprocals are part of every division. A gap within one
 	// stride, the usual one, has the one division above and prepares
-	// nothing.
+	// nothing. The residues are in the prepared modulus's own form from
+	// here to the return.
 	pm := cModPrepareW(m)
-	b := cPow10W(remStepW)
-	for k /= remStepW; k > 0; k >>= 1 {
+	r := cMulModW(cModEnterW(c, &pm), cModEnterW(cPow10W(k%remStepW), &pm), &pm)
+	b := cModEnterW(cPow10W(remStepW), &pm)
+	for k /= remStepW; ; {
 		if k&1 != 0 {
-			r = cModPreparedW(cMulFullW(r, b), &pm)
+			r = cMulModW(r, b, &pm)
 		}
-		b = cModPreparedW(cMulFullW(b, b), &pm)
+		// The square after the last bit would be computed and thrown
+		// away, and the squares are the chain that sets the time.
+		if k >>= 1; k == 0 {
+			return cModLeaveW(r, &pm)
+		}
+		b = cMulModW(b, b, &pm)
 	}
-	return r
 }
 
 // remExactW encodes an exact result, which remainderW has shown fits.

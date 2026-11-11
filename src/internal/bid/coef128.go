@@ -444,15 +444,16 @@ func cModPrepare128(m coef128) cModulus128 {
 	return prepareDivisor128(m)
 }
 
-// cModPrepared128 is cModFull128 for a prepared modulus: p mod m. A p
-// with p.Hi < m, which is every product of two values below m, divides by
-// the reciprocals at hand; any other takes cModFull128.
-func cModPrepared128(p wide128, pm *cModulus128) coef128 {
-	if u128Lt(p.Hi, pm.d) {
-		return u256ModPrepared(p, pm)
-	}
-	return cModFull128(p, pm.d)
-}
+// cModEnter128 returns c mod m for a prepared modulus, in the form that
+// cMulMod128 takes and returns and cModLeave128 undoes: see u128ModEnter.
+func cModEnter128(c coef128, pm *cModulus128) coef128 { return u128ModEnter(c, pm) }
+
+// cMulMod128 returns a × b mod m for a prepared modulus, a, b and the
+// result in the form of cModEnter128.
+func cMulMod128(a, b coef128, pm *cModulus128) coef128 { return u128MulMod(a, b, pm) }
+
+// cModLeave128 returns the residue itself.
+func cModLeave128(a coef128, pm *cModulus128) coef128 { return u128ModLeave(a, pm) }
 
 // cLo128 returns the coefficient held in the low half of p. Precondition:
 // the high half is zero, that is, p fits a coefficient; a p that does not
