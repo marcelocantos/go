@@ -131,6 +131,39 @@ func addLong64(x, y coef64, mode Mode) coef64 {
 			if r, ok := packWord64(neg, hi, lo, ye-Bias64); ok {
 				return r
 			}
+		} else if xw != 0 {
+			// A y so far below x that it only says which way the sum
+			// lies from x scaled to its Precision64 digits, X: the gap
+			// leaves a word y below a twentieth of a unit of X (see
+			// farWordGap). To nearest it then changes nothing: X + y
+			// rounds down to X, and X - y up to it even when X is a
+			// power of ten and the difference has its last digit one
+			// place lower; and a zero y leaves X exactly, in any mode.
+			// packWord64 encodes X. In a directed mode a non-zero y is
+			// the fraction of the general path's swamped addend, below
+			// a half above X or above a half above X - 1, and
+			// roundFace64 rounds it at face value as it does there. The
+			// difference from a power of ten has its Precision64 digits
+			// one place lower, all nines, and what lies above them is
+			// one less ten times the fraction: above a half still,
+			// which is why the bound is a twentieth and not a half.
+			if m := Precision64 - wordDigits(xw); gap >= uint(m+farWordGap) {
+				p := cMulPow1064(cFromU6464(xw), m)
+				if mode <= ToNearestAway || yw == 0 {
+					hi, lo := cWords64(p)
+					if r, ok := packWord64(xneg, hi, lo, xe-m-Bias64); ok {
+						return r
+					}
+				} else if xneg == yneg {
+					return roundFace64(xneg, p, xe-m-Bias64, classBelowHalf, mode)
+				} else {
+					if cEq64(p, cPow1064(Precision64-1)) {
+						p, m = cPow1064(Precision64), m+1
+					}
+					p, _ = cSub64(p, cPow1064(0))
+					return roundFace64(xneg, p, xe-m-Bias64, classAboveHalf, mode)
+				}
+			}
 		}
 		xc, xe, yc, ye = cFromU6464(xw), xe-Bias64, cFromU6464(yw), ye-Bias64
 	} else {

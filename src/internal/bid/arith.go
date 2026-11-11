@@ -269,3 +269,11 @@ func compareWords(xneg bool, xc uint64, xe int, yneg bool, yc uint64, ye int) in
 // below 2^64 × 10^19 and, with a word added, below (2^64-1)(10^19+1) < 2^128,
 // so the aligned value always fits the two words that bits.Mul64 returns.
 const maxWordGap = uint(len(pow10tab64) - 1)
+
+// farWordGap is how far beyond the places that scale x to full precision
+// the exponent gap of word operands must reach for y to be swamped,
+// whatever its digits. A word is below 2^64, which is below 5 × 10^19, so
+// across 21 places it is below a twentieth of a unit of the scaled x: a
+// half of the unit one place lower, at which the difference from a power
+// of ten rounds.
+const farWordGap = 21
