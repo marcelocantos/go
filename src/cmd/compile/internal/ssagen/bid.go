@@ -174,6 +174,10 @@ var (
 	// bidKernelAdd and bidKernelMul are its entries for coefficients of
 	// two words, which hand everything else to these.
 	bidKernelAddLong, bidKernelMulLong *obj.LSym
+	// bidKernelQuantize is its entry for a coefficient of two words, and
+	// this the routine for every operand, which a word is sent to as a
+	// sum's or a product's words are.
+	bidKernelQuantizeLong *obj.LSym
 )
 
 func initBIDKernelSyms() {
@@ -188,6 +192,7 @@ func initBIDKernelSyms() {
 	bidKernelCmp = base.PkgLinksym("internal/bid", "quietCmpSlow128", obj.ABIInternal)
 	bidKernelCmpFinite = base.PkgLinksym("internal/bid", "cCmpFinite128", obj.ABIInternal)
 	bidKernelQuantize = base.PkgLinksym("internal/bid", "quantizeSlow128", obj.ABIInternal)
+	bidKernelQuantizeLong = base.PkgLinksym("internal/bid", "quantizeLong128", obj.ABIInternal)
 	bidKernelIntegral = base.PkgLinksym("internal/bid", "roundToIntegral128", obj.ABIInternal)
 }
 
