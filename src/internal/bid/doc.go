@@ -1822,6 +1822,25 @@
 // the same paths for the tests and the benchmark rows. The general paths
 // take every operand, so no result depends on any of this.
 //
+// FMA128 has a front of another kind: a test that the three coefficients
+// fit a word each, which sends them to fmaLong128 and its word paths, and
+// everything else to fmaSlow128 ("Straight paths"). It calls fmaLong128
+// through fmaWordSlow128, a one-line function, so that both of its calls
+// have the ending the compiler charges as cheap and it inlines; the test
+// then costs the word operands no call.
+//
+// The functions of math/decimal reach these entries through
+// internal/decimal, where each generic function is a test of the width and
+// a call to one of two functions of concrete type that hold the conversion
+// and the kernel call. The compiler charges those two calls as cheap by
+// the same rule, for that package: a generic function is compiled where
+// it is instantiated, in the user's package, where its calls into
+// internal/decimal and internal/bid are not inlined, and its inlining
+// cost counts both widths. Before, decimal.Abs of a decimal128 was four
+// calls around one instruction (9.1 cycles; 3.1 after), and
+// decimal.Remainder of two amounts 61.8 cycles, of which the kernel's
+// were 48 (12.8 after, with the word path of "Remainder" below).
+//
 // # Face-value rounding
 //
 // Every rounded result passes through roundW, with one named exception:
@@ -1989,6 +2008,24 @@
 // 47.5 to 21.7 and 34.2 to 20.2 on operands without a pattern. The trade
 // was taken: operands are not four variants of one pair.
 //
+// A fixed operand can hide more than a mispredicted branch: it can hide a
+// path. The conversion of a decimal128 of 34 digits to float64 decided
+// most values from a 19-digit prefix and left the rest, about one random
+// coefficient in a few hundred, to an exact multiprecision path that
+// costs hundreds of nanoseconds, and tens of microseconds at a large
+// exponent. The benchmark's one coefficient was not among them, and its
+// row read 10 ns; coefficients drawn at random averaged 19 ns at an
+// exponent of -30 and 201 ns at 270. The whole coefficient is now scaled
+// by the 128-bit power of ten (internal/strconv's coeffScale, described
+// in float.go), which leaves one value in 2^74 undecided, and the same
+// pools take 12 ns at every exponent. The rows Float64From/128/drawn and
+// drawn-large hold it. Every other operation was then run on operands
+// drawn at random against its fixed row (the binary-to-decimal
+// conversions, the fused multiply-add, quantize, the integral rounding,
+// the integer conversions, parsing, formatting and the remainder): none
+// has such a tail; they take 1.2 to 1.8 times their fixed rows, which is
+// the branches of this section.
+//
 // # Division
 //
 // The 256-by-128 division at the centre of a decimal128 division
@@ -2016,6 +2053,62 @@
 // alone is then exact but for a few times in a thousand (div3by2Lead).
 // The two-word reciprocal is extended beside that step and serves the
 // second word, which needs it.
+//
+// The correction of a quotient word is a selection, not a masked addition.
+// The candidate is right or one too large as often as not; both
+// remainders are formed, the one against the candidate and the one against
+// its successor, and the comparison selects between them, two
+// instructions deep where adding the divisor back under a mask was seven
+// from the comparison to the high word of the remainder, which the next
+// step waits for. On a quotient of 34 digits by a two-word divisor that
+// was 74.2 cycles to 70.1 on a fixed pair and 90.8 to about 83 on operands
+// drawn at random (2026-11-11). The last, rare correction stays a branch;
+// where it would otherwise be made a selection too, it is written as a
+// loop of at most one trip.
+//
+// Measured and not adopted in the same pass: the leading quotient word of
+// divWide128 from the reciprocal of the divisor's high word alone
+// (div3by2Lead written out), so that it need not wait for the two-word
+// reciprocal: 75.5 cycles against 71.7 on the fixed pair, level on drawn
+// operands.
+//
+// A zero operand is decided where div128 sees it: a zero dividend over a
+// non-zero word is the zero at the preferred exponent, and a non-zero
+// dividend over zero the infinity (18.2 cycles to 6.8 and 13.8 to 6.7
+// through the operator). 0 / 0 and a dividend that only reads as zero go
+// on to divLong128.
+//
+// # Remainder
+//
+// Rem and Mod had the general route only: 1234.56 rem 0.05 was a 256-bit
+// product, a division by reciprocals and the rounding routine, 409
+// instructions and 48 cycles. Operands of one word each whose scaled
+// coefficient still fits a word take one division instruction and
+// packWordW: 99 instructions and 9.6 cycles (decimal64: 228 and 28 to 104
+// and 12.6).
+//
+// Operands more than a stride of 38 places apart reduce by repeated
+// squaring modulo twice the divisor, and the squarings are a chain, each
+// waiting for the one before, so the time of the operation is what one
+// step spends between its operands and its result. The step was a
+// product, a prepared division and two quotient steps, four calls deep;
+// it is u128MulMod, one function that calls nothing. Residues stay in the
+// form a division step leaves them in, shifted as the divisor is
+// normalised, so that nothing is shifted down and up again between steps;
+// the correction of a step is the selection of "Division"; the base is
+// reduced before the loop, where its first square had missed the prepared
+// modulus altogether; and the square after the last bit of the exponent
+// is not computed. At the widest gap of decimal128, twelve such steps:
+// 3180 instructions and 755 cycles to 1671 and 520; decimal64, with
+// div2by1 where the target has no instruction for two words by one, 938
+// and 214 to 612 and 118.
+//
+// Not built: Montgomery's product in place of the reciprocal step. Its
+// chain is about 23 cycles a step against 36, which is some 130 of the 520
+// at the widest gap, less the entry into and out of its form and the
+// separation of the modulus's factor of two (twice the divisor is always
+// even): a quarter of an operation that only operands 38 places apart
+// reach, for about a hundred lines.
 //
 // # Straight paths
 //
@@ -2104,6 +2197,27 @@
 // that mix those cases, and a third slower on operands that do not. The
 // cost is that sums at one exponent or one apart, which alternate between
 // the cases and carry often, run a sixth slower than before this section.
+//
+// Two more operations have such an entry since (2026-11-11).
+//
+// Addition of word operands far apart. The exact word path of addLongW
+// aligns across 19 places; beyond it word operands took the general
+// addition, 247 instructions and 26.7 cycles through the operator for
+// 1.23456789E+30 + 9.87654321E-30, whose result is the larger operand
+// scaled to 34 digits. Across farWordGap places beyond that scale a word
+// y is below a twentieth of a unit of the scaled x, so to nearest the sum
+// is that x, which packWordW encodes, and in a directed mode y is the
+// fraction of a swamped addend, which roundFaceW rounds at face value
+// ("Face-value rounding"): 161 instructions and 15.9 cycles.
+//
+// The fused multiply-add. fmaSlow128 takes operands of which one has two
+// words, with z at the exponent of the product or up to 38 places above
+// it, which is the step of a sum of products or of a polynomial at full
+// precision. The product is exact in four words, z scaled to its exponent
+// is four more, their sum or difference is the exact value at the
+// preferred exponent, and it is rounded once as mulSlow128 rounds its
+// product. On operands of 34 digits drawn at random: 787 instructions and
+// 101.6 cycles to 287 and 47.7.
 //
 // # Short numerals
 //
@@ -2233,6 +2347,41 @@
 // 41 bytes, in which an index of five bits is the proof, so that
 // MaxLen128 bytes of capacity are enough: fmt's buffer of 68 and a
 // caller's of 64 take the path in place.
+//
+// # Examined and left
+//
+// What a last survey of every row found that was not changed, with the
+// measurement that decided it (Apple M4 Max, 2026-11-11).
+//
+// Quantize of a value that does not fit the quantum, which is invalid and
+// returns a NaN: 116 instructions and 15 cycles through math/decimal, of
+// which the refusal is one comparison before any multiply. Intel's
+// library answers in about 12 cycles. It is an error path.
+//
+// The comparison of two 34-digit values on a fixed pair: 4.3 ns against
+// 4.0 for Intel's library, whose branches a fixed pair predicts; drawn at
+// random 6.0 against 9.2 ("Operands without a pattern").
+//
+// Formatting 34 digits: 12.9 ns against 6.4 for decQuad, whose encoding
+// holds the digits. A table of four digits an entry would save about
+// eight instructions of each lane of eight digits, some 15% of the
+// conversion, for 40 KB that the first level of cache of most amd64
+// processors does not hold beside the caller's data.
+//
+// Sums of 34-digit values at one exponent or one apart, a sixth slower
+// than before "Straight paths": three branch-free formulations, the last
+// computing the carried sum beside the plain one, each cost the other
+// sums more than they gained here.
+//
+// The remainder at the widest gap by Montgomery's product ("Remainder").
+//
+// A decimal64 division is 297 instructions and 34 cycles: it has no
+// entry of its own, being word arithmetic throughout.
+//
+// The sign and class functions of math/decimal (Abs, Signbit, IsNaN,
+// IsInf, Copysign) are one call each from a user's package, about three
+// cycles: written on the stored words in the generic function they would
+// inline to an instruction or two.
 //
 // # No assembly
 //
