@@ -2219,6 +2219,15 @@
 // product. On operands of 34 digits drawn at random: 787 instructions and
 // 101.6 cycles to 287 and 47.7.
 //
+// Quantize. quantizeSlow128 takes a coefficient of two words, which is
+// what a division or a long product leaves and what is then brought to
+// two places. With digits to drop it biases the coefficient by half of
+// the power of ten and divides once, the zero remainder the tie; with
+// digits to add it refuses by one comparison or scales by one multiply.
+// A 34-digit value rounded to two places: 256 instructions and 33.8 cycles
+// to 168 and 19.4 through math/decimal; the refusal of a value that does
+// not fit the quantum, 116 and 14.3 to 81 and 8.0 (2026-11-12).
+//
 // # Short numerals
 //
 // A numeral of at most eight characters after its sign, digits and at most
@@ -2353,14 +2362,18 @@
 // What a last survey of every row found that was not changed, with the
 // measurement that decided it (Apple M4 Max, 2026-11-11).
 //
-// Quantize of a value that does not fit the quantum, which is invalid and
-// returns a NaN: 116 instructions and 15 cycles through math/decimal, of
-// which the refusal is one comparison before any multiply. Intel's
-// library answers in about 12 cycles. It is an error path.
+// The comparison of two values keeps one branch, on whether their
+// exponents are within 19 of each other, which halves its products for
+// values of one kind ("Operands without a pattern" lists what is
+// computed); everything on their digits is still arithmetic.
 //
-// The comparison of two 34-digit values on a fixed pair: 4.3 ns against
-// 4.0 for Intel's library, whose branches a fixed pair predicts; drawn at
-// random 6.0 against 9.2 ("Operands without a pattern").
+// Formatting a money amount: 193 instructions and 21 cycles through
+// strconv, of which 47 are strconv's dispatch and 126 the conversion and
+// the layout with its point. Intel's library takes about a cycle less
+// and writes the coefficient and exponent with no point to place.
+// Splitting strconv's dispatch so that the short form skips the frame of
+// the long ones saved one instruction of the 193 and cost the long forms
+// 13.
 //
 // Formatting 34 digits: 12.9 ns against 6.4 for decQuad, whose encoding
 // holds the digits. A table of four digits an entry would save about
@@ -2382,6 +2395,22 @@
 // IsInf, Copysign) are one call each from a user's package, about three
 // cycles: written on the stored words in the generic function they would
 // inline to an instruction or two.
+//
+// The conversion from binary floating point. Its exact path, which the
+// interval argument of fromfloat_fast.go hands about one float64 in 300
+// of large exponent, does not show in a profile of floats drawn at
+// random. What does is the three-way branch of shr192 on the size of the
+// shift, a quarter of the conversion of floats around 10^100; selecting
+// its words by masks took those from 82 cycles to 72 and cost floats of
+// ordinary size 3 to 4 percent and the fixed rows 8 to 18, in 25 to 40
+// more instructions, and was not kept. The rows Float64To/128 read a
+// tenth higher in the baseline of 2026-11-11 than in the one before it
+// with the same instructions executed (367 for the typical value): their
+// compiled code is identical but for the addresses of the tables, the
+// same conversions in another binary take the same cycles under both
+// trees to within 2 percent (62.5 and 63.2 for amounts, 64.6 and 65.9
+// below one), and in a later build of this package the row for the
+// largest value was back where it had been. It is placement.
 //
 // # No assembly
 //
