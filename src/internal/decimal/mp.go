@@ -111,16 +111,21 @@ func mpNormTo(m, w []uint64, exp int, neg bool) mpf {
 		return mpf{}
 	}
 	lz := uint(bits.LeadingZeros64(w[l-1]))
-	if d := l - n; d >= 1 {
-		// The usual case, a product or a quotient: w is longer than m,
-		// and every word of m has a word of w below it.
-		s := w[d-1 : l]
-		s = s[:len(m)+1]
+	if d := l - n; d >= 0 {
+		// The usual case: w is at least as long as m, and m is its
+		// first n words, shifted.
+		s := w[d:l]
+		s = s[:len(m)]
 		if lz == 0 {
-			copy(m, s[1:])
+			copy(m, s)
 		} else {
-			for i := range m {
-				m[i] = s[i+1]<<lz | s[i]>>(64-lz)
+			var lo uint64
+			if d > 0 {
+				lo = w[d-1]
+			}
+			for i, hi := range s {
+				m[i] = hi<<lz | lo>>(64-lz)
+				lo = hi
 			}
 		}
 		return mpf{m, exp + 64*d - int(lz), neg}
@@ -150,13 +155,31 @@ func mpNorm(a *arena, n int, w []uint64, exp int, neg bool) mpf {
 
 // mpWord returns the integer w as an mpf of n words.
 func mpWord(a *arena, n int, w uint64) mpf {
-	return mpNormTo(a.words(n), []uint64{w}, 0, false)
+	if w == 0 {
+		return mpf{}
+	}
+	m := a.zeros(n)
+	lz := bits.LeadingZeros64(w)
+	m[n-1] = w << uint(lz)
+	return mpf{m, 64*(1-n) - lz, false}
 }
 
 // mpInt returns the integer hi×2^64 + lo as an mpf of n words; it is
 // exact for n >= 2.
 func mpInt(a *arena, n int, hi, lo uint64) mpf {
-	return mpNormTo(a.words(n), []uint64{lo, hi}, 0, false)
+	if hi == 0 {
+		return mpWord(a, n, lo)
+	}
+	m := a.zeros(n)
+	lz := uint(bits.LeadingZeros64(hi))
+	if lz != 0 {
+		hi, lo = hi<<lz|lo>>(64-lz), lo<<lz
+	}
+	m[n-1] = hi
+	if n >= 2 {
+		m[n-2] = lo
+	}
+	return mpf{m, 64*(2-n) - int(lz), false}
 }
 
 // mpNeg returns -x.
