@@ -179,15 +179,23 @@ func mpMul(a *arena, n int, x, y mpf) mpf {
 		return mpf{}
 	}
 	r := a.words(n)
-	m := a.mark()
-	if len(x.m) == 3 && len(y.m) == 3 {
-		// The precision of a first evaluation.
-		w := a.words(6)
-		mulWords3((*[6]uint64)(w), (*[3]uint64)(x.m), (*[3]uint64)(y.m))
-		z := mpNormTo(r, w, x.exp+y.exp, x.neg != y.neg)
-		a.release(m)
-		return z
+	if n == 3 && len(x.m) == 3 && len(y.m) == 3 {
+		// The precision of a first evaluation: the product written
+		// out, and its first three words taken in place. Both factors
+		// are normalized, so the product's top word is not zero.
+		w := mulWords3((*[3]uint64)(x.m), (*[3]uint64)(y.m))
+		lz := uint(bits.LeadingZeros64(w[5]))
+		z := (*[3]uint64)(r)
+		if lz == 0 {
+			z[0], z[1], z[2] = w[3], w[4], w[5]
+		} else {
+			z[0] = w[3]<<lz | w[2]>>(64-lz)
+			z[1] = w[4]<<lz | w[3]>>(64-lz)
+			z[2] = w[5]<<lz | w[4]>>(64-lz)
+		}
+		return mpf{r, x.exp + y.exp + 3*64 - int(lz), x.neg != y.neg}
 	}
+	m := a.mark()
 	w := a.zeros(len(x.m) + len(y.m))
 	for i, xi := range x.m {
 		var c uint64
@@ -206,8 +214,8 @@ func mpMul(a *arena, n int, x, y mpf) mpf {
 	return z
 }
 
-// mulWords3 sets w to x × y.
-func mulWords3(w *[6]uint64, x, y *[3]uint64) {
+// mulWords3 returns x × y.
+func mulWords3(x, y *[3]uint64) [6]uint64 {
 	// Each row is x[i] × y, three products whose low words go in at
 	// word i and whose high words go in a word higher. A row's sum
 	// cannot carry out of its top word: the total is below 2^384.
@@ -242,7 +250,7 @@ func mulWords3(w *[6]uint64, x, y *[3]uint64) {
 	w4, c = bits.Add64(w4, h1, c)
 	w5 += h2 + c
 
-	w[0], w[1], w[2], w[3], w[4], w[5] = w0, w1, w2, w3, w4, w5
+	return [6]uint64{w0, w1, w2, w3, w4, w5}
 }
 
 // mpMulWord returns x × w truncated to n words.

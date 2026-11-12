@@ -967,3 +967,102 @@ func TestElementarySignaling(t *testing.T) {
 		}
 	}
 }
+
+// allocOperands returns values of D across its range: zero and one, values
+// beside one, amounts, quotients with every digit, and the extremes of the
+// exponent, where the powers of ten that scale a value are longest.
+func allocOperands[D decimal.Decimal](maxExp int) []D {
+	xs := []D{0, 1, 2, 10, 0.5, 2.25, 0.0001, 1234.56, 1.0000001, 0.9999999, D(1) / 3, D(22) / 7, D(1) / 12, 1e30}
+	for _, k := range []int{maxExp / 4, maxExp / 2, maxExp - 40, maxExp} {
+		xs = append(xs, decimal.ScaleB(D(22)/7, k), decimal.ScaleB(D(22)/7, -k), decimal.ScaleB(D(1), -k))
+	}
+	return xs
+}
+
+// allocs checks that every function, at one width, allocates nothing on
+// any of the operands.
+func allocs[D decimal.Decimal](t *testing.T, maxExp int) {
+	var sink D
+	check := func(format string, f func(), args ...any) {
+		t.Helper()
+		if n := testing.AllocsPerRun(5, f); n != 0 {
+			t.Errorf("%T "+format+": %v allocations, want 0", append([]any{sink}, append(args, n)...)...)
+		}
+	}
+	xs := allocOperands[D](maxExp)
+	counts := []int{-2000000, -360, -5, -1, 2, 3, 5, 360, 2000000}
+	roots := []int{-12, -2, 2, 3, 12, 1001}
+	powers := []D{0.5, D(1) / 12, -2.75, 100.5, 1e-10, 33}
+	rates := []D{0.05, D(5) / 1200, -0.5, -0.9999999, 1e-30, 2.5, 1e30, decimal.ScaleB(D(3), 40)}
+	for _, x := range xs {
+		check("Sqrt(%v)", func() { sink = decimal.Sqrt(x) }, x)
+		check("Exp(%v)", func() { sink = decimal.Exp(x) }, x)
+		check("Exp(%v)", func() { sink = decimal.Exp(-x) }, -x)
+		check("Log(%v)", func() { sink = decimal.Log(x) }, x)
+		check("Log10(%v)", func() { sink = decimal.Log10(x) }, x)
+		check("LogB(%v)", func() { sink = decimal.LogB(x) }, x)
+		check("ScaleB(%v, 3)", func() { sink = decimal.ScaleB(x, 3) }, x)
+		check("NextUp(%v)", func() { sink = decimal.NextUp(x) }, x)
+		check("NextDown(%v)", func() { sink = decimal.NextDown(x) }, x)
+		for _, n := range counts {
+			check("Pown(%v, %d)", func() { sink = decimal.Pown(x, n) }, x, n)
+			check("Pown(%v, %d)", func() { sink = decimal.Pown(-x, n) }, -x, n)
+		}
+		for _, n := range roots {
+			check("Rootn(%v, %d)", func() { sink = decimal.Rootn(x, n) }, x, n)
+		}
+		for _, y := range powers {
+			check("Pow(%v, %v)", func() { sink = decimal.Pow(x, y) }, x, y)
+		}
+	}
+	for _, r := range rates {
+		for _, n := range counts {
+			check("Compound(%v, %d)", func() { sink = decimal.Compound(r, n) }, r, n)
+		}
+	}
+}
+
+// TestElementaryAllocs checks that the functions do not allocate. An
+// evaluation takes its words from an array on the stack that is large
+// enough for the first attempt and for a second at twice the precision;
+// only a result that needs a third, which none of these does, goes to
+// the heap.
+func TestElementaryAllocs(t *testing.T) {
+	allocs[decimal64](t, bid.MaxExp64)
+	allocs[decimal128](t, bid.MaxExp128)
+}
+
+// TestElementaryFar checks powers whose value is far beyond the range of
+// either format: millions of digits. They are infinite or zero, and are
+// found to be so without the digits being computed. (They used to reach
+// the digits with an exponent estimated too coarsely for a number that
+// long, and the rounding loop then gave up with a panic.)
+func TestElementaryFar(t *testing.T) {
+	far[decimal64](t)
+	far[decimal128](t)
+}
+
+func far[D decimal.Decimal](t *testing.T) {
+	inf := D(1) / D(0)
+	check := func(name string, got, want D) {
+		t.Helper()
+		if got != want || decimal.Signbit(got) != decimal.Signbit(want) {
+			t.Errorf("%T %s = %v, want %v", got, name, got, want)
+		}
+	}
+	for _, x := range []D{1000.5, 12345.5, 3e300, D(22) / 7 * 1e200} {
+		for _, n := range []int{400000, 1000000, 1048576} {
+			check(fmt.Sprintf("Pown(%v, %d)", x, n), decimal.Pown(x, n), inf)
+			check(fmt.Sprintf("Pown(%v, %d)", x, -n), decimal.Pown(x, -n), 0)
+			check(fmt.Sprintf("Pown(%v, %d)", -x, n), decimal.Pown(-x, n), inf)
+			check(fmt.Sprintf("Pown(%v, %d)", -x, n+1), decimal.Pown(-x, n+1), -inf)
+			check(fmt.Sprintf("Pown(1/%v, %d)", x, n), decimal.Pown(1/x, n), 0)
+			check(fmt.Sprintf("Pown(1/%v, %d)", x, -n), decimal.Pown(1/x, -n), inf)
+			check(fmt.Sprintf("Compound(%v, %d)", x, n), decimal.Compound(x, n), inf)
+			check(fmt.Sprintf("Compound(%v, %d)", x, -n), decimal.Compound(x, -n), 0)
+			check(fmt.Sprintf("Pow(%v, %d)", x, n), decimal.Pow(x, D(n)), inf)
+			check(fmt.Sprintf("Pow(%v, %d)", x, -n), decimal.Pow(x, D(-n)), 0)
+			check(fmt.Sprintf("Pow(%v, %d.5)", x, n), decimal.Pow(x, D(n)+0.5), inf)
+		}
+	}
+}

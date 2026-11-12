@@ -584,8 +584,13 @@ func mpPowInt(a *arena, n int, b mpf, k int64) (mpf, int) {
 	}
 	m0 := a.mark()
 	slot := a.words(n)
-	r := mpNormTo(slot, []uint64{1}, 0, false)
-	for i := bits.Len64(u) - 1; i >= 0; i-- {
+	if u == 0 {
+		return mpNormTo(slot, []uint64{1}, 0, false), evValue
+	}
+	// From the bit below the top one: the first turn would square 1
+	// and multiply it by b.
+	r := mpNormTo(slot, b.m, b.exp, b.neg)
+	for i := bits.Len64(u) - 2; i >= 0; i-- {
 		m := a.mark()
 		t := mpMul(a, n, r, r)
 		if u>>uint(i)&1 != 0 {
@@ -791,15 +796,20 @@ func mpExpSmall(a *arena, n int, r mpf) mpf {
 // 2^-(64n-30), and scaling by a power of ten adds a few units.
 const guardBits = 44
 
+// log10Two is log10(2) × 2^40, truncated.
+const log10Two = 330985980541
+
 // mpDigits returns the first k digits of v, which is positive: the
 // integer c with 10^(k-1) <= c < 10^k and c <= v/10^q < c+1. ok is
 // false if an error of up to 2^guardBits units in the last place of v
 // could change c, or make v/10^q an integer.
 func mpDigits(a *arena, n int, v mpf, k int) (c u128, q int, ok bool) {
 	// The leading digit's exponent is floor(log10 v), which is
-	// floor(log2 v) × log10(2) to within one; 78913/2^18 is log10(2)
-	// to eight places.
-	q = int((int64(v.top()-1)*78913)>>18) - (k - 1)
+	// floor(log2 v) × log10(2) to within one, and the tries below find
+	// it from there. log10Two/2^40 is log10(2) to twelve places, which
+	// keeps the product within a thousandth of a digit for any v that
+	// ziv passes: 2^±farTop at most.
+	q = int((int64(v.top()-1)*log10Two)>>40) - (k - 1)
 	for try := 0; try < 4; try++ {
 		m := a.mark()
 		hi, lo, near, fits := mpFloor(mpScale10(a, n, v, q), guardBits)
@@ -900,10 +910,18 @@ func (v *eval) run(a *arena, n int) (mpf, int) {
 	return mpExp(a, n, t)
 }
 
-// zivStore is the number of words of an evaluation's arena. The first
-// evaluation of every function fits in it, at either width; see
-// TestArenaStore.
-const zivStore = 256
+// farTop bounds the binary exponent of a value whose digits ziv takes.
+// 2^farTop is above 10^39000, and decimal128 ends at 10^6145 and at
+// 10^-6176: a value beyond it overflows or underflows, even times the
+// 10^scale of a square root, which is half a format's exponent at most.
+const farTop = 1 << 17
+
+// zivStore is the number of words of an evaluation's arena. A first
+// evaluation uses up to 53 of them and a second, at twice the
+// precision, up to 101, so that neither allocates; a third takes what
+// it lacks from the heap. math/decimal's TestElementaryAllocs holds the
+// functions to that.
+const zivStore = 128
 
 // ziv returns the result for the positive, inexact value that v
 // computes, times 10^scale and with the sign neg.
@@ -939,6 +957,17 @@ func (f *format) ziv(neg bool, scale int64, near dec, v *eval) result {
 		}
 		a.release(0)
 		x, ev := v.run(&a, n)
+		if ev == evValue {
+			// A value beyond 2^±farTop is out of every format's range,
+			// and its digits, which would cost a power of ten as long
+			// as the value's exponent, are not wanted.
+			switch t := x.top(); {
+			case t > farTop:
+				ev = evOverflow
+			case t < -farTop:
+				ev = evUnderflow
+			}
+		}
 		r := result{dec: dec{neg: neg}, sticky: true}
 		switch ev {
 		case evAbove, evBelow:
