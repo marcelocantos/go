@@ -12,9 +12,12 @@ import (
 )
 
 // softdecimal removes the decimal64 and decimal128 types from the values that
-// remain after ssagen, which has already lowered every decimal operator and
-// conversion to a runtime call. Unlike softfloat, this pass always runs, since
-// the compiler doesn't use any target's decimal floating-point instructions yet.
+// remain after ssagen, which has already lowered the decimal operators and
+// conversions: to calls of the runtime or of internal/bid, to inline integer
+// code for the common cases of decimal128 on arm64 and amd64 (ssagen's bid
+// files), or, on linux/ppc64le, to the DPD operations that become POWER's
+// decimal instructions (ssagen's dpd.go). Unlike softfloat, this pass always
+// runs: on every target what is left of a decimal value is its words.
 //
 // For decimal64 (8 bytes), values are retyped to uint64.
 // For decimal128 (16 bytes), decomposition into two uint64 halves is handled
