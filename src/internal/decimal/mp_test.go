@@ -104,6 +104,28 @@ func TestMPArithmetic(t *testing.T) {
 				p.Quo(bigf().SetInt64(1), p)
 			}
 			check("pow10", n, MpPow10(n, e), p, 2)
+			q := r.IntN(121) - 60
+			p10 := bigf().SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(max(q, -q))), nil))
+			scaled := bigf().Quo(bx, p10)
+			if q < 0 {
+				scaled = bigf().Mul(bx, p10)
+			}
+			check("scale10", n, MpScale10(n, x, q), scaled, 4)
+			// An integer power of a value near 1, exactly: its error
+			// is within eight units for each unit of the count.
+			k := int64(r.IntN(4001) - 2000)
+			base := MpAdd(n, MakeMpf([]uint64{1 << 63}, -63, false), MakeMpf([]uint64{r.Uint64() | 1<<63}, -64-r.IntN(40), r.IntN(2) == 0))
+			if got, ok := MpPowInt(n, base, k); ok {
+				want := bigf().SetInt64(1)
+				bb := toBig(base)
+				for j := max(k, -k); j > 0; j-- {
+					want.Mul(want, bb)
+				}
+				if k < 0 {
+					want.Quo(bigf().SetInt64(1), want)
+				}
+				check("powInt", n, got, want, float64(8*max(k, -k)+8))
+			}
 		}
 	}
 }

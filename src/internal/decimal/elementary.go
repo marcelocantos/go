@@ -455,12 +455,75 @@ func mpMulInt(n int, x mpf, k int64) mpf {
 // words.
 func mpDec(n int, neg bool, c u128, e int) mpf {
 	v := mpInt(n, c.Hi, c.Lo)
-	if e != 0 {
+	switch {
+	case e > 0 && e < len(pow10Word):
+		v = mpMulWord(n, v, pow10Word[e])
+	case e < 0 && -e < len(pow10Word):
+		v = mpDivWord(n, v, pow10Word[-e])
+	case e != 0:
 		v = mpMul(n, v, mpPow10(n, e))
 	}
 	v.neg = neg
 	return v
 }
+
+// mpScale10 returns v × 10^-q to within four units in the last of n
+// words.
+func mpScale10(n int, v mpf, q int) mpf {
+	switch {
+	case q == 0:
+		return mpNorm(n, v.m, v.exp, v.neg)
+	case q < 0 && q >= -38:
+		p := pow10U(-q)
+		return mpMul(n, v, mpInt(2, p.Hi, p.Lo))
+	case q > 0 && q <= 38:
+		p := pow10U(q)
+		return mpDiv(n, v, mpInt(2, p.Hi, p.Lo))
+	}
+	return mpMul(n, v, mpPow10(n, -q))
+}
+
+// mpPowInt returns b^k for a positive b and a k of at most 2^20 in
+// magnitude, by repeated squaring, with a relative error below
+// 2^-(64n-25) if b is within four units in its last place: each product
+// adds a unit and the error of b, and each squaring doubles what there
+// is, which comes to under 8|k| units.
+func mpPowInt(n int, b mpf, k int64) (mpf, int) {
+	a := uint64(k)
+	if k < 0 {
+		a = -a
+	}
+	// b is between 2^(top-1) and 2^top. A power beyond 2^±(2^24) is
+	// beyond every format, and is not computed: its exponent need not
+	// fit an int.
+	huge, tiny := false, false
+	if t := int64(b.top()); t > 1 {
+		huge = a*uint64(t-1) > 1<<24
+	} else if t < 0 {
+		tiny = a*uint64(-t) > 1<<24
+	}
+	switch {
+	case huge && k > 0, tiny && k < 0:
+		return mpf{}, evOverflow
+	case huge || tiny:
+		return mpf{}, evUnderflow
+	}
+	r := mpWord(n, 1)
+	for i := bits.Len64(a) - 1; i >= 0; i-- {
+		r = mpMul(n, r, r)
+		if a>>uint(i)&1 != 0 {
+			r = mpMul(n, r, b)
+		}
+	}
+	if k < 0 {
+		r = mpDiv(n, mpWord(n, 1), r)
+	}
+	return r, evValue
+}
+
+// maxPowInt is the largest count mpPowInt takes; beyond it a power is
+// the exponential of a logarithm.
+const maxPowInt = 1 << 20
 
 // mpLn returns ln(c × 10^e), for 0 < c < 10^38, with a relative error
 // below 2^-(64n-14). The value must not be 1.
@@ -647,7 +710,7 @@ func mpDigits(n int, v mpf, k int) (c u128, q int, ok bool) {
 	// to eight places.
 	q = int((int64(v.top()-1)*78913)>>18) - (k - 1)
 	for try := 0; try < 4; try++ {
-		hi, lo, near, fits := mpFloor(mpMul(n, v, mpPow10(n, -q)), guardBits)
+		hi, lo, near, fits := mpFloor(mpScale10(n, v, q), guardBits)
 		c = u128{Hi: hi, Lo: lo}
 		switch {
 		case !fits || cmpU(c, pow10U(k)) >= 0:
@@ -830,6 +893,9 @@ func (f *format) pownDec(x dec, n int64) result {
 	if N, exp, ok := powExact(c, e, n); ok {
 		return f.exact(neg, N, exp, mulExp(x.e, n))
 	}
+	if n <= maxPowInt && n >= -maxPowInt {
+		return f.ziv(neg, 0, dec{}, func(m int) (mpf, int) { return mpPowInt(m, mpDec(m, false, c, e), n) })
+	}
 	return f.expOf(neg, func(m int) mpf { return mpMulInt(m, mpLn(m, c, e), n) })
 }
 
@@ -872,6 +938,10 @@ func (f *format) compoundDec(x dec, n int64) result {
 		if N, exp, ok := powExact(b, eb, n); ok {
 			return f.exact(false, N, exp, mulExp(min(x.e, 0), n))
 		}
+	}
+	if short && n <= maxPowInt && n >= -maxPowInt {
+		// 1+x is short enough to be held exactly: raise it.
+		return f.ziv(false, 0, dec{}, func(m int) (mpf, int) { return mpPowInt(m, mpDec(m, false, b, eb), n) })
 	}
 	if short || e < 0 {
 		return f.expOf(false, func(m int) mpf { return mpMulInt(m, mpLn1p(m, x), n) })

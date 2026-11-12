@@ -328,13 +328,25 @@ func mpDiv(n int, x, y mpf) mpf {
 // mpSqrt returns the square root of x, which must be positive, to within
 // four units in the last of n words.
 func mpSqrt(n int, x mpf) mpf {
-	// Newton's iteration s' = (s + x/s)/2 from a power of two at or
-	// above the root and less than twice it. The relative error e of s
-	// becomes e²/(2(1+e)): 1, 1/4, 1/40, then squared and halved each
-	// time, so two steps and then one for each doubling of 5 bits
-	// reach 64n bits; truncation leaves it within a few units.
-	s := mpShift(mpWord(n, 1), (x.top()+1)>>1)
-	for i := 3 + bits.Len(uint(64*n/5)); i > 0; i-- {
+	// Newton's iteration s' = (s + x/s)/2, whose relative error e
+	// becomes e²/(2(1+e)), from the root of the top word of x: that is
+	// right to about 30 bits, and each step doubles them. Truncation
+	// leaves the last step within a few units.
+	t, e := x.m[len(x.m)-1], x.exp+64*(len(x.m)-1)
+	if e&1 != 0 {
+		t, e = t>>1, e+1
+	}
+	// The integer root of t, at least 2^62: Newton from above.
+	r := uint64(1) << 32
+	for {
+		q := (r + t/r) >> 1
+		if q >= r {
+			break
+		}
+		r = q
+	}
+	s := mpShift(mpWord(n, r), e>>1)
+	for i := bits.Len(uint(64*n/30)) + 1; i > 0; i-- {
 		s = mpShift(mpAdd(n, s, mpDiv(n, x, s)), -1)
 	}
 	return s
@@ -350,6 +362,13 @@ func mpPow10(n int, e int) mpf {
 	a := uint(e)
 	if e < 0 {
 		a = uint(-e)
+	}
+	if a < uint(len(pow10Word)) {
+		// A power that is one word: exact, or one division.
+		if e < 0 {
+			return mpDivWord(n, mpWord(n, 1), pow10Word[a])
+		}
+		return mpWord(n, pow10Word[a])
 	}
 	r := mpWord(n+1, 1)
 	if a > 0 {

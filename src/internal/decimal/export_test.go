@@ -31,6 +31,7 @@ var (
 	MpLn         = mpLn
 	MpDec        = mpDec
 	MpDigits     = mpDigits
+	MpScale10    = mpScale10
 	LnTableWords = len(ln2Words)
 
 	DigitsU   = digitsU
@@ -44,5 +45,11 @@ var (
 // MpExp returns e^t and whether the evaluation gave a value.
 func MpExp(n int, t Mpf) (Mpf, bool) {
 	v, ev := mpExp(n, t)
+	return v, ev == evValue
+}
+
+// MpPowInt returns b^k and whether the evaluation gave a value.
+func MpPowInt(n int, b Mpf, k int64) (Mpf, bool) {
+	v, ev := mpPowInt(n, b, k)
 	return v, ev == evValue
 }
