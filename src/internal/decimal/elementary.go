@@ -20,8 +20,9 @@ import (
 // with internal/bid's rounding routine. See ziv for how a result that is
 // not exact is made certain before it is rounded.
 //
-// These functions are written to be right, not fast. They allocate, and
-// they were not tuned as the arithmetic of internal/bid was.
+// These functions are written to be right first. They were not tuned as
+// the arithmetic of internal/bid was, but a first evaluation, which is
+// nearly always the only one, allocates nothing (see arena in mp.go).
 
 type u128 = bid.Uint128
 
@@ -397,90 +398,100 @@ func powExact(c u128, e int, n int64) (N u128, exp int64, ok bool) {
 // Logarithms and the exponential in multiple precision.
 
 // mpLn2 returns ln 2 to n words.
-func mpLn2(n int) mpf {
+func mpLn2(a *arena, n int) mpf {
 	if n <= len(ln2Words) {
 		return mpf{m: ln2Words[len(ln2Words)-n:], exp: ln2Exp + 64*(len(ln2Words)-n)}
 	}
-	return mpLn2Series(n)
+	return mpLn2Series(a, n)
 }
 
 // mpLn2Series computes ln 2 = 2 atanh(1/3).
-func mpLn2Series(n int) mpf { return mpAtanh2(n, mpDivWord(n, mpWord(n, 1), 3)) }
+func mpLn2Series(a *arena, n int) mpf {
+	m := a.mark()
+	return a.ret(m, mpAtanh2(a, n, mpDivWord(a, n, mpWord(a, n, 1), 3)))
+}
 
 // mpLn10 returns ln 10 to n words.
-func mpLn10(n int) mpf {
+func mpLn10(a *arena, n int) mpf {
 	if n <= len(ln10Words) {
 		return mpf{m: ln10Words[len(ln10Words)-n:], exp: ln10Exp + 64*(len(ln10Words)-n)}
 	}
-	return mpLn10Series(n)
+	return mpLn10Series(a, n)
 }
 
 // mpLn10Series computes ln 10 = 3 ln 2 + ln(5/4), where ln(5/4) is
 // 2 atanh(1/9).
-func mpLn10Series(n int) mpf {
-	return mpAdd(n, mpMulWord(n, mpLn2Series(n), 3), mpAtanh2(n, mpDivWord(n, mpWord(n, 1), 9)))
+func mpLn10Series(a *arena, n int) mpf {
+	m := a.mark()
+	return a.ret(m, mpAdd(a, n, mpMulWord(a, n, mpLn2Series(a, n), 3), mpAtanh2(a, n, mpDivWord(a, n, mpWord(a, n, 1), 9))))
 }
 
 // mpAtanh2 returns 2 atanh(z) = ln((1+z)/(1-z)), for |z| <= 1/2, with a
 // relative error below 2^-(64n-12).
-func mpAtanh2(n int, z mpf) mpf {
+func mpAtanh2(a *arena, n int, z mpf) mpf {
 	if z.m == nil {
 		return mpf{}
 	}
 	// atanh(z) = z × (1 + w/3 + w²/5 + ...), w = z². The terms fall by
 	// at least a factor of four, so there are at most 32n of them, each
 	// within a few units in the last place of the sum.
-	w := mpMul(n, z, z)
-	sum := mpWord(n, 1)
-	p := sum
+	m0 := a.mark()
+	w := mpMul(a, n, z, z)
+	sumSlot, pSlot := a.words(n), a.words(n)
+	sum := mpNormTo(sumSlot, []uint64{1}, 0, false)
+	p := mpKeep(pSlot, sum)
 	for k := uint64(3); ; k += 2 {
-		p = mpMul(n, p, w)
+		m := a.mark()
+		p = mpKeep(pSlot, mpMul(a, n, p, w))
 		if p.m == nil || p.top() < -(64*n+2) {
 			break
 		}
-		sum = mpAdd(n, sum, mpDivWord(n, p, k))
+		sum = mpKeep(sumSlot, mpAdd(a, n, sum, mpDivWord(a, n, p, k)))
+		a.release(m)
 	}
-	return mpShift(mpMul(n, z, sum), 1)
+	return a.ret(m0, mpShift(mpMul(a, n, z, sum), 1))
 }
 
 // mpMulInt returns x × k.
-func mpMulInt(n int, x mpf, k int64) mpf {
+func mpMulInt(a *arena, n int, x mpf, k int64) mpf {
 	if k < 0 {
-		return mpNeg(mpMulWord(n, x, uint64(-k)))
+		return mpNeg(mpMulWord(a, n, x, uint64(-k)))
 	}
-	return mpMulWord(n, x, uint64(k))
+	return mpMulWord(a, n, x, uint64(k))
 }
 
 // mpDec returns (-1)^neg × c × 10^e to within four units in the last of n
 // words.
-func mpDec(n int, neg bool, c u128, e int) mpf {
-	v := mpInt(n, c.Hi, c.Lo)
+func mpDec(a *arena, n int, neg bool, c u128, e int) mpf {
+	m := a.mark()
+	v := mpInt(a, n, c.Hi, c.Lo)
 	switch {
 	case e > 0 && e < len(pow10Word):
-		v = mpMulWord(n, v, pow10Word[e])
+		v = mpMulWord(a, n, v, pow10Word[e])
 	case e < 0 && -e < len(pow10Word):
-		v = mpDivWord(n, v, pow10Word[-e])
+		v = mpDivWord(a, n, v, pow10Word[-e])
 	case e != 0:
-		v = mpMul(n, v, mpPow10(n, e))
+		v = mpMul(a, n, v, mpPow10(a, n, e))
 	}
 	v.neg = neg
-	return v
+	return a.ret(m, v)
 }
 
 // mpScale10 returns v × 10^-q to within four units in the last of n
 // words.
-func mpScale10(n int, v mpf, q int) mpf {
+func mpScale10(a *arena, n int, v mpf, q int) mpf {
+	m := a.mark()
 	switch {
 	case q == 0:
-		return mpNorm(n, v.m, v.exp, v.neg)
+		return mpNorm(a, n, v.m, v.exp, v.neg)
 	case q < 0 && q >= -38:
 		p := pow10U(-q)
-		return mpMul(n, v, mpInt(2, p.Hi, p.Lo))
+		return a.ret(m, mpMul(a, n, v, mpInt(a, 2, p.Hi, p.Lo)))
 	case q > 0 && q <= 38:
 		p := pow10U(q)
-		return mpDiv(n, v, mpInt(2, p.Hi, p.Lo))
+		return a.ret(m, mpDiv(a, n, v, mpInt(a, 2, p.Hi, p.Lo)))
 	}
-	return mpMul(n, v, mpPow10(n, -q))
+	return a.ret(m, mpMul(a, n, v, mpPow10(a, n, -q)))
 }
 
 // mpPowInt returns b^k for a positive b and a k of at most 2^20 in
@@ -488,19 +499,19 @@ func mpScale10(n int, v mpf, q int) mpf {
 // 2^-(64n-25) if b is within four units in its last place: each product
 // adds a unit and the error of b, and each squaring doubles what there
 // is, which comes to under 8|k| units.
-func mpPowInt(n int, b mpf, k int64) (mpf, int) {
-	a := uint64(k)
+func mpPowInt(a *arena, n int, b mpf, k int64) (mpf, int) {
+	u := uint64(k)
 	if k < 0 {
-		a = -a
+		u = -u
 	}
 	// b is between 2^(top-1) and 2^top. A power beyond 2^±(2^24) is
 	// beyond every format, and is not computed: its exponent need not
 	// fit an int.
 	huge, tiny := false, false
 	if t := int64(b.top()); t > 1 {
-		huge = a*uint64(t-1) > 1<<24
+		huge = u*uint64(t-1) > 1<<24
 	} else if t < 0 {
-		tiny = a*uint64(-t) > 1<<24
+		tiny = u*uint64(-t) > 1<<24
 	}
 	switch {
 	case huge && k > 0, tiny && k < 0:
@@ -508,17 +519,22 @@ func mpPowInt(n int, b mpf, k int64) (mpf, int) {
 	case huge || tiny:
 		return mpf{}, evUnderflow
 	}
-	r := mpWord(n, 1)
-	for i := bits.Len64(a) - 1; i >= 0; i-- {
-		r = mpMul(n, r, r)
-		if a>>uint(i)&1 != 0 {
-			r = mpMul(n, r, b)
+	m0 := a.mark()
+	slot := a.words(n)
+	r := mpNormTo(slot, []uint64{1}, 0, false)
+	for i := bits.Len64(u) - 1; i >= 0; i-- {
+		m := a.mark()
+		t := mpMul(a, n, r, r)
+		if u>>uint(i)&1 != 0 {
+			t = mpMul(a, n, t, b)
 		}
+		r = mpKeep(slot, t)
+		a.release(m)
 	}
 	if k < 0 {
-		r = mpDiv(n, mpWord(n, 1), r)
+		r = mpDiv(a, n, mpWord(a, n, 1), r)
 	}
-	return r, evValue
+	return a.ret(m0, r), evValue
 }
 
 // maxPowInt is the largest count mpPowInt takes; beyond it a power is
@@ -527,7 +543,7 @@ const maxPowInt = 1 << 20
 
 // mpLn returns ln(c × 10^e), for 0 < c < 10^38, with a relative error
 // below 2^-(64n-14). The value must not be 1.
-func mpLn(n int, c u128, e int) mpf {
+func mpLn(a *arena, n int, c u128, e int) mpf {
 	// Write the value as m × 2^b × 10^(e+d), with c/10^d in [0.3, 3)
 	// and m in [0.707, 1.415]. Then
 	//
@@ -545,28 +561,29 @@ func mpLn(n int, c u128, e int) mpf {
 	p := pow10U(d)
 	b := lenU(c) - lenU(p)
 	// tc/tp is c/p scaled into (1/2, 2), from the top 64 bits of each.
-	tc := mpInt(1, c.Hi, c.Lo).m[0]
-	tp := mpInt(1, p.Hi, p.Lo).m[0]
+	m0 := a.mark()
+	tc := mpInt(a, 1, c.Hi, c.Lo).m[0]
+	tp := mpInt(a, 1, p.Hi, p.Lo).m[0]
 	if cmpU(mulWordU(tc, 70), mulWordU(tp, 99)) >= 0 {
 		b++ // c/(p × 2^b) was at least 99/70, just over the square root of 2
 	} else if cmpU(mulWordU(tc, 99), mulWordU(tp, 70)) < 0 {
 		b-- // or below 70/99
 	}
-	num, den := mpInt(n, c.Hi, c.Lo), mpInt(n, p.Hi, p.Lo)
+	num, den := mpInt(a, n, c.Hi, c.Lo), mpInt(a, n, p.Hi, p.Lo)
 	if b < 0 {
 		num = mpShift(num, -b)
 	} else {
 		den = mpShift(den, b)
 	}
-	z := mpDiv(n, mpSub(n, num, den), mpAdd(n, num, den))
-	v := mpAtanh2(n, z)
+	z := mpDiv(a, n, mpSub(a, n, num, den), mpAdd(a, n, num, den))
+	v := mpAtanh2(a, n, z)
 	if b != 0 {
-		v = mpAdd(n, v, mpMulInt(n, mpLn2(n), int64(b)))
+		v = mpAdd(a, n, v, mpMulInt(a, n, mpLn2(a, n), int64(b)))
 	}
 	if e+d != 0 {
-		v = mpAdd(n, v, mpMulInt(n, mpLn10(n), int64(e+d)))
+		v = mpAdd(a, n, v, mpMulInt(a, n, mpLn10(a, n), int64(e+d)))
 	}
-	return v
+	return a.ret(m0, v)
 }
 
 func mulWordU(a, b uint64) u128 {
@@ -605,20 +622,21 @@ func onePlus(x dec) (c u128, e int, ok bool) {
 
 // mpLn1p returns ln(1+x) for a finite x above -1 and not zero, with a
 // relative error below 2^-(64n-14).
-func mpLn1p(n int, x dec) mpf {
+func mpLn1p(a *arena, n int, x dec) mpf {
 	if c, e, ok := onePlus(x); ok {
-		return mpLn(n, c, e)
+		return mpLn(a, n, c, e)
 	}
+	m := a.mark()
 	c, e := strip(x)
-	xf := mpDec(n, x.neg, c, e)
-	two := mpWord(n, 2)
+	xf := mpDec(a, n, x.neg, c, e)
+	two := mpWord(a, n, 2)
 	if e < 0 {
 		// |x| is below 10^-4: ln(1+x) = 2 atanh(x/(2+x)).
-		return mpAtanh2(n, mpDiv(n, xf, mpAdd(n, two, xf)))
+		return a.ret(m, mpAtanh2(a, n, mpDiv(a, n, xf, mpAdd(a, n, two, xf))))
 	}
 	// x is 10^37 or more: ln(1+x) = ln x + ln(1 + 1/x).
-	inv := mpDiv(n, mpWord(n, 1), xf)
-	return mpAdd(n, mpLn(n, c, e), mpAtanh2(n, mpDiv(n, inv, mpAdd(n, two, inv))))
+	inv := mpDiv(a, n, mpWord(a, n, 1), xf)
+	return a.ret(m, mpAdd(a, n, mpLn(a, n, c, e), mpAtanh2(a, n, mpDiv(a, n, inv, mpAdd(a, n, two, inv)))))
 }
 
 // Outcomes of an evaluation other than a value: the result is a known
@@ -636,7 +654,7 @@ const (
 // mpExp returns e^t with a relative error below 2^-(64n-30), provided t
 // is itself within 2^-(64n-14) of the exact argument, in relative terms.
 // t must not be zero.
-func mpExp(n int, t mpf) (mpf, int) {
+func mpExp(a *arena, n int, t mpf) (mpf, int) {
 	switch {
 	case t.top() > 15:
 		// |t| is 2^15 or more, and e^±32768 is beyond decimal128.
@@ -656,43 +674,52 @@ func mpExp(n int, t mpf) (mpf, int) {
 	// subtraction is done with a word to spare, so that what it cancels
 	// costs nothing.
 	if t.top() < -1 {
-		return mpExpSmall(n, t), evValue // |t| < 1/4
+		return mpExpSmall(a, n, t), evValue // |t| < 1/4
 	}
-	ln2 := mpLn2(n + 1)
+	m := a.mark()
+	ln2 := mpLn2(a, n+1)
 	half := mpf{m: []uint64{1 << 63}, exp: -64, neg: t.neg}
-	_, lo, _, _ := mpFloor(mpAdd(2, mpDiv(2, t, ln2), half), 0)
+	_, lo, _, _ := mpFloor(mpAdd(a, 2, mpDiv(a, 2, t, ln2), half), 0)
 	k := int64(lo) // |t/ln 2| + 1/2 truncated: the nearest integer
 	if t.neg {
 		k = -k
 	}
-	r := mpSub(n+1, t, mpMulInt(n+1, ln2, k))
-	return mpShift(mpExpSmall(n, mpNorm(n, r.m, r.exp, r.neg)), int(k)), evValue
+	r := mpSub(a, n+1, t, mpMulInt(a, n+1, ln2, k))
+	return a.ret(m, mpShift(mpExpSmall(a, n, mpNorm(a, n, r.m, r.exp, r.neg)), int(k))), evValue
 }
 
 // mpExpSmall returns e^r for |r| below 1/2.
-func mpExpSmall(n int, r mpf) mpf {
+func mpExpSmall(a *arena, n int, r mpf) mpf {
 	// e^r = (e^(r/2^j))^(2^j). The series for the inner exponential
 	// needs about 64n/(j+1) terms, each within a unit of the sum, and
 	// each squaring doubles the relative error and adds a unit: about
 	// 2^(j+6) units in the last place at the end, 2^18 for j = 12.
 	const j = 12
-	sum := mpWord(n, 1)
+	m0 := a.mark()
+	sumSlot, termSlot := a.words(n), a.words(n)
+	sum := mpNormTo(sumSlot, []uint64{1}, 0, false)
 	if r.m != nil {
 		r = mpShift(r, -j)
-		sum = mpAdd(n, sum, r)
+		m := a.mark()
+		sum = mpKeep(sumSlot, mpAdd(a, n, sum, r))
+		a.release(m)
 		term := r
 		for i := uint64(2); ; i++ {
-			term = mpDivWord(n, mpMul(n, term, r), i)
+			m := a.mark()
+			term = mpKeep(termSlot, mpDivWord(a, n, mpMul(a, n, term, r), i))
 			if term.m == nil || term.top() < -(64*n+2) {
 				break
 			}
-			sum = mpAdd(n, sum, term)
+			sum = mpKeep(sumSlot, mpAdd(a, n, sum, term))
+			a.release(m)
 		}
 	}
 	for i := 0; i < j; i++ {
-		sum = mpMul(n, sum, sum)
+		m := a.mark()
+		sum = mpKeep(sumSlot, mpMul(a, n, sum, sum))
+		a.release(m)
 	}
-	return sum
+	return a.ret(m0, sum)
 }
 
 // guardBits is the number of low bits of an n-word value that the
@@ -704,13 +731,15 @@ const guardBits = 44
 // integer c with 10^(k-1) <= c < 10^k and c <= v/10^q < c+1. ok is
 // false if an error of up to 2^guardBits units in the last place of v
 // could change c, or make v/10^q an integer.
-func mpDigits(n int, v mpf, k int) (c u128, q int, ok bool) {
+func mpDigits(a *arena, n int, v mpf, k int) (c u128, q int, ok bool) {
 	// The leading digit's exponent is floor(log10 v), which is
 	// floor(log2 v) × log10(2) to within one; 78913/2^18 is log10(2)
 	// to eight places.
 	q = int((int64(v.top()-1)*78913)>>18) - (k - 1)
 	for try := 0; try < 4; try++ {
-		hi, lo, near, fits := mpFloor(mpScale10(n, v, q), guardBits)
+		m := a.mark()
+		hi, lo, near, fits := mpFloor(mpScale10(a, n, v, q), guardBits)
+		a.release(m)
 		c = u128{Hi: hi, Lo: lo}
 		switch {
 		case !fits || cmpU(c, pow10U(k)) >= 0:
@@ -724,10 +753,98 @@ func mpDigits(n int, v mpf, k int) (c u128, q int, ok bool) {
 	return c, q, false
 }
 
-// ziv returns the result for the positive, inexact value that eval
-// approximates, times 10^scale and with the sign neg.
+// An eval is a value for ziv to compute: one of the functions below of
+// the operands it holds.
+type eval struct {
+	op    evalOp
+	c     u128 // the operand, or the base of a power: c × 10^e, c stripped
+	e     int
+	neg   bool  // the sign of the argument of evalExp, or of evalPow's y
+	n     int64 // the count of a power or a root
+	x     dec   // the operand of a compound
+	c2    u128  // evalPow's y: c2 × 10^e2
+	e2    int
+	bit   int  // evalCompoundFar: 2|n|/x is below 2^bit
+	exact bool // evalCompoundFar: x^n is a short decimal
+}
+
+type evalOp uint8
+
+const (
+	evalSqrt        evalOp = iota // the square root of c
+	evalLog                       // |ln(c × 10^e)|
+	evalLog10                     // |log10(c × 10^e)|
+	evalPowInt                    // (c × 10^e)^n by repeated squaring
+	evalCompoundFar               // (1+x)^n for an x of 10^37 or more
+	evalExp                       // e^(±c × 10^e)
+	evalPowLn                     // (c × 10^e)^n as e^(n ln)
+	evalCompound                  // (1+x)^n as e^(n ln(1+x))
+	evalRootn                     // the nth root of c × 10^e
+	evalPow                       // (c × 10^e)^(±c2 × 10^e2)
+)
+
+// run computes the value in n words, with a relative error below
+// 2^-(64n-30), or reports one of the outcomes that are not a value.
+func (v *eval) run(a *arena, n int) (mpf, int) {
+	var t mpf // the argument of an exponential
+	switch v.op {
+	case evalSqrt:
+		return mpSqrt(a, n, mpInt(a, n, v.c.Hi, v.c.Lo)), evValue
+	case evalLog, evalLog10:
+		r := mpLn(a, n, v.c, v.e)
+		if v.op == evalLog10 {
+			r = mpDiv(a, n, r, mpLn10(a, n))
+		}
+		r.neg = false
+		return r, evValue
+	case evalPowInt:
+		return mpPowInt(a, n, mpDec(a, n, false, v.c, v.e), v.n)
+	case evalCompoundFar:
+		// (1+x)^n is x^n × (1+1/x)^n, whose second factor is within
+		// 2|n|/x of 1. A precision that cannot show that difference
+		// would have to grow until it could, which for the largest x is
+		// thousands of digits; instead, at such a precision the result
+		// is x^n and a bit, more or less of it by the sign of n. If x^n
+		// is not a short decimal, the bit is far less than the error
+		// already allowed for in its digits.
+		switch {
+		case v.bit >= -(64*n - 50):
+			t = mpMulInt(a, n, mpLn1p(a, n, v.x), v.n)
+		case !v.exact:
+			t = mpMulInt(a, n, mpLn(a, n, v.c, v.e), v.n)
+		case v.n < 0:
+			return mpf{}, evBelow
+		default:
+			return mpf{}, evAbove
+		}
+	case evalExp:
+		t = mpDec(a, n, v.neg, v.c, v.e)
+	case evalPowLn:
+		t = mpMulInt(a, n, mpLn(a, n, v.c, v.e), v.n)
+	case evalCompound:
+		t = mpMulInt(a, n, mpLn1p(a, n, v.x), v.n)
+	case evalRootn:
+		u := uint64(v.n)
+		if v.n < 0 {
+			u = -u
+		}
+		t = mpDivWord(a, n, mpLn(a, n, v.c, v.e), u)
+		t.neg = t.neg != (v.n < 0)
+	case evalPow:
+		t = mpMul(a, n, mpDec(a, n, v.neg, v.c2, v.e2), mpLn(a, n, v.c, v.e))
+	}
+	return mpExp(a, n, t)
+}
+
+// zivStore is the number of words of an evaluation's arena. The first
+// evaluation of every function fits in it, at either width; see
+// TestArenaStore.
+const zivStore = 256
+
+// ziv returns the result for the positive, inexact value that v
+// computes, times 10^scale and with the sign neg.
 //
-// eval(n) computes the value in n words with a relative error below
+// v.run computes the value in n words with a relative error below
 // 2^-(64n-30). The first p+3 digits of that are taken, and they are the
 // digits of the exact value unless the approximation is so close to a
 // number of p+3 digits that its error could carry it across; then the
@@ -739,14 +856,16 @@ func mpDigits(n int, v mpf, k int) (c u128, q int, ok bool) {
 // in every case, a subnormal result included.
 //
 // Some values are a known number and a difference too small for any
-// reasonable precision to show: e^t for a tiny t is 1 and a bit. eval
-// reports those as evAbove or evBelow, and the result is then the number
+// reasonable precision to show: e^t for a tiny t is 1 and a bit. The
+// evaluation reports those as evAbove or evBelow, and the result is then the number
 // just above or below near, which is 1 unless the caller gives another.
-func (f *format) ziv(neg bool, scale int64, near dec, eval func(n int) (mpf, int)) result {
+func (f *format) ziv(neg bool, scale int64, near dec, v *eval) result {
 	k := f.p + 3
 	if near.c.Hi|near.c.Lo == 0 {
 		near.c.Lo = 1
 	}
+	var store [zivStore]uint64
+	a := arena{buf: store[:0]}
 	for n := f.words; ; n *= 2 {
 		if n > 1<<12 {
 			// A quarter of a million bits have not separated the value
@@ -754,7 +873,8 @@ func (f *format) ziv(neg bool, scale int64, near dec, eval func(n int) (mpf, int
 			// failed to return an exact result.
 			panic("decimal: exact result reached the rounding loop")
 		}
-		v, ev := eval(n)
+		a.release(0)
+		x, ev := v.run(&a, n)
 		r := result{dec: dec{neg: neg}, sticky: true}
 		switch ev {
 		case evAbove, evBelow:
@@ -774,7 +894,7 @@ func (f *format) ziv(neg bool, scale int64, near dec, eval func(n int) (mpf, int
 		case evUnderflow:
 			r.c, r.e = u128{Lo: 1}, -farExp
 		default:
-			c, q, ok := mpDigits(n, v, k)
+			c, q, ok := mpDigits(&a, n, x, k)
 			if !ok {
 				continue
 			}
@@ -806,9 +926,7 @@ func (f *format) sqrtDec(x dec) result {
 	if r, ok := rootU(c, 2); ok {
 		return f.exact(false, r, int64(e/2), floorDiv(int64(x.e), 2))
 	}
-	return f.ziv(false, int64(e/2), dec{}, func(n int) (mpf, int) {
-		return mpSqrt(n, mpInt(n, c.Hi, c.Lo)), evValue
-	})
+	return f.ziv(false, int64(e/2), dec{}, &eval{op: evalSqrt, c: c})
 }
 
 // floorDiv returns the floor of a/b.
@@ -818,12 +936,6 @@ func floorDiv(a, b int64) int64 {
 		q--
 	}
 	return q
-}
-
-// expOf returns e^t for the argument that t computes to n words, which
-// is not zero.
-func (f *format) expOf(neg bool, t func(n int) mpf) result {
-	return f.ziv(neg, 0, dec{}, func(n int) (mpf, int) { return mpExp(n, t(n)) })
 }
 
 // expDec returns e^x.
@@ -838,7 +950,7 @@ func (f *format) expDec(x dec) result {
 		return resOne()
 	}
 	c, e := strip(x)
-	return f.expOf(false, func(n int) mpf { return mpDec(n, x.neg, c, e) })
+	return f.ziv(false, 0, dec{}, &eval{op: evalExp, c: c, e: e, neg: x.neg})
 }
 
 // logDec returns the natural logarithm of x, or the one to base 10.
@@ -862,14 +974,11 @@ func (f *format) logDec(x dec, base10 bool) result {
 		}
 		return f.exact(e < 0, u128{Lo: uint64(a)}, 0, 0)
 	}
-	return f.ziv(belowOne(c, e), 0, dec{}, func(n int) (mpf, int) {
-		v := mpLn(n, c, e)
-		if base10 {
-			v = mpDiv(n, v, mpLn10(n))
-		}
-		v.neg = false
-		return v, evValue
-	})
+	op := evalLog
+	if base10 {
+		op = evalLog10
+	}
+	return f.ziv(belowOne(c, e), 0, dec{}, &eval{op: op, c: c, e: e})
 }
 
 // pownDec returns x^n. x may be a NaN if n is 0.
@@ -893,10 +1002,11 @@ func (f *format) pownDec(x dec, n int64) result {
 	if N, exp, ok := powExact(c, e, n); ok {
 		return f.exact(neg, N, exp, mulExp(x.e, n))
 	}
+	op := evalPowLn
 	if n <= maxPowInt && n >= -maxPowInt {
-		return f.ziv(neg, 0, dec{}, func(m int) (mpf, int) { return mpPowInt(m, mpDec(m, false, c, e), n) })
+		op = evalPowInt
 	}
-	return f.expOf(neg, func(m int) mpf { return mpMulInt(m, mpLn(m, c, e), n) })
+	return f.ziv(neg, 0, dec{}, &eval{op: op, c: c, e: e, n: n})
 }
 
 // compoundDec returns (1+x)^n. x may be a NaN if n is 0.
@@ -941,35 +1051,21 @@ func (f *format) compoundDec(x dec, n int64) result {
 	}
 	if short && n <= maxPowInt && n >= -maxPowInt {
 		// 1+x is short enough to be held exactly: raise it.
-		return f.ziv(false, 0, dec{}, func(m int) (mpf, int) { return mpPowInt(m, mpDec(m, false, b, eb), n) })
+		return f.ziv(false, 0, dec{}, &eval{op: evalPowInt, c: b, e: eb, n: n})
 	}
 	if short || e < 0 {
-		return f.expOf(false, func(m int) mpf { return mpMulInt(m, mpLn1p(m, x), n) })
+		return f.ziv(false, 0, dec{}, &eval{op: evalCompound, x: x, n: n})
 	}
-	// x is 10^37 or more, and (1+x)^n is x^n × (1+1/x)^n, whose second
-	// factor is within 2|n|/x of 1. A precision that cannot show that
-	// difference would have to grow until it could, which for the
-	// largest x is thousands of digits; instead, at such a precision
-	// the result is x^n and a bit, more or less of it by the sign of n.
-	// If x^n is not a short decimal, the bit is far less than the error
-	// already allowed for in its digits.
+	// x is 10^37 or more: the result is x^n, a little more or less of
+	// it; see evalCompoundFar.
 	N, exp, exact := powExact(c, e, n)
 	a := uint64(n)
 	if n < 0 {
 		a = -a
 	}
 	bit := bits.Len64(a) + 1 - 3*(digitsU(c)-1+e) // 2|n|/x < 2^bit: 10 > 2^3
-	return f.ziv(false, 0, dec{c: N, e: clampExp(exp)}, func(m int) (mpf, int) {
-		switch {
-		case bit >= -(64*m - 50):
-			return mpExp(m, mpMulInt(m, mpLn1p(m, x), n))
-		case !exact:
-			return mpExp(m, mpMulInt(m, mpLn(m, c, e), n))
-		case n < 0:
-			return mpf{}, evBelow
-		}
-		return mpf{}, evAbove
-	})
+	return f.ziv(false, 0, dec{c: N, e: clampExp(exp)},
+		&eval{op: evalCompoundFar, c: c, e: e, n: n, x: x, bit: bit, exact: exact})
 }
 
 // rootnDec returns the nth root of x.
@@ -1013,11 +1109,7 @@ func (f *format) rootnDec(x dec, n int64) result {
 			}
 		}
 	}
-	return f.expOf(neg, func(m int) mpf {
-		v := mpDivWord(m, mpLn(m, c, e), a)
-		v.neg = v.neg != (n < 0)
-		return v
-	})
+	return f.ziv(neg, 0, dec{}, &eval{op: evalRootn, c: c, e: e, n: n})
 }
 
 // powDec returns x^y. Either operand may be a NaN.
@@ -1154,9 +1246,7 @@ func (f *format) powDec(x, y dec) result {
 			return f.exact(false, N, exp, pref)
 		}
 	}
-	return f.expOf(neg, func(n int) mpf {
-		return mpMul(n, mpDec(n, y.neg, cy, ey), mpLn(n, cx, ex))
-	})
+	return f.ziv(neg, 0, dec{}, &eval{op: evalPow, c: cx, e: ex, neg: y.neg, c2: cy, e2: ey})
 }
 
 // prefPow returns floor(y × q), the preferred exponent of an exact x^y

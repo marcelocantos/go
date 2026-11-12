@@ -33,10 +33,77 @@ type mpf struct {
 // 2^(top-1) <= |x| < 2^top for a normalized x.
 func (x mpf) top() int { return x.exp + 64*len(x.m) }
 
-// mpNorm returns (-1)^neg × w × 2^exp truncated to n words, where w is an
-// integer of any length, least significant word first.
-func mpNorm(n int, w []uint64, exp int, neg bool) mpf {
-	l := len(w)
+// An arena is where the words of one evaluation's numbers live. Its
+// store is an array on the stack of the function that starts the
+// evaluation, so that an evaluation at the usual precision allocates
+// nothing; a function that runs out of store takes its words from the
+// heap instead, which is all that the precisions of a retry cost.
+//
+// The words are handed out in order and given back in order. A function
+// here that has intermediate results notes where the arena stood when it
+// was called (mark), and before it returns gives back everything since,
+// leaving only its result (ret). A loop does the same for each turn, and
+// keeps what the next turn needs in words it took before the loop
+// (mpKeep). Every function leaves the arena holding its result and
+// nothing else of its own, so a caller's numbers stay valid until the
+// caller itself gives them back.
+type arena struct {
+	buf []uint64 // the words handed out; its capacity is the store
+}
+
+// words returns k words, which are not cleared.
+func (a *arena) words(k int) []uint64 {
+	l := len(a.buf)
+	if l+k > cap(a.buf) {
+		return make([]uint64, k)
+	}
+	a.buf = a.buf[:l+k]
+	return a.buf[l : l+k : l+k]
+}
+
+// zeros returns k words that are zero.
+func (a *arena) zeros(k int) []uint64 {
+	w := a.words(k)
+	clear(w)
+	return w
+}
+
+// mark returns where the arena stands, for release and ret.
+func (a *arena) mark() int { return len(a.buf) }
+
+// release gives back the words handed out since the mark m.
+func (a *arena) release(m int) { a.buf = a.buf[:m] }
+
+// ret gives back the words handed out since the mark m, and returns x,
+// which may be among them, in words of its own.
+func (a *arena) ret(m int, x mpf) mpf {
+	a.release(m)
+	if x.m == nil {
+		return x
+	}
+	w := a.words(len(x.m))
+	copy(w, x.m) // the two may overlap, the copy then moving x down
+	x.m = w
+	return x
+}
+
+// mpKeep copies x, of at most len(slot) words, into slot, and returns
+// it there.
+func mpKeep(slot []uint64, x mpf) mpf {
+	if x.m == nil {
+		return x
+	}
+	s := slot[:len(x.m)]
+	copy(s, x.m)
+	x.m = s
+	return x
+}
+
+// mpNormTo sets m, which must not overlap w, to the first len(m) words
+// of the integer w, least significant word first and of any length, and
+// returns (-1)^neg × w × 2^exp truncated to them.
+func mpNormTo(m, w []uint64, exp int, neg bool) mpf {
+	n, l := len(m), len(w)
 	for l > 0 && w[l-1] == 0 {
 		l--
 	}
@@ -44,7 +111,6 @@ func mpNorm(n int, w []uint64, exp int, neg bool) mpf {
 		return mpf{}
 	}
 	lz := uint(bits.LeadingZeros64(w[l-1]))
-	m := make([]uint64, n)
 	for i := n - 1; i >= 0; i-- {
 		j := l - n + i
 		var hi, lo uint64
@@ -62,12 +128,22 @@ func mpNorm(n int, w []uint64, exp int, neg bool) mpf {
 	return mpf{m, exp + 64*(l-n) - int(lz), neg}
 }
 
+// mpNorm returns (-1)^neg × w × 2^exp truncated to n words, where w is an
+// integer of any length, least significant word first.
+func mpNorm(a *arena, n int, w []uint64, exp int, neg bool) mpf {
+	return mpNormTo(a.words(n), w, exp, neg)
+}
+
 // mpWord returns the integer w as an mpf of n words.
-func mpWord(n int, w uint64) mpf { return mpNorm(n, []uint64{w}, 0, false) }
+func mpWord(a *arena, n int, w uint64) mpf {
+	return mpNormTo(a.words(n), []uint64{w}, 0, false)
+}
 
 // mpInt returns the integer hi×2^64 + lo as an mpf of n words; it is
 // exact for n >= 2.
-func mpInt(n int, hi, lo uint64) mpf { return mpNorm(n, []uint64{lo, hi}, 0, false) }
+func mpInt(a *arena, n int, hi, lo uint64) mpf {
+	return mpNormTo(a.words(n), []uint64{lo, hi}, 0, false)
+}
 
 // mpNeg returns -x.
 func mpNeg(x mpf) mpf {
@@ -84,73 +160,83 @@ func mpShift(x mpf, k int) mpf {
 }
 
 // mpMul returns x × y truncated to n words.
-func mpMul(n int, x, y mpf) mpf {
+func mpMul(a *arena, n int, x, y mpf) mpf {
 	if x.m == nil || y.m == nil {
 		return mpf{}
 	}
-	w := make([]uint64, len(x.m)+len(y.m))
-	for i, a := range x.m {
+	r := a.words(n)
+	m := a.mark()
+	w := a.zeros(len(x.m) + len(y.m))
+	for i, xi := range x.m {
 		var c uint64
-		for j, b := range y.m {
-			hi, lo := bits.Mul64(a, b)
+		for j, yj := range y.m {
+			hi, lo := bits.Mul64(xi, yj)
 			var c1, c2 uint64
 			lo, c1 = bits.Add64(lo, w[i+j], 0)
 			lo, c2 = bits.Add64(lo, c, 0)
 			w[i+j] = lo
-			c = hi + c1 + c2 // cannot overflow: a×b + two words < 2^128
+			c = hi + c1 + c2 // cannot overflow: xi×yj + two words < 2^128
 		}
 		w[i+len(y.m)] = c
 	}
-	return mpNorm(n, w, x.exp+y.exp, x.neg != y.neg)
+	z := mpNormTo(r, w, x.exp+y.exp, x.neg != y.neg)
+	a.release(m)
+	return z
 }
 
 // mpMulWord returns x × w truncated to n words.
-func mpMulWord(n int, x mpf, w uint64) mpf {
+func mpMulWord(a *arena, n int, x mpf, w uint64) mpf {
 	if x.m == nil || w == 0 {
 		return mpf{}
 	}
-	p := make([]uint64, len(x.m)+1)
+	r := a.words(n)
+	m := a.mark()
+	p := a.words(len(x.m) + 1)
 	var c uint64
-	for i, a := range x.m {
-		hi, lo := bits.Mul64(a, w)
+	for i, xi := range x.m {
+		hi, lo := bits.Mul64(xi, w)
 		var c1 uint64
 		p[i], c1 = bits.Add64(lo, c, 0)
 		c = hi + c1
 	}
 	p[len(x.m)] = c
-	return mpNorm(n, p, x.exp, x.neg)
+	z := mpNormTo(r, p, x.exp, x.neg)
+	a.release(m)
+	return z
 }
 
 // mpDivWord returns x / w truncated to n words. w must not be zero.
-func mpDivWord(n int, x mpf, w uint64) mpf {
+func mpDivWord(a *arena, n int, x mpf, w uint64) mpf {
 	if x.m == nil {
 		return mpf{}
 	}
+	r := a.words(n)
+	m := a.mark()
 	// Divide x.m scaled by whole words, so that the quotient has a word
 	// more than n whatever w is.
 	k := max(n-len(x.m), 0) + 1
-	q := make([]uint64, len(x.m)+k)
-	var r uint64
+	q := a.words(len(x.m) + k)
+	var rem uint64
 	for i := len(x.m) - 1; i >= 0; i-- {
-		q[i+k], r = bits.Div64(r, x.m[i], w)
+		q[i+k], rem = bits.Div64(rem, x.m[i], w)
 	}
 	for i := k - 1; i >= 0; i-- {
-		q[i], r = bits.Div64(r, 0, w)
+		q[i], rem = bits.Div64(rem, 0, w)
 	}
-	return mpNorm(n, q, x.exp-64*k, x.neg)
+	z := mpNormTo(r, q, x.exp-64*k, x.neg)
+	a.release(m)
+	return z
 }
 
-// shlWords returns w × 2^s as a new slice.
-func shlWords(w []uint64, s uint) []uint64 {
+// shlWords sets r, which is zero and long enough, to w × 2^s.
+func shlWords(r, w []uint64, s uint) {
 	ws, bs := int(s/64), s%64
-	r := make([]uint64, len(w)+ws+1)
 	for i, x := range w {
 		r[i+ws] |= x << bs
 		if bs != 0 {
 			r[i+ws+1] = x >> (64 - bs)
 		}
 	}
-	return r
 }
 
 // cmpWords compares the integers a and b, which have the same length.
@@ -167,12 +253,12 @@ func cmpWords(a, b []uint64) int {
 }
 
 // mpAdd returns x + y truncated to n words.
-func mpAdd(n int, x, y mpf) mpf {
+func mpAdd(a *arena, n int, x, y mpf) mpf {
 	if x.m == nil {
-		return mpNorm(n, y.m, y.exp, y.neg)
+		return mpNorm(a, n, y.m, y.exp, y.neg)
 	}
 	if y.m == nil {
-		return mpNorm(n, x.m, x.exp, x.neg)
+		return mpNorm(a, n, x.m, x.exp, x.neg)
 	}
 	if x.top() < y.top() {
 		x, y = y, x
@@ -181,35 +267,41 @@ func mpAdd(n int, x, y mpf) mpf {
 	// leaving it out changes the sum by less than one unit in the last
 	// place.
 	if x.top()-y.top() > 64*n+64 {
-		return mpNorm(n, x.m, x.exp, x.neg)
+		return mpNorm(a, n, x.m, x.exp, x.neg)
 	}
+	r := a.words(n)
+	m := a.mark()
+	// Both as integers at the lesser exponent, with a word for the shift
+	// and a word for the carry.
 	e := min(x.exp, y.exp)
-	a := shlWords(x.m, uint(x.exp-e))
-	b := shlWords(y.m, uint(y.exp-e))
-	l := max(len(a), len(b)) + 1
-	a = append(a, make([]uint64, l-len(a))...)
-	b = append(b, make([]uint64, l-len(b))...)
+	sx, sy := uint(x.exp-e), uint(y.exp-e)
+	l := max(len(x.m)+int(sx/64), len(y.m)+int(sy/64)) + 2
+	p, q := a.zeros(l), a.zeros(l)
+	shlWords(p, x.m, sx)
+	shlWords(q, y.m, sy)
+	neg := x.neg
 	if x.neg == y.neg {
 		var c uint64
-		for i := range a {
-			a[i], c = bits.Add64(a[i], b[i], c)
+		for i := range p {
+			p[i], c = bits.Add64(p[i], q[i], c)
 		}
-		return mpNorm(n, a, e, x.neg)
+	} else {
+		if cmpWords(p, q) < 0 {
+			p, q = q, p
+			neg = y.neg
+		}
+		var c uint64
+		for i := range p {
+			p[i], c = bits.Sub64(p[i], q[i], c)
+		}
 	}
-	neg := x.neg
-	if cmpWords(a, b) < 0 {
-		a, b = b, a
-		neg = y.neg
-	}
-	var c uint64
-	for i := range a {
-		a[i], c = bits.Sub64(a[i], b[i], c)
-	}
-	return mpNorm(n, a, e, neg)
+	z := mpNormTo(r, p, e, neg)
+	a.release(m)
+	return z
 }
 
 // mpSub returns x - y truncated to n words.
-func mpSub(n int, x, y mpf) mpf { return mpAdd(n, x, mpNeg(y)) }
+func mpSub(a *arena, n int, x, y mpf) mpf { return mpAdd(a, n, x, mpNeg(y)) }
 
 // mpCmpAbs compares |x| and |y|, both normalized.
 func mpCmpAbs(x, y mpf) int {
@@ -249,23 +341,19 @@ func mpCmpAbs(x, y mpf) int {
 	return 0
 }
 
-// divWords returns the quotient of the integer u by the integer v, whose
-// top bit is set (Knuth, The Art of Computer Programming, volume 2,
-// section 4.3.1, algorithm D). u is overwritten.
-func divWords(u, v []uint64) []uint64 {
+// divWords sets q to the quotient of the integer u by the integer v,
+// whose top bit is set (Knuth, The Art of Computer Programming, volume
+// 2, section 4.3.1, algorithm D). The top word of u is zero, q has
+// len(u)-len(v) words, and u is overwritten.
+func divWords(q, u, v []uint64) {
 	nv := len(v)
-	if len(u) < nv {
-		return nil
-	}
-	q := make([]uint64, len(u)-nv+1)
 	if nv == 1 {
 		var r uint64
-		for i := len(u) - 1; i >= 0; i-- {
+		for i := len(q) - 1; i >= 0; i-- {
 			q[i], r = bits.Div64(r, u[i], v[0])
 		}
-		return q
+		return
 	}
-	u = append(u, 0)
 	vn1, vn2 := v[nv-1], v[nv-2]
 	for j := len(q) - 1; j >= 0; j-- {
 		// Estimate the quotient word from the top two words of what
@@ -308,26 +396,32 @@ func divWords(u, v []uint64) []uint64 {
 		}
 		q[j] = qhat
 	}
-	return q
 }
 
 // mpDiv returns x / y truncated to n words. y must be normalized and not
 // zero.
-func mpDiv(n int, x, y mpf) mpf {
+func mpDiv(a *arena, n int, x, y mpf) mpf {
 	if x.m == nil {
 		return mpf{}
 	}
+	r := a.words(n)
+	m := a.mark()
 	// Scale the dividend by whole words so that the quotient has at
-	// least n+1 of them.
+	// least n+1 of them, and give it the zero top word the division
+	// wants.
 	k := max(n+1+len(y.m)-len(x.m), 0)
-	u := make([]uint64, k+len(x.m), k+len(x.m)+1)
+	u := a.zeros(k + len(x.m) + 1)
 	copy(u[k:], x.m)
-	return mpNorm(n, divWords(u, y.m), x.exp-64*k-y.exp, x.neg != y.neg)
+	q := a.words(len(u) - len(y.m))
+	divWords(q, u, y.m)
+	z := mpNormTo(r, q, x.exp-64*k-y.exp, x.neg != y.neg)
+	a.release(m)
+	return z
 }
 
 // mpSqrt returns the square root of x, which must be positive, to within
 // four units in the last of n words.
-func mpSqrt(n int, x mpf) mpf {
+func mpSqrt(a *arena, n int, x mpf) mpf {
 	// Newton's iteration s' = (s + x/s)/2, whose relative error e
 	// becomes e²/(2(1+e)), from the root of the top word of x: that is
 	// right to about 30 bits, and each step doubles them. Truncation
@@ -345,45 +439,51 @@ func mpSqrt(n int, x mpf) mpf {
 		}
 		r = q
 	}
-	s := mpShift(mpWord(n, r), e>>1)
+	slot := a.words(n)
+	s := mpShift(mpNormTo(slot, []uint64{r}, 0, false), e>>1)
 	for i := bits.Len(uint(64*n/30)) + 1; i > 0; i-- {
-		s = mpShift(mpAdd(n, s, mpDiv(n, x, s)), -1)
+		m := a.mark()
+		s = mpKeep(slot, mpShift(mpAdd(a, n, s, mpDiv(a, n, x, s)), -1))
+		a.release(m)
 	}
 	return s
 }
 
 // mpPow10 returns 10^e to within two units in the last of n words.
-func mpPow10(n int, e int) mpf {
+func mpPow10(a *arena, n int, e int) mpf {
 	// Powers by squaring at one more word than asked for: each of the
 	// at most 2×log2|e| products adds a unit of that precision and the
 	// squarings double what is there, which stays below |e| units in
 	// all, far less than one unit of n words for any exponent a decimal
 	// format reaches.
-	a := uint(e)
+	u := uint(e)
 	if e < 0 {
-		a = uint(-e)
+		u = uint(-e)
 	}
-	if a < uint(len(pow10Word)) {
+	m0 := a.mark()
+	if u < uint(len(pow10Word)) {
 		// A power that is one word: exact, or one division.
 		if e < 0 {
-			return mpDivWord(n, mpWord(n, 1), pow10Word[a])
+			return a.ret(m0, mpDivWord(a, n, mpWord(a, n, 1), pow10Word[u]))
 		}
-		return mpWord(n, pow10Word[a])
+		return mpWord(a, n, pow10Word[u])
 	}
-	r := mpWord(n+1, 1)
-	if a > 0 {
-		p := mpWord(n+1, 10)
-		for i := bits.Len(a) - 1; i >= 0; i-- {
-			r = mpMul(n+1, r, r)
-			if a>>uint(i)&1 != 0 {
-				r = mpMul(n+1, r, p)
-			}
+	slot := a.words(n + 1)
+	r := mpNormTo(slot, []uint64{1}, 0, false)
+	p := mpWord(a, n+1, 10)
+	for i := bits.Len(u) - 1; i >= 0; i-- {
+		m := a.mark()
+		t := mpMul(a, n+1, r, r)
+		if u>>uint(i)&1 != 0 {
+			t = mpMul(a, n+1, t, p)
 		}
+		r = mpKeep(slot, t)
+		a.release(m)
 	}
 	if e < 0 {
-		return mpDiv(n, mpWord(n+1, 1), r)
+		return a.ret(m0, mpDiv(a, n, mpWord(a, n+1, 1), r))
 	}
-	return mpNorm(n, r.m, r.exp, false)
+	return a.ret(m0, mpNorm(a, n, r.m, r.exp, false))
 }
 
 // mpFloor returns the integer part of |x| as a 128-bit integer. near
