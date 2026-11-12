@@ -15,7 +15,7 @@ import (
 // exponential and the logarithms on the operands a program has: amounts,
 // rates and counts. A row named exact has a result that is found from the
 // coefficients; the others go through the multiple-precision arithmetic
-// once, and allocate there.
+// once.
 func BenchmarkElementary(b *testing.B) {
 	const m = 7
 	rates := []decimal128{0.0125, 0.0450, 0.0001, 0.0875, 0.0025, 0.0650, 0.1200, 0.0399}
@@ -97,6 +97,31 @@ func BenchmarkElementary(b *testing.B) {
 			s = decimal.Compound(decimal64(rates[i&m]), 360)
 		}
 		moneySink64 = s
+	})
+	// The three rows below have the operands of the UW-Madison risk
+	// and banking benchmarks: a base or a rate that is a quotient, with
+	// all 34 digits.
+	b.Run("Pown/128/quotient", func(b *testing.B) { // a growth factor over five years
+		var s decimal128
+		for i := 0; i < b.N; i++ {
+			s = decimal.Pown(1+rates[i&m]/7, 5)
+		}
+		moneySink128 = s
+	})
+	b.Run("Pow/128/twelfth", func(b *testing.B) { // a monthly factor from a yearly one
+		var s decimal128
+		twelfth := decimal128(1) / 12
+		for i := 0; i < b.N; i++ {
+			s = decimal.Pow(1+rates[i&m], twelfth)
+		}
+		moneySink128 = s
+	})
+	b.Run("Compound/128/quotient", func(b *testing.B) { // a discount factor at a monthly rate
+		var s decimal128
+		for i := 0; i < b.N; i++ {
+			s = decimal.Compound(rates[i&m]/12, -360+(i&m)*40)
+		}
+		moneySink128 = s
 	})
 	b.Run("Rootn/128", func(b *testing.B) { // a monthly factor from a yearly one
 		var s decimal128

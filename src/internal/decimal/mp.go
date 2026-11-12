@@ -111,6 +111,20 @@ func mpNormTo(m, w []uint64, exp int, neg bool) mpf {
 		return mpf{}
 	}
 	lz := uint(bits.LeadingZeros64(w[l-1]))
+	if d := l - n; d >= 1 {
+		// The usual case, a product or a quotient: w is longer than m,
+		// and every word of m has a word of w below it.
+		s := w[d-1 : l]
+		s = s[:len(m)+1]
+		if lz == 0 {
+			copy(m, s[1:])
+		} else {
+			for i := range m {
+				m[i] = s[i+1]<<lz | s[i]>>(64-lz)
+			}
+		}
+		return mpf{m, exp + 64*d - int(lz), neg}
+	}
 	for i := n - 1; i >= 0; i-- {
 		j := l - n + i
 		var hi, lo uint64
@@ -166,6 +180,14 @@ func mpMul(a *arena, n int, x, y mpf) mpf {
 	}
 	r := a.words(n)
 	m := a.mark()
+	if len(x.m) == 3 && len(y.m) == 3 {
+		// The precision of a first evaluation.
+		w := a.words(6)
+		mulWords3((*[6]uint64)(w), (*[3]uint64)(x.m), (*[3]uint64)(y.m))
+		z := mpNormTo(r, w, x.exp+y.exp, x.neg != y.neg)
+		a.release(m)
+		return z
+	}
 	w := a.zeros(len(x.m) + len(y.m))
 	for i, xi := range x.m {
 		var c uint64
@@ -182,6 +204,45 @@ func mpMul(a *arena, n int, x, y mpf) mpf {
 	z := mpNormTo(r, w, x.exp+y.exp, x.neg != y.neg)
 	a.release(m)
 	return z
+}
+
+// mulWords3 sets w to x × y.
+func mulWords3(w *[6]uint64, x, y *[3]uint64) {
+	// Each row is x[i] × y, three products whose low words go in at
+	// word i and whose high words go in a word higher. A row's sum
+	// cannot carry out of its top word: the total is below 2^384.
+	var c uint64
+	h0, l0 := bits.Mul64(x[0], y[0])
+	h1, l1 := bits.Mul64(x[0], y[1])
+	h2, l2 := bits.Mul64(x[0], y[2])
+	w0 := l0
+	w1, c := bits.Add64(l1, h0, 0)
+	w2, c := bits.Add64(l2, h1, c)
+	w3 := h2 + c
+
+	h0, l0 = bits.Mul64(x[1], y[0])
+	h1, l1 = bits.Mul64(x[1], y[1])
+	h2, l2 = bits.Mul64(x[1], y[2])
+	w1, c = bits.Add64(w1, l0, 0)
+	w2, c = bits.Add64(w2, l1, c)
+	w3, c = bits.Add64(w3, l2, c)
+	w4 := c
+	w2, c = bits.Add64(w2, h0, 0)
+	w3, c = bits.Add64(w3, h1, c)
+	w4 += h2 + c
+
+	h0, l0 = bits.Mul64(x[2], y[0])
+	h1, l1 = bits.Mul64(x[2], y[1])
+	h2, l2 = bits.Mul64(x[2], y[2])
+	w2, c = bits.Add64(w2, l0, 0)
+	w3, c = bits.Add64(w3, l1, c)
+	w4, c = bits.Add64(w4, l2, c)
+	w5 := c
+	w3, c = bits.Add64(w3, h0, 0)
+	w4, c = bits.Add64(w4, h1, c)
+	w5 += h2 + c
+
+	w[0], w[1], w[2], w[3], w[4], w[5] = w0, w1, w2, w3, w4, w5
 }
 
 // mpMulWord returns x × w truncated to n words.
@@ -217,15 +278,35 @@ func mpDivWord(a *arena, n int, x mpf, w uint64) mpf {
 	k := max(n-len(x.m), 0) + 1
 	q := a.words(len(x.m) + k)
 	var rem uint64
-	for i := len(x.m) - 1; i >= 0; i-- {
-		q[i+k], rem = bits.Div64(rem, x.m[i], w)
-	}
-	for i := k - 1; i >= 0; i-- {
-		q[i], rem = bits.Div64(rem, 0, w)
+	if w>>32 == 0 {
+		// A divisor of a series, a small count: two machine divisions
+		// a word, where bits.Div64 is a function of many steps.
+		for i := len(x.m) - 1; i >= 0; i-- {
+			q[i+k], rem = divSmall(rem, x.m[i], w)
+		}
+		for i := k - 1; i >= 0; i-- {
+			q[i], rem = divSmall(rem, 0, w)
+		}
+	} else {
+		for i := len(x.m) - 1; i >= 0; i-- {
+			q[i+k], rem = bits.Div64(rem, x.m[i], w)
+		}
+		for i := k - 1; i >= 0; i-- {
+			q[i], rem = bits.Div64(rem, 0, w)
+		}
 	}
 	z := mpNormTo(r, q, x.exp-64*k, x.neg)
 	a.release(m)
 	return z
+}
+
+// divSmall returns the quotient and remainder of hi×2^64 + lo by d, for
+// hi < d < 2^32.
+func divSmall(hi, lo, d uint64) (q, r uint64) {
+	t := hi<<32 | lo>>32
+	qh, r := t/d, t%d
+	t = r<<32 | lo&(1<<32-1)
+	return qh<<32 | t/d, t % d
 }
 
 // shlWords sets r, which is zero and long enough, to w × 2^s.
@@ -237,19 +318,6 @@ func shlWords(r, w []uint64, s uint) {
 			r[i+ws+1] = x >> (64 - bs)
 		}
 	}
-}
-
-// cmpWords compares the integers a and b, which have the same length.
-func cmpWords(a, b []uint64) int {
-	for i := len(a) - 1; i >= 0; i-- {
-		if a[i] != b[i] {
-			if a[i] < b[i] {
-				return -1
-			}
-			return 1
-		}
-	}
-	return 0
 }
 
 // mpAdd returns x + y truncated to n words.
@@ -269,33 +337,45 @@ func mpAdd(a *arena, n int, x, y mpf) mpf {
 	if x.top()-y.top() > 64*n+64 {
 		return mpNorm(a, n, x.m, x.exp, x.neg)
 	}
+	// The sum of the magnitudes, or the larger less the smaller.
+	sub := x.neg != y.neg
+	if sub && mpCmpAbs(x, y) < 0 {
+		x, y = y, x
+	}
 	r := a.words(n)
 	m := a.mark()
-	// Both as integers at the lesser exponent, with a word for the shift
-	// and a word for the carry.
+	// x as an integer at the lesser exponent, with a word for the shift
+	// and a word for the carry; y is added to it, or taken from it, a
+	// word at a time as it is shifted.
 	e := min(x.exp, y.exp)
 	sx, sy := uint(x.exp-e), uint(y.exp-e)
 	l := max(len(x.m)+int(sx/64), len(y.m)+int(sy/64)) + 2
-	p, q := a.zeros(l), a.zeros(l)
+	p := a.zeros(l)
 	shlWords(p, x.m, sx)
-	shlWords(q, y.m, sy)
-	neg := x.neg
-	if x.neg == y.neg {
-		var c uint64
-		for i := range p {
-			p[i], c = bits.Add64(p[i], q[i], c)
+	ws, bs := int(sy/64), sy%64
+	var c, low uint64 // low is what the word below shifted into this one
+	t := p[ws:]
+	for i, w := range y.m {
+		v := w<<bs | low
+		low = 0
+		if bs != 0 {
+			low = w >> (64 - bs)
 		}
-	} else {
-		if cmpWords(p, q) < 0 {
-			p, q = q, p
-			neg = y.neg
-		}
-		var c uint64
-		for i := range p {
-			p[i], c = bits.Sub64(p[i], q[i], c)
+		if sub {
+			t[i], c = bits.Sub64(t[i], v, c)
+		} else {
+			t[i], c = bits.Add64(t[i], v, c)
 		}
 	}
-	z := mpNormTo(r, p, e, neg)
+	for i := len(y.m); c|low != 0; i++ {
+		if sub {
+			t[i], c = bits.Sub64(t[i], low, c)
+		} else {
+			t[i], c = bits.Add64(t[i], low, c)
+		}
+		low = 0
+	}
+	z := mpNormTo(r, p, e, x.neg)
 	a.release(m)
 	return z
 }
@@ -341,16 +421,46 @@ func mpCmpAbs(x, y mpf) int {
 	return 0
 }
 
+// reciprocal returns floor((2^128-1)/d) - 2^64, for a d whose top bit is
+// set: the reciprocal that divRecip divides by (Möller and Granlund,
+// Improved division by invariant integers, IEEE Transactions on
+// Computers, 2011).
+func reciprocal(d uint64) uint64 {
+	v, _ := bits.Div64(^d, ^uint64(0), d)
+	return v
+}
+
+// divRecip returns the quotient and remainder of hi×2^64 + lo by d,
+// whose top bit is set and whose reciprocal is inv, for hi < d
+// (algorithm 4 of the paper): two products where bits.Div64 divides.
+func divRecip(hi, lo, d, inv uint64) (q, r uint64) {
+	q, q0 := bits.Mul64(inv, hi)
+	q0, c := bits.Add64(q0, lo, 0)
+	q, _ = bits.Add64(q, hi, c)
+	q++
+	r = lo - q*d
+	if r > q0 {
+		q--
+		r += d
+	}
+	if r >= d {
+		q++
+		r -= d
+	}
+	return q, r
+}
+
 // divWords sets q to the quotient of the integer u by the integer v,
 // whose top bit is set (Knuth, The Art of Computer Programming, volume
 // 2, section 4.3.1, algorithm D). The top word of u is zero, q has
 // len(u)-len(v) words, and u is overwritten.
 func divWords(q, u, v []uint64) {
 	nv := len(v)
+	inv := reciprocal(v[nv-1])
 	if nv == 1 {
 		var r uint64
 		for i := len(q) - 1; i >= 0; i-- {
-			q[i], r = bits.Div64(r, u[i], v[0])
+			q[i], r = divRecip(r, u[i], v[0], inv)
 		}
 		return
 	}
@@ -362,7 +472,7 @@ func divWords(q, u, v []uint64) {
 		qhat := ^uint64(0)
 		if ujn := u[j+nv]; ujn < vn1 {
 			var rhat uint64
-			qhat, rhat = bits.Div64(ujn, u[j+nv-1], vn1)
+			qhat, rhat = divRecip(ujn, u[j+nv-1], vn1, inv)
 			for {
 				hi, lo := bits.Mul64(qhat, vn2)
 				if hi < rhat || hi == rhat && lo <= u[j+nv-2] {

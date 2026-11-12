@@ -50,9 +50,14 @@ type format struct {
 	words  int // words of mp precision for the first attempt
 }
 
+// The first attempt must hold the p+3 digits that are taken, the
+// guardBits that may be wrong, and enough bits between the two that the
+// test of mpDigits seldom fails. Three words do for both widths:
+// decimal128's 37 digits are 123 bits, which with the guard leaves 25,
+// so that about one evaluation in 2^24 is done twice.
 var (
 	format64  = format{bid.Precision64, bid.MinExp64, bid.MaxExp64, 3}
-	format128 = format{bid.Precision128, bid.MinExp128, bid.MaxExp128, 4}
+	format128 = format{bid.Precision128, bid.MinExp128, bid.MaxExp128, 3}
 )
 
 // farExp is an exponent beyond every format's range in either direction,
@@ -442,14 +447,35 @@ func mpAtanh2(a *arena, n int, z mpf) mpf {
 	p := mpKeep(pSlot, sum)
 	for k := uint64(3); ; k += 2 {
 		m := a.mark()
-		p = mpKeep(pSlot, mpMul(a, n, p, w))
+		nk := termWords(n, p.top()+w.top())
+		p = mpKeep(pSlot, mpMul(a, nk, mpTop(p, nk), mpTop(w, nk)))
 		if p.m == nil || p.top() < -(64*n+2) {
 			break
 		}
-		sum = mpKeep(sumSlot, mpAdd(a, n, sum, mpDivWord(a, n, p, k)))
+		sum = mpKeep(sumSlot, mpAdd(a, n, sum, mpDivWord(a, nk, p, k)))
 		a.release(m)
 	}
 	return a.ret(m0, mpShift(mpMul(a, n, z, sum), 1))
+}
+
+// termWords returns the number of words, at most n, in which to compute
+// a term below 2^top of a series whose sum is near 1 and wanted to n
+// words. A term so computed, and a power it is the product of, is wrong
+// by at most a few units of its own last place for each term before it;
+// with the bits allowed here beyond those of the sum, that is less than
+// a unit of the sum's last place for any of the at most 32n terms, as
+// it is for a term computed in all n words.
+func termWords(n, top int) int {
+	return min(max((64*n+top+8+bits.Len(uint(n))+63)/64, 1), n)
+}
+
+// mpTop returns x truncated to its first k words, if it has more.
+func mpTop(x mpf, k int) mpf {
+	if d := len(x.m) - k; d > 0 {
+		x.m = x.m[d:]
+		x.exp += 64 * d
+	}
+	return x
 }
 
 // mpMulInt returns x × k.
@@ -470,11 +496,50 @@ func mpDec(a *arena, n int, neg bool, c u128, e int) mpf {
 		v = mpMulWord(a, n, v, pow10Word[e])
 	case e < 0 && -e < len(pow10Word):
 		v = mpDivWord(a, n, v, pow10Word[-e])
+	case e > 0 && e <= maxPow10Exact:
+		v = mpMul(a, n, v, mpPow10Exact(a, e))
+	case e < 0 && -e <= maxPow10Exact:
+		v = mpDiv(a, n, v, mpPow10Exact(a, -e))
 	case e != 0:
 		v = mpMul(a, n, v, mpPow10(a, n, e))
 	}
 	v.neg = neg
 	return a.ret(m, v)
+}
+
+// maxPow10Exact is the largest k for which mpPow10Exact gives 10^k: the
+// square of the largest power of ten of 128 bits.
+const maxPow10Exact = 76
+
+// mpPow10Exact returns 10^k, exactly, for k in [0, maxPow10Exact]. A
+// product or a quotient by it is one operation, where a power of ten
+// from mpPow10 costs a chain of squarings and its error.
+func mpPow10Exact(a *arena, k int) mpf {
+	var w [4]uint64
+	if k <= 38 {
+		p := pow10U(k)
+		w[0], w[1] = p.Lo, p.Hi
+	} else {
+		// 10^38 × 10^(k-38), two words by two.
+		x, y := pow10U(38), pow10U(k-38)
+		var c uint64
+		w[1], w[0] = bits.Mul64(x.Lo, y.Lo)
+		hi, lo := bits.Mul64(x.Hi, y.Lo)
+		w[1], c = bits.Add64(w[1], lo, 0)
+		w[2] = hi + c
+		hi, lo = bits.Mul64(x.Lo, y.Hi)
+		w[1], c = bits.Add64(w[1], lo, 0)
+		w[2], c = bits.Add64(w[2], hi, c)
+		w[3] = c
+		hi, lo = bits.Mul64(x.Hi, y.Hi)
+		w[2], c = bits.Add64(w[2], lo, 0)
+		w[3] += hi + c
+	}
+	l := len(w)
+	for w[l-1] == 0 {
+		l--
+	}
+	return mpNormTo(a.words(l), w[:l], 0, false)
 }
 
 // mpScale10 returns v × 10^-q to within four units in the last of n
@@ -484,12 +549,10 @@ func mpScale10(a *arena, n int, v mpf, q int) mpf {
 	switch {
 	case q == 0:
 		return mpNorm(a, n, v.m, v.exp, v.neg)
-	case q < 0 && q >= -38:
-		p := pow10U(-q)
-		return a.ret(m, mpMul(a, n, v, mpInt(a, 2, p.Hi, p.Lo)))
-	case q > 0 && q <= 38:
-		p := pow10U(q)
-		return a.ret(m, mpDiv(a, n, v, mpInt(a, 2, p.Hi, p.Lo)))
+	case q < 0 && q >= -maxPow10Exact:
+		return a.ret(m, mpMul(a, n, v, mpPow10Exact(a, -q)))
+	case q > 0 && q <= maxPow10Exact:
+		return a.ret(m, mpDiv(a, n, v, mpPow10Exact(a, q)))
 	}
 	return a.ret(m, mpMul(a, n, v, mpPow10(a, n, -q)))
 }
@@ -706,7 +769,8 @@ func mpExpSmall(a *arena, n int, r mpf) mpf {
 		term := r
 		for i := uint64(2); ; i++ {
 			m := a.mark()
-			term = mpKeep(termSlot, mpDivWord(a, n, mpMul(a, n, term, r), i))
+			ni := termWords(n, term.top()+r.top())
+			term = mpKeep(termSlot, mpDivWord(a, ni, mpMul(a, ni, mpTop(term, ni), mpTop(r, ni)), i))
 			if term.m == nil || term.top() < -(64*n+2) {
 				break
 			}
