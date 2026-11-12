@@ -146,10 +146,8 @@ func canonical128(x bid.Uint128) bid.Uint128 {
 }
 
 // TestDPDNonCanonical fixes the treatment of the non-canonical encodings
-// of both kinds, which is what the bits functions of a DPD target do with
-// them: math.Decimal64frombits stores the DPD encoding of the value its
-// BID operand reads as, and math.Decimal64bits returns the canonical BID
-// encoding of what is stored.
+// of both kinds at an explicit conversion between encodings. Raw math bits
+// functions perform no such conversion and preserve every stored bit.
 func TestDPDNonCanonical(t *testing.T) {
 	// A BID coefficient above 10^16 - 1 reads as zero, with its sign and
 	// exponent: 0x6C7386F26FC10000 has coefficient 10^16 and exponent 0.

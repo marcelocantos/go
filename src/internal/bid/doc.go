@@ -24,14 +24,15 @@
 // [Zero128Hi] in the high word, so that all bits clear is the zero value 0E+0,
 // the result of converting the integer 0. Callers convert at the boundary:
 // cmd/compile for operators and constants, the runtime for hashing and
-// printing, and math's bits functions for everyone else.
+// printing, and math/decimal's BID and DPD codecs for everyone else. Math's
+// bits functions do not convert: they return the stored words as they are.
 //
 // On linux/ppc64le, whose decimal floating-point unit works on the densely
 // packed decimal (DPD) encoding, the memory form is the DPD encoding XORed
 // with [DPDZero64] or [DPDZero128Hi] instead, and the compiler lowers the
 // operators to the hardware's instructions. [DPDFromBID64], [BIDFromDPD64]
-// and their decimal128 forms convert at the boundary there: the kernel,
-// the bits functions and every wire format stay BID on every target.
+// and their decimal128 forms convert at the boundary there: the kernel
+// and every wire format stay BID on every target.
 //
 // Every exported function that works at one width is width-suffixed:
 // Add64 operates on decimal64 bit patterns and Add128 on decimal128 bit

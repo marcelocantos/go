@@ -8,7 +8,10 @@ package bid
 // decimal floating-point unit, so that the compiler can lower the decimal
 // operators to its instructions with no conversion. See native.go.
 
-const NativeDPD = true
+// NativeEncoding identifies the encoding before the zero mask is applied.
+const NativeEncoding = EncodingDPD
+
+const NativeDPD = NativeEncoding == EncodingDPD
 
 const (
 	NativeZero64    = DPDZero64

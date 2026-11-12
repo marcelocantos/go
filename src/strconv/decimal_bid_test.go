@@ -8,7 +8,6 @@ package strconv_test
 
 import (
 	"internal/bid"
-	"math"
 	"math/big"
 	"math/decimal"
 	"math/rand"
@@ -105,10 +104,10 @@ var dtoaTests = []dtoaTest{
 	{decimal.Inf[decimal64](-1), 'f', 6, "-Inf"},
 
 	// Negative zero
-	{math.Decimal64frombits(1 << 63), 'g', -1, "-0e-398"},
-	{math.Decimal64frombits(1 << 63), 'e', 6, "-0.000000e+00"},
-	{math.Decimal64frombits(1 << 63), 'f', 6, "-0.000000"},
-	{math.Decimal64frombits(1 << 63), 'f', 1, "-0.0"},
+	{decimal.BID64frombits(1 << 63), 'g', -1, "-0e-398"},
+	{decimal.BID64frombits(1 << 63), 'e', 6, "-0.000000e+00"},
+	{decimal.BID64frombits(1 << 63), 'f', 6, "-0.000000"},
+	{decimal.BID64frombits(1 << 63), 'f', 1, "-0.0"},
 
 	// Decimal-specific: exact representation (unlike float)
 	{decimal64(0.1), 'f', 20, "0.10000000000000000000"},
@@ -147,7 +146,7 @@ var dtoaTests = []dtoaTest{
 	{decimal64(1225), 'g', 3, "1.22e+03"},
 	{decimal64(1e-5), 'g', 3, "1e-05"},
 	{decimal64(-0.0001234), 'g', 2, "-0.00012"},
-	{math.Decimal64frombits(1<<63 | 0x31c0000000000001), 'g', 3, "-1"}, // -1E+0 (exponent at the bias)
+	{decimal.BID64frombits(1<<63 | 0x31c0000000000001), 'g', 3, "-1"}, // -1E+0 (exponent at the bias)
 }
 
 func zeros(n int) string {
@@ -789,11 +788,11 @@ func TestAppendDecimalCanonicalCapacity(t *testing.T) {
 					var x decimal128
 					if width.bits == 64 {
 						bits, _ := bid.Pack64(neg, c.Uint64(), exp)
-						x = decimal128(math.Decimal64frombits(bits))
+						x = decimal128(decimal.BID64frombits(bits))
 					} else {
 						hi := new(big.Int).Rsh(new(big.Int).Set(c), 64).Uint64()
 						bits, _ := bid.Pack128(neg, bid.Uint128{Hi: hi, Lo: c.Uint64()}, exp)
-						x = math.Decimal128frombits(bits.Hi, bits.Lo)
+						x = decimal.BID128frombits(bits.Hi, bits.Lo)
 					}
 					for _, format := range []byte{'e', 'E', 'g', 'G', 'f', '?'} {
 						e := exp + n - 1
@@ -846,7 +845,7 @@ func TestAppendDecimalShort(t *testing.T) {
 		for exp := -8; exp <= 2; exp++ {
 			for _, neg := range []bool{false, true} {
 				bits, _ := bid.Pack128(neg, bid.Uint128{Lo: c.Uint64()}, exp)
-				x := math.Decimal128frombits(bits.Hi, bits.Lo)
+				x := decimal.BID128frombits(bits.Hi, bits.Lo)
 				n := len(coeff)
 				for _, format := range []byte{'e', 'E', 'g', 'G', 'f', '?'} {
 					for _, prec := range []int{-1, 2} {
@@ -951,7 +950,7 @@ func FuzzDecimal64RoundTrip(f *testing.F) {
 		if !bid.IsCanonical64(b) {
 			t.Skip("not an encoding Format produces from")
 		}
-		d := math.Decimal64frombits(b)
+		d := decimal.BID64frombits(b)
 		for _, prec := range []int{-1, -2} {
 			s := FormatDecimal(decimal128(d), 'e', prec, 64)
 			d2, err := parseDecimal64(s)
@@ -960,12 +959,12 @@ func FuzzDecimal64RoundTrip(f *testing.F) {
 			}
 			if decimal.IsNaN[decimal64](d) {
 				if !decimal.IsNaN[decimal64](d2) {
-					t.Fatalf("%#x: NaN came back as %q (%#x)", b, s, math.Decimal64bits(d2))
+					t.Fatalf("%#x: NaN came back as %q (%#x)", b, s, decimal.BID64bits(d2))
 				}
 				continue
 			}
-			if !bid.Equal64(math.Decimal64bits(d2), b) {
-				t.Fatalf("%#x: %q parses to %#x", b, s, math.Decimal64bits(d2))
+			if !bid.Equal64(decimal.BID64bits(d2), b) {
+				t.Fatalf("%#x: %q parses to %#x", b, s, decimal.BID64bits(d2))
 			}
 			// -2 keeps the quantum, so formatting again gives the same text.
 			if prec == -2 {
@@ -990,7 +989,7 @@ func FuzzDecimal128RoundTrip(f *testing.F) {
 		if !bid.IsCanonical128(x) {
 			t.Skip("not an encoding Format produces from")
 		}
-		d := math.Decimal128frombits(hi, lo)
+		d := decimal.BID128frombits(hi, lo)
 		for _, prec := range []int{-1, -2} {
 			s := FormatDecimal(d, 'e', prec, 128)
 			d2, err := ParseDecimal(s, 128)
@@ -1003,7 +1002,7 @@ func FuzzDecimal128RoundTrip(f *testing.F) {
 				}
 				continue
 			}
-			hi2, lo2 := math.Decimal128bits(d2)
+			hi2, lo2 := decimal.BID128bits(d2)
 			if !bid.Equal128(bid.Uint128{Hi: hi2, Lo: lo2}, x) {
 				t.Fatalf("%#x:%#x: %q parses to %#x:%#x", hi, lo, s, hi2, lo2)
 			}
@@ -1107,7 +1106,7 @@ func TestFormatDecimalCanonical(t *testing.T) {
 	for _, tt := range tests {
 		// bid.Pack64 is the kernel's packer; the digits here don't come from it.
 		bits, _ := bid.Pack64(tt.neg, tt.coeff, tt.exp)
-		d := math.Decimal64frombits(bits)
+		d := decimal.BID64frombits(bits)
 		for _, c := range []struct {
 			fmt  byte
 			want string
@@ -1123,8 +1122,8 @@ func TestFormatDecimalCanonical(t *testing.T) {
 		if err != nil {
 			t.Errorf("ParseDecimal(%q): %v", tt.g, err)
 		}
-		if math.Decimal64bits(back) != bits {
-			t.Errorf("ParseDecimal(%q) = %#x, want %#x", tt.g, math.Decimal64bits(back), bits)
+		if decimal.BID64bits(back) != bits {
+			t.Errorf("ParseDecimal(%q) = %#x, want %#x", tt.g, decimal.BID64bits(back), bits)
 		}
 	}
 }
@@ -1192,14 +1191,14 @@ func parseDecimal64(s string) (decimal64, error) {
 func TestFormatDecimalMatchesKernel(t *testing.T) {
 	check128 := func(x bid.Uint128) {
 		t.Helper()
-		d := math.Decimal128frombits(x.Hi, x.Lo)
+		d := decimal.BID128frombits(x.Hi, x.Lo)
 		if got, want := FormatDecimal(d, 'g', -1, 128), string(bid.Append128(nil, x)); got != want {
 			t.Fatalf("FormatDecimal(%#016x%016x, 'g', -1, 128) = %q, kernel %q", x.Hi, x.Lo, got, want)
 		}
 	}
 	check64 := func(x uint64) {
 		t.Helper()
-		d := decimal128(math.Decimal64frombits(x))
+		d := decimal128(decimal.BID64frombits(x))
 		if got, want := FormatDecimal(d, 'g', -1, 64), string(bid.Append64(nil, x)); got != want {
 			t.Fatalf("FormatDecimal(%#016x, 'g', -1, 64) = %q, kernel %q", x, got, want)
 		}

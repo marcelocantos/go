@@ -12,7 +12,7 @@ import "math/bits"
 // IBM Z operate on. On those targets a decimal value in memory is its DPD
 // encoding XORed with DPDZero64 or DPDZero128Hi, as it is its BID encoding
 // XORed with Zero64 or Zero128Hi everywhere else, and the conversions below
-// run where the BID encoding is needed: at the math bits functions, and
+// run where the BID encoding is needed: in explicit codecs and
 // around the kernel calls that remain. The kernel itself stays BID only.
 //
 // A DPD encoding has the same sign bit and the same combination-field
@@ -43,6 +43,12 @@ import "math/bits"
 // sign and exponent, and a BID NaN payload of 10^(Precision-1) or more
 // becomes zero, so the round trip BID → DPD → BID returns the canonical
 // form of a non-canonical BID operand rather than its bits.
+
+// Encodings used by the native representation, before its zero mask.
+const (
+	EncodingBID = iota
+	EncodingDPD
+)
 
 // DPDZero64 is the DPD encoding of 0E+0 in decimal64, and DPDZero128Hi the
 // high word of 0E+0 in decimal128, whose low word is zero. They have the

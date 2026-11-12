@@ -11,7 +11,6 @@
 package main
 
 import (
-	"math"
 	"math/decimal"
 )
 
@@ -27,14 +26,14 @@ func main() {
 	var a, b decimal128 = 1e20, 1e-20
 	println(a + b)
 
-	big := math.Decimal128frombits(0x5ffe314dc6448d93, 0x38c15b0a00000000) // 1E+6144
+	big := decimal.BID128frombits(0x5ffe314dc6448d93, 0x38c15b0a00000000) // 1E+6144
 	var ten decimal128 = 10
 	println(big, big*ten, -big*ten)
 
 	println(decimal.NaN[decimal64](), decimal.NaN[decimal128]())
 	println(decimal.Inf[decimal64](1), decimal.Inf[decimal64](-1))
 	println(decimal.Inf[decimal128](1), decimal.Inf[decimal128](-1))
-	println(math.Decimal64frombits(1<<63), decimal64(0), decimal64(0.00))
+	println(decimal.BID64frombits(1<<63), decimal64(0), decimal64(0.00))
 
 	var zeroValue decimal64
 	println(zeroValue)

@@ -6,62 +6,34 @@
 
 package math
 
-import (
-	"internal/bid"
-	"unsafe"
-)
+import "unsafe"
 
-// In memory, a decimal value is its native encoding XORed with the native
-// encoding of the integer 0 converted to its type, so that all bits clear is
-// the zero value. The native encoding is BID on every target but
-// linux/ppc64le, where it is DPD, the encoding of POWER's decimal
-// floating-point unit. The functions below convert between the memory form
-// and BID, which is what they exchange on every target.
-//
-// A decimal value always holds an encoding that its target's arithmetic
-// produces or accepts, and where the native encoding is DPD it cannot hold
-// a non-canonical BID encoding: Decimal64frombits stores the value its
-// operand reads as under IEEE 754-2019 clause 3.5.2 (a coefficient above
-// 10^16 - 1 reads as zero, a NaN payload of 10^15 or more as zero, and the
-// reserved bits of an infinity or NaN are ignored), and Decimal64bits then
-// returns the canonical encoding of that value. On every target, therefore,
-// Decimal64bits(Decimal64frombits(b)) == b for every canonical b, and is
-// the canonical encoding of b's value otherwise; whether a non-canonical b
-// survives is the target's choice. The same holds for decimal128.
+// Decimal64bits returns the exact stored representation of d, including the
+// zero-value XOR. The representation is implementation-dependent; see
+// math/decimal.NativeRepresentation and the explicit BID and DPD codecs in
+// math/decimal. No encoding conversion or canonicalization is performed.
+// Decimal64bits(Decimal64frombits(x)) == x for every x.
+func Decimal64bits(d decimal64) uint64 { return *(*uint64)(unsafe.Pointer(&d)) }
 
-// Decimal64bits returns the IEEE 754-2019 BID (Binary Integer Decimal)
-// representation of d as a uint64.
-// Decimal64bits(Decimal64frombits(x)) == x for every canonical x.
-func Decimal64bits(d decimal64) uint64 {
-	return bid.FromNative64(*(*uint64)(unsafe.Pointer(&d)) ^ bid.NativeZero64)
-}
+// Decimal64frombits returns the decimal64 with the exact stored bits b.
+// Every bit pattern is preserved, including non-canonical encodings.
+// Decimal64frombits(Decimal64bits(x)) has exactly the same bits as x.
+func Decimal64frombits(b uint64) decimal64 { return *(*decimal64)(unsafe.Pointer(&b)) }
 
-// Decimal64frombits returns the decimal64 value corresponding to the
-// IEEE 754-2019 BID encoding b.
-// Decimal64frombits(Decimal64bits(x)) == x.
-func Decimal64frombits(b uint64) decimal64 {
-	b = bid.ToNative64(b) ^ bid.NativeZero64
-	return *(*decimal64)(unsafe.Pointer(&b))
-}
-
-// Decimal128bits returns the IEEE 754-2019 BID (Binary Integer Decimal)
-// representation of d as two uint64 values (hi, lo).
-// Decimal128frombits(Decimal128bits(x)) == x.
+// Decimal128bits returns the exact stored representation of d as its high
+// and low uint64 words, including the zero-value XOR. See [Decimal64bits].
+// The word order of the result is independent of the target's byte order.
 func Decimal128bits(d decimal128) (hi, lo uint64) {
-	p := (*[2]uint64)(unsafe.Pointer(&d))
-	x := bid.FromNative128(bid.Uint128{Hi: p[1] ^ bid.NativeZero128Hi, Lo: p[0]}) // stored as [lo, hi] on every target
-	return x.Hi, x.Lo
+	p := (*[2]uint64)(unsafe.Pointer(&d)) // decimal128 is stored as [lo, hi]
+	return p[1], p[0]
 }
 
-// Decimal128frombits returns the decimal128 value corresponding to the
-// IEEE 754-2019 BID encoding given by hi and lo.
-// Decimal128bits(Decimal128frombits(hi, lo)) == (hi, lo) for every
-// canonical (hi, lo).
+// Decimal128frombits returns the decimal128 with the exact stored words hi
+// and lo. Every bit pattern is preserved without encoding conversion.
+// Decimal128bits(Decimal128frombits(hi, lo)) returns (hi, lo) for every pair.
 func Decimal128frombits(hi, lo uint64) decimal128 {
-	x := bid.ToNative128(bid.Uint128{Hi: hi, Lo: lo})
 	var d decimal128
 	p := (*[2]uint64)(unsafe.Pointer(&d))
-	p[0] = x.Lo
-	p[1] = x.Hi ^ bid.NativeZero128Hi
+	p[0], p[1] = lo, hi
 	return d
 }

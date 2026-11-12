@@ -54,19 +54,19 @@ var decimal128Operands = []bid.Uint128{
 func TestDecimal64Operators(t *testing.T) {
 	const mode = bid.ToNearestEven
 	for _, xb := range decimal64Operands {
-		x := math.Decimal64frombits(xb)
+		x := decimal.BID64frombits(xb)
 		for _, yb := range decimal64Operands {
-			y := math.Decimal64frombits(yb)
+			y := decimal.BID64frombits(yb)
 			for _, c := range []struct {
 				op        string
 				got, want uint64
 			}{
-				{"+", math.Decimal64bits(x + y), bid.Add64(xb, yb, mode)},
-				{"-", math.Decimal64bits(x - y), bid.Sub64(xb, yb, mode)},
-				{"*", math.Decimal64bits(x * y), bid.Mul64(xb, yb, mode)},
-				{"/", math.Decimal64bits(x / y), bid.Div64(xb, yb, mode)},
-				{"min", math.Decimal64bits(min(x, y)), bid.Min64(xb, yb)},
-				{"max", math.Decimal64bits(max(x, y)), bid.Max64(xb, yb)},
+				{"+", decimal.BID64bits(x + y), bid.Add64(xb, yb, mode)},
+				{"-", decimal.BID64bits(x - y), bid.Sub64(xb, yb, mode)},
+				{"*", decimal.BID64bits(x * y), bid.Mul64(xb, yb, mode)},
+				{"/", decimal.BID64bits(x / y), bid.Div64(xb, yb, mode)},
+				{"min", decimal.BID64bits(min(x, y)), bid.Min64(xb, yb)},
+				{"max", decimal.BID64bits(max(x, y)), bid.Max64(xb, yb)},
 			} {
 				if c.got != c.want {
 					t.Errorf("%#x %s %#x = %#x, want %#x", xb, c.op, yb, c.got, c.want)
@@ -94,13 +94,13 @@ func TestDecimal64Operators(t *testing.T) {
 func TestDecimal128Operators(t *testing.T) {
 	const mode = bid.ToNearestEven
 	bits := func(d decimal128) bid.Uint128 {
-		hi, lo := math.Decimal128bits(d)
+		hi, lo := decimal.BID128bits(d)
 		return bid.Uint128{Hi: hi, Lo: lo}
 	}
 	for _, xb := range decimal128Operands {
-		x := math.Decimal128frombits(xb.Hi, xb.Lo)
+		x := decimal.BID128frombits(xb.Hi, xb.Lo)
 		for _, yb := range decimal128Operands {
-			y := math.Decimal128frombits(yb.Hi, yb.Lo)
+			y := decimal.BID128frombits(yb.Hi, yb.Lo)
 			for _, c := range []struct {
 				op        string
 				got, want bid.Uint128
@@ -175,15 +175,15 @@ func decimalWordOperands() []bid.Uint128 {
 func TestDecimal128WordOperators(t *testing.T) {
 	const mode = bid.ToNearestEven
 	bits := func(d decimal128) bid.Uint128 {
-		hi, lo := math.Decimal128bits(d)
+		hi, lo := decimal.BID128bits(d)
 		return bid.Uint128{Hi: hi, Lo: lo}
 	}
 	operands := decimalWordOperands()
 	n := 0
 	for _, xb := range operands {
-		x := math.Decimal128frombits(xb.Hi, xb.Lo)
+		x := decimal.BID128frombits(xb.Hi, xb.Lo)
 		for _, yb := range operands {
-			y := math.Decimal128frombits(yb.Hi, yb.Lo)
+			y := decimal.BID128frombits(yb.Hi, yb.Lo)
 			n++
 			for _, c := range []struct {
 				op        string
@@ -242,18 +242,18 @@ func TestDecimal64WordOperators(t *testing.T) {
 		0x6c7386f26fc10000) // a second form above the largest coefficient: it reads as zero
 	n := 0
 	for _, xb := range operands {
-		x := math.Decimal64frombits(xb)
+		x := decimal.BID64frombits(xb)
 		for _, yb := range operands {
-			y := math.Decimal64frombits(yb)
+			y := decimal.BID64frombits(yb)
 			n++
 			for _, c := range []struct {
 				op        string
 				got, want uint64
 			}{
-				{"+", math.Decimal64bits(x + y), bid.Add64(xb, yb, mode)},
-				{"-", math.Decimal64bits(x - y), bid.Sub64(xb, yb, mode)},
-				{"*", math.Decimal64bits(x * y), bid.Mul64(xb, yb, mode)},
-				{"/", math.Decimal64bits(x / y), bid.Div64(xb, yb, mode)},
+				{"+", decimal.BID64bits(x + y), bid.Add64(xb, yb, mode)},
+				{"-", decimal.BID64bits(x - y), bid.Sub64(xb, yb, mode)},
+				{"*", decimal.BID64bits(x * y), bid.Mul64(xb, yb, mode)},
+				{"/", decimal.BID64bits(x / y), bid.Div64(xb, yb, mode)},
 			} {
 				if c.got != c.want {
 					t.Fatalf("%#x %s %#x = %#x, want %#x", xb, c.op, yb, c.got, c.want)
@@ -288,7 +288,7 @@ func TestDecimal64WordOperators(t *testing.T) {
 // special values, in every rounding mode and in one that is none of them.
 func TestDecimal128QuantizeGrid(t *testing.T) {
 	bits := func(d decimal128) bid.Uint128 {
-		hi, lo := math.Decimal128bits(d)
+		hi, lo := decimal.BID128bits(d)
 		return bid.Uint128{Hi: hi, Lo: lo}
 	}
 	modes := []struct {
@@ -302,7 +302,7 @@ func TestDecimal128QuantizeGrid(t *testing.T) {
 	operands := decimalWordOperands()
 	n := 0
 	for _, xb := range operands {
-		x := math.Decimal128frombits(xb.Hi, xb.Lo)
+		x := decimal.BID128frombits(xb.Hi, xb.Lo)
 		for _, c := range []struct {
 			op        string
 			got, want bid.Uint128
@@ -318,7 +318,7 @@ func TestDecimal128QuantizeGrid(t *testing.T) {
 			}
 		}
 		for _, yb := range operands {
-			y := math.Decimal128frombits(yb.Hi, yb.Lo)
+			y := decimal.BID128frombits(yb.Hi, yb.Lo)
 			n++
 			if got, want := bits(decimal.Quantize(x, y)), bid.Quantize128(xb, yb, bid.ToNearestEven); got != want {
 				t.Fatalf("Quantize(%#x, %#x) = %#x, want %#x", xb, yb, got, want)
@@ -336,14 +336,14 @@ func TestDecimal128QuantizeGrid(t *testing.T) {
 func TestDecimalConversions(t *testing.T) {
 	const mode = bid.ToNearestEven
 	bits := func(d decimal128) bid.Uint128 {
-		hi, lo := math.Decimal128bits(d)
+		hi, lo := decimal.BID128bits(d)
 		return bid.Uint128{Hi: hi, Lo: lo}
 	}
 	same64 := func(a, b float64) bool { return a == b || a != a && b != b }
 	same32 := func(a, b float32) bool { return a == b || a != a && b != b }
 
 	for _, xb := range decimal64Operands {
-		x := math.Decimal64frombits(xb)
+		x := decimal.BID64frombits(xb)
 		wantI, _ := bid.Int64From64(xb, bid.TowardZero)
 		if got := int64(x); got != wantI {
 			t.Errorf("int64(%#x) = %d, want %d", xb, got, wantI)
@@ -366,7 +366,7 @@ func TestDecimalConversions(t *testing.T) {
 		}
 	}
 	for _, xb := range decimal128Operands {
-		x := math.Decimal128frombits(xb.Hi, xb.Lo)
+		x := decimal.BID128frombits(xb.Hi, xb.Lo)
 		wantI, _ := bid.Int64From128(xb, bid.TowardZero)
 		if got := int64(x); got != wantI {
 			t.Errorf("int64(%#x) = %d, want %d", xb, got, wantI)
@@ -384,40 +384,40 @@ func TestDecimalConversions(t *testing.T) {
 		if got, want := float32(x), bid.Float32From128(xb, mode); !same32(got, want) {
 			t.Errorf("float32(%#x) = %v, want %v", xb, got, want)
 		}
-		if got, want := math.Decimal64bits(decimal64(x)), bid.Narrow(xb, mode); got != want {
+		if got, want := decimal.BID64bits(decimal64(x)), bid.Narrow(xb, mode); got != want {
 			t.Errorf("decimal64(%#x) = %#x, want %#x", xb, got, want)
 		}
 	}
 	for _, i := range []int64{0, 1, -1, 12345, -12345, math.MaxInt64, math.MinInt64} {
-		if got, want := math.Decimal64bits(decimal64(i)), bid.Int64To64(i, mode); got != want {
+		if got, want := decimal.BID64bits(decimal64(i)), bid.Int64To64(i, mode); got != want {
 			t.Errorf("decimal64(int64 %d) = %#x, want %#x", i, got, want)
 		}
 		if got, want := bits(decimal128(i)), bid.Int64To128(i); got != want {
 			t.Errorf("decimal128(int64 %d) = %#x, want %#x", i, got, want)
 		}
-		if got, want := math.Decimal64bits(decimal64(int16(i))), bid.Int64To64(int64(int16(i)), mode); got != want {
+		if got, want := decimal.BID64bits(decimal64(int16(i))), bid.Int64To64(int64(int16(i)), mode); got != want {
 			t.Errorf("decimal64(int16 %d) = %#x, want %#x", int16(i), got, want)
 		}
 		u := uint64(i)
-		if got, want := math.Decimal64bits(decimal64(u)), bid.Uint64To64(u, mode); got != want {
+		if got, want := decimal.BID64bits(decimal64(u)), bid.Uint64To64(u, mode); got != want {
 			t.Errorf("decimal64(uint64 %d) = %#x, want %#x", u, got, want)
 		}
 		if got, want := bits(decimal128(u)), bid.Uint64To128(u); got != want {
 			t.Errorf("decimal128(uint64 %d) = %#x, want %#x", u, got, want)
 		}
-		if got, want := math.Decimal64bits(decimal64(uint8(u))), bid.Uint64To64(uint64(uint8(u)), mode); got != want {
+		if got, want := decimal.BID64bits(decimal64(uint8(u))), bid.Uint64To64(uint64(uint8(u)), mode); got != want {
 			t.Errorf("decimal64(uint8 %d) = %#x, want %#x", uint8(u), got, want)
 		}
 	}
 	for _, f := range []float64{0, 0.5, 0.1, -2, 1e23, 1e-320, math.Inf(1), math.Inf(-1), math.NaN(), math.MaxFloat64} {
-		if got, want := math.Decimal64bits(decimal64(f)), bid.Float64To64(f, mode); got != want {
+		if got, want := decimal.BID64bits(decimal64(f)), bid.Float64To64(f, mode); got != want {
 			t.Errorf("decimal64(float64 %v) = %#x, want %#x", f, got, want)
 		}
 		if got, want := bits(decimal128(f)), bid.Float64To128(f, mode); got != want {
 			t.Errorf("decimal128(float64 %v) = %#x, want %#x", f, got, want)
 		}
 		g := float32(f)
-		if got, want := math.Decimal64bits(decimal64(g)), bid.Float32To64(g, mode); got != want {
+		if got, want := decimal.BID64bits(decimal64(g)), bid.Float32To64(g, mode); got != want {
 			t.Errorf("decimal64(float32 %v) = %#x, want %#x", g, got, want)
 		}
 		if got, want := bits(decimal128(g)), bid.Float32To128(g, mode); got != want {
@@ -443,17 +443,17 @@ func TestDecimalFloat32OneRounding(t *testing.T) {
 // before it used internal/bid.
 func TestDecimalReproducers(t *testing.T) {
 	var one, d decimal64 = 1, 70000000000000
-	if got, want := math.Decimal64bits(one/d), uint64(0x2e25134734894925); got != want {
+	if got, want := decimal.BID64bits(one/d), uint64(0x2e25134734894925); got != want {
 		t.Errorf("1 / 70000000000000 = %#x, want %#x (1.428571428571429E-14)", got, want)
 	}
-	big := math.Decimal128frombits(0x5ffe314dc6448d93, 0x38c15b0a00000000) // 1E+6144
+	big := decimal.BID128frombits(0x5ffe314dc6448d93, 0x38c15b0a00000000) // 1E+6144
 	var ten decimal128 = 10
 	if got := big * ten; !decimal.IsInf[decimal128](got, 1) {
 		t.Errorf("1e6144 * 10 is not +Inf")
 	}
 	// The exact sum has 41 digits; it rounds to 10^33 × 10^-13.
 	var a, b decimal128 = 1e20, 1e-20
-	hi, lo := math.Decimal128bits(a + b)
+	hi, lo := decimal.BID128bits(a + b)
 	if want := (bid.Uint128{Hi: 0x3026314dc6448d93, Lo: 0x38c15b0a00000000}); hi != want.Hi || lo != want.Lo {
 		t.Errorf("1e20 + 1e-20 = %#x %#x, want %#x", hi, lo, want)
 	}
