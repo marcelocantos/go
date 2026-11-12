@@ -11,6 +11,11 @@
 // explicit mode, the quantum of a value, and reading and writing the payload
 // of a NaN.
 //
+// It also provides the square root, the powers, the exponential and the
+// logarithms. Those are correctly rounded: each returns the value of its
+// type nearest to the exact result, with ties to even. They are slower
+// than the arithmetic, and they allocate.
+//
 // Each function is generic over [Decimal] and computes in the format of its
 // type argument, so a decimal64 result is rounded once, as a decimal64, not
 // computed in decimal128 and narrowed. The arithmetic is internal/bid's,
@@ -184,3 +189,158 @@ func Quantum[D Decimal](x D) D { return impl.Quantum[D](x) }
 // largest exponent at which it is representable. Reduce(1.50) is 1.5, and
 // Reduce of any zero is a zero with exponent 0 and the sign of x.
 func Reduce[D Decimal](x D) D { return impl.Reduce[D](x) }
+
+// Sqrt returns the square root of x, correctly rounded. An exact root
+// has the exponent nearest to half that of x: Sqrt(2.25) is 1.5 and
+// Sqrt(4.00) is 2.0.
+//
+// Special cases are:
+//
+//	Sqrt(+Inf) = +Inf
+//	Sqrt(±0) = ±0
+//	Sqrt(x < 0) = NaN
+//	Sqrt(NaN) = NaN
+func Sqrt[D Decimal](x D) D { return impl.Sqrt[D](x) }
+
+// Exp returns e**x, the base-e exponential of x, correctly rounded.
+//
+// Special cases are:
+//
+//	Exp(+Inf) = +Inf
+//	Exp(-Inf) = 0
+//	Exp(±0) = 1
+//	Exp(NaN) = NaN
+//
+// Very large values overflow to +Inf and very small values underflow to
+// 0.
+func Exp[D Decimal](x D) D { return impl.Exp[D](x) }
+
+// Log returns the natural logarithm of x, correctly rounded.
+//
+// Special cases are:
+//
+//	Log(+Inf) = +Inf
+//	Log(1) = 0
+//	Log(±0) = -Inf
+//	Log(x < 0) = NaN
+//	Log(NaN) = NaN
+func Log[D Decimal](x D) D { return impl.Log[D](x) }
+
+// Log10 returns the decimal logarithm of x, correctly rounded. The
+// logarithm of a power of ten is exact: Log10(1000) is 3 and Log10(0.01)
+// is -2. The special cases are the same as for [Log].
+func Log10[D Decimal](x D) D { return impl.Log10[D](x) }
+
+// Pow returns x**y, the base-x exponential of y, correctly rounded. A
+// result that is exact has the exponent nearest to y times that of x, as
+// repeated multiplication would give it: Pow(1.5, 2) is 2.25 and
+// Pow(2.25, 0.5) is 1.5.
+//
+// Special cases are (in order):
+//
+//	Pow(x, ±0) = 1 for any x
+//	Pow(1, y) = 1 for any y
+//	Pow(x, NaN) = NaN
+//	Pow(NaN, y) = NaN
+//	Pow(±0, y) = ±Inf for y an odd integer < 0
+//	Pow(±0, -Inf) = +Inf
+//	Pow(±0, +Inf) = +0
+//	Pow(±0, y) = +Inf for finite y < 0 and not an odd integer
+//	Pow(±0, y) = ±0 for y an odd integer > 0
+//	Pow(±0, y) = +0 for finite y > 0 and not an odd integer
+//	Pow(-1, ±Inf) = 1
+//	Pow(x, +Inf) = +Inf for |x| > 1
+//	Pow(x, -Inf) = +0 for |x| > 1
+//	Pow(x, +Inf) = +0 for |x| < 1
+//	Pow(x, -Inf) = +Inf for |x| < 1
+//	Pow(+Inf, y) = +Inf for y > 0
+//	Pow(+Inf, y) = +0 for y < 0
+//	Pow(-Inf, y) = Pow(-0, -y)
+//	Pow(x, y) = NaN for finite x < 0 and finite non-integer y
+func Pow[D Decimal](x, y D) D { return impl.Pow[D](x, y) }
+
+// Pown returns x**n for an integer n, correctly rounded (the pown
+// operation of IEEE 754-2019 clause 9.2). The exponent of an exact result
+// is the nearest to n times that of x: Pown(1.5, 2) is 2.25 and
+// Pown(2, -2) is 0.25.
+//
+// Special cases are:
+//
+//	Pown(x, 0) = 1 for any x, even a NaN
+//	Pown(±0, n) = ±Inf for odd n < 0
+//	Pown(±0, n) = +Inf for even n < 0
+//	Pown(±0, n) = ±0 for odd n > 0
+//	Pown(±0, n) = +0 for even n > 0
+//	Pown(±Inf, n) = Pown(±0, -n)
+//	Pown(NaN, n) = NaN
+func Pown[D Decimal](x D, n int) D { return impl.Pown[D](x, n) }
+
+// Compound returns (1+x)**n, correctly rounded (the compound operation
+// of IEEE 754-2019 clause 9.2): the growth of one unit at the rate x
+// over n periods. It is exact about the sum 1+x, which Pown(1+x, n) is
+// not when x is a small rate whose digits the sum would lose.
+//
+// Special cases are:
+//
+//	Compound(x, 0) = 1 for x >= -1 or a NaN
+//	Compound(-1, n) = +Inf for n < 0
+//	Compound(-1, n) = +0 for n > 0
+//	Compound(±0, n) = 1
+//	Compound(+Inf, n) = +Inf for n > 0
+//	Compound(+Inf, n) = +0 for n < 0
+//	Compound(x, n) = NaN for x < -1
+//	Compound(NaN, n) = NaN for n != 0
+func Compound[D Decimal](x D, n int) D { return impl.Compound[D](x, n) }
+
+// Rootn returns the nth root of x, correctly rounded (the rootn
+// operation of IEEE 754-2019 clause 9.2): Rootn(x, 12) is the monthly
+// growth factor of a yearly one. The root of a negative x is negative
+// for an odd n.
+//
+// Special cases are:
+//
+//	Rootn(x, 0) = NaN
+//	Rootn(±0, n) = ±Inf for odd n < 0
+//	Rootn(±0, n) = +Inf for even n < 0
+//	Rootn(±0, n) = ±0 for odd n > 0
+//	Rootn(±0, n) = +0 for even n > 0
+//	Rootn(+Inf, n) = +Inf for n > 0
+//	Rootn(+Inf, n) = +0 for n < 0
+//	Rootn(-Inf, n) = -Inf for odd n > 0
+//	Rootn(-Inf, n) = -0 for odd n < 0
+//	Rootn(x, n) = NaN for x < 0 and even n
+//	Rootn(NaN, n) = NaN
+func Rootn[D Decimal](x D, n int) D { return impl.Rootn[D](x, n) }
+
+// ScaleB returns x × 10**n (the scaleB operation of IEEE 754-2019 clause
+// 5.3.3). It moves the decimal point and changes no digit, unless the
+// result is beyond the format's range: ScaleB(1.50, 2) is 150 and
+// ScaleB(150, -2) is 1.50. An infinity or a NaN is returned as it is.
+func ScaleB[D Decimal](x D, n int) D { return impl.ScaleB[D](x, n) }
+
+// LogB returns the decimal exponent of x as an integer value of type D
+// (the logB operation of IEEE 754-2019 clause 5.3.3): the exponent of x
+// written with one digit before the point, so LogB(250) is 2 and
+// LogB(0.025) is -2.
+//
+// Special cases are:
+//
+//	LogB(±Inf) = +Inf
+//	LogB(±0) = -Inf
+//	LogB(NaN) = NaN
+func LogB[D Decimal](x D) D { return impl.LogB[D](x) }
+
+// NextUp returns the least value of type D that is greater than x (the
+// nextUp operation of IEEE 754-2019 clause 5.3.1).
+//
+// Special cases are:
+//
+//	NextUp(±0) = the least positive value
+//	NextUp(+Inf) = +Inf
+//	NextUp(-Inf) = the most negative finite value
+//	NextUp(NaN) = NaN
+func NextUp[D Decimal](x D) D { return impl.NextUp[D](x) }
+
+// NextDown returns the greatest value of type D that is less than x: it
+// is -NextUp(-x).
+func NextDown[D Decimal](x D) D { return impl.NextDown[D](x) }

@@ -177,7 +177,7 @@ var depsRules = `
 	MATH
 	< math/cmplx;
 
-	internal/bid, unsafe < internal/decimal;
+	internal/bid, math/bits, unsafe < internal/decimal;
 	internal/decimal, math < math/decimal;
 
 	MATH

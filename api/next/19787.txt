@@ -79,3 +79,15 @@ pkg reflect, method (Value) SetDecimal(decimal128) #19787
 pkg strconv, func AppendDecimal([]uint8, decimal128, uint8, int, int) []uint8 #19787
 pkg strconv, func FormatDecimal(decimal128, uint8, int, int) string #19787
 pkg strconv, func ParseDecimal(string, int) (decimal128, error) #19787
+pkg math/decimal, func Compound[$0 Decimal]($0, int) $0 #19787
+pkg math/decimal, func Exp[$0 Decimal]($0) $0 #19787
+pkg math/decimal, func Log[$0 Decimal]($0) $0 #19787
+pkg math/decimal, func Log10[$0 Decimal]($0) $0 #19787
+pkg math/decimal, func LogB[$0 Decimal]($0) $0 #19787
+pkg math/decimal, func NextDown[$0 Decimal]($0) $0 #19787
+pkg math/decimal, func NextUp[$0 Decimal]($0) $0 #19787
+pkg math/decimal, func Pow[$0 Decimal]($0, $0) $0 #19787
+pkg math/decimal, func Pown[$0 Decimal]($0, int) $0 #19787
+pkg math/decimal, func Rootn[$0 Decimal]($0, int) $0 #19787
+pkg math/decimal, func ScaleB[$0 Decimal]($0, int) $0 #19787
+pkg math/decimal, func Sqrt[$0 Decimal]($0) $0 #19787
