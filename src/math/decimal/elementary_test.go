@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"math/decimal"
 	"math/rand/v2"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -856,7 +857,14 @@ func TestElementarySpecial(t *testing.T) {
 			{coeff: big.NewInt(1023)}, {coeff: big.NewInt(3), exp: 40}, {coeff: big.NewInt(99999), exp: -5},
 		}
 		const powYs = 26
-		counts := []int{0, 1, -1, 2, -2, 3, -3, 4, 10, -10, 12, 55, -55, 127, 128, -128, 1000, -1000, 1 << 40, -(1 << 40), 1<<62 + 1, -(1<<62 + 1)}
+		counts := []int{0, 1, -1, 2, -2, 3, -3, 4, 10, -10, 12, 55, -55, 127, 128, -128, 1000, -1000, 1 << 30, -(1 << 30)}
+		if strconv.IntSize == 64 {
+			// Counts beyond a 32-bit int, made at run time so that the
+			// file compiles where int is 32 bits.
+			for _, c := range []int64{1 << 40, -(1 << 40), 1<<62 + 1, -(1<<62 + 1)} {
+				counts = append(counts, int(c))
+			}
+		}
 		for _, x := range vals {
 			if _, ok := w.pack(x); !ok {
 				t.Fatalf("decimal%s: cannot pack %v", w.name, x)
@@ -866,10 +874,10 @@ func TestElementarySpecial(t *testing.T) {
 			}
 			for op := range el.count {
 				for _, n := range counts {
-					if op == "ScaleB" && (n > 1<<30 || n < -(1<<30)) {
+					if op == "ScaleB" && (n >= 1<<30 || n <= -(1<<30)) {
 						continue // the reference adds the count to an exponent
 					}
-					if (n > 1<<41 || n < -(1<<41)) && x.kind == bid.KindFinite && x.exp != 0 {
+					if (n >= 1<<30 || n <= -(1<<30)) && x.kind == bid.KindFinite && x.exp != 0 {
 						continue // the reference multiplies the exponent by the count
 					}
 					el.checkCount(t, op, x, n)
