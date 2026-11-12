@@ -15,7 +15,7 @@ package strconv
 //
 // With 'g' and 'G' and the special precision -1, the result is the canonical
 // string. It is in fixed notation unless the exponent of the leading digit is
-// less than -6 or at least 21, or the quantum is above the units digit, which
+// less than -4 or at least 21, or the quantum is above the units digit, which
 // fixed notation can't show: 1e+03 is not 1000.
 //
 // The bitSize must be 64 for values from decimal64 or 128 for decimal128.

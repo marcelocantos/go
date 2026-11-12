@@ -534,9 +534,10 @@ opSwitch:
 					// kernel would each pay a call they need not: with the
 					// rule, adding or quantizing two amounts at one quantum
 					// takes under 1 ns and comparing them under 2 (Apple M4
-					// Max, 2026-11). The rule is kept deliberately narrow,
-					// one package and one naming convention, so that it
-					// changes no other inlining decision; the generated
+					// Max, 2026-11). The rule is kept narrow, this package
+					// and one naming convention (a second rule, for
+					// internal/decimal, follows), so that it changes
+					// no other inlining decision; the generated
 					// code of the general path is the same either way, and
 					// internal/bid's TestInlinePaths checks the fronts'
 					// results against the general paths.

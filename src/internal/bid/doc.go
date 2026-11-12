@@ -88,7 +88,18 @@
 //     rounds an intermediate and then rounds again, and no two operations
 //     carry their own rounding logic. The exported [Round64] and
 //     [Round128] are that routine's entry points for callers that already
-//     hold an exact value in parts.
+//     hold an exact value in parts. The implementation has three parts
+//     that this rule covers and one copy outside the package that it does
+//     not: roundW, the general routine; roundFiniteW, the part of it for a
+//     coefficient already within the format, which Quantize and
+//     RoundToIntegral enter directly; roundFaceW, the one named exception
+//     (see "Face-value rounding"); and, in cmd/compile, the rounding
+//     decision that ssagen's bid_round.go writes out in integer SSA for
+//     quantizing and integral rounding of word coefficients on arm64 and
+//     amd64. The first three take the increment from roundInc; the
+//     compiler's copy is the same decision in integers, and
+//     TestCompiledRounding checks its results against the reference
+//     model's.
 //   - Non-canonical encodings read as their canonical value. An encoding
 //     whose coefficient field exceeds [MaxCoeff64] or 10^34 - 1
 //     ([MaxCoeff128Hi], [MaxCoeff128Lo]) is read as a zero with the

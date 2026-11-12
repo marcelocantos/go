@@ -3,8 +3,11 @@
 // license that can be found in the LICENSE file.
 
 // Soft-decimal entry points for decimal64, the counterpart of
-// softfloat64.go. The compiler lowers the decimal64 operators to calls to
-// these functions (see softDecimalOps in cmd/compile/internal/ssagen), which
+// softfloat64.go. The compiler lowers the decimal64 arithmetic operators to
+// calls to these functions, and the comparisons too except on arm64 and
+// amd64, where it compares inline and calls here only for the operands its
+// fast path refuses (see softDecimalOps and bidCompare in
+// cmd/compile/internal/ssagen). The functions
 // pass a decimal64 as its native bit pattern, having removed the zero mask of
 // its memory form. The native encoding is BID except on linux/ppc64le, where
 // it is DPD and the compiler calls only the functions that the hardware
@@ -52,8 +55,9 @@ func d64load(p unsafe.Pointer) uint64 {
 	return from64(*(*uint64)(p) ^ bid.NativeZero64)
 }
 
-// printdecimal64 prints x for the builtin print and println, in the character
-// form of internal/bid, which preserves the quantum.
+// printdecimal64 prints x for the builtin print and println, in the form
+// of internal/bid's Append64: the one %v and strconv write, which keeps the
+// quantum.
 func printdecimal64(x decimal64) {
 	var buf [bid.MaxLen64]byte
 	gwrite(bid.Append64(buf[:0], d64load(unsafe.Pointer(&x))))
