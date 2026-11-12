@@ -55,6 +55,12 @@ type format struct {
 // test of mpDigits seldom fails. Three words do for both widths:
 // decimal128's 37 digits are 123 bits, which with the guard leaves 25,
 // so that about one evaluation in 2^24 is done twice.
+//
+// There is a second condition, and it is one of correctness: an
+// exponential within 2^-(64n-50) of 1 is taken to be 1 and a bit (mpExp,
+// evalCompoundFar), which is right only if that is less than a unit of
+// the p+3 digits. At three words it is 2^-142, against decimal128's
+// 2^-123. Two words would do for decimal64 and not for decimal128.
 var (
 	format64  = format{bid.Precision64, bid.MinExp64, bid.MaxExp64, 3}
 	format128 = format{bid.Precision128, bid.MinExp128, bid.MaxExp128, 3}

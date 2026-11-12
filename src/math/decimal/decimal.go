@@ -14,7 +14,10 @@
 // It also provides the square root, the powers, the exponential and the
 // logarithms. Those are correctly rounded: each returns the value of its
 // type nearest to the exact result, with ties to even. They are slower
-// than the arithmetic, and they allocate.
+// than the arithmetic, hundreds of nanoseconds to a few microseconds a
+// call, and they do not allocate, except for the rare result so close to
+// a rounding boundary that it takes many times the usual precision to
+// tell which side it is on.
 //
 // Each function is generic over [Decimal] and computes in the format of its
 // type argument, so a decimal64 result is rounded once, as a decimal64, not
