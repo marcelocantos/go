@@ -260,18 +260,25 @@ func digitsU(a u128) int {
 // many there were.
 func stripU(a u128) (u128, int) {
 	n := 0
-	for {
+	for a.Lo&1 == 0 { // a number that ends in a zero is even
 		q, r := divWordU(a, 10)
 		if r != 0 {
-			return a, n
+			break
 		}
 		a = q
 		n++
 	}
+	return a, n
 }
 
 // powU returns a^n and whether it fits in 128 bits, for n >= 0.
 func powU(a u128, n uint) (u128, bool) {
+	// a is at least 2^(l-1), and a power of that of 2^128 or more does
+	// not fit: the usual case of a long coefficient, seen without a
+	// product.
+	if l := uint(lenU(a)); l > 1 && (n >= 128 || (l-1)*n >= 128) {
+		return u128{}, false
+	}
 	r := u128{Lo: 1}
 	for i := bits.Len(n) - 1; i >= 0; i-- {
 		var ok bool
@@ -495,6 +502,17 @@ func mpMulInt(a *arena, n int, x mpf, k int64) mpf {
 // mpDec returns (-1)^neg × c × 10^e to within four units in the last of n
 // words.
 func mpDec(a *arena, n int, neg bool, c u128, e int) mpf {
+	if e < 0 && -e <= maxPow10Recip && n == 3 {
+		// The precision of a first evaluation, and a coefficient with
+		// digits after the point: one product by a reciprocal, where
+		// the cases below divide. The coefficient is a factor only, so
+		// its words are this function's own.
+		var store [3]uint64
+		t := arena{buf: store[:0]}
+		v := mpMul(a, n, mpInt(&t, n, c.Hi, c.Lo), mpPow10Recip(-e))
+		v.neg = neg
+		return v
+	}
 	m := a.mark()
 	v := mpInt(a, n, c.Hi, c.Lo)
 	switch {
@@ -521,26 +539,30 @@ const maxPow10Exact = 76
 // product or a quotient by it is one operation, where a power of ten
 // from mpPow10 costs a chain of squarings and its error.
 func mpPow10Exact(a *arena, k int) mpf {
-	var w [4]uint64
 	if k <= 38 {
+		// One word or two: the usual case, the scale of a result's
+		// digits.
 		p := pow10U(k)
-		w[0], w[1] = p.Lo, p.Hi
-	} else {
-		// 10^38 × 10^(k-38), two words by two.
-		x, y := pow10U(38), pow10U(k-38)
-		var c uint64
-		w[1], w[0] = bits.Mul64(x.Lo, y.Lo)
-		hi, lo := bits.Mul64(x.Hi, y.Lo)
-		w[1], c = bits.Add64(w[1], lo, 0)
-		w[2] = hi + c
-		hi, lo = bits.Mul64(x.Lo, y.Hi)
-		w[1], c = bits.Add64(w[1], lo, 0)
-		w[2], c = bits.Add64(w[2], hi, c)
-		w[3] = c
-		hi, lo = bits.Mul64(x.Hi, y.Hi)
-		w[2], c = bits.Add64(w[2], lo, 0)
-		w[3] += hi + c
+		if p.Hi == 0 {
+			return mpWord(a, 1, p.Lo)
+		}
+		return mpInt(a, 2, p.Hi, p.Lo)
 	}
+	// 10^38 × 10^(k-38), two words by two.
+	x, y := pow10U(38), pow10U(k-38)
+	var w [4]uint64
+	var c uint64
+	w[1], w[0] = bits.Mul64(x.Lo, y.Lo)
+	hi, lo := bits.Mul64(x.Hi, y.Lo)
+	w[1], c = bits.Add64(w[1], lo, 0)
+	w[2] = hi + c
+	hi, lo = bits.Mul64(x.Lo, y.Hi)
+	w[1], c = bits.Add64(w[1], lo, 0)
+	w[2], c = bits.Add64(w[2], hi, c)
+	w[3] = c
+	hi, lo = bits.Mul64(x.Hi, y.Hi)
+	w[2], c = bits.Add64(w[2], lo, 0)
+	w[3] += hi + c
 	l := len(w)
 	for w[l-1] == 0 {
 		l--
@@ -551,15 +573,21 @@ func mpPow10Exact(a *arena, k int) mpf {
 // mpScale10 returns v × 10^-q to within four units in the last of n
 // words.
 func mpScale10(a *arena, n int, v mpf, q int) mpf {
-	m := a.mark()
+	// An exact power of ten is a factor only, so its words are this
+	// function's own.
+	var store [4]uint64
+	t := arena{buf: store[:0]}
 	switch {
 	case q == 0:
 		return mpNorm(a, n, v.m, v.exp, v.neg)
+	case q > 0 && q <= maxPow10Recip && n == 3:
+		return mpMul(a, n, v, mpPow10Recip(q))
 	case q < 0 && q >= -maxPow10Exact:
-		return a.ret(m, mpMul(a, n, v, mpPow10Exact(a, -q)))
+		return mpMul(a, n, v, mpPow10Exact(&t, -q))
 	case q > 0 && q <= maxPow10Exact:
-		return a.ret(m, mpDiv(a, n, v, mpPow10Exact(a, q)))
+		return mpDiv(a, n, v, mpPow10Exact(&t, q))
 	}
+	m := a.mark()
 	return a.ret(m, mpMul(a, n, v, mpPow10(a, n, -q)))
 }
 
@@ -593,17 +621,25 @@ func mpPowInt(a *arena, n int, b mpf, k int64) (mpf, int) {
 	if u == 0 {
 		return mpNormTo(slot, []uint64{1}, 0, false), evValue
 	}
-	// From the bit below the top one: the first turn would square 1
-	// and multiply it by b.
-	r := mpNormTo(slot, b.m, b.exp, b.neg)
-	for i := bits.Len64(u) - 2; i >= 0; i-- {
-		m := a.mark()
-		t := mpMul(a, n, r, r)
-		if u>>uint(i)&1 != 0 {
-			t = mpMul(a, n, t, b)
+	var r mpf
+	if n == 3 && len(b.m) == 3 {
+		// The precision of a first evaluation.
+		w, exp := powWords3((*[3]uint64)(b.m), b.exp, u)
+		copy(slot, w[:])
+		r = mpf{slot, exp, false}
+	} else {
+		// From the bit below the top one: the first turn would square
+		// 1 and multiply it by b.
+		r = mpNormTo(slot, b.m, b.exp, b.neg)
+		for i := bits.Len64(u) - 2; i >= 0; i-- {
+			m := a.mark()
+			t := mpMul(a, n, r, r)
+			if u>>uint(i)&1 != 0 {
+				t = mpMul(a, n, t, b)
+			}
+			r = mpKeep(slot, t)
+			a.release(m)
 		}
-		r = mpKeep(slot, t)
-		a.release(m)
 	}
 	if k < 0 {
 		r = mpDiv(a, n, mpWord(a, n, 1), r)

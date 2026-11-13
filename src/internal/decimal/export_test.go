@@ -56,3 +56,17 @@ func MpPowInt(n int, b Mpf, k int64) (Mpf, bool) {
 	v, ev := mpPowInt(new(arena), n, b, k)
 	return v, ev == evValue
 }
+
+// The three-word arithmetic of a first evaluation.
+
+func MulWords3(x, y [3]uint64) [6]uint64 { return mulWords3(&x, &y) }
+func SqrWords3(x [3]uint64) [6]uint64    { return sqrWords3(&x) }
+
+func PowWords3(b [3]uint64, bexp int, u uint64) ([3]uint64, int) { return powWords3(&b, bexp, u) }
+
+const MaxPow10Recip = maxPow10Recip
+
+var (
+	Pow10Recip   = pow10Recip
+	MpPow10Recip = mpPow10Recip
+)

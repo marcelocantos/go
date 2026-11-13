@@ -130,6 +130,108 @@ func TestMPArithmetic(t *testing.T) {
 	}
 }
 
+// bigWords returns the integer whose words, least significant first, are w.
+func bigWords(w []uint64) *big.Int {
+	v := new(big.Int)
+	for i := len(w) - 1; i >= 0; i-- {
+		v.Lsh(v, 64).Or(v, new(big.Int).SetUint64(w[i]))
+	}
+	return v
+}
+
+// TestWords3 checks the three-word product, square and power that a
+// first evaluation uses against the integers they stand for: the
+// products exactly, and the power as the same truncated products the
+// general ladder makes.
+func TestWords3(t *testing.T) {
+	r := rand.New(rand.NewPCG(34, 55))
+	word := func() uint64 {
+		switch r.IntN(6) {
+		case 0:
+			return 0
+		case 1:
+			return ^uint64(0)
+		case 2:
+			return 1 << uint(r.IntN(64))
+		}
+		return r.Uint64()
+	}
+	for i := 0; i < 20000; i++ {
+		x, y := [3]uint64{word(), word(), word()}, [3]uint64{word(), word(), word()}
+		bx, by := bigWords(x[:]), bigWords(y[:])
+		if got, want := MulWords3(x, y), new(big.Int).Mul(bx, by); bigWords(got[:]).Cmp(want) != 0 {
+			t.Fatalf("mulWords3(%x, %x) = %x, want %x", x, y, got, want)
+		}
+		if got, want := SqrWords3(x), new(big.Int).Mul(bx, bx); bigWords(got[:]).Cmp(want) != 0 {
+			t.Fatalf("sqrWords3(%x) = %x, want %x", x, got, want)
+		}
+		if i%20 != 0 {
+			continue
+		}
+		// A power, by the ladder on integers: each product cut to
+		// its first 192 bits.
+		x[2] |= 1 << 63
+		bx = bigWords(x[:])
+		u := 1 + r.Uint64()>>uint(34+r.IntN(30))
+		bexp := r.IntN(401) - 200 - 192
+		top := func(p *big.Int, exp int) (*big.Int, int) {
+			d := p.BitLen() - 192
+			return p.Rsh(p, uint(d)), exp + d
+		}
+		want, wexp := new(big.Int).Set(bx), bexp
+		for j := big.NewInt(int64(u)).BitLen() - 2; j >= 0; j-- {
+			want, wexp = top(want.Mul(want, want), 2*wexp)
+			if u>>uint(j)&1 != 0 {
+				want, wexp = top(want.Mul(want, bx), wexp+bexp)
+			}
+		}
+		got, exp := PowWords3(x, bexp, u)
+		if bigWords(got[:]).Cmp(want) != 0 || exp != wexp {
+			t.Fatalf("powWords3(%x × 2^%d, %d) = %x × 2^%d, want %x × 2^%d", x, bexp, u, got, exp, want, wexp)
+		}
+		// And mpPowInt, which takes that path at three words.
+		if p, ok := MpPowInt(3, MakeMpf(x[:], bexp, false), int64(u)); ok {
+			m, e, _ := p.Parts()
+			if bigWords(m).Cmp(want) != 0 || e != wexp {
+				t.Fatalf("mpPowInt(%x × 2^%d, %d) = %x × 2^%d, want %x × 2^%d", x, bexp, u, m, e, want, wexp)
+			}
+		}
+	}
+}
+
+// TestPow10Recip checks the table of reciprocal powers of ten against
+// the quotients it holds, and the conversions that use it.
+func TestPow10Recip(t *testing.T) {
+	r := rand.New(rand.NewPCG(89, 144))
+	for k := 1; k <= MaxPow10Recip; k++ {
+		p := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(k)), nil)
+		bits := p.BitLen() + 191
+		want := new(big.Int).Lsh(big.NewInt(1), uint(bits))
+		want.Quo(want, p)
+		m, exp, neg := MpPow10Recip(k).Parts()
+		if bigWords(m).Cmp(want) != 0 || exp != -bits || neg || bigWords(Pow10Recip[k-1][:]).Cmp(want) != 0 {
+			t.Errorf("10^-%d: %x × 2^%d, want %x × 2^%d", k, m, exp, want, -bits)
+		}
+		// A coefficient over that power, and a number scaled down by
+		// it: each within the four units its function states.
+		inv := bigf().Quo(bigf().SetInt64(1), bigf().SetInt(p))
+		for i := 0; i < 200; i++ {
+			c := bid.Uint128{Hi: r.Uint64() >> uint(15+r.IntN(49)), Lo: r.Uint64()}
+			if i%4 == 0 {
+				c.Hi = 0
+			}
+			bc := bigf().SetInt(bigWords([]uint64{c.Lo, c.Hi}))
+			if u := ulps(3, MpDec(3, false, c, -k), bigf().Mul(bc, inv)); c.Hi|c.Lo != 0 && u > 4 {
+				t.Fatalf("mpDec(%vE-%d) at 3 words: off by %g units, want at most 4", bc, k, u)
+			}
+			x := randMpf(r, 3)
+			if u := ulps(3, MpScale10(3, x, k), bigf().Mul(toBig(x), inv)); u > 4 {
+				t.Fatalf("mpScale10 by 10^%d at 3 words: off by %g units, want at most 4", k, u)
+			}
+		}
+	}
+}
+
 // MakeMpfAbs returns |x|.
 func MakeMpfAbs(x Mpf) Mpf {
 	m, exp, _ := x.Parts()

@@ -202,21 +202,26 @@ func mpMul(a *arena, n int, x, y mpf) mpf {
 		return mpf{}
 	}
 	r := a.words(n)
-	if n == 3 && len(x.m) == 3 && len(y.m) == 3 {
+	if n == 3 && len(x.m) <= 3 && len(y.m) <= 3 {
 		// The precision of a first evaluation: the product written
-		// out, and its first three words taken in place. Both factors
-		// are normalized, so the product's top word is not zero.
-		w := mulWords3((*[3]uint64)(x.m), (*[3]uint64)(y.m))
-		lz := uint(bits.LeadingZeros64(w[5]))
-		z := (*[3]uint64)(r)
-		if lz == 0 {
-			z[0], z[1], z[2] = w[3], w[4], w[5]
+		// out, and its first three words taken in place. A shorter
+		// factor, an exact power of ten or a series term, is one of
+		// three words with zeros below.
+		var xs, ys [3]uint64
+		px, py := &xs, &ys
+		if len(x.m) == 3 {
+			px = (*[3]uint64)(x.m)
 		} else {
-			z[0] = w[3]<<lz | w[2]>>(64-lz)
-			z[1] = w[4]<<lz | w[3]>>(64-lz)
-			z[2] = w[5]<<lz | w[4]>>(64-lz)
+			copy(xs[3-len(x.m):], x.m)
 		}
-		return mpf{r, x.exp + y.exp + 3*64 - int(lz), x.neg != y.neg}
+		if len(y.m) == 3 {
+			py = (*[3]uint64)(y.m)
+		} else {
+			copy(ys[3-len(y.m):], y.m)
+		}
+		w := mulWords3(px, py)
+		exp := x.exp + y.exp + 64*(len(x.m)+len(y.m)-3)
+		return mpf{r, exp - top3((*[3]uint64)(r), &w), x.neg != y.neg}
 	}
 	m := a.mark()
 	w := a.zeros(len(x.m) + len(y.m))
@@ -235,6 +240,17 @@ func mpMul(a *arena, n int, x, y mpf) mpf {
 	z := mpNormTo(r, w, x.exp+y.exp, x.neg != y.neg)
 	a.release(m)
 	return z
+}
+
+// top3 sets z to the first 192 bits of w, the product of two three-word
+// numbers whose top bits are set, and returns how far it shifted them
+// up: the product's top bit is its last or the one below.
+func top3(z *[3]uint64, w *[6]uint64) int {
+	s := uint(^w[5] >> 63)
+	z[0] = w[3]<<s | w[2]>>(64-s) // a shift of 64 gives zero
+	z[1] = w[4]<<s | w[3]>>(64-s)
+	z[2] = w[5]<<s | w[4]>>(64-s)
+	return int(s)
 }
 
 // mulWords3 returns x × y.
@@ -274,6 +290,49 @@ func mulWords3(x, y *[3]uint64) [6]uint64 {
 	w5 += h2 + c
 
 	return [6]uint64{w0, w1, w2, w3, w4, w5}
+}
+
+// sqrWords3 returns x × x: the three products of different words once
+// and doubled, where mulWords3 would form each of them twice.
+func sqrWords3(x *[3]uint64) [6]uint64 {
+	// x[0]x[1] at word 1, x[0]x[2] at word 2 and x[1]x[2] at word 3:
+	// their sum is below 2^320, so it ends in word 4.
+	h01, c1 := bits.Mul64(x[0], x[1])
+	h02, l02 := bits.Mul64(x[0], x[2])
+	h12, l12 := bits.Mul64(x[1], x[2])
+	c2, c := bits.Add64(h01, l02, 0)
+	c3, c := bits.Add64(h02, l12, c)
+	c4 := h12 + c
+
+	// Twice that, and the squares at words 0, 2 and 4.
+	h0, w0 := bits.Mul64(x[0], x[0])
+	h1, l1 := bits.Mul64(x[1], x[1])
+	h2, l2 := bits.Mul64(x[2], x[2])
+	w1, c := bits.Add64(c1<<1, h0, 0)
+	w2, c := bits.Add64(c2<<1|c1>>63, l1, c)
+	w3, c := bits.Add64(c3<<1|c2>>63, h1, c)
+	w4, c := bits.Add64(c4<<1|c3>>63, l2, c)
+	w5 := c4>>63 + h2 + c
+
+	return [6]uint64{w0, w1, w2, w3, w4, w5}
+}
+
+// powWords3 returns b^u for u at least 1, where b is the three-word
+// number b × 2^bexp with its top bit set: the ladder of mpPowInt with
+// the power kept in an array, each product truncated as mpMul's is.
+func powWords3(b *[3]uint64, bexp int, u uint64) (r [3]uint64, exp int) {
+	r, exp = *b, bexp
+	// From the bit below the top one: the first turn would square 1
+	// and multiply it by b.
+	for i := bits.Len64(u) - 2; i >= 0; i-- {
+		w := sqrWords3(&r)
+		exp = 2*exp + 3*64 - top3(&r, &w)
+		if u>>uint(i)&1 != 0 {
+			w = mulWords3(&r, b)
+			exp += bexp + 3*64 - top3(&r, &w)
+		}
+	}
+	return r, exp
 }
 
 // mpMulWord returns x × w truncated to n words.
