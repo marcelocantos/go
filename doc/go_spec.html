@@ -7951,7 +7951,8 @@ t := max("", "foo", "bar")  // t == "foo" (string kind)
 
 <p>
 For numeric arguments, assuming all NaNs are equal, <code>min</code> and <code>max</code> are
-commutative and associative:
+commutative and associative (for decimal floating-point arguments, in the value of the
+result; see below):
 </p>
 
 <pre>
@@ -7970,6 +7971,23 @@ For floating-point arguments negative zero, NaN, and infinity the following rule
   -Inf      y         -Inf            y    // negative infinity is smaller than any other number
   +Inf      y            y         +Inf    // positive infinity is larger than any other number
    NaN      y          NaN          NaN    // if any argument is a NaN, the result is a NaN
+</pre>
+
+<p>
+For decimal floating-point arguments, values that are equal and have the same sign
+may still differ in their quantum, as <code>1.0</code> and <code>1.00</code> do.
+Among such arguments the result is the first one, so the quantum of the result,
+though never its value, can depend on the order of the arguments.
+A binary floating-point value has one representation, and the question does not arise;
+IEEE 754-2019 leaves the choice open.
+The rule is the same for constant and non-constant arguments:
+</p>
+
+<pre>
+decimal64(min(1.0, 1.00))      // 1.0
+decimal64(min(1.00, 1.0))      // 1.00
+decimal64(max(2.50, 1, 2.5))   // 2.50
+min(x, y) == if y &lt; x then y else x    // decimal x and y, not NaNs or zeros
 </pre>
 
 <p>

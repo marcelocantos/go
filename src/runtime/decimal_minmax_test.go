@@ -125,3 +125,41 @@ func TestMinMaxDecimal128(t *testing.T) {
 		}
 	}
 }
+
+//go:noinline
+func d64id(x decimal64) decimal64 { return x }
+
+// TestMinMaxDecimalCohort checks the rule for members of one cohort: the
+// result is the first argument of the extreme value, at run time, in
+// constants and when the two are mixed, so its quantum follows the order of
+// the arguments.
+func TestMinMaxDecimalCohort(t *testing.T) {
+	a, b, c := d64id(1.0), d64id(1.00), d64id(1.000)
+	const ka, kb decimal64 = 1.0, 1.00
+	text := func(x decimal64) string { return strconv.FormatDecimal(decimal128(x), 'e', -1, 64) }
+	for _, tt := range []struct {
+		name      string
+		got, want decimal64
+	}{
+		{"min(a, b)", min(a, b), a},
+		{"min(b, a)", min(b, a), b},
+		{"max(a, b)", max(a, b), a},
+		{"max(b, a)", max(b, a), b},
+		{"min(c, b, a)", min(c, b, a), c},
+		{"max(b, c, a)", max(b, c, a), b},
+		{"min(2, a, b)", min(2, a, b), a},
+		{"max(0.5, b, a)", max(0.5, b, a), b},
+		{"min(ka, kb)", min(ka, kb), ka},
+		{"min(kb, ka)", min(kb, ka), kb},
+		{"max(kb, ka)", max(kb, ka), kb},
+		{"min(1.0, 1.00) as decimal64", min(1.0, 1.00), ka},
+		{"min(a, kb)", min(a, kb), a},
+		{"min(kb, a)", min(kb, a), kb},
+		{"max(-a, -b)", max(-a, -b), -a},
+		{"min(-b, -a)", min(-b, -a), -b},
+	} {
+		if text(tt.got) != text(tt.want) {
+			t.Errorf("%s = %s, want %s", tt.name, text(tt.got), text(tt.want))
+		}
+	}
+}
