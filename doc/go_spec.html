@@ -1561,7 +1561,7 @@ Union elements denote unions of type sets:
 </p>
 
 <pre>
-// The Float interface represents all floating-point types
+// The Float interface represents all binary floating-point types
 // (including any named types whose underlying types are
 // either float32 or float64).
 type Float interface {
@@ -5941,11 +5941,18 @@ const Four int8 = Huge &gt;&gt; 98  // Four == 4                                
 </pre>
 
 <p>
-Arithmetic on constants of a decimal floating-point type is the exception:
+The value of a typed constant must be <a href="#Representability">representable</a>
+by its type, so the result of each operation on typed floating-point constants is
+rounded to the type, as for <code>const f float32 = 1&lt;&lt;24</code>, where
+<code>f + 1 - 1</code> is <code>16777215</code>.
+For a decimal floating-point type the rounding is specified:
 each operation rounds as the corresponding IEEE 754 operation does,
 to nearest with ties to even, and its result takes the IEEE 754 preferred
-exponent as its quantum, so a typed decimal constant expression has the
-value it has at run time. A result too large for the type is illegal.
+exponent as its quantum.
+A typed decimal constant expression therefore has the value that the same
+operations have at run time when they are not
+<a href="#Arithmetic_operators">fused</a>.
+A result too large for the type is illegal.
 </p>
 
 <pre>
@@ -7711,7 +7718,7 @@ imag(complexT) floatT
 <p>
 The type of the arguments and return value correspond.
 For <code>complex</code>, the two arguments must be of the same
-<a href="#Numeric_types">floating-point type</a> and the return type is the
+binary <a href="#Numeric_types">floating-point type</a> and the return type is the
 <a href="#Numeric_types">complex type</a>
 with the corresponding floating-point constituents:
 <code>complex64</code> for <code>float32</code> arguments, and
@@ -7721,11 +7728,13 @@ If one of the arguments evaluates to an untyped constant, it is first implicitly
 If both arguments evaluate to untyped constants, they must be non-complex
 numbers or their imaginary parts must be zero, and the return value of
 the function is an untyped complex constant.
+There is no complex type with decimal floating-point constituents, so the
+arguments of <code>complex</code> cannot be of a decimal floating-point type.
 </p>
 
 <p>
 For <code>real</code> and <code>imag</code>, the argument must be
-of complex type, and the return type is the corresponding floating-point
+of complex type, and the return type is the corresponding binary floating-point
 type: <code>float32</code> for a <code>complex64</code> argument, and
 <code>float64</code> for a <code>complex128</code> argument.
 If the argument evaluates to an untyped constant, it must be a number,
