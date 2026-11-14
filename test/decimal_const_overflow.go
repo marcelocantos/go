@@ -29,8 +29,8 @@ const i decimal64 = 1e400 // ERROR "overflows|truncated"
 // above the largest finite value is an overflow, as for floats.
 const (
 	big64   decimal64  = 9e384
-	over64             = big64 * 10 // ERROR "overflow"
+	over64             = big64 * 10 // ERROR "big64 \* 10 \(constant 9e\+385 of type decimal64\) overflows decimal64"
 	big128  decimal128 = 9e6144
-	over128            = big128 * 10 // ERROR "overflow"
+	over128            = big128 * 10 // ERROR "big128 \* 10 \(constant 9e\+6145 of type decimal128\) overflows decimal128"
 	ok64               = big64 / 10
 )

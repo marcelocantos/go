@@ -390,6 +390,11 @@ func (check *Checker) builtin(x *operand, call *syntax.CallExpr, id builtinId) (
 		}
 		resTyp := check.applyTypeFunc(f, x, id)
 		if resTyp == nil {
+			if isDecimal(x.typ()) {
+				// There is no complex type with decimal parts.
+				check.errorf(x, InvalidComplex, invalidArg+"arguments have type %s, expected binary floating-point (there is no decimal complex type)", x.typ())
+				return
+			}
 			check.errorf(x, InvalidComplex, invalidArg+"arguments have type %s, expected floating-point", x.typ())
 			return
 		}

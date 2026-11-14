@@ -915,7 +915,11 @@ checked:
 			}
 			v, ok := constdecimal.BinaryOp(x.val, op, y.val, w)
 			if !ok {
-				check.errorf(atPos(opPos), InvalidConstVal, "constant %s overflow", opName(x.expr))
+				// The diagnostic a float's overflow gives: the operation,
+				// its exact value and the type it overflows.
+				x.val = constant.BinaryOp(x.val, op, y.val)
+				x.expr = e
+				check.errorf(x, NumericOverflow, "%s overflows %s", x, x.typ())
 				x.invalidate()
 				return
 			}
