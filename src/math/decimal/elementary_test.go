@@ -19,7 +19,8 @@ import (
 )
 
 // These tests check Sqrt, Exp, Log, Log10, Pow, Pown, Compound, Rootn,
-// ScaleB, LogB, NextUp and NextDown against a reference that shares
+// Ldexp, Logb and Nextafter toward each infinity (IEEE 754-2019's nextUp
+// and nextDown, which the reference names) against a reference that shares
 // nothing with their implementation.
 //
 // The reference computes each function in math/big floating point at
@@ -491,7 +492,7 @@ func (w dfmt) wantPow(x, y dval) dval {
 	return w.power(refLog(f.Abs(f)), ffrom(y), neg, pref)
 }
 
-func (w dfmt) wantScaleB(x dval, n int) dval {
+func (w dfmt) wantLdexp(x dval, n int) dval {
 	if x.kind != bid.KindFinite {
 		return x
 	}
@@ -515,7 +516,7 @@ func (w dfmt) wantScaleB(x dval, n int) dval {
 	return w.roundRat(r, x.neg)
 }
 
-func (w dfmt) wantLogB(x dval) dval {
+func (w dfmt) wantLogb(x dval) dval {
 	switch {
 	case x.kind == bid.KindNaN:
 		return nanVal()
@@ -608,12 +609,12 @@ func elems() []*elem {
 			unary: map[string]func(bid.Uint128) bid.Uint128{
 				"Sqrt": un64(decimal.Sqrt[decimal64]), "Exp": un64(decimal.Exp[decimal64]),
 				"Log": un64(decimal.Log[decimal64]), "Log10": un64(decimal.Log10[decimal64]),
-				"LogB": un64(decimal.LogB[decimal64]), "NextUp": un64(decimal.NextUp[decimal64]),
-				"NextDown": un64(decimal.NextDown[decimal64]),
+				"Logb": un64(decimal.Logb[decimal64]), "NextUp": un64(nextUp[decimal64]),
+				"NextDown": un64(nextDown[decimal64]),
 			},
 			count: map[string]func(bid.Uint128, int) bid.Uint128{
 				"Pown": cn64(decimal.Pown[decimal64]), "Compound": cn64(decimal.Compound[decimal64]),
-				"Rootn": cn64(decimal.Rootn[decimal64]), "ScaleB": cn64(decimal.ScaleB[decimal64]),
+				"Rootn": cn64(decimal.Rootn[decimal64]), "Ldexp": cn64(decimal.Ldexp[decimal64]),
 			},
 			pow: func(x, y bid.Uint128) bid.Uint128 { return t64(decimal.Pow(f64(x), f64(y))) },
 		},
@@ -622,12 +623,12 @@ func elems() []*elem {
 			unary: map[string]func(bid.Uint128) bid.Uint128{
 				"Sqrt": un128(decimal.Sqrt[decimal128]), "Exp": un128(decimal.Exp[decimal128]),
 				"Log": un128(decimal.Log[decimal128]), "Log10": un128(decimal.Log10[decimal128]),
-				"LogB": un128(decimal.LogB[decimal128]), "NextUp": un128(decimal.NextUp[decimal128]),
-				"NextDown": un128(decimal.NextDown[decimal128]),
+				"Logb": un128(decimal.Logb[decimal128]), "NextUp": un128(nextUp[decimal128]),
+				"NextDown": un128(nextDown[decimal128]),
 			},
 			count: map[string]func(bid.Uint128, int) bid.Uint128{
 				"Pown": cn128(decimal.Pown[decimal128]), "Compound": cn128(decimal.Compound[decimal128]),
-				"Rootn": cn128(decimal.Rootn[decimal128]), "ScaleB": cn128(decimal.ScaleB[decimal128]),
+				"Rootn": cn128(decimal.Rootn[decimal128]), "Ldexp": cn128(decimal.Ldexp[decimal128]),
 			},
 			pow: func(x, y bid.Uint128) bid.Uint128 { return t128(decimal.Pow(f128(x), f128(y))) },
 		},
@@ -647,8 +648,8 @@ func (el *elem) wantUnary(op string, x dval) dval {
 		return w.wantLog(x, false)
 	case "Log10":
 		return w.wantLog(x, true)
-	case "LogB":
-		return w.wantLogB(x)
+	case "Logb":
+		return w.wantLogb(x)
 	case "NextUp":
 		return w.wantNextUp(x)
 	case "NextDown":
@@ -666,8 +667,8 @@ func (el *elem) wantCount(op string, x dval, n int) dval {
 		return w.wantCompound(x, n)
 	case "Rootn":
 		return w.wantRootn(x, n)
-	case "ScaleB":
-		return w.wantScaleB(x, n)
+	case "Ldexp":
+		return w.wantLdexp(x, n)
 	}
 	panic(op)
 }
@@ -817,11 +818,11 @@ func TestElementaryAgainstBig(t *testing.T) {
 
 				// The operations on the representation.
 				x := g.val(el.w.minExp, el.w.maxExp, g.IntN(2) == 0)
-				el.checkUnary(t, "LogB", x)
+				el.checkUnary(t, "Logb", x)
 				el.checkUnary(t, "NextUp", x)
 				el.checkUnary(t, "NextDown", x)
-				el.checkCount(t, "ScaleB", x, g.IntN(4*el.w.maxExp)-2*el.w.maxExp)
-				el.checkCount(t, "ScaleB", g.mag(g.IntN(21)-10, g.IntN(2) == 0), g.IntN(41)-20)
+				el.checkCount(t, "Ldexp", x, g.IntN(4*el.w.maxExp)-2*el.w.maxExp)
+				el.checkCount(t, "Ldexp", g.mag(g.IntN(21)-10, g.IntN(2) == 0), g.IntN(41)-20)
 			}
 		})
 	}
@@ -874,7 +875,7 @@ func TestElementarySpecial(t *testing.T) {
 			}
 			for op := range el.count {
 				for _, n := range counts {
-					if op == "ScaleB" && (n >= 1<<30 || n <= -(1<<30)) {
+					if op == "Ldexp" && (n >= 1<<30 || n <= -(1<<30)) {
 						continue // the reference adds the count to an exponent
 					}
 					if (n >= 1<<30 || n <= -(1<<30)) && x.kind == bid.KindFinite && x.exp != 0 {
@@ -909,8 +910,8 @@ func TestElementaryExamples(t *testing.T) {
 		{"Compound", "0.25", "-1", "0.8"}, {"Compound", "3", "-2", "0.0625"}, {"Compound", "0.05", "1", "1.05"},
 		{"Rootn", "27", "3", "3"}, {"Rootn", "-27", "3", "-3"}, {"Rootn", "1E+6", "3", "1E+2"}, {"Rootn", "0.001", "3", "0.1"},
 		{"Rootn", "4", "-2", "0.5"}, {"Rootn", "16", "4", "2"}, {"Rootn", "2", "1", "2"}, {"Rootn", "1000000", "3", "100"},
-		{"ScaleB", "1.50", "2", "150"}, {"ScaleB", "150", "-2", "1.50"}, {"ScaleB", "0", "5", "0E+5"},
-		{"LogB", "250", "", "2"}, {"LogB", "0.025", "", "-2"}, {"LogB", "1", "", "0"}, {"LogB", "9.99", "", "0"},
+		{"Ldexp", "1.50", "2", "150"}, {"Ldexp", "150", "-2", "1.50"}, {"Ldexp", "0", "5", "0E+5"},
+		{"Logb", "250", "", "2"}, {"Logb", "0.025", "", "-2"}, {"Logb", "1", "", "0"}, {"Logb", "9.99", "", "0"},
 	}
 	for _, el := range elems() {
 		for _, e := range examples {
@@ -949,7 +950,7 @@ func TestElementarySignaling(t *testing.T) {
 		"Pown(sNaN, 0)": decimal.Pown(s, 0), "Compound(sNaN, 0)": decimal.Compound(s, 0),
 		"Pow(sNaN, 0)": decimal.Pow(s, 0), "Pow(1, sNaN)": decimal.Pow(one, s),
 		"Sqrt(sNaN)": decimal.Sqrt(s), "Exp(NaN)": decimal.Exp(q), "Pow(NaN, 2)": decimal.Pow(q, 2),
-		"ScaleB(sNaN, 3)": decimal.ScaleB(s, 3), "Rootn(NaN, 0)": decimal.Rootn(q, 0),
+		"Ldexp(sNaN, 3)": decimal.Ldexp(s, 3), "Rootn(NaN, 0)": decimal.Rootn(q, 0),
 	} {
 		if !decimal.IsNaN(got) || decimal.Payload(got) != p {
 			t.Errorf("%s = %v with payload %v, want a NaN with payload 42", name, got, decimal.Payload(got))
@@ -974,7 +975,7 @@ func TestElementarySignaling(t *testing.T) {
 func allocOperands[D decimal.Decimal](maxExp int) []D {
 	xs := []D{0, 1, 2, 10, 0.5, 2.25, 0.0001, 1234.56, 1.0000001, 0.9999999, D(1) / 3, D(22) / 7, D(1) / 12, 1e30}
 	for _, k := range []int{maxExp / 4, maxExp / 2, maxExp - 40, maxExp} {
-		xs = append(xs, decimal.ScaleB(D(22)/7, k), decimal.ScaleB(D(22)/7, -k), decimal.ScaleB(D(1), -k))
+		xs = append(xs, decimal.Ldexp(D(22)/7, k), decimal.Ldexp(D(22)/7, -k), decimal.Ldexp(D(1), -k))
 	}
 	return xs
 }
@@ -993,17 +994,19 @@ func allocs[D decimal.Decimal](t *testing.T, maxExp int) {
 	counts := []int{-2000000, -360, -5, -1, 2, 3, 5, 360, 2000000}
 	roots := []int{-12, -2, 2, 3, 12, 1001}
 	powers := []D{0.5, D(1) / 12, -2.75, 100.5, 1e-10, 33}
-	rates := []D{0.05, D(5) / 1200, -0.5, -0.9999999, 1e-30, 2.5, 1e30, decimal.ScaleB(D(3), 40)}
+	rates := []D{0.05, D(5) / 1200, -0.5, -0.9999999, 1e-30, 2.5, 1e30, decimal.Ldexp(D(3), 40)}
 	for _, x := range xs {
 		check("Sqrt(%v)", func() { sink = decimal.Sqrt(x) }, x)
 		check("Exp(%v)", func() { sink = decimal.Exp(x) }, x)
 		check("Exp(%v)", func() { sink = decimal.Exp(-x) }, -x)
 		check("Log(%v)", func() { sink = decimal.Log(x) }, x)
 		check("Log10(%v)", func() { sink = decimal.Log10(x) }, x)
-		check("LogB(%v)", func() { sink = decimal.LogB(x) }, x)
-		check("ScaleB(%v, 3)", func() { sink = decimal.ScaleB(x, 3) }, x)
-		check("NextUp(%v)", func() { sink = decimal.NextUp(x) }, x)
-		check("NextDown(%v)", func() { sink = decimal.NextDown(x) }, x)
+		check("Logb(%v)", func() { sink = decimal.Logb(x) }, x)
+		check("Ldexp(%v, 3)", func() { sink = decimal.Ldexp(x, 3) }, x)
+		check("Nextafter(%v, +Inf)", func() { sink = decimal.Nextafter(x, decimal.Inf[D](1)) }, x)
+		check("Nextafter(%v, -Inf)", func() { sink = decimal.Nextafter(x, decimal.Inf[D](-1)) }, x)
+		check("Nextafter(%v, 1)", func() { sink = decimal.Nextafter(x, 1) }, x)
+		check("Ilogb(%v)", func() { sink = D(decimal.Ilogb(x)) }, x)
 		for _, n := range counts {
 			check("Pown(%v, %d)", func() { sink = decimal.Pown(x, n) }, x, n)
 			check("Pown(%v, %d)", func() { sink = decimal.Pown(-x, n) }, -x, n)
@@ -1064,5 +1067,78 @@ func far[D decimal.Decimal](t *testing.T) {
 			check(fmt.Sprintf("Pow(%v, %d)", x, -n), decimal.Pow(x, D(-n)), 0)
 			check(fmt.Sprintf("Pow(%v, %d.5)", x, n), decimal.Pow(x, D(n)+0.5), inf)
 		}
+	}
+}
+
+// nextUp and nextDown are IEEE 754-2019's nextUp and nextDown, which
+// Nextafter toward an infinity is.
+func nextUp[D decimal.Decimal](x D) D   { return decimal.Nextafter(x, decimal.Inf[D](1)) }
+func nextDown[D decimal.Decimal](x D) D { return decimal.Nextafter(x, decimal.Inf[D](-1)) }
+
+// TestNextafter checks Nextafter against math.Nextafter's special cases and
+// against nextUp and nextDown, and Ilogb against Logb and math.Ilogb's
+// special cases.
+func TestNextafter(t *testing.T) {
+	text := func(d decimal128) string { return strconv.FormatDecimal(d, 'e', -1, 128) }
+	inf := decimal.Inf[decimal128](1)
+	nan := decimal.NaN[decimal128]()
+	tiny := decimal128(decimal.SmallestNonzeroDecimal128)
+	for _, tt := range []struct{ x, y, want decimal128 }{
+		{1.0, 1.00, 1.0},
+		{1.00, 1.0, 1.00},
+		{0, 0, 0},
+		{1, 2, nextUp(decimal128(1))},
+		{1, -2, nextDown(decimal128(1))},
+		{1, inf, nextUp(decimal128(1))},
+		{0, 1, tiny},
+		{0, -1, -tiny},
+		{decimal.MaxDecimal128, inf, inf},
+		{inf, 0, decimal.MaxDecimal128},
+		{inf, inf, inf},
+	} {
+		if got := decimal.Nextafter(tt.x, tt.y); text(got) != text(tt.want) {
+			t.Errorf("Nextafter(%s, %s) = %s, want %s", text(tt.x), text(tt.y), text(got), text(tt.want))
+		}
+	}
+	var negZero decimal128
+	negZero = -negZero
+	if got := decimal.Nextafter(0, negZero); text(got) != "0e+00" {
+		t.Errorf("Nextafter(0, -0) = %s, want 0, as math.Nextafter(0, -0) is 0", text(got))
+	}
+	if !decimal.IsNaN(decimal.Nextafter(nan, 1)) || !decimal.IsNaN(decimal.Nextafter(1, nan)) {
+		t.Errorf("Nextafter with a NaN operand is not NaN")
+	}
+	if got := decimal.Nextafter(decimal64(1), 2); got != nextUp(decimal64(1)) {
+		t.Errorf("decimal64 Nextafter(1, 2) = %v", got)
+	}
+
+	for _, tt := range []struct {
+		x    decimal128
+		want int
+	}{
+		{250, 2}, {0.025, -2}, {1, 0}, {9.99, 0}, {-1e100, 100}, {tiny, -6176},
+		{0, -1 << 31}, {inf, 1<<31 - 1}, {-inf, 1<<31 - 1}, {nan, 1<<31 - 1},
+	} {
+		if got := decimal.Ilogb(tt.x); got != tt.want {
+			t.Errorf("Ilogb(%v) = %d, want %d", tt.x, got, tt.want)
+		}
+	}
+}
+
+// TestLimits checks the limit constants against the formats.
+func TestLimits(t *testing.T) {
+	text := func(d decimal128) string { return strconv.FormatDecimal(d, 'e', -1, 128) }
+	inf64, inf128 := decimal.Inf[decimal64](1), decimal.Inf[decimal128](1)
+	if got := decimal.Nextafter(decimal64(decimal.MaxDecimal64), inf64); got != inf64 {
+		t.Errorf("MaxDecimal64 is not the largest decimal64: next is %v", got)
+	}
+	if got := decimal.Nextafter(inf128, 0); text(got) != text(decimal.MaxDecimal128) {
+		t.Errorf("MaxDecimal128 = %s, the largest decimal128 is %s", text(decimal.MaxDecimal128), text(got))
+	}
+	if got := decimal.Nextafter(decimal64(0), 1); got != decimal.SmallestNonzeroDecimal64 {
+		t.Errorf("SmallestNonzeroDecimal64 = %v, the least positive decimal64 is %v", decimal64(decimal.SmallestNonzeroDecimal64), got)
+	}
+	if got := decimal.Nextafter(decimal128(0), 1); got != decimal.SmallestNonzeroDecimal128 {
+		t.Errorf("SmallestNonzeroDecimal128 = %v, the least positive decimal128 is %v", decimal128(decimal.SmallestNonzeroDecimal128), got)
 	}
 }

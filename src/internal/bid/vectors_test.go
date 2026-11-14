@@ -118,13 +118,16 @@ package bid_test
 // Conversion_syntax are checked; Rounded, Clamped, Subnormal and the other
 // GDA conditions have no counterpart and are ignored.
 //
-// The operations squareroot, exp, ln, log10, power, logb, scaleb, nextplus
-// and nextminus are not the kernel's: they run against math/decimal's
-// Sqrt, Exp, Log, Log10, Pow, LogB, ScaleB, NextUp and NextDown, which
-// internal/decimal implements above the kernel (see the function
+// The operations squareroot, exp, ln, log10, power, logb, scaleb, nextplus,
+// nextminus and nexttoward are not the kernel's: they run against
+// math/decimal's Sqrt, Exp, Log, Log10, Pow, Logb, Ldexp and Nextafter
+// (toward +Infinity, toward -Infinity and toward the second operand),
+// which internal/decimal implements above the kernel (see the function
 // elementary). Those round to nearest even, so a vector in another
 // rounding mode is skipped, and so is a scaleb whose count GDA rejects,
-// since ScaleB takes an int.
+// since Ldexp takes an int. A nexttoward of two equal operands is skipped
+// where it differs: Nextafter returns x, as math.Nextafter does, and GDA x
+// with the sign of y.
 //
 // Skipped, with a reason counted per file: contexts other than the two
 // formats, operations outside the kernel API (non-IEEE operations such as
@@ -210,8 +213,10 @@ package bid_test
 //	                                at rounding code 0 only: they round to
 //	                                nearest even
 //	cbrt, exp10, exp2               Rootn(x, 3), Pow(10, x), Pow(2, x), likewise
-//	scalbn, scalbln, ldexp          ScaleB, likewise
-//	logb, nextup, nextdown          LogB, NextUp, NextDown
+//	scalbn, scalbln, ldexp          Ldexp, likewise
+//	logb, ilogb                     Logb, Ilogb
+//	nextup, nextdown                Nextafter(x, +Inf), Nextafter(x, -Inf)
+//	nextafter, bid128_nexttoward    Nextafter(x, y)
 //
 // Status. A comparison of flags is made where the kernel returns a Status:
 // from_string (Parse), the conversions to integers (Int64From and
@@ -234,8 +239,8 @@ package bid_test
 // IEEE 754-2008's minNum and maxNum or its clause 5.10 order of NaNs and
 // the target differs in the documented way and in no other. Each skip has a reason, counted. Not mapped, each with its own
 // reason: the C99 functions and the transcendental functions math/decimal
-// does not have, lrint, lround, fdim, frexp, modf, ilogb, nextafter and
-// nexttoward, minNumMag and maxNumMag, llquantexp, copy,
+// does not have, lrint, lround, fdim, frexp, modf, bid64_nexttoward (whose
+// direction is a decimal128), minNumMag and maxNumMag, llquantexp, copy,
 // the inf and nan constructors, the library's flag and rounding-attribute
 // functions, DPD and strtod; the bid32 and binary80 and binary128 formats;
 // a mixed-width function with a decimal64 result and a decimal128 operand,
@@ -914,27 +919,30 @@ var decOps = map[string]decOp{
 		return elementary(im, m, func() bits { return elemPow(f, a[0], a[1]) })
 	}},
 	"logb": {1, false, false, func(im impl, f *format, a []bits, m bid.Mode) decRes {
-		return elementary(im, m, func() bits { return elemUnary(f, "LogB", a[0]) })
+		return elementary(im, m, func() bits { return elemUnary(f, "Logb", a[0]) })
 	}},
 	"nextplus": {1, false, false, func(im impl, f *format, a []bits, m bid.Mode) decRes {
-		return elementary(im, m, func() bits { return elemUnary(f, "NextUp", a[0]) })
+		return elementary(im, m, func() bits { return elemNextafter(f, a[0], elemConst(f, "Infinity")) })
 	}},
 	"nextminus": {1, false, false, func(im impl, f *format, a []bits, m bid.Mode) decRes {
-		return elementary(im, m, func() bits { return elemUnary(f, "NextDown", a[0]) })
+		return elementary(im, m, func() bits { return elemNextafter(f, a[0], elemConst(f, "-Infinity")) })
+	}},
+	"nexttoward": {2, false, false, func(im impl, f *format, a []bits, m bid.Mode) decRes {
+		return elementary(im, m, func() bits { return elemNextafter(f, a[0], a[1]) })
 	}},
 	"scaleb": {2, true, false, func(im impl, f *format, a []bits, m bid.Mode) decRes {
 		// GDA takes the count as a decimal, which must be an integer
 		// with exponent 0 and no more than 2 × (Emax + precision).
-		// ScaleB takes an int, so only such a count can be passed.
+		// Ldexp takes an int, so only such a count can be passed.
 		v := f.decode(a[1])
 		if v.kind != finite || v.exp != 0 || !v.coeff.IsInt64() || v.coeff.Int64() > int64(2*(f.maxExp+2*f.prec-1)) {
-			return decRes{skip: "contract: ScaleB takes an int count (GDA takes a decimal, and answers NaN for one that is not a small integer)"}
+			return decRes{skip: "contract: Ldexp takes an int count (GDA takes a decimal, and answers NaN for one that is not a small integer)"}
 		}
 		n := int(v.coeff.Int64())
 		if v.neg {
 			n = -n
 		}
-		return elementary(im, m, func() bits { return elemCount(f, "ScaleB", a[0], n) })
+		return elementary(im, m, func() bits { return elemCount(f, "Ldexp", a[0], n) })
 	}},
 	"copysign": {2, false, false, func(im impl, f *format, a []bits, m bid.Mode) decRes {
 		return resBits(im.copySign(f, a[0], a[1]))
@@ -944,7 +952,7 @@ var decOps = map[string]decOp{
 // vecOpReason names why an operation has no mapping.
 func vecOpReason(op string) string {
 	switch op {
-	case "nexttoward", "class", "canonical", "copy",
+	case "class", "canonical", "copy",
 		"minmag", "maxmag", "toeng", "plus", "minus":
 		return "op: IEEE or identity operation outside the kernel API"
 	case "?malformed":
@@ -1065,8 +1073,17 @@ func evalDec(im impl, v *decVector) vecOutcome {
 			return vecSkip(why)
 		}
 	}
+	if !out.pass && op == "nexttoward" {
+		if c, ok := vecRef.compare(f, args[0], args[1]); ok && c == 0 && got.x == args[0] {
+			return vecSkip(skipNextafterEqual)
+		}
+	}
 	return out
 }
+
+// skipNextafterEqual names the one place where Nextafter, which follows
+// math.Nextafter, and GDA's nexttoward differ.
+const skipNextafterEqual = "contract: Nextafter(x, y) is x when x == y, as math.Nextafter is (GDA's nexttoward gives x with the sign of y)"
 
 // The functions of math/decimal that internal/decimal implements above the
 // kernel: the square root, the exponential and logarithms, the powers, and
@@ -1097,12 +1114,8 @@ func elemUnary(f *format, op string, x bits) bits {
 			d = idecimal.Log(d)
 		case "Log10":
 			d = idecimal.Log10(d)
-		case "LogB":
-			d = idecimal.LogB(d)
-		case "NextUp":
-			d = idecimal.NextUp(d)
-		case "NextDown":
-			d = idecimal.NextDown(d)
+		case "Logb":
+			d = idecimal.Logb(d)
 		default:
 			panic(op)
 		}
@@ -1118,12 +1131,8 @@ func elemUnary(f *format, op string, x bits) bits {
 		d = idecimal.Log(d)
 	case "Log10":
 		d = idecimal.Log10(d)
-	case "LogB":
-		d = idecimal.LogB(d)
-	case "NextUp":
-		d = idecimal.NextUp(d)
-	case "NextDown":
-		d = idecimal.NextDown(d)
+	case "Logb":
+		d = idecimal.Logb(d)
 	default:
 		panic(op)
 	}
@@ -1135,8 +1144,8 @@ func elemCount(f *format, op string, x bits, n int) bits {
 	if f.width == 64 {
 		d := idecimal.BID64frombits(x.Lo)
 		switch op {
-		case "ScaleB":
-			d = idecimal.ScaleB(d, n)
+		case "Ldexp":
+			d = idecimal.Ldexp(d, n)
 		case "Rootn":
 			d = idecimal.Rootn(d, n)
 		default:
@@ -1146,8 +1155,8 @@ func elemCount(f *format, op string, x bits, n int) bits {
 	}
 	d := idecimal.BID128frombits(x.Hi, x.Lo)
 	switch op {
-	case "ScaleB":
-		d = idecimal.ScaleB(d, n)
+	case "Ldexp":
+		d = idecimal.Ldexp(d, n)
 	case "Rootn":
 		d = idecimal.Rootn(d, n)
 	default:
@@ -1155,6 +1164,24 @@ func elemCount(f *format, op string, x bits, n int) bits {
 	}
 	hi, lo := idecimal.BID128bits(d)
 	return bits{Hi: hi, Lo: lo}
+}
+
+// elemNextafter is math/decimal's Nextafter, which is also IEEE 754-2019's
+// nextUp and nextDown toward an infinity.
+func elemNextafter(f *format, x, y bits) bits {
+	if f.width == 64 {
+		return bits{Lo: idecimal.BID64bits(idecimal.Nextafter(idecimal.BID64frombits(x.Lo), idecimal.BID64frombits(y.Lo)))}
+	}
+	hi, lo := idecimal.BID128bits(idecimal.Nextafter(idecimal.BID128frombits(x.Hi, x.Lo), idecimal.BID128frombits(y.Hi, y.Lo)))
+	return bits{Hi: hi, Lo: lo}
+}
+
+// elemIlogb is math/decimal's Ilogb.
+func elemIlogb(f *format, x bits) int {
+	if f.width == 64 {
+		return idecimal.Ilogb(idecimal.BID64frombits(x.Lo))
+	}
+	return idecimal.Ilogb(idecimal.BID128frombits(x.Hi, x.Lo))
 }
 
 func elemPow(f *format, x, y bits) bits {
@@ -1541,12 +1568,9 @@ var intelSkipOps = map[string]string{
 	"erfc": "op: transcendental function (not in the contract)", "lgamma": "op: transcendental function (not in the contract)",
 	"tgamma": "op: transcendental function (not in the contract)",
 
-	"fdim":       "op: fdim (not in the contract)",
-	"frexp":      "op: frexp (not in the contract)",
-	"modf":       "op: modf (not in the contract)",
-	"ilogb":      "op: ilogb (not in the contract)",
-	"nextafter":  "op: nextUp, nextDown, nextAfter (not in the contract)",
-	"nexttoward": "op: nextUp, nextDown, nextAfter (not in the contract)",
+	"fdim":  "op: fdim (not in the contract)",
+	"frexp": "op: frexp (not in the contract)",
+	"modf":  "op: modf (not in the contract)",
 
 	"minnum_mag": "op: minNumMag, maxNumMag (not in the contract)",
 	"maxnum_mag": "op: minNumMag, maxNumMag (not in the contract)",
@@ -1870,11 +1894,26 @@ func (c *intelCall) eval() vecOutcome {
 	case "exp2":
 		return c.elementary(1, true, func(a []bits) bits { return elemPow(f, elemConst(f, "2"), a[0]) })
 	case "logb":
-		return c.elementary(1, false, func(a []bits) bits { return elemUnary(f, "LogB", a[0]) })
+		return c.elementary(1, false, func(a []bits) bits { return elemUnary(f, "Logb", a[0]) })
 	case "nextup":
-		return c.elementary(1, false, func(a []bits) bits { return elemUnary(f, "NextUp", a[0]) })
+		return c.elementary(1, false, func(a []bits) bits { return elemNextafter(f, a[0], elemConst(f, "Infinity")) })
 	case "nextdown":
-		return c.elementary(1, false, func(a []bits) bits { return elemUnary(f, "NextDown", a[0]) })
+		return c.elementary(1, false, func(a []bits) bits { return elemNextafter(f, a[0], elemConst(f, "-Infinity")) })
+	case "nextafter", "nexttoward":
+		if op == "nexttoward" && f.width == 64 {
+			return vecSkip("op: bid64_nexttoward takes a decimal128 direction (a mixed-width call Nextafter does not have)")
+		}
+		var x, y bits
+		out := c.elementary(2, false, func(a []bits) bits {
+			x, y = a[0], a[1]
+			return elemNextafter(f, a[0], a[1])
+		})
+		if cmp, ok := im.compare(f, x, y); !out.pass && out.skip == "" && ok && cmp == 0 {
+			return vecSkip("contract: Nextafter(x, y) is x when x == y, as math.Nextafter is (Intel's nextafter, as C's, gives y)")
+		}
+		return out
+	case "ilogb":
+		return c.ilogb()
 	case "scalbn", "scalbln", "ldexp":
 		return c.scale()
 	case "llrint":
@@ -1981,7 +2020,7 @@ func (c *intelCall) elementary(n int, modal bool, fn func(a []bits) bits) vecOut
 	return c.arith(n, fn)
 }
 
-// scale runs scalbn, scalbln and ldexp, which are ScaleB with the count as
+// scale runs scalbn, scalbln and ldexp, which are Ldexp with the count as
 // a C integer.
 func (c *intelCall) scale() vecOutcome {
 	if _, ok := c.im.(kernel); !ok {
@@ -2007,10 +2046,42 @@ func (c *intelCall) scale() vecOutcome {
 		return vecSkip(why)
 	}
 	var got bits
-	if o, ok := intelRun(func() { got = elemCount(c.f, "ScaleB", x, int(n)) }); !ok {
+	if o, ok := intelRun(func() { got = elemCount(c.f, "Ldexp", x, int(n)) }); !ok {
 		return o
 	}
 	return intelCompare(c.f, got, want).noted(noteNoStatus)
+}
+
+// ilogb runs ilogb, which is Ilogb with a C int result. Intel's ilogb of a
+// NaN is INT_MIN; Ilogb's is math.Ilogb's, MaxInt32.
+func (c *intelCall) ilogb() vecOutcome {
+	if _, ok := c.im.(kernel); !ok {
+		return vecSkip("reference: the model has no elementary functions")
+	}
+	ops, res, _, skip := c.split(1)
+	if skip != "" {
+		return vecSkip(skip)
+	}
+	a, why := c.operands(ops)
+	if why != "" {
+		return vecSkip(why)
+	}
+	want, err := strconv.ParseInt(res, 10, 64)
+	if err != nil {
+		w, err := strconv.ParseUint(strings.Trim(res, "[]"), 16, 32)
+		if err != nil || !strings.HasPrefix(res, "[") {
+			return vecSkip("malformed line: ilogb's result is not an integer")
+		}
+		want = int64(int32(uint32(w)))
+	}
+	if kind, _, _, _ := c.im.unpack(c.f, a[0]); kind == bid.KindNaN && want == -1<<31 {
+		return vecSkip("contract: Ilogb(NaN) is MaxInt32, as math.Ilogb's is (Intel: INT_MIN)")
+	}
+	var got int
+	if o, ok := intelRun(func() { got = elemIlogb(c.f, a[0]) }); !ok {
+		return o
+	}
+	return vecOutcome{pass: int64(got) == want, got: strconv.Itoa(got)}.noted(noteNoStatus)
 }
 
 // minMax runs minnum and maxnum, which differ from the contract's Min and
@@ -3361,7 +3432,14 @@ func TestIntelLineParser(t *testing.T) {
 		{"bid64_lround 0 2.5 3 00 longintsize=64", "op: lround"},
 		{"bid64_scalbn 0 1 2 [3200000000000001] 00", pass},
 		{"bid64_nextup 0 1 [2fe38d7ea4c68001] 00", pass},
-		{"bid64_nextafter 0 1 2 [2fe38d7ea4c68001] 00", "op: nextUp"},
+		{"bid64_nextafter 0 1 2 [2fe38d7ea4c68001] 00", pass},
+		{"bid64_nextafter 0 1 1 [31c0000000000001] 00", pass},
+		{"bid64_nextafter 0 0 -0 [b1c0000000000000] 00", "contract: Nextafter(x, y) is x when x == y"},
+		{"bid64_nexttoward 0 1 [303e000000000000000000000000000a] [2fe38d7ea4c68001] 00", "op: bid64_nexttoward takes a decimal128 direction"},
+		{"bid64_ilogb 0 [31c0000000000001] 0 00", pass},
+		{"bid64_ilogb 0 0 -2147483648 01", pass},
+		{"bid64_ilogb 0 [7800000000000000] 2147483647 01", pass},
+		{"bid64_ilogb 0 [7c00000000000000] -2147483648 01", "contract: Ilogb(NaN) is MaxInt32"},
 		{"bid64_llquantexp 0 [31a0000000000001] -2 00", "op: llquantexp"},
 		{"bid64_copy 0 0 [31c0000000000000] 00", "op: copy"},
 		{"bid64_inf 0 0 [7800000000000000] 00", "op: inf and nan"},

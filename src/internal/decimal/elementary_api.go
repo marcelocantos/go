@@ -89,7 +89,7 @@ func Log10[D Decimal](x D) D {
 func logTen64(x decimal64) decimal64    { return unary64(x, logTen) }
 func logTen128(x decimal128) decimal128 { return unary128(x, logTen) }
 
-func LogB[D Decimal](x D) D {
+func Logb[D Decimal](x D) D {
 	if is64(x) {
 		return D(logB64(decimal64(x)))
 	}
@@ -99,7 +99,37 @@ func LogB[D Decimal](x D) D {
 func logB64(x decimal64) decimal64    { return unary64(x, (*format).logBDec) }
 func logB128(x decimal128) decimal128 { return unary128(x, (*format).logBDec) }
 
-func NextUp[D Decimal](x D) D {
+// The results of Ilogb for the special cases, which are math.Ilogb's.
+const (
+	ilogbInfNaN = 1<<31 - 1 // math.MaxInt32
+	ilogbZero   = -1 << 31  // math.MinInt32
+)
+
+func Ilogb[D Decimal](x D) int {
+	switch {
+	case IsNaN(x) || x-x != 0:
+		return ilogbInfNaN
+	case x == 0:
+		return ilogbZero
+	}
+	return int(Logb(x))
+}
+
+func Nextafter[D Decimal](x, y D) D {
+	switch {
+	case IsNaN(x) || IsNaN(y):
+		return x + y // the NaN that arithmetic on the two propagates
+	case x == y:
+		// x, canonical: the same value, sign and exponent in the encoding
+		// every operation but the sign operations gives.
+		return Quantize(x, x)
+	case y > x:
+		return nextUp(x)
+	}
+	return nextDown(x)
+}
+
+func nextUp[D Decimal](x D) D {
 	if is64(x) {
 		return D(nextUp64(decimal64(x)))
 	}
@@ -109,7 +139,7 @@ func NextUp[D Decimal](x D) D {
 func nextUp64(x decimal64) decimal64    { return unary64(x, (*format).nextUpDec) }
 func nextUp128(x decimal128) decimal128 { return unary128(x, (*format).nextUpDec) }
 
-func NextDown[D Decimal](x D) D {
+func nextDown[D Decimal](x D) D {
 	if is64(x) {
 		return D(nextDown64(decimal64(x)))
 	}
@@ -119,11 +149,11 @@ func NextDown[D Decimal](x D) D {
 func nextDown64(x decimal64) decimal64    { return unary64(x, (*format).nextDownDec) }
 func nextDown128(x decimal128) decimal128 { return unary128(x, (*format).nextDownDec) }
 
-func ScaleB[D Decimal](x D, n int) D {
-	if is64(x) {
-		return D(scaleB64(decimal64(x), n))
+func Ldexp[D Decimal](frac D, exp int) D {
+	if is64(frac) {
+		return D(scaleB64(decimal64(frac), exp))
 	}
-	return D(scaleB128(decimal128(x), n))
+	return D(scaleB128(decimal128(frac), exp))
 }
 
 func scaleB64(x decimal64, n int) decimal64 { return count64(x, n, false, (*format).scaleBDec) }

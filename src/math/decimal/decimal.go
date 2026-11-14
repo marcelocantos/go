@@ -32,6 +32,17 @@ type Decimal interface {
 	~decimal64 | ~decimal128
 }
 
+// Decimal limit values, as [math.MaxFloat64] and [math.SmallestNonzeroFloat64]
+// are for the floats. Max is the largest finite value of the type and
+// SmallestNonzero the least positive one, a subnormal.
+const (
+	MaxDecimal64             = 9.999999999999999e384
+	SmallestNonzeroDecimal64 = 1e-398
+
+	MaxDecimal128             = 9.999999999999999999999999999999999e6144
+	SmallestNonzeroDecimal128 = 1e-6176
+)
+
 // A RoundingMode determines how a result that is not exactly representable
 // is rounded. The operators always round to nearest, ties to even.
 type RoundingMode byte
@@ -315,35 +326,51 @@ func Compound[D Decimal](x D, n int) D { return impl.Compound[D](x, n) }
 //	Rootn(NaN, n) = NaN
 func Rootn[D Decimal](x D, n int) D { return impl.Rootn[D](x, n) }
 
-// ScaleB returns x × 10**n (the scaleB operation of IEEE 754-2019 clause
-// 5.3.3). It moves the decimal point and changes no digit, unless the
-// result is beyond the format's range: ScaleB(1.50, 2) is 150 and
-// ScaleB(150, -2) is 1.50. An infinity or a NaN is returned as it is.
-func ScaleB[D Decimal](x D, n int) D { return impl.ScaleB[D](x, n) }
-
-// LogB returns the decimal exponent of x as an integer value of type D
-// (the logB operation of IEEE 754-2019 clause 5.3.3): the exponent of x
-// written with one digit before the point, so LogB(250) is 2 and
-// LogB(0.025) is -2.
+// Ldexp returns frac × 10**exp, the inverse of [Logb] as [math.Ldexp] is
+// of math.Logb, with the radix of the format, ten (the scaleB operation of
+// IEEE 754-2019 clause 5.3.3). It moves the decimal point and changes no
+// digit, unless the result is beyond the format's range: Ldexp(1.50, 2) is
+// 150 and Ldexp(150, -2) is 1.50.
 //
 // Special cases are:
 //
-//	LogB(±Inf) = +Inf
-//	LogB(±0) = -Inf
-//	LogB(NaN) = NaN
-func LogB[D Decimal](x D) D { return impl.LogB[D](x) }
+//	Ldexp(±0, exp) = ±0, with its exponent moved
+//	Ldexp(±Inf, exp) = ±Inf
+//	Ldexp(NaN, exp) = NaN
+func Ldexp[D Decimal](frac D, exp int) D { return impl.Ldexp[D](frac, exp) }
 
-// NextUp returns the least value of type D that is greater than x (the
-// nextUp operation of IEEE 754-2019 clause 5.3.1).
+// Logb returns the decimal exponent of x as an integer value of type D, as
+// [math.Logb] returns the binary exponent of a float64 (the logB operation
+// of IEEE 754-2019 clause 5.3.3): the exponent of x written with one digit
+// before the point, so Logb(250) is 2 and Logb(0.025) is -2.
 //
 // Special cases are:
 //
-//	NextUp(±0) = the least positive value
-//	NextUp(+Inf) = +Inf
-//	NextUp(-Inf) = the most negative finite value
-//	NextUp(NaN) = NaN
-func NextUp[D Decimal](x D) D { return impl.NextUp[D](x) }
+//	Logb(±Inf) = +Inf
+//	Logb(0) = -Inf
+//	Logb(NaN) = NaN
+func Logb[D Decimal](x D) D { return impl.Logb[D](x) }
 
-// NextDown returns the greatest value of type D that is less than x: it
-// is -NextUp(-x).
-func NextDown[D Decimal](x D) D { return impl.NextDown[D](x) }
+// Ilogb returns the decimal exponent of x as an integer, as [math.Ilogb]
+// returns the binary exponent of a float64.
+//
+// Special cases are:
+//
+//	Ilogb(±Inf) = MaxInt32
+//	Ilogb(0) = MinInt32
+//	Ilogb(NaN) = MaxInt32
+func Ilogb[D Decimal](x D) int { return impl.Ilogb[D](x) }
+
+// Nextafter returns the next representable value of type D after x towards
+// y, as [math.Nextafter] does for float64. IEEE 754-2019's nextUp(x)
+// (clause 5.3.1) is Nextafter(x, Inf[D](1)), and its nextDown(x) is
+// Nextafter(x, Inf[D](-1)). The next value after ±0 is the least subnormal
+// of the sign of the direction, and a result has the least exponent that
+// holds it.
+//
+// Special cases are:
+//
+//	Nextafter(x, x) = x, also for x and y of one cohort, such as 1.0 and 1.00
+//	Nextafter(NaN, y) = NaN
+//	Nextafter(x, NaN) = NaN
+func Nextafter[D Decimal](x, y D) D { return impl.Nextafter[D](x, y) }

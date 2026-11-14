@@ -130,24 +130,25 @@ func BenchmarkElementary(b *testing.B) {
 		}
 		moneySink128 = s
 	})
-	b.Run("ScaleB/128", func(b *testing.B) {
+	b.Run("Ldexp/128", func(b *testing.B) {
 		var s decimal128
 		for i := 0; i < b.N; i++ {
-			s = decimal.ScaleB(amounts[i&m], 2)
+			s = decimal.Ldexp(amounts[i&m], 2)
 		}
 		moneySink128 = s
 	})
-	b.Run("LogB/128", func(b *testing.B) {
+	b.Run("Logb/128", func(b *testing.B) {
 		var s decimal128
 		for i := 0; i < b.N; i++ {
-			s = decimal.LogB(amounts[i&m])
+			s = decimal.Logb(amounts[i&m])
 		}
 		moneySink128 = s
 	})
-	b.Run("NextUp/128", func(b *testing.B) {
+	b.Run("Nextafter/128", func(b *testing.B) {
 		var s decimal128
+		inf := decimal.Inf[decimal128](1)
 		for i := 0; i < b.N; i++ {
-			s = decimal.NextUp(amounts[i&m])
+			s = decimal.Nextafter(amounts[i&m], inf)
 		}
 		moneySink128 = s
 	})
