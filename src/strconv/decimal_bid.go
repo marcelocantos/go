@@ -180,6 +180,16 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 	return formatDigits(dst, v.neg, v.exp, v.digs[len(v.digs)-v.n:], normalFormat(fmt), prec)
 }
 
+// decimal64Exact reports whether d is a finite decimal128 whose coefficient
+// and exponent a decimal64 holds, as every decimal64 widened is: converting
+// it to decimal64 changes nothing.
+func decimal64Exact(d decimal128) bool {
+	hi, lo := decimal.BID128bits(d)
+	kind, _, coeff, exp := bid.Unpack128(bid.Uint128{Hi: hi, Lo: lo})
+	return kind == bid.KindFinite && coeff.Hi == 0 && coeff.Lo <= bid.MaxCoeff64 &&
+		bid.MinExp64 <= exp && exp <= bid.MaxExp64
+}
+
 // appendDecimalB appends the 'b' form of x: the coefficient in decimal, 'e',
 // and the exponent of its last digit with its sign, as a float's 'b' writes
 // its integer significand, 'p' and a power of two. "150e-2" is 1.50 and

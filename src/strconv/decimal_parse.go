@@ -7,6 +7,7 @@ package strconv
 import (
 	"internal/bid"
 	"internal/decimal"
+	"internal/stringslite"
 	"math/bits"
 	_ "unsafe"
 )
@@ -43,10 +44,13 @@ func readDecimal(s string, bitSize int) (decimal128, bid.Status) {
 		}
 		return readHexDecimal(i > 0 && s[0] == '-', removeUnderscores(rest[2:]), bitSize)
 	}
-	if !underscoreOK(s) {
-		return 0, bid.Syntax
+	if stringslite.IndexByte(s, '_') >= 0 {
+		if !underscoreOK(s) {
+			return 0, bid.Syntax
+		}
+		s = removeUnderscores(s)
 	}
-	return kernelParse(removeUnderscores(s), bitSize)
+	return kernelParse(s, bitSize)
 }
 
 // parseDecimalBinExp converts the decimal numeral mant, which has no
