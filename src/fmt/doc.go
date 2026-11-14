@@ -65,6 +65,25 @@ Floating-point and complex constituents:
 	The exponent is always a decimal integer.
 	For formats other than %b the exponent is at least two digits.
 
+Decimal floating-point (decimal64, decimal128) take the verbs of
+floating-point values but %x and %X, which write a hexadecimal fraction
+and a power of two, a notation in radix two:
+
+	%b	decimalless scientific notation with exponent a power of ten,
+		the coefficient and the exponent of its last digit, in the
+		manner of strconv.FormatDecimal with the 'b' format,
+		e.g. -123456e-78
+	%e %E %f %F %g %G	as for floating-point values
+
+	A decimal value has a quantum, the exponent of its last digit, which
+	the value alone does not fix: 1.5 and 1.50 are equal, and differ in
+	their quantum. %v, %g and %G without a precision write every digit of
+	the coefficient, so that 1.50 prints as 1.50 and parses back with its
+	quantum. They choose between fixed and exponent notation as for a
+	float64, by the exponent of the leading digit, and also use exponent
+	notation when the quantum is above the units digit, which fixed notation
+	cannot show: 1E+3 prints as 1e+03.
+
 String and slice of bytes (treated equivalently with these verbs):
 
 	%s	the uninterpreted bytes of the string or slice
@@ -88,6 +107,7 @@ The default format for %v is:
 	int, int8 etc.:          %d
 	uint, uint8 etc.:        %d, %#x if printed with %#v
 	float32, complex64, etc: %g
+	decimal64, decimal128:   %g
 	string:                  %s
 	chan:                    %p
 	pointer:                 %p
@@ -135,7 +155,8 @@ except that for %g/%G precision sets the maximum number of significant
 digits (trailing zeros are removed). For example, given 12.345 the format
 %6.3f prints 12.345 while %.3g prints 12.3. The default precision for %e, %f
 and %#g is 6; for %g it is the smallest number of digits necessary to identify
-the value uniquely.
+the value uniquely. For a decimal value, which has a quantum, the default
+precision for %g is every digit of the coefficient.
 
 For complex numbers, the width and precision apply to the two
 components independently and the result is parenthesized, so %f applied
@@ -353,6 +374,9 @@ For floating-point and complex values, all valid formatting verbs
 (%b %e %E %f %F %g %G %x %X and %v) are equivalent and accept
 both decimal and hexadecimal notation (for example: "2.3e+7", "0x4.5p-8")
 and digit-separating underscores (for example: "3.14159_26535_89793").
+Decimal values accept the same input: decimal notation keeps the quantum
+of its digits, and a value given in hexadecimal is rounded once to the
+decimal type.
 
 Input processed by verbs is implicitly space-delimited: the
 implementation of every verb except %c starts by discarding
