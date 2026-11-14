@@ -157,6 +157,13 @@ func Recip10tab128(k int) (m Uint128, s uint) {
 	return recip10tab128[k].m, uint(recip10tab128[k].s)
 }
 
+// ProdTab64 returns entry z of the table of mulSlow64's rounding, and the
+// table's length.
+func ProdTab64(z int) (pow Uint128, d1, m1, d0, m0 uint64, j, s, u uint, n int) {
+	e := prodTab64[z]
+	return e.pow, e.d1, e.m1, e.d0, e.m0, uint(e.j), uint(e.s), uint(e.u), len(prodTab64)
+}
+
 // RecipTrunc10tab128 returns ⌊(2^128 - 1) / 10^k⌋ from entry k of the
 // 128-bit reciprocal table, the reciprocal of divPow10Recip128.
 func RecipTrunc10tab128(k int) Uint128 { return recip10tab128[k].t }

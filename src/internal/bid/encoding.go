@@ -353,6 +353,44 @@ func unpackWordCanon128(x Uint128) (neg bool, coeff uint64, exp int, ok bool) {
 	return unpackWord128(x)
 }
 
+// fields64 decodes what mulSlow64's own path needs of a decimal64: the
+// coefficient and the biased exponent of either encoding form, chosen
+// without a branch, since a coefficient from 2^53 up is as likely as its
+// digits (one sixteen-digit coefficient in nine). x is finite and
+// canonical exactly when coeff <= MaxCoeff64 and exp < specialExp64. The
+// second form is the coefficient field shorter by two bits under an
+// implicit 100, and its exponent field two bits lower; an infinity or a
+// NaN is a second form whose exponent field would start with 11, which no
+// finite encoding's does, so the exponent alone tells it.
+func fields64(x uint64) (coeff uint64, exp int) {
+	coeff = x & (1<<CoeffBits64 - 1)
+	e := x >> ExpShift64 & ExpMask64
+	coeff2 := 1<<CoeffBits64 | x&(1<<Form2CoeffBits64-1)
+	e2 := x >> Form2ExpShift64 & ExpMask64
+	if x&Form2Mask64 == Form2Mask64 {
+		coeff, e = coeff2, e2
+	}
+	return coeff, int(e)
+}
+
+// specialExp64 is the least exponent field that fields64 reads from an
+// infinity or a NaN, and above every exponent field of a finite encoding.
+const specialExp64 = 3 << (ExpBits64 - 2)
+
+// packSign64 is packWord64 for a coefficient of one word and a sign given
+// as the sign bit, 0 or SignMask64, which mulSlow64 has without a
+// comparison. TestRoundIsTheOnlyPacker lists its callers.
+func packSign64(sign, c uint64, exp int) (uint64, bool) {
+	if c > MaxCoeff64 || uint(exp-MinExp64) > MaxExp64-MinExp64 {
+		return 0, false
+	}
+	x := sign | uint64(exp+Bias64)<<ExpShift64 | c
+	if c >= 1<<CoeffBits64 {
+		x = sign | Form2Mask64 | uint64(exp+Bias64)<<Form2ExpShift64 | c&(1<<Form2CoeffBits64-1)
+	}
+	return x, true
+}
+
 // packWord64 and packWord128 encode the exact value (-1)^neg × (hi·2^64 +
 // lo) × 10^exp, which a word fast path computed at its preferred exponent,
 // if it fits the format, and report ok = false otherwise, when the caller

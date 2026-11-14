@@ -24,9 +24,10 @@ func mulW(x, y coefW, mode Mode) coefW {
 }
 
 // mulLongW returns x × y rounded in mode, for every operand: mulSlowW,
-// which mulW above and the compiler call, is mulLong64 for decimal64 and
-// takes most products of a two-word coefficient itself for decimal128
-// (mul128.go). The special values follow "NaN and
+// which mulW above and the compiler call, takes most products of finite
+// operands in a nearest mode itself for decimal64, and most products of a
+// two-word coefficient for decimal128 (mul128.go), and hands the rest
+// here. The special values follow "NaN and
 // infinity operands" and "Sign of a result"; a finite product is computed
 // exactly in the double-width type, whose digits roundW reduces with a sticky
 // class of everything it drops, so the product is rounded once and nothing

@@ -297,8 +297,13 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 		// digits rounded by its biased remainder, or an exact quotient
 		// with its zeros stripped, in range or turned away.
 		"div128": true, "divWide128": true, "div64": true, "div64Exact": true,
+		// The straight path of decimal64 multiplication: an exact product,
+		// or one rounded to Precision64 digits by its biased remainder,
+		// in range or turned away.
+		"mulSlow64": true,
 	}
-	wordEncoder := map[string]bool{"packWord64": true, "packWord128": true, "packWordW": true, "packQuotient64": true}
+	// packSign64 is packWord64 with the sign as its bit.
+	wordEncoder := map[string]bool{"packWord64": true, "packWord128": true, "packWordW": true, "packQuotient64": true, "packSign64": true}
 	// Callers of the inline encoders, which encode the exact results of the
 	// inline paths of addition, subtraction and multiplication in front of
 	// the general paths: see "Inline fast paths" in the package

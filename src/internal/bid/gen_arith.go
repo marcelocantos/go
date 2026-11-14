@@ -290,6 +290,39 @@ package bid
 		return fmt.Sprintf("{m: Uint128{Hi: %#016x, Lo: %#016x}, t: Uint128{Hi: %#016x, Lo: %#016x}, s: %d}", w[1], w[0], t[1], t[0], s)
 	})
 
+	// The rounding of a decimal64 product, by the number of leading zeros
+	// of the product in two words (see prodRound64 in mul128.go). A
+	// product that rounds has from 17 to 32 digits, 54 to 107 bits, and so
+	// from 21 to 74 leading zeros; the entries below 21 are never read and
+	// stay zero. For n bits the digit count is t or t + 1 with
+	// t = ⌊n × 1233 / 4096⌋, as cLenFull64 counts it; the shift is
+	// s = max(n - 62, 0), and the multiplier for 10^j is ⌊2^(64+s) / 10^j⌋,
+	// for j = t - 15 (t + 1 digits) and, when it is positive, j = t - 16.
+	const prodMinLZ, prodMaxLZ = 128 - 107, 128 - 54
+	fmt.Fprintf(&sb, "\n// prodTab64[z] is the rounding of a decimal64 product of two words with z leading\n// zeros (see prodRound64), for z in [%d, %d].\nvar prodTab64 = [%d]prodRound64{\n", prodMinLZ, prodMaxLZ, prodMaxLZ+1)
+	for z := 0; z <= prodMaxLZ; z++ {
+		if z < prodMinLZ {
+			sb.WriteString("\t{},\n")
+			continue
+		}
+		n := 128 - z
+		t := n * 1233 >> 12
+		s := uint(max(n-62, 0))
+		pw := words(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(t)), nil))
+		recipOf := func(j int) (d, m uint64) {
+			if j < 1 {
+				return 0, 0
+			}
+			p := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(j)), nil)
+			return p.Uint64(), new(big.Int).Quo(new(big.Int).Lsh(big.NewInt(1), 64+s), p).Uint64()
+		}
+		d1, m1 := recipOf(t - 15)
+		d0, m0 := recipOf(t - 16)
+		fmt.Fprintf(&sb, "\t{pow: Uint128{Hi: %#016x, Lo: %#016x}, d1: %d, m1: %#016x, d0: %d, m0: %#016x, j: %d, s: %d, u: %d}, // %d\n",
+			pw[1], pw[0], d1, m1, d0, m0, t-15, s, (64-s)%64, z)
+	}
+	sb.WriteString("}\n")
+
 	// The four characters of each number below 10^4, the thousands in
 	// the low byte, as eightQuads reads them (putlong.go).
 	sb.WriteString("\n// quadTab[n] is the four characters of n, below 10^4, with leading zeros,\n// the thousands in the low byte: four digits as putEight stores them.\nvar quadTab = [10000]uint32{")

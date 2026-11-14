@@ -1836,6 +1836,14 @@
 // the same paths for the tests and the benchmark rows. The general paths
 // take every operand, so no result depends on any of this.
 //
+// The decimal64 operators have the same arrangement on amd64 and arm64:
+// the compiler writes the fronts addSameQuantum64, subSameQuantum64 and
+// mulShort64 in SSA and calls addSlow64, mulSlow64 and div64 with the
+// mode for every operand pair they refuse
+// (cmd/compile/internal/ssagen/bid64.go), so those functions' parameters
+// are a contract with it too. mulSlow64 is not the general path itself:
+// it has a straight path in front of mulLong64 ("Straight paths").
+//
 // FMA128 has a front of another kind: a test that the three coefficients
 // fit a word each, which sends them to fmaLong128 and its word paths, and
 // everything else to fmaSlow128 ("Straight paths"). It calls fmaLong128
@@ -2199,9 +2207,9 @@
 // operands: the special values, the directed modes, and any result that
 // packWord128 refuses, which covers the subnormal range, overflow, a
 // clamped exponent and a coefficient that a rounding carried to 10^34. A
-// decimal64 operation is word arithmetic throughout; of the three, only its
-// division has such an entry, div64 in front of divLong64 (div64.go; see
-// the end of "Division").
+// decimal64 operation is word arithmetic throughout; its division and its
+// multiplication have such entries, div64 in front of divLong64 (div64.go;
+// see the end of "Division") and mulSlow64 in front of mulLong64 (below).
 //
 // All three round the same way. The value whose digits are to go is
 // biased by half of the power of ten it is divided by (half the divisor,
@@ -2289,6 +2297,43 @@
 // A 34-digit value rounded to two places: 256 instructions and 33.8 cycles
 // to 168 and 19.4 through math/decimal; the refusal of a value that does
 // not fit the quantum, 116 and 14.3 to 81 and 8.0 (2026-11-12).
+//
+// Decimal64 multiplication (2026-11-14). The operator's front takes a
+// product below 2^53; every other went to mulLong64, whose rounding
+// routine spent most of its time finding out again what the product's
+// size already said: a digit count, a division by a power of ten through
+// reduceClass64 and a class. mulSlow64 now multiplies finite canonical
+// operands of either encoding form, in a nearest mode, itself. Two words
+// hold the exact product; one of 16 digits or fewer is encoded at once.
+// One that rounds is looked up by its leading zeros in prodTab64, whose
+// entry holds the power of ten that settles the digit count, and both
+// candidate powers 10^j with their reciprocals at a shift that the bit
+// length fixes. The borrow against the power picks one by a select, the
+// product shifted by the entry's amount is multiplied by the reciprocal,
+// and one comparison of the remainder of the product biased by half of
+// 10^j corrects the estimate; a zero remainder is the tie. The estimate
+// needs no bias of its own, because the shift keeps the shifted product
+// and the reciprocal below 2^62, which leaves it within a half of the
+// unbiased quotient (prodRound64 proves it). The encoding form of each
+// operand is chosen by a select, not a branch: one random 16-digit
+// coefficient in nine has the second form, and a branch on it cost 8
+// percent on random operands and 20 on operands from 4 × 10^15 up, in the
+// kernel's own loop. Through the operator, loop included, on
+// an M4 Max: 16-digit operands, 302 instructions and 35.5 cycles to 133
+// and 16.0 (9.1 ns to 4.2); random 16-digit operands, 310 and 50.9 to 146
+// and 25.8 (13.1 ns to 6.7). Set aside, with their cost on those rows:
+// the first form of the path, which read 10^j and its reciprocal from
+// recip10tab64 only once the digit count was known (5.6 and 8.8 ns on the
+// two rows); the same constants read from the existing tables of powers
+// and reciprocals by the digit count, both candidates beside the count,
+// in place of one entry (5.7 and 8.1 ns); the bias added to the
+// estimate's dividend as well (4 percent); a branch-free choice of the
+// result's encoding form, which is the second form for one product of
+// random operands in thirty (no gain on them, 10 percent on fixed ones);
+// one test of the operands' validity and the mode, their conditions
+// gathered in the sign bit of one word, in place of five branches on
+// them, which are predicted (5 percent); and //go:nosplit on mulSlow64,
+// which saves the stack check (1 percent).
 //
 // # Short numerals
 //
