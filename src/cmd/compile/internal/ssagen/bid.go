@@ -184,6 +184,7 @@ func initBIDKernelSyms() {
 	if !bidKernelDirect() {
 		return
 	}
+	initBIDKernelSyms64()
 	bidKernelAdd = base.PkgLinksym("internal/bid", "addSlow128", obj.ABIInternal)
 	bidKernelMul = base.PkgLinksym("internal/bid", "mulSlow128", obj.ABIInternal)
 	bidKernelAddLong = base.PkgLinksym("internal/bid", "addLong128", obj.ABIInternal)

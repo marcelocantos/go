@@ -143,6 +143,16 @@ func (s *state) decimalOp(op ir.Op, rt *types.Type, args ...*ssa.Value) *ssa.Val
 				return s.bidMul128(rt, args[0], args[1])
 			}
 		}
+		if rt.Kind() == types.TDECIMAL64 && bidKernelDirect() {
+			switch op {
+			case ir.OADD, ir.OSUB:
+				return s.bidAddSub64(op, rt, args[0], args[1])
+			case ir.OMUL:
+				return s.bidMul64(rt, args[0], args[1])
+			case ir.ODIV:
+				return s.bidKernelOp64(op, rt, args[0], args[1])
+			}
+		}
 		return s.softDecimalOp(op, rt, args...)
 	}
 	x, y := args[0], args[1]

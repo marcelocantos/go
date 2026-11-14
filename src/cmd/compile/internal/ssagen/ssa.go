@@ -5011,6 +5011,11 @@ func (s *state) softDecimalOp(op ir.Op, rt *types.Type, args ...*ssa.Value) *ssa
 			return res
 		}
 	}
+	if bidKernelDirect() && args[0].Type.Kind() == types.TDECIMAL64 && !rt.IsBoolean() {
+		if res := s.bidKernelOp64(op, rt, args[0], args[1]); res != nil {
+			return res
+		}
+	}
 	fn, ok := softDecimalOps[opAndType{op, args[0].Type.Kind()}]
 	if !ok {
 		s.Fatalf("unhandled decimal operator %v on %v", op, args[0].Type)
