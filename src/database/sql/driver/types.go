@@ -285,10 +285,16 @@ func (defaultConverter) ConvertValue(v any) (Value, error) {
 		return int64(u64), nil
 	case reflect.Float32, reflect.Float64:
 		return rv.Float(), nil
-	case decimalreflect.Decimal64:
-		return decimalreflect.FormatDecimal(decimalreflect.Decimal(rv), 'f', -1, 64), nil
-	case decimalreflect.Decimal128:
-		return decimalreflect.FormatDecimal(decimalreflect.Decimal(rv), 'f', -1, 128), nil
+	case decimalreflect.Decimal64, decimalreflect.Decimal128:
+		// A decimal has no driver.Value type of its own, and float64
+		// would change its value, so it becomes its canonical string,
+		// the 'g' form that asString uses for a float, which keeps the
+		// value and the quantum, a positive exponent included ("1.5e+03").
+		bits := 128
+		if rv.Kind() == decimalreflect.Decimal64 {
+			bits = 64
+		}
+		return decimalreflect.FormatDecimal(decimalreflect.Decimal(rv), 'g', -1, bits), nil
 	case reflect.Bool:
 		return rv.Bool(), nil
 	case reflect.Slice:

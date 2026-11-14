@@ -668,6 +668,27 @@ func TestDecimalConversions(t *testing.T) {
 		t.Errorf("decimal64 to string: got %q, want %q", s, "3.14")
 	}
 
+	// A decimal converts to text as a float does, with 'g' at precision
+	// -1, which for a decimal keeps the quantum.
+	for _, tt := range []struct {
+		in   any
+		want string
+	}{
+		{decimal64(1.50), "1.50"},
+		{decimal64(1.5e3), "1.5e+03"},
+		{decimal128(1234567.89), "1.23456789e+06"},
+		{decimal128(0.000), "0.000"},
+	} {
+		var s string
+		if err := convertAssign(&s, tt.in); err != nil || s != tt.want {
+			t.Errorf("%T %v to string: %q, %v; want %q", tt.in, tt.in, s, err, tt.want)
+		}
+		var b []byte
+		if err := convertAssign(&b, tt.in); err != nil || string(b) != tt.want {
+			t.Errorf("%T %v to []byte: %q, %v; want %q", tt.in, tt.in, b, err, tt.want)
+		}
+	}
+
 	// Test NULL to decimal
 	var d64 decimal64
 	err = convertAssign(&d64, nil)

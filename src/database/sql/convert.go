@@ -624,6 +624,10 @@ func asString(src any) string {
 		return strconv.FormatFloat(rv.Float(), 'g', -1, 64)
 	case reflect.Float32:
 		return strconv.FormatFloat(rv.Float(), 'g', -1, 32)
+	case decimalreflect.Decimal64:
+		return decimalreflect.FormatDecimal(decimalreflect.Decimal(rv), 'g', -1, 64)
+	case decimalreflect.Decimal128:
+		return decimalreflect.FormatDecimal(decimalreflect.Decimal(rv), 'g', -1, 128)
 	case reflect.Bool:
 		return strconv.FormatBool(rv.Bool())
 	}
@@ -640,6 +644,10 @@ func asBytes(buf []byte, rv reflect.Value) (b []byte, ok bool) {
 		return strconv.AppendFloat(buf, rv.Float(), 'g', -1, 32), true
 	case reflect.Float64:
 		return strconv.AppendFloat(buf, rv.Float(), 'g', -1, 64), true
+	case decimalreflect.Decimal64:
+		return decimalreflect.AppendDecimal(buf, decimalreflect.Decimal(rv), 'g', -1, 64), true
+	case decimalreflect.Decimal128:
+		return decimalreflect.AppendDecimal(buf, decimalreflect.Decimal(rv), 'g', -1, 128), true
 	case reflect.Bool:
 		return strconv.AppendBool(buf, rv.Bool()), true
 	case reflect.String:

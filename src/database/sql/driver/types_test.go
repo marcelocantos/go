@@ -65,6 +65,11 @@ var valueConverterTests = []valueConverterTest{
 	{DefaultParameterConverter, decimal128(3.14), "3.14", ""},
 	{DefaultParameterConverter, d64(1.25), "1.25", ""},
 	{DefaultParameterConverter, d128(3.14), "3.14", ""},
+	// The canonical string keeps the quantum, above the units digit too.
+	{DefaultParameterConverter, decimal64(1.50), "1.50", ""},
+	{DefaultParameterConverter, decimal64(1.5e3), "1.5e+03", ""},
+	{DefaultParameterConverter, decimal128(1500), "1500", ""},
+	{DefaultParameterConverter, decimal128(0.00), "0.00", ""},
 }
 
 func TestValueConverters(t *testing.T) {
