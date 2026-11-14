@@ -56,8 +56,8 @@ func d64load(p unsafe.Pointer) uint64 {
 }
 
 // printdecimal64 prints x for the builtin print and println, in the form
-// of internal/bid's Append64: the one %v and strconv write, which keeps the
-// quantum.
+// of internal/bid's Append64: the one %v and strconv's 'g' at precision -1
+// write, which keeps the quantum. A float64 prints its %v form too.
 func printdecimal64(x decimal64) {
 	var buf [bid.MaxLen64]byte
 	gwrite(bid.Append64(buf[:0], d64load(unsafe.Pointer(&x))))

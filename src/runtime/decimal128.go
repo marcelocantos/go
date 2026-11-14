@@ -51,8 +51,9 @@ func to128(x bid.Uint128) (hi, lo uint64) {
 	return x.Hi, x.Lo
 }
 
-// printdecimal128 prints x for the builtin print and println, in the
-// character form of internal/bid, which preserves the quantum.
+// printdecimal128 prints x for the builtin print and println, in the form
+// of internal/bid's Append128: the one %v and strconv's 'g' at precision -1
+// write, which keeps the quantum. A float64 prints its %v form too.
 func printdecimal128(x decimal128) {
 	var buf [bid.MaxLen128]byte
 	gwrite(bid.Append128(buf[:0], d128load(unsafe.Pointer(&x))))

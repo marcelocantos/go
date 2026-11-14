@@ -153,7 +153,8 @@ func TestParseLongExponentCompensation(t *testing.T) {
 
 // TestShort128 checks the short form of decimal128 against the reference
 // and against the general formatter: IsShort128 accepts exactly the finite
-// encodings with a coefficient below 10^8 and an exponent from -6 to 0;
+// encodings with a coefficient below 10^8, an exponent from -4 to 0 and a
+// magnitude below 10^6;
 // for those, PutShort128 writes the reference's character form and no byte
 // after it; and Append128 returns the same string with spare capacity (the
 // short path) and without (the general one). The coefficients are every
@@ -178,7 +179,8 @@ func TestShort128(t *testing.T) {
 	check := func(x bits) {
 		t.Helper()
 		v := f.decode(x)
-		want := v.kind == finite && v.coeff.IsUint64() && v.coeff.Uint64() < 100_000_000 && v.exp >= -4 && v.exp <= 0 && bid.IsCanonical128(x)
+		want := v.kind == finite && v.coeff.IsUint64() && v.coeff.Uint64() < 100_000_000 && v.exp >= -4 && v.exp <= 0 && bid.IsCanonical128(x) &&
+			len(v.coeff.String())+v.exp <= 6 // below 10^6
 		if got := bid.IsShort128(x); got != want {
 			t.Fatalf("IsShort128(%s) = %t, want %t", hex128(x), got, want)
 		}

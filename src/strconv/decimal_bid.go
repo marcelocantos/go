@@ -26,11 +26,11 @@ import (
 // [parseDecimal] of that string returns the same value and quantum.
 //
 // With 'g' and 'G' and the special precision -1, the result is the canonical
-// string, which println and fmt's %v also write. It follows the layout of a
-// float's shortest form: fixed notation unless the exponent of the leading
-// digit is less than -4 or at least 21, and an exponent of at least two
-// digits ("1e-05"). Unlike a float it keeps every coefficient digit, and a
-// quantum above the units digit, which fixed notation can't show, forces
+// string, which println and fmt's %v also write. It follows a float's
+// shortest form: fixed notation unless the exponent of the leading digit is
+// less than -4 or at least 6, and an exponent of at least two digits
+// ("1e-05", "1.5e+06"). Unlike a float it keeps every coefficient digit, and
+// a quantum above the units digit, which fixed notation can't show, forces
 // exponential notation: 1e+03 is not 1000.
 //
 // The bitSize must be 64 for values from decimal64 or 128 for decimal128.
@@ -56,10 +56,10 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 	hi, lo := decimal.BID128bits(d)
 	x := bid.Uint128{Hi: hi, Lo: lo}
 
-	// A short coefficient at or just below the units place (money and most
-	// quantities) is plain digits around a point in every notation that
-	// keeps all the digits, which is each verb but 'e' and 'E' at
-	// precision -1. The kernel lays those out in registers and stores
+	// A short coefficient at or just below the units place and below 10^6
+	// (money and most quantities) is plain digits around a point in every
+	// notation that keeps all the digits, which is each verb but 'e' and
+	// 'E' at precision -1. The kernel lays those out in registers and stores
 	// them straight into dst, exactly the bytes appended.
 	if i := len(dst); bid.IsShort128(x) && prec < 0 && fmt != 'e' && fmt != 'E' && cap(dst)-i >= bid.ShortLen128 {
 		return dst[:i+bid.PutShort128((*[bid.ShortLen128]byte)(dst[i:i+bid.ShortLen128]), x)]
@@ -331,10 +331,11 @@ func appendZero(dst []byte, neg bool, format byte, prec int) []byte {
 }
 
 // Exponents of the leading digit outside this range use exponent notation in
-// the canonical string. They are the thresholds encoding/json uses for floats.
+// the canonical string. They are those of a float's shortest 'g' form
+// (ftoa.go: "if shortest { eprec = 6 }").
 const (
 	canonicalMinExp = -4
-	canonicalMaxExp = 21
+	canonicalMaxExp = 6
 )
 
 // formatDigits formats the non-zero value (-1)^neg × digits × 10^exp, where

@@ -365,12 +365,12 @@ func TestDecimalRoundingMode(t *testing.T) {
 			x, y decimal64
 			want string
 		}{
-			{big, 0.5, "1234567890123456"},  // tie, down to even
-			{big, 1.5, "1234567890123458"},  // tie, up to even
-			{big, 0.51, "1234567890123457"}, // above the tie
-			{-big, -0.5, "-1234567890123456"},
-			{-big, -1.5, "-1234567890123458"},
-			{big, 0.49, "1234567890123456"},
+			{big, 0.5, "1.234567890123456e+15"},  // tie, down to even
+			{big, 1.5, "1.234567890123458e+15"},  // tie, up to even
+			{big, 0.51, "1.234567890123457e+15"}, // above the tie
+			{-big, -0.5, "-1.234567890123456e+15"},
+			{-big, -1.5, "-1.234567890123458e+15"},
+			{big, 0.49, "1.234567890123456e+15"},
 		} {
 			got := string(bid.Append64(nil, dec.BID64bits(opAdd64(c.x, c.y))))
 			if got != c.want {

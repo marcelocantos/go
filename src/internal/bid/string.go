@@ -12,10 +12,10 @@ import "math/bits"
 // reads both:
 //
 //   - Go's canonical form (Append64, Append128), which println, fmt's %v
-//     and strconv's 'g' at precision -1 write, and which follows Go's
-//     floating-point layout: plain notation unless the exponent of the
-//     leading digit is below -4 or at least 21, exponential notation with
-//     a lowercase "e" and at least two exponent digits ("1e+02",
+//     and strconv's 'g' at precision -1 write, and which follows the
+//     shortest form of a float64 there: plain notation unless the exponent
+//     of the leading digit is below -4 or at least 6, exponential notation
+//     with a lowercase "e" and at least two exponent digits ("1.5e+06",
 //     "1.2e-07"), and "NaN", "+Inf" and "-Inf". The one difference from a
 //     float is the quantum: every coefficient digit is written, and a
 //     quantum above the units digit, which plain notation cannot show,
@@ -98,10 +98,14 @@ func AppendSci128(dst []byte, x Uint128) []byte {
 
 // The short values, which dominate formatting (money and quantities): a
 // coefficient below shortCoeff, of at most eight digits, which eightQuads
-// converts as one word, at an exponent from shortMinExp to 0. Their
-// character form is plain notation whatever the coefficient ("Values,
-// cohorts and the character form"): the digits, with a point inside them
-// or after a leading "0." and zeros.
+// converts as one word, at an exponent from shortMinExp to 0, and a
+// magnitude below 10^canonicalMaxExp. Their character form is plain
+// notation in both forms ("Values, cohorts and the character form"): the
+// digits, with a point inside them or after a leading "0." and zeros.
+// The magnitude bound excludes only coefficients of seven and eight
+// digits at an exponent of -1 or 0, which the canonical form writes in
+// exponential notation (1.2345678e+07); every coefficient below shortCoeff
+// with two places or more after the point is below it.
 const (
 	shortCoeff  = 100_000_000
 	shortMinExp = -4
@@ -112,13 +116,19 @@ const (
 	ShortLen128 = 16
 )
 
-// IsShort128 reports whether x is finite with a coefficient below 10^8 and
-// an exponent from -4 to 0: a value PutShort128 formats. Its leading digit
-// is then at an exponent of -4 or more, so both character forms write it
-// in plain notation.
+// IsShort128 reports whether x is finite with a coefficient below 10^8, an
+// exponent from -4 to 0 and a magnitude below 10^6: a value PutShort128
+// formats. Its leading digit is then at an exponent from -4 to 5, so both
+// character forms write it in plain notation.
 func IsShort128(x Uint128) bool {
-	return shortExp128(x) <= -shortMinExp && x.Lo < shortCoeff
+	k := shortExp128(x)
+	return k <= -shortMinExp && x.Lo < shortLimit[k]
 }
+
+// shortLimit[k] bounds the coefficient of a short value at the exponent
+// shortMinExp + k: shortCoeff, or less where 10^canonicalMaxExp is the
+// lower bound, 10^(canonicalMaxExp - shortMinExp - k).
+var shortLimit = [1 - shortMinExp]uint64{shortCoeff, shortCoeff, shortCoeff, 10_000_000, 1_000_000}
 
 // PutShort128 writes the character form of x, as Append128 gives it, to
 // the start of buf and returns its length, for an x that IsShort128
@@ -406,12 +416,13 @@ func appendDecimal(dst []byte, neg bool, digs []byte, exp int) []byte {
 	return appendExpDigits(dst, adj)
 }
 
-// The thresholds of Go's canonical form: those of a float's shortest form
-// below the units digit, and those of plain notation above it that keep a
-// money value or a 34-digit count readable.
+// The thresholds of Go's canonical form: those of a float64's shortest
+// form, strconv's 'g' at precision -1, which writes exponential notation
+// when the exponent of the leading digit is below -4 or at least 6
+// (strconv/ftoa.go: "if shortest { eprec = 6 }").
 const (
 	canonicalMinExp = -4
-	canonicalMaxExp = 21
+	canonicalMaxExp = 6
 )
 
 // appendPlain appends the digits digs with the point placed for the

@@ -14,9 +14,11 @@ package strconv
 // [ParseDecimal] of that string returns the same value and quantum.
 //
 // With 'g' and 'G' and the special precision -1, the result is the canonical
-// string. It is in fixed notation unless the exponent of the leading digit is
-// less than -4 or at least 21, or the quantum is above the units digit, which
-// fixed notation can't show: 1e+03 is not 1000.
+// string. As for a float, it is in fixed notation unless the exponent of the
+// leading digit is less than -4 or at least 6: 1234567.89 formats as
+// "1.23456789e+06". Unlike a float, the quantum above the units digit, which
+// fixed notation can't show, also forces exponential notation: 1e+03 is not
+// 1000.
 //
 // The bitSize must be 64 for values from decimal64 or 128 for decimal128.
 func FormatDecimal(d decimal128, fmt byte, prec, bitSize int) string {

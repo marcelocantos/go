@@ -37,4 +37,13 @@ func main() {
 
 	var zeroValue decimal64
 	println(zeroValue)
+
+	// println writes what %v does, for a decimal as for a float64, with
+	// the same thresholds: exponential notation when the exponent of the
+	// leading digit is below -4 or at least 6.
+	println(decimal64(1234567.89), 1234567.89, decimal64(0.00001), 0.00001)
+	println(decimal64(999999), decimal64(1000000), decimal64(-999999), decimal64(-1000000))
+	println(decimal128(999999.99), decimal128(1000000.00), -decimal128(999999.99), -decimal128(1000000.00))
+	println(decimal64(0.0001), decimal64(0.00001), -decimal128(0.0001), -decimal128(0.00001))
+	println(decimal128(1234567.890123456789012345678901234), decimal64(1e5))
 }

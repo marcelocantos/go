@@ -38,7 +38,7 @@ var dtoaTests = []dtoaTest{
 	{decimal64(0.1), 'g', -1, "0.1"},
 	{decimal64(0.3), 'g', -1, "0.3"},
 	{decimal64(3.14), 'g', -1, "3.14"},
-	{decimal64(1234567.8), 'g', -1, "1234567.8"},
+	{decimal64(1234567.8), 'g', -1, "1.2345678e+06"},
 
 	// 'e' format
 	{decimal64(0), 'e', 6, "0.000000e+00"},
@@ -293,7 +293,7 @@ var atod64Tests = []atodTest{
 	{"-1", "-1", nil},
 	{"0.1", "0.1", nil},
 	{"-0.1", "-0.1", nil},
-	{"123456700", "123456700", nil},
+	{"123456700", "1.23456700e+08", nil},
 	{".5", "0.5", nil},
 	{"5.", "5", nil},
 
@@ -330,7 +330,7 @@ var atod64Tests = []atodTest{
 	{"infinity", "+Inf", nil},
 	{"-Infinity", "-Inf", nil},
 	// Max coefficient (16 digits)
-	{"9999999999999999", "9999999999999999", nil},
+	{"9999999999999999", "9.999999999999999e+15", nil},
 
 	// Digits beyond the 16th round to nearest even; they are not truncated
 	// (audit L4).
@@ -343,7 +343,7 @@ var atod64Tests = []atodTest{
 	{"-12345678901234565", "-1.234567890123456e+16", nil},
 	// Above a tie, however far below the 17th digit the excess lies.
 	{"12345678901234565000000000000000000001", "1.234567890123457e+37", nil},
-	{"1234567890123456.50000000000000000000001", "1234567890123457", nil},
+	{"1234567890123456.50000000000000000000001", "1.234567890123457e+15", nil},
 	// Below a tie.
 	{"12345678901234564999999999999999999999", "1.234567890123456e+37", nil},
 	// A carry through every digit.
@@ -351,7 +351,7 @@ var atod64Tests = []atodTest{
 	{"99999999999999994", "9.999999999999999e+16", nil},
 	// Zeros that do not count as digits, and trailing zeros that do not matter.
 	{"0.0000000000000000000000000001234567890123456789", "1.234567890123457e-28", nil},
-	{"1234567890123456.00000000000000000000", "1234567890123456", nil},
+	{"1234567890123456.00000000000000000000", "1.234567890123456e+15", nil},
 
 	// Range errors: the result is +-Inf, as ParseFloat gives (audit L3).
 	{"1e999", "+Inf", ErrRange},
@@ -796,7 +796,7 @@ func TestAppendDecimalCanonicalCapacity(t *testing.T) {
 					}
 					for _, format := range []byte{'e', 'E', 'g', 'G', 'f', '?'} {
 						e := exp + n - 1
-						scientific := format == 'e' || format == 'E' || format != 'f' && (e < -4 || e >= 21 || exp > 0)
+						scientific := format == 'e' || format == 'E' || format != 'f' && (e < -4 || e >= 6 || exp > 0)
 						want := ""
 						if scientific {
 							want = refFormat(neg, coeff, exp, 'e', n-1)
@@ -852,7 +852,7 @@ func TestAppendDecimalShort(t *testing.T) {
 						want := ""
 						if prec < 0 {
 							e := exp + n - 1
-							scientific := format == 'e' || format == 'E' || format != 'f' && (e < -4 || e >= 21 || exp > 0)
+							scientific := format == 'e' || format == 'E' || format != 'f' && (e < -4 || e >= 6 || exp > 0)
 							switch {
 							case scientific && coeff == "0":
 								// The reference has no exponent form of
@@ -1101,7 +1101,17 @@ func TestFormatDecimalCanonical(t *testing.T) {
 		{coeff: 10, exp: -8, g: "1.0e-07", e: "1.0e-07", f: "0.00000010"},
 		{coeff: 1000000000000000, exp: 5, g: "1.000000000000000e+20", e: "1.000000000000000e+20", f: "100000000000000000000"},
 		{coeff: 1, exp: 21, g: "1e+21", e: "1e+21", f: "1000000000000000000000"},
-		{coeff: 9999999999999999, exp: 0, g: "9999999999999999", e: "9.999999999999999e+15", f: "9999999999999999"},
+		{coeff: 9999999999999999, exp: 0, g: "9.999999999999999e+15", e: "9.999999999999999e+15", f: "9999999999999999"},
+		// The upper threshold, a float64's: the leading digit at 10^5 and 10^6.
+		{coeff: 999999, exp: 0, g: "999999", e: "9.99999e+05", f: "999999"},
+		{coeff: 1000000, exp: 0, g: "1.000000e+06", e: "1.000000e+06", f: "1000000"},
+		{coeff: 999999, exp: 0, neg: true, g: "-999999", e: "-9.99999e+05", f: "-999999"},
+		{coeff: 1000000, exp: 0, neg: true, g: "-1.000000e+06", e: "-1.000000e+06", f: "-1000000"},
+		{coeff: 99999999, exp: -2, g: "999999.99", e: "9.9999999e+05", f: "999999.99"},
+		{coeff: 123456789, exp: -2, g: "1.23456789e+06", e: "1.23456789e+06", f: "1234567.89"},
+		{coeff: 1, exp: 5, g: "1e+05", e: "1e+05", f: "100000"},
+		{coeff: 1, exp: -4, neg: true, g: "-0.0001", e: "-1e-04", f: "-0.0001"},
+		{coeff: 1, exp: -5, neg: true, g: "-1e-05", e: "-1e-05", f: "-0.00001"},
 	}
 	for _, tt := range tests {
 		// bid.Pack64 is the kernel's packer; the digits here don't come from it.
@@ -1128,13 +1138,78 @@ func TestFormatDecimalCanonical(t *testing.T) {
 	}
 }
 
+// TestFormatDecimalPrecisionLikeFloat checks 'g' and 'G' at an explicit
+// precision against FormatFloat on values a float64 and a decimal128 both
+// hold exactly, c × 10^e / 2^k: the same digits, rounded the same way, and
+// the same choice of notation, exponential when the exponent of the leading
+// digit is below -4 or at least the precision.
+func TestFormatDecimalPrecisionLikeFloat(t *testing.T) {
+	limit := new(big.Int).Lsh(big.NewInt(1), 53) // a float64's integers
+	n := 0
+	for _, c := range []int64{1, 3, 7, 11, 25, 99, 123, 1001, 12345, 999999} {
+		for k := 0; k <= 20; k++ {
+			for e := 0; e <= 22; e++ {
+				// The float c × 5^e × 2^(e-k) is exact when c × 5^e
+				// fits its 53 bits; the decimal is c × 5^k × 10^(e-k).
+				m := new(big.Int).Mul(big.NewInt(c), new(big.Int).Exp(big.NewInt(5), big.NewInt(int64(e)), nil))
+				if m.Cmp(limit) >= 0 {
+					continue
+				}
+				coeff := new(big.Int).Mul(big.NewInt(c), new(big.Int).Exp(big.NewInt(5), big.NewInt(int64(k)), nil))
+				for _, neg := range []string{"", "-"} {
+					s := neg + coeff.String() + "e" + Itoa(e-k)
+					f, err := ParseFloat(s, 64)
+					if err != nil {
+						t.Fatal(err)
+					}
+					d, err := ParseDecimal(s, 128)
+					if err != nil {
+						t.Fatal(err)
+					}
+					for _, format := range []byte{'g', 'G'} {
+						for prec := 0; prec <= 25; prec++ {
+							want := FormatFloat(f, format, prec, 64)
+							if got := FormatDecimal(d, format, prec, 128); got != want {
+								t.Errorf("FormatDecimal(%s, %c, %d) = %q, FormatFloat %q", s, format, prec, got, want)
+							}
+							n++
+						}
+					}
+				}
+			}
+		}
+	}
+	if n == 0 {
+		t.Fatal("no values checked")
+	}
+}
+
 func TestFormatDecimalCanonicalNotation(t *testing.T) {
 	for _, tt := range []struct{ in, want string }{
-		{"100000000000000000000", "100000000000000000000"},
-		{"-100000000000000000000", "-100000000000000000000"},
+		{"100000000000000000000", "1.00000000000000000000e+20"},
+		{"-100000000000000000000", "-1.00000000000000000000e+20"},
 		{"1000000000000000000000", "1.000000000000000000000e+21"},
 		{"1.234567890123456789012", "1.234567890123456789012"},
-		{"-123456789012345678901.2345678901234", "-123456789012345678901.2345678901234"},
+		{"-123456789012345678901.2345678901234", "-1.234567890123456789012345678901234e+20"},
+		// The upper threshold, a float64's, in each of the kernel's paths:
+		// the short values, the long ones and the general one.
+		{"999999", "999999"},
+		{"1000000", "1.000000e+06"},
+		{"-999999", "-999999"},
+		{"-1000000", "-1.000000e+06"},
+		{"999999.9", "999999.9"},
+		{"9999999.9", "9.9999999e+06"},
+		{"12345678", "1.2345678e+07"},
+		{"999999.99", "999999.99"},
+		{"1234567.89", "1.23456789e+06"},
+		{"-1234567.89", "-1.23456789e+06"},
+		{"123456.789012345678", "123456.789012345678"},
+		{"1234567.89012345678", "1.23456789012345678e+06"},
+		{"-123456.7890123456789012345678901234", "-123456.7890123456789012345678901234"},
+		{"-1234567.890123456789012345678901234", "-1.234567890123456789012345678901234e+06"},
+		{"1e5", "1e+05"},
+		{"-0.0001", "-0.0001"},
+		{"-0.00001", "-1e-05"},
 		{"1.234567890123456789012345678901234", "1.234567890123456789012345678901234"},
 		{"0.0001", "0.0001"},
 		{"0.00001", "1e-05"},

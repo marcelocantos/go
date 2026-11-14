@@ -786,7 +786,7 @@ func (f *format) format(x bits) string {
 // formatGo is Go's canonical form of x, as strconv's 'g' at precision -1
 // writes it (see "Character conversions"): plain notation when the
 // exponent is at most zero and the leading digit's power of ten is from -4
-// to 20, and otherwise exponential notation with a lowercase "e", a sign
+// to 5, as for a float64, and otherwise exponential notation with a lowercase "e", a sign
 // and at least two exponent digits; "NaN", "+Inf" and "-Inf".
 func (f *format) formatGo(x bits) string {
 	a := f.decode(x)
@@ -805,7 +805,7 @@ func (f *format) formatGo(x bits) string {
 	}
 	c := a.coeff.String()
 	adj := a.exp + len(c) - 1
-	if a.exp <= 0 && adj >= -4 && adj < 21 {
+	if a.exp <= 0 && adj >= -4 && adj < 6 {
 		if p := len(c) + a.exp; p >= len(c) {
 			sb.WriteString(c)
 		} else if p > 0 {

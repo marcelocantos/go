@@ -107,7 +107,7 @@ func TestLong128(t *testing.T) {
 			exps = append(exps, e)
 		}
 		// The thresholds of exponential notation, by the leading digit's exponent.
-		for _, adj := range []int{-5, -4, -3, 20, 21, 22, 99, 100, 101, 999, 1000, 1001, -99, -100, -101, -999, -1000} {
+		for _, adj := range []int{-5, -4, -3, 4, 5, 6, 7, 20, 21, 22, 99, 100, 101, 999, 1000, 1001, -99, -100, -101, -999, -1000} {
 			exps = append(exps, adj-(n-1))
 		}
 		exps = append(exps, f.maxExp, f.minExp, f.maxExp-1, f.minExp+1)
@@ -195,7 +195,7 @@ func TestLong64(t *testing.T) {
 		for e := -n - 8; e <= 3; e++ {
 			exps = append(exps, e)
 		}
-		for _, adj := range []int{-5, -4, -3, 20, 21, 22, 99, 100, 101, -99, -100, -101} {
+		for _, adj := range []int{-5, -4, -3, 4, 5, 6, 7, 20, 21, 22, 99, 100, 101, -99, -100, -101} {
 			exps = append(exps, adj-(n-1))
 		}
 		exps = append(exps, f.maxExp, f.minExp, f.maxExp-1, f.minExp+1, f.minExp+r.IntN(f.maxExp-f.minExp+1))

@@ -295,6 +295,115 @@ func TestDecimalCanonicalNumber(t *testing.T) {
 	}
 }
 
+// A decimal is written as a float is: fixed notation unless the absolute
+// value is below 1e-6 or at least 1e21, with e-09 cleaned up to e-9. Where a
+// float64 holds the value with the same digits (float), Marshal of the float
+// must give the same text. A quantum above the units digit keeps
+// exponential notation, which a float has no counterpart for, and the text
+// of every value parses back to the same value and quantum.
+func TestDecimalJSONThresholds(t *testing.T) {
+	tests := []struct {
+		in, want string
+		float    bool
+	}{
+		// Not affected by the threshold of %v, which is 1e6.
+		{"999999", "999999", true},
+		{"1000000", "1000000", true},
+		{"-999999", "-999999", true},
+		{"-1000000", "-1000000", true},
+		{"1234567.89", "1234567.89", true},
+		{"-1234567.89", "-1234567.89", true},
+		{"12345678", "12345678", true},
+		{"9999999.9", "9999999.9", true},
+		{"1234567890123456", "1234567890123456", true},
+		{"0.0001", "0.0001", true},
+		{"0.00001", "0.00001", true},
+		{"-0.00001", "-0.00001", true},
+		// The lower threshold, 1e-6.
+		{"0.000001", "0.000001", true},
+		{"-0.000001", "-0.000001", true},
+		{"0.00000123", "0.00000123", true},
+		{"0.0000010", "0.0000010", false},
+		{"0.000000999", "9.99e-7", true},
+		{"0.0000001", "1e-7", true},
+		{"-0.0000001", "-1e-7", true},
+		{"1.5e-10", "1.5e-10", true},
+		// The upper threshold, 1e21.
+		{"100000000000000000000", "100000000000000000000", true},
+		{"-100000000000000000000", "-100000000000000000000", true},
+		{"999999999999999999999", "999999999999999999999", false},
+		{"123456789012345678901.5", "123456789012345678901.5", false},
+		{"1000000000000000000000", "1.000000000000000000000e+21", false},
+		{"-1000000000000000000000", "-1.000000000000000000000e+21", false},
+		{"1e21", "1e+21", true},
+		{"-1e21", "-1e+21", true},
+		// A quantum above the units digit.
+		{"1e20", "1e+20", false},
+		{"1.5e3", "1.5e+03", false},
+		{"-1e1", "-1e+01", false},
+		{"0e3", "0e+03", false},
+		// Zeros, at the magnitude of their quantum.
+		{"0", "0", true},
+		{"0.000000", "0.000000", false},
+		{"0e-7", "0e-7", false},
+	}
+	for _, tt := range tests {
+		for _, bits := range []int{64, 128} {
+			d, err := strconv.ParseDecimal(tt.in, bits)
+			if err != nil {
+				t.Fatal(err)
+			}
+			canon := strconv.FormatDecimal(d, 'g', -1, bits)
+			var v any = d
+			if bits == 64 {
+				v = decimal64(d)
+			}
+			if bits == 64 && strconv.FormatDecimal(d, 'e', -1, 64) != strconv.FormatDecimal(mustParseDecimal128(t, tt.in), 'e', -1, 128) {
+				continue // more digits than a decimal64 holds
+			}
+			got, err := Marshal(v)
+			if err != nil {
+				t.Errorf("Marshal(decimal%d %s): %v", bits, tt.in, err)
+				continue
+			}
+			if string(got) != tt.want {
+				t.Errorf("Marshal(decimal%d %s) = %s, want %s", bits, tt.in, got, tt.want)
+			}
+			var back string
+			if bits == 64 {
+				var x decimal64
+				err = Unmarshal(got, &x)
+				back = strconv.FormatDecimal(decimal128(x), 'g', -1, 64)
+			} else {
+				var x decimal128
+				err = Unmarshal(got, &x)
+				back = strconv.FormatDecimal(x, 'g', -1, 128)
+			}
+			if err != nil || back != canon {
+				t.Errorf("Unmarshal(%s) into decimal%d = %s, %v; want %s", got, bits, back, err, canon)
+			}
+		}
+		if tt.float {
+			f, err := strconv.ParseFloat(tt.in, 64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, err := Marshal(f); err != nil || string(got) != tt.want {
+				t.Errorf("Marshal(float64 %s) = %s, %v; the decimal gives %s", tt.in, got, err, tt.want)
+			}
+		}
+	}
+}
+
+func mustParseDecimal128(t *testing.T, s string) decimal128 {
+	t.Helper()
+	d, err := strconv.ParseDecimal(s, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
 func parseDecimal64(s string) (decimal64, error) {
 	d, err := strconv.ParseDecimal(s, 64)
 	return decimal64(d), err

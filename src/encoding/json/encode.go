@@ -607,14 +607,28 @@ var (
 	float64Encoder = (floatEncoder(64)).encode
 )
 
-// jsonDecimal returns the JSON text of d, which has the given bitSize: the
-// canonical string with JSON's exponent thresholds, as for floats. The
-// canonical string goes to exponential notation below 1e-4, and JSON, like
-// ECMAScript, below 1e-6; a value in between, whose quantum is below the
-// units digit, is written in fixed notation with every coefficient digit.
+// jsonDecimal returns the JSON text of d, which has the given bitSize,
+// written as a float is: fixed notation unless the absolute value is below
+// 1e-6 or at least 1e21, and exponential notation then, with e-09 cleaned up
+// to e-9. Every coefficient digit is written, and a quantum above the units
+// digit, which fixed notation cannot show, forces exponential notation, so
+// that the text parses back to the same value and quantum. A zero has the
+// magnitude of its quantum: 0E-7 is "0e-7", not seven zeros after a point,
+// which for the smallest quantum would be thousands.
+//
+// The canonical string decides: it is in fixed notation from 1e-4 to below
+// 1e6, which JSON keeps, and otherwise in exponential notation, from which
+// the exponent of the leading digit and the number of digits are read.
 func jsonDecimal(d decimal128, bitSize int) string {
 	s := decimalreflect.FormatDecimal(d, 'g', -1, bitSize)
-	if n := len(s); n >= 4 && s[n-4] == 'e' && s[n-3] == '-' && s[n-2] == '0' && (s[n-1] == '5' || s[n-1] == '6') {
+	e := strings.LastIndexByte(s, 'e')
+	if e < 0 {
+		return s // fixed notation, NaN or an infinity
+	}
+	lead, _ := strconv.Atoi(s[e+1:]) // the exponent of the leading digit
+	digits := e - strings.Count(s[:e], "-") - strings.Count(s[:e], ".")
+	quantum := lead - (digits - 1)
+	if quantum <= 0 && lead >= -6 && lead < 21 {
 		return decimalreflect.FormatDecimal(d, 'f', -1, bitSize)
 	}
 	return cleanDecimalExp(s)

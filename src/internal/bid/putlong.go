@@ -176,7 +176,7 @@ func PutLong128(buf *[LongLen128]byte, x Uint128) int {
 		return int(sign + s1 + 2 + k)
 	}
 
-	// Plain notation: exp is zero or negative and e from -4 to 20. Each
+	// Plain notation: exp is zero or negative and e from -4 to 5. Each
 	// condition is a sign bit.
 	below := uint(e) >> intSign             // below one: a lead
 	inside := uint(exp) >> intSign &^ below // the point within the digits

@@ -677,10 +677,12 @@
 // 5.12) in Go's canonical form, the one println, fmt's %v and strconv's
 // 'g' at precision -1 write: the same digits and quantum as the character
 // form defined under "Values, cohorts and the character form", laid out as
-// a Go float is, in plain notation when the adjusted exponent is from -4
-// to 20 and Q(x) <= 0, and otherwise in exponential notation with a
-// lowercase "e" and at least two exponent digits; infinities are "+Inf"
-// and "-Inf". AppendSci64 and AppendSci128 write the character form itself,
+// the shortest form of a float64 is (strconv's 'g' at precision -1), in
+// plain notation when the adjusted exponent is from -4 to 5 and Q(x) <= 0,
+// and otherwise in exponential notation with a lowercase "e" and at least
+// two exponent digits; infinities are "+Inf" and "-Inf". So 1234567.89 is
+// "1.23456789e+06", as a float64 prints, and 1.5E+3, whose quantum plain
+// notation cannot show, is "1.5e+03". AppendSci64 and AppendSci128 write the character form itself,
 // in which the conformance suites are written. Parse reads both back to
 // the canonical encoding of the operand. They are exact and take no Mode.
 //
@@ -2403,7 +2405,8 @@
 // pay either.
 //
 // The short values, a decimal128 coefficient below 10^8 at an exponent
-// from -4 to 0 (money and most quantities), have their own conversion,
+// from -4 to 0 and a magnitude below 10^6, where the canonical form turns
+// exponential (money and most quantities), have their own conversion,
 // PutShort128, and it is the chunk of eight after all, without the branch
 // that sank it above. The eight digits stay in a register; the leading
 // zeros the value does not show are dropped by a shift, the point is
@@ -2442,7 +2445,9 @@
 // Through strconv, the canonical form of a money value fell from 7.4 ns
 // appended and 14.5 as a new string (the numbers are in the commit that
 // added the path); a test for the short encodings is one rotation and two
-// comparisons (IsShort128).
+// comparisons (IsShort128), the second against a bound loaded from a table
+// of five by the exponent the first has checked, which keeps the values of
+// 10^6 and more, written in exponential notation, out (2026-11-15).
 //
 // The long values, every finite canonical decimal128 with a coefficient
 // of nine digits or more, have PutLong128, which writes Go's canonical
