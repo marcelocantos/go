@@ -257,6 +257,17 @@ func divPair128(x, y Uint128) (xhi, yhi uint64, exp int, neg, ok bool) {
 	return x.Hi & CoeffMask128Hi, y.Hi & CoeffMask128Hi, exp, (x.Hi^y.Hi)&SignMask128Hi != 0, ok
 }
 
+// divPair64 decodes what div64's own path needs, as divPair128 does for
+// div128. first reports that x and y are both finite encodings of the first
+// form (see divPair128); a and b are then their coefficients, exp the
+// exponent of x less that of y, and sign the sign bit of the quotient. For
+// any other pair the caller decodes again with unpackWordCanon64.
+func divPair64(x, y uint64) (a, b uint64, exp int, sign uint64, first bool) {
+	first = (x&(x<<1)|y&(y<<1))&(Form2Mask64&(Form2Mask64<<1)) == 0
+	exp = int(x>>ExpShift64&ExpMask64) - int(y>>ExpShift64&ExpMask64)
+	return x & (1<<CoeffBits64 - 1), y & (1<<CoeffBits64 - 1), exp, (x ^ y) & SignMask64, first
+}
+
 // wordPair128 reports whether neither x nor y has a coefficient bit above
 // its low word: coefficients of one word each, if they are finite and of
 // the first form.
@@ -361,6 +372,22 @@ func packWord64(neg bool, hi, lo uint64, exp int) (uint64, bool) {
 		x |= SignMask64
 	}
 	return x, true
+}
+
+// packQuotient64 is packWord64 for div64's rounded quotient q, whose sign
+// bit is sign: the two forms are both made and one is selected, because
+// whether a quotient of 16 digits reaches 2^53 is in its leading digits, as
+// good as random ("Operands without a pattern").
+func packQuotient64(q uint64, exp int, sign uint64) (uint64, bool) {
+	if q > MaxCoeff64 || uint(exp-MinExp64) > MaxExp64-MinExp64 {
+		return 0, false
+	}
+	e := uint64(exp + Bias64)
+	r, r2 := e<<ExpShift64|q, Form2Mask64|e<<Form2ExpShift64|q&(1<<Form2CoeffBits64-1)
+	if q >= 1<<CoeffBits64 {
+		r = r2
+	}
+	return r | sign, true
 }
 
 func packWord128(neg bool, hi, lo uint64, exp int) (Uint128, bool) {

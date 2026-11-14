@@ -1830,7 +1830,9 @@
 // one cost a frame and a second call on every such operand pair, 0.6 to
 // 0.8 ns of an addition's 9. Those functions' parameters are therefore a
 // contract with the compiler, which passes a decimal128 as its two words,
-// high first, as Uint128 lays them out. AddSlow128 and its relatives export
+// high first, as Uint128 lays them out. The decimal64 operator / is lowered
+// the same way on those targets, to a call of div64 with the rounding mode,
+// whose parameters are a contract too. AddSlow128 and its relatives export
 // the same paths for the tests and the benchmark rows. The general paths
 // take every operand, so no result depends on any of this.
 //
@@ -2094,6 +2096,46 @@
 // through the operator). 0 / 0 and a dividend that only reads as zero go
 // on to divLong128.
 //
+// A decimal64 division has an entry of its own, div64 (2026-11-14). Its
+// quotient has 16 digits, under 54 bits, and its divisor one word, so the
+// division at its centre is two words by one with a quotient of one word.
+// On arm64 a profile of decimal64 divisions of money amounts drawn at
+// random put 12 percent of their time in bits.Div64 and 51 in divLong64
+// itself, the general decoding, digit counts and dispatch. div64 makes the
+// division from the processor's word division, about 9 cycles on the M4
+// whatever the operands, in one of two ways. A divisor below 10^9, which
+// the divisors of money are, divides twice in decimal: the dividend scaled
+// to 15 or 16 digits, and then the remainder scaled by the places left, so
+// that the first division waits for one table load and one product and the
+// digit counts and the leading ratio are found beside it. A larger divisor
+// takes an estimate of the quotient in float64, within 7 of it, whose
+// remainder is exact in the low word alone; one word division of that
+// remainder, with 16 divisors added, gives the correction and the remainder
+// at once. The estimate's error decides only how many divisors must be
+// added, never a result bit: div64's comment bounds it, and
+// TestDiv64Estimate measures it, at most 4 on operands drawn to make it
+// large. On amd64 bits.Div64 is the instruction, and div64 divides by it
+// once. Operands of the second form are decoded and divided here too, and
+// zeros and a divisor that is a power of ten are decided as div128 decides
+// them; the directed modes, which the compiler never passes, and every
+// special value are divLong64's.
+//
+// Through the operator, on the side-by-side harness's sets (Apple M4 Max,
+// 2026-11-14; instructions and cycles per operation net of the loop, which
+// its float64 rows measure, and nanoseconds with the loop, the median of
+// eight interleaved runs; drawn rows draw 1024 pairs by a generator):
+//
+//	                                        before            after
+//	money       1234.56 / 78.90         235  26.8  7.2    111  15.1  4.3
+//	full        16 digits each          305  36.9  9.9    145  18.8  5.3
+//	far         1.23456789E+30 / E-30   271  29.4  8.2    111  15.2  4.4
+//	pow10       123456.789 / 1000       157  17.4  5.0    127  14.5  4.3
+//	drawn-money amounts, two places     268  81.3 23.0    116  19.5  6.7
+//	drawn-full  16 digits, 1-12 apart   285  75.8 19.7    129  29.2  9.1
+//
+// decimal128 takes 8.2, 10.6, 8.2, 5.9, 13.5 and 15.2 ns on the same
+// sets, and float64 0.43 on the fixed sets and 1.6 on the drawn ones.
+//
 // # Remainder
 //
 // Rem and Mod had the general route only: 1234.56 rem 0.05 was a 256-bit
@@ -2157,7 +2199,9 @@
 // operands: the special values, the directed modes, and any result that
 // packWord128 refuses, which covers the subnormal range, overflow, a
 // clamped exponent and a coefficient that a rounding carried to 10^34. A
-// decimal64 operation is word arithmetic throughout and has no such entry.
+// decimal64 operation is word arithmetic throughout; of the three, only its
+// division has such an entry, div64 in front of divLong64 (div64.go; see
+// the end of "Division").
 //
 // All three round the same way. The value whose digits are to go is
 // biased by half of the power of ten it is divided by (half the divisor,
@@ -2421,10 +2465,21 @@
 // computing the carried sum beside the plain one, each cost the other
 // sums more than they gained here.
 //
-// A decimal64 division is 297 instructions and 33 cycles, of which the
-// software division of two words by one is 28 percent and the general
-// routine around it the rest. decimal64 was not this work's subject, and
-// its division has no entry of its own.
+// A decimal64 division was 297 instructions and 33 cycles, of which the
+// software division of two words by one was 28 percent and the general
+// routine around it the rest, and had no entry of its own, decimal64 not
+// being this work's subject. It has one since (the end of "Division"). Two
+// of its forms were measured and not kept (2026-11-14, cycles per
+// operation through the kernel's loop, the fixed inexact pair and operands
+// drawn as the operator harness draws them): decoding the second form by
+// masks instead of a branch took 16-digit operands, about one pair in five
+// of which has an operand of that form, from 35.4 to 31.6, and cost money
+// amounts 2 (31.1 to 33.1) and the fixed pair 4 (19.7 to 24.0); and the
+// first form of the entry, which found the digit counts and the leading
+// ratio as div128 does, scaled the dividend to two words and divided it
+// half a word at a time below a divisor of 2^32 and by the estimate above,
+// took 42.1 cycles on money amounts, 41.2 on 16-digit operands and 28.9 on
+// the fixed pair, against 24.8, 34.0 and 18.2 now.
 //
 // A word quantized to a quantum twenty or more places finer, which scales
 // it by a power of two words: 113 instructions through math/decimal, 3.3

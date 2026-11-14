@@ -30,6 +30,7 @@ const (
 // Tables.
 var (
 	Pow10Word       = pow10word
+	Div64Scale      = &div64Scale
 	EightASCII      = eightASCII
 	EightQuads      = eightQuads
 	QuadTab         = &quadTab
@@ -98,6 +99,7 @@ var (
 	Reciprocal2by1   = reciprocal2by1
 	ReciprocalNewton = reciprocalNewton
 	Div2by1          = div2by1
+	Div64Estimate    = div64Estimate
 	RecipTab         = &recipTab
 	DivPow10Recip64  = divPow10Recip64
 	U128Add          = u128Add
@@ -231,4 +233,10 @@ func ParseLong128(s string, mode Mode) (Uint128, Status) {
 		class = classBelowHalf
 	}
 	return round128(n.neg, cWide128(n.mant), n.exp, class, mode, MinExp128)
+}
+
+// Div64ScaleEntry returns the power and the places of div64Scale[n].
+func Div64ScaleEntry(n int) (p uint64, s int) {
+	e := div64Scale[n]
+	return e.p, e.s
 }

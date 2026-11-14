@@ -6,12 +6,6 @@ package bid
 
 import "math/bits"
 
-// div64 is Div64. A decimal64 division is word arithmetic throughout, and
-// divLong64 is all of it.
-func div64(x, y uint64, mode Mode) uint64 {
-	return divLong64(x, y, mode)
-}
-
 // div128 is Div128. A finite dividend over a finite divisor whose
 // coefficient fits a word, neither of them zero, in a mode that rounds to
 // nearest (amounts, rates and counts as they are usually held, and what a
