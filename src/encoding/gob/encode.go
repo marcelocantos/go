@@ -237,26 +237,26 @@ func encComplex(i *encInstr, state *encoderState, v reflect.Value) {
 	}
 }
 
-// encDecimal64 encodes a decimal64 value referenced by v.
-// decimal64 values are transmitted as their raw uint64 BID bits.
-// Only the zero value is omitted, not a zero with another exponent or sign.
-func encDecimal64(i *encInstr, state *encoderState, v reflect.Value) {
-	bits := decimal.BID64bits(v.Convert(reflect.TypeFor[decimal64]()).Interface().(decimal64))
-	if bits != decimal.BID64bits(0) || state.sendZero {
-		state.update(i)
-		state.encodeUint(bits)
-	}
-}
-
-// encDecimal128 encodes a decimal128 value referenced by v.
-// decimal128 values are transmitted as the two uint64 words of their BID
-// encoding, most significant first.
-func encDecimal128(i *encInstr, state *encoderState, v reflect.Value) {
+// encDecimal encodes the decimal value (decimal64 decimal128) referenced by
+// v. Decimals are sent as decimal128, as floats are sent as float64: a
+// decimal64 widens exactly, keeping its quantum. The value is the two words
+// of the decimal128 interchange encoding (BID). The high word, which holds
+// the sign, the exponent and the leading coefficient bits, is byte-reversed
+// as a float's bits are, so that the zero bytes of a short coefficient fall
+// away; the low word, which for such a coefficient is the coefficient, is
+// sent as it is.
+//
+// A field is omitted only when it is the zero value, 0E+0. A float field
+// is omitted when it equals zero, and that loses -0; a decimal zero with
+// another quantum, 0.00, compares equal to zero too, and omitting it would
+// lose the quantum, so the test is of the representation, which keeps -0
+// as well.
+func encDecimal(i *encInstr, state *encoderState, v reflect.Value) {
 	hi, lo := decimal.BID128bits(decimalreflect.Decimal(v))
 	zeroHi, zeroLo := decimal.BID128bits(0)
 	if hi != zeroHi || lo != zeroLo || state.sendZero {
 		state.update(i)
-		state.encodeUint(hi)
+		state.encodeUint(bits.ReverseBytes64(hi))
 		state.encodeUint(lo)
 	}
 }
@@ -503,8 +503,8 @@ var encOpTable = [...]encOp{
 	reflect.Float64:           encFloat,
 	reflect.Complex64:         encComplex,
 	reflect.Complex128:        encComplex,
-	decimalreflect.Decimal64:  encDecimal64,
-	decimalreflect.Decimal128: encDecimal128,
+	decimalreflect.Decimal64:  encDecimal,
+	decimalreflect.Decimal128: encDecimal,
 	reflect.String:            encString,
 }
 

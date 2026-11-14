@@ -256,17 +256,17 @@ var (
 	// Primordial types, needed during initialization.
 	// Always passed as pointers so the interface{} type
 	// goes through without losing its interfaceness.
-	tBool       = bootstrapType("bool", (*bool)(nil))
-	tInt        = bootstrapType("int", (*int)(nil))
-	tUint       = bootstrapType("uint", (*uint)(nil))
-	tFloat      = bootstrapType("float", (*float64)(nil))
-	tBytes      = bootstrapType("bytes", (*[]byte)(nil))
-	tString     = bootstrapType("string", (*string)(nil))
-	tComplex    = bootstrapType("complex", (*complex128)(nil))
-	tInterface  = bootstrapType("interface", (*any)(nil))
-	tDecimal64  = bootstrapType("decimal64", (*decimal64)(nil))
-	tDecimal128 = bootstrapType("decimal128", (*decimal128)(nil))
+	tBool      = bootstrapType("bool", (*bool)(nil))
+	tInt       = bootstrapType("int", (*int)(nil))
+	tUint      = bootstrapType("uint", (*uint)(nil))
+	tFloat     = bootstrapType("float", (*float64)(nil))
+	tBytes     = bootstrapType("bytes", (*[]byte)(nil))
+	tString    = bootstrapType("string", (*string)(nil))
+	tComplex   = bootstrapType("complex", (*complex128)(nil))
+	tInterface = bootstrapType("interface", (*any)(nil))
+	tDecimal   = bootstrapType("decimal", (*decimal128)(nil))
 	// Reserve some Ids for compatible expansion
+	tReserved6 = bootstrapType("_reserved6", (*struct{ r6 int })(nil))
 	tReserved5 = bootstrapType("_reserved5", (*struct{ r5 int })(nil))
 	tReserved4 = bootstrapType("_reserved4", (*struct{ r4 int })(nil))
 	tReserved3 = bootstrapType("_reserved3", (*struct{ r3 int })(nil))
@@ -482,11 +482,8 @@ func newTypeObject(name string, ut *userTypeInfo, rt reflect.Type) (gobType, err
 	case reflect.Complex64, reflect.Complex128:
 		return tComplex.gobType(), nil
 
-	case decimalreflect.Decimal64:
-		return tDecimal64.gobType(), nil
-
-	case decimalreflect.Decimal128:
-		return tDecimal128.gobType(), nil
+	case decimalreflect.Decimal64, decimalreflect.Decimal128:
+		return tDecimal.gobType(), nil
 
 	case reflect.String:
 		return tString.gobType(), nil

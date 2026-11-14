@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math/bits"
 	"os"
 	"strings"
 	"sync"
@@ -624,6 +625,10 @@ func (deb *debugger) printBuiltin(indent tab, id typeId) {
 		r := deb.uint64()
 		i := deb.uint64()
 		fmt.Fprintf(os.Stderr, "%s%g+%gi\n", indent, float64FromBits(r), float64FromBits(i))
+	case tDecimal:
+		hi := deb.uint64()
+		lo := deb.uint64()
+		fmt.Fprintf(os.Stderr, "%s%#x %#x\n", indent, bits.ReverseBytes64(hi), lo)
 	case tBytes:
 		x := int(deb.uint64())
 		b := make([]byte, x)

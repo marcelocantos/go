@@ -16,7 +16,6 @@ import (
 	"math"
 	"math/bits"
 	"reflect"
-	"unsafe"
 )
 
 var (
@@ -364,16 +363,31 @@ func decComplex128(i *decInstr, state *decoderState, value reflect.Value) {
 	value.SetComplex(complex(real, imag))
 }
 
-// decDecimal64 decodes a uint64 and stores it as a decimal64 in value.
-func decDecimal64(i *decInstr, state *decoderState, value reflect.Value) {
-	*(*decimal64)(unsafe.Pointer(value.Addr().Pointer())) = decimal.BID64frombits(state.decodeUint())
+// decimalFromWire decodes a decimal as encDecimal sends it: the decimal128
+// interchange encoding, its high word byte-reversed and then its low word.
+func decimalFromWire(state *decoderState) decimal128 {
+	hi := bits.ReverseBytes64(state.decodeUint())
+	lo := state.decodeUint()
+	return decimal.BID128frombits(hi, lo)
 }
 
-// decDecimal128 decodes two uint64 values and stores them as a decimal128 in value.
+// maxDecimal64 is the largest finite decimal64.
+const maxDecimal64 decimal128 = 9.999999999999999e384
+
+// decDecimal64 decodes a decimal and stores it in a decimal64, rounded to
+// it. As for a float32, a finite value beyond the largest finite decimal64
+// is an error; an infinity and underflow are not.
+func decDecimal64(i *decInstr, state *decoderState, value reflect.Value) {
+	d := decimalFromWire(state)
+	if d-d == 0 && (d > maxDecimal64 || d < -maxDecimal64) {
+		error_(i.ovfl)
+	}
+	decimalreflect.SetDecimal(value, decimal128(decimal64(d)))
+}
+
+// decDecimal128 decodes a decimal and stores it in a decimal128.
 func decDecimal128(i *decInstr, state *decoderState, value reflect.Value) {
-	hi := state.decodeUint()
-	lo := state.decodeUint()
-	decimalreflect.SetDecimal(value, decimal.BID128frombits(hi, lo))
+	decimalreflect.SetDecimal(value, decimalFromWire(state))
 }
 
 // decUint8Slice decodes a byte slice and stores in value a slice header
@@ -839,15 +853,14 @@ var decOpTable = [...]decOp{
 
 // Indexed by gob types.  tComplex will be added during type.init().
 var decIgnoreOpMap = map[typeId]decOp{
-	tBool:       ignoreUint,
-	tInt:        ignoreUint,
-	tUint:       ignoreUint,
-	tFloat:      ignoreUint,
-	tBytes:      ignoreUint8Array,
-	tString:     ignoreUint8Array,
-	tComplex:    ignoreTwoUints,
-	tDecimal64:  ignoreUint,
-	tDecimal128: ignoreTwoUints,
+	tBool:    ignoreUint,
+	tInt:     ignoreUint,
+	tUint:    ignoreUint,
+	tFloat:   ignoreUint,
+	tBytes:   ignoreUint8Array,
+	tString:  ignoreUint8Array,
+	tComplex: ignoreTwoUints,
+	tDecimal: ignoreTwoUints,
 }
 
 // decOpFor returns the decoding op for the base type under rt and
@@ -1074,10 +1087,8 @@ func (dec *Decoder) compatibleType(fr reflect.Type, fw typeId, inProgress map[re
 		return fw == tFloat
 	case reflect.Complex64, reflect.Complex128:
 		return fw == tComplex
-	case decimalreflect.Decimal64:
-		return fw == tDecimal64
-	case decimalreflect.Decimal128:
-		return fw == tDecimal128
+	case decimalreflect.Decimal64, decimalreflect.Decimal128:
+		return fw == tDecimal
 	case reflect.String:
 		return fw == tString
 	case reflect.Interface:

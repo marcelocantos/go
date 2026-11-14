@@ -68,13 +68,17 @@ discrimination in the gob format; there are only signed and unsigned integers. A
 described below, the transmitter sends the value in a variable-length encoding;
 the receiver accepts the value and stores it in the destination variable.
 Floating-point numbers are always sent using IEEE 754 64-bit precision (see
-below).
+below). Likewise decimal floating-point numbers, of types decimal64 and
+decimal128, are always sent as decimal128 values.
 
 Signed integers may be received into any signed integer variable: int, int16, etc.;
-unsigned integers may be received into any unsigned integer variable; and floating
-point values may be received into any floating point variable. However,
+unsigned integers may be received into any unsigned integer variable; floating
+point values may be received into any floating point variable; and decimal
+values may be received into any decimal variable. However,
 the destination variable must be able to represent the value or the decode
-operation will fail.
+operation will fail. A decimal received into a decimal64 is rounded to it, as
+a float64 is rounded to a float32; a finite value beyond the largest
+decimal64 fails.
 
 Structs, arrays and slices are also supported. Structs encode and decode only
 exported fields. Strings and arrays of bytes are supported with a special,
@@ -136,6 +140,22 @@ byte-reversed and sent as a regular unsigned integer. The byte-reversal means th
 exponent and high-precision part of the mantissa go first. Since the low bits are
 often zero, this can save encoding bytes. For instance, 17.0 is encoded in only
 three bytes (FE 31 40).
+
+Decimal floating-point numbers are always sent as a representation of a
+decimal128 value, to which a decimal64 widens exactly, keeping its exponent.
+That value is converted to two uint64s, the high and low words of its IEEE
+754-2019 interchange encoding with a binary integer significand (BID). The
+high word, which holds the sign, the exponent and the leading bits of the
+coefficient, is byte-reversed, as a float's is, and sent first as a regular
+unsigned integer; the low word follows unchanged. For a coefficient below
+2^64 the low word is the coefficient, so 1.50 is sent in five bytes
+(FE 3C 30 FF 96).
+
+A struct field holding a float is omitted when it equals zero, which loses
+the sign of -0. A field holding a decimal is omitted only when it is the zero
+value of its type, 0E+0: a decimal zero with another exponent, such as 0.00,
+equals zero too, and omitting it would lose its exponent, so the test is of
+the representation, and it keeps -0 as well.
 
 Strings and slices of bytes are sent as an unsigned count followed by that many
 uninterpreted bytes of the value.
@@ -245,6 +265,7 @@ priori, as well as the basic gob types int, uint, etc. Their ids are:
 	string      6
 	complex     7
 	interface   8
+	decimal     9
 	// gap for reserved ids.
 	WireType    16
 	ArrayType   17
