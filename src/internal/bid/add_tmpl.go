@@ -59,9 +59,10 @@ func subSlowW(x, y coefW, mode Mode) coefW {
 }
 
 // addLongW returns x + y rounded in mode, for every operand: addSlowW,
-// which the callers above and the compiler call, is addLong64 for
-// decimal64 and takes most sums of two-word coefficients itself for
-// decimal128 (add128.go).
+// which the callers above and the compiler call, takes most sums of word
+// coefficients to nearest itself for decimal64 (add64.go) and most sums of
+// two-word coefficients for decimal128 (add128.go), and hands the rest to
+// this function.
 //
 // The operand with the larger exponent is scaled up to the exponent of the
 // other if that takes it to addDigitsW digits or fewer, and then the sum is
@@ -302,8 +303,10 @@ func addLongW(x, y coefW, mode Mode) coefW {
 }
 
 // roundFaceW returns (-1)^neg × (q + f) × 10^exp rounded in mode, for the
-// swamped and the aligned addend of addLongW and the inexact quotient of
-// divLongW, its only callers: q has exactly PrecisionW digits, 10^(PrecisionW-1)
+// swamped and the aligned addend of addLongW, for decimal64 the swamped
+// addend of addSlow64 too (addLong64's word path for far operands, in
+// front of it), and the inexact quotient of divLongW, its only callers: q
+// has exactly PrecisionW digits, 10^(PrecisionW-1)
 // <= q <= cMaxW(), and f is a fraction, not zero, whose class is known at
 // face value (classBelowHalf or classAboveHalf for a swamped addend; an
 // aligned addend's discarded digits and a quotient's remainder can also be

@@ -6,12 +6,6 @@ package bid
 
 import "math/bits"
 
-// addSlow64 is the sum of decimal64 operands that add64 did not decide:
-// addLong64 is all of it.
-func addSlow64(x, y uint64, mode Mode) uint64 {
-	return addLong64(x, y, mode)
-}
-
 // addSlow128 returns x + y rounded in mode. Finite operands of which one
 // at least has a coefficient of two words, in a mode that rounds to
 // nearest (what a division or a long product left, added to an amount or

@@ -131,6 +131,7 @@ var (
 var (
 	AddSameQuantum128  = addSameQuantum128
 	AddSameQuantum64   = addSameQuantum64
+	AddLong64          = addLong64
 	AddSlow64          = addSlow64
 	MulShort128        = mulShort128
 	MulShort64         = mulShort64

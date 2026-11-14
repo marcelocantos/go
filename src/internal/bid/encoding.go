@@ -289,6 +289,48 @@ func addPair128(x, y Uint128) (xhi, yhi uint64, xe, ye int, ok bool) {
 	return x.Hi & CoeffMask128Hi, y.Hi & CoeffMask128Hi, int(x.Hi >> ExpShift128 & ExpMask128), int(y.Hi >> ExpShift128 & ExpMask128), ok
 }
 
+// wordParts64 decodes what addSlow64's own path needs of an operand: the
+// coefficient c and the biased exponent e of x, if x is finite and
+// canonical, which every first-form encoding is. For an infinity, a NaN
+// and a second-form coefficient above MaxCoeff64 it returns e = -1, which
+// the caller tests for both operands at once.
+//
+// The form is a branch, although a ninth of the coefficients of 16 digits
+// are 2^53 or more and on operands without a pattern it mispredicts:
+// decoded both ways and chosen by a mask (the compiler makes no
+// conditional select of a value that an address depends on), the
+// exponent reaches the rest of the sum four cycles later, and that cost
+// operands of one form a nanosecond while saving operands of mixed forms a
+// quarter of one (Apple M4 Max, 2026-11-14).
+func wordParts64(x uint64) (c uint64, e int) {
+	// x & x<<1 has the upper bit of Form2Mask64 set exactly when both
+	// of its bits are set: one test.
+	if x&(x<<1)&(Form2Mask64&(Form2Mask64<<1)) == 0 {
+		return x & (1<<CoeffBits64 - 1), int(x >> ExpShift64 & ExpMask64)
+	}
+	c = 1<<CoeffBits64 | x&(1<<Form2CoeffBits64-1)
+	if x&SpecialMask64 == SpecialMask64 || c > MaxCoeff64 {
+		return 0, -1
+	}
+	return c, int(x >> Form2ExpShift64 & ExpMask64)
+}
+
+// packWordSign64 is packWord64 for addSlow64's results, with the sign as a
+// bit, where the caller has established the bounds: c <= MaxCoeff64 and
+// MinExp64 <= exp <= MaxExp64. The form, which a coefficient of 16 digits
+// takes as its leading digits say, is chosen by a mask and not a branch:
+// on values without a pattern a ninth of such coefficients are 2^53 or
+// more, and a branch on it mispredicts.
+func packWordSign64(sign, c uint64, exp int) uint64 {
+	// The second form of c, which is 2^53 or more and below 2^53 + 2^51,
+	// is the first plus k: its two bits, its exponent field two places
+	// down, and c less its implicit leading bits. k depends only on the
+	// exponent, so only the mask waits for c.
+	e := uint64(exp + Bias64)
+	k := Form2Mask64 + e<<Form2ExpShift64 - e<<ExpShift64 - 1<<CoeffBits64
+	return sign<<63 | e<<ExpShift64 + c + k&-(c>>CoeffBits64)
+}
+
 // finite128 decodes what fmaSlow128's own path needs of its third operand. ok
 // reports that z is a finite encoding of the first form (see divPair128).
 // zhi is the high word of the coefficient, whose low word is that of z,

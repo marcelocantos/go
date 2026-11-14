@@ -257,7 +257,7 @@ func FuzzRound128(f *testing.F) {
 // exact fast paths that roundW's comment enumerates are the allowlist
 // here; a new one is added to both or the test fails. So is roundFaceW,
 // the face-value rounding of a swamped or aligned addend and of an inexact
-// quotient, and addLongW and divLongW, its only callers.
+// quotient, and addLongW, divLongW and addSlow64, its only callers.
 func TestRoundIsTheOnlyPacker(t *testing.T) {
 	// Callers of the raw encoder.
 	// Widen, the DPD decoders and the 128-bit integer conversions are exact
@@ -277,16 +277,17 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 	// The face-value rounding is the one exception to roundW as the
 	// rounding routine, and its proof holds only for the swamped and the
 	// aligned addend of addLongW and the quotient of divLongW inside the exponent range divLongW
-	// tests: see roundFaceW and "Face-value rounding" in the package
-	// documentation. It has those two callers.
+	// tests, and for the swamped addend of addSlow64, which is addLong64's:
+	// see roundFaceW and "Face-value rounding" in the package
+	// documentation. It has those three callers.
 	faceRounder := map[string]bool{"roundFaceW": true, "roundFace64": true, "roundFace128": true}
-	faceCallers := map[string]bool{"addLongW": true, "addLong64": true, "addLong128": true, "divLongW": true, "divLong64": true, "divLong128": true}
+	faceCallers := map[string]bool{"addLongW": true, "addLong64": true, "addLong128": true, "addSlow64": true, "divLongW": true, "divLong64": true, "divLong128": true}
 	// Callers of the word packers, which encode the exact results of the
 	// word fast paths of addition, multiplication, fused multiply-add,
 	// quantize and division: see the comments of those functions and the
 	// end of roundW's.
 	wordPackers := map[string]bool{
-		"addLongW": true, "addLong64": true, "addLong128": true, "addSlow128": true,
+		"addLongW": true, "addLong64": true, "addLong128": true, "addSlow64": true, "addWide64": true, "addSlow128": true,
 		"mulLongW": true, "mulLong64": true, "mulLong128": true, "mulSlow128": true,
 		"fmaLongW": true, "fmaLong64": true, "fmaLong128": true, "fmaSlow128": true,
 		"quantizeLongW": true, "quantizeLong64": true, "quantizeLong128": true, "quantizeSlow128": true,
@@ -302,8 +303,8 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 		// in range or turned away.
 		"mulSlow64": true,
 	}
-	// packSign64 is packWord64 with the sign as its bit.
-	wordEncoder := map[string]bool{"packWord64": true, "packWord128": true, "packWordW": true, "packQuotient64": true, "packSign64": true}
+	// packSign64 and packWordSign64 are packWord64 with the sign as a bit.
+	wordEncoder := map[string]bool{"packWord64": true, "packWord128": true, "packWordW": true, "packQuotient64": true, "packSign64": true, "packWordSign64": true}
 	// Callers of the inline encoders, which encode the exact results of the
 	// inline paths of addition, subtraction and multiplication in front of
 	// the general paths: see "Inline fast paths" in the package

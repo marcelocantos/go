@@ -1834,7 +1834,12 @@
 // the same way on those targets, to a call of div64 with the rounding mode,
 // whose parameters are a contract too. AddSlow128 and its relatives export
 // the same paths for the tests and the benchmark rows. The general paths
-// take every operand, so no result depends on any of this.
+// take every operand, so no result depends on any of this. The decimal64
+// operators on the same targets have the fronts of add64, sub64 and mul64
+// written in SSA and call what they refuse the same way, with the rounding
+// mode: addSlow64 for a sum or a difference (as x + -y), mulSlow64 and
+// div64 (ssagen.bidAddSub64 and bidKernelOp64), whose parameters are then
+// a contract with the compiler as well, a decimal64 as its one word.
 //
 // The decimal64 operators have the same arrangement on amd64 and arm64:
 // the compiler writes the fronts addSameQuantum64, subSameQuantum64 and
@@ -1871,7 +1876,9 @@
 //
 // Every rounded result passes through roundW, with one named exception:
 // roundFaceW, which rounds the swamped and the aligned addend of addLongW
-// and the inexact quotient of divLongW, and has no other caller. Its input is a
+// and the inexact quotient of divLongW, and for decimal64 the swamped
+// addend of addSlow64, which is addLong64's word path for far operands
+// taken in front of it, and has no other caller. Its input is a
 // coefficient q of exactly PrecisionW digits at an exponent inside the
 // format and not tiny, plus a fraction below one unit, not zero, whose
 // class the caller knows exactly: below a half or above it for a swamped
@@ -1931,7 +1938,7 @@
 // mode: x + f rounds down to x and (x - 1) + (1 - f) up to it, so
 // addLongW passes x scaled to full precision to roundFaceW with no class.
 // TestRoundIsTheOnlyPacker allows roundFaceW to call packW and allows
-// only addLongW and divLongW to call it.
+// only addLongW, divLongW and addSlow64 to call it.
 //
 // # Operands without a pattern
 //
@@ -2207,9 +2214,10 @@
 // operands: the special values, the directed modes, and any result that
 // packWord128 refuses, which covers the subnormal range, overflow, a
 // clamped exponent and a coefficient that a rounding carried to 10^34. A
-// decimal64 operation is word arithmetic throughout; its division and its
-// multiplication have such entries, div64 in front of divLong64 (div64.go;
-// see the end of "Division") and mulSlow64 in front of mulLong64 (below).
+// decimal64 operation is word arithmetic throughout; its three operations
+// have such entries, addSlow64 in front of addLong64 (add64.go), mulSlow64
+// in front of mulLong64 (below) and div64 in front of divLong64 (div64.go;
+// see the end of "Division").
 //
 // All three round the same way. The value whose digits are to go is
 // biased by half of the power of ten it is divided by (half the divisor,
@@ -2334,6 +2342,32 @@
 // gathered in the sign bit of one word, in place of five branches on
 // them, which are predicted (5 percent); and //go:nosplit on mulSlow64,
 // which saves the stack check (1 percent).
+//
+// Addition of decimal64 values (2026-11-14). addSlow64 (add64.go) takes
+// finite canonical operands at most 19 places apart in a mode that rounds
+// to nearest, and the sums among them that round to 16 digits, by
+// addSlow128's method in one word: the operand with the larger exponent,
+// chosen by a mask, is scaled to 16 digits, the other is biased by half of
+// the power of ten and divided once by the processor's division
+// instruction, the zero remainder is the tie, and the sign of a
+// difference and the adjustment of a tie are masks. A sum that carries
+// into a 17th digit, or a difference that may have lost its leading digit,
+// goes to addWide64, which forms the exact sum in two words and rounds it
+// once by the reciprocal of recip.go. An operand of 16 digits skips the
+// digit count, which is a branch on the kind of operand and was the
+// longest chain of the sum; addLong64's swamped addend is decided in front
+// of the call, in every mode; and the result's form is chosen by a mask
+// (packWordSign64). Against addLong64 on the same operands, instructions
+// and cycles per operation net of the loop:
+//
+//	                                        before        after
+//	16 digits + 16 digits, 4 apart         193  21.6      96  10.9
+//	the same, drawn 1 to 12 apart          182  54.8      88  13.8
+//	9 digits + 9 digits, 60 apart           92   7.9      71   6.9
+//
+// Through the operators, which call addSlow64 directly, 16-digit operands
+// 4 apart went from 7.1 to 4.8 ns, drawn ones from 18.9 to 8.4, and the
+// far pair from 4.0 to 3.5; decimal128's rows did not move.
 //
 // # Short numerals
 //
@@ -2509,6 +2543,22 @@
 // than before "Straight paths": three branch-free formulations, the last
 // computing the carried sum beside the plain one, each cost the other
 // sums more than they gained here.
+//
+// Addition of decimal64 values, three alternatives to addSlow64's path
+// (Apple M4 Max, 2026-11-14, ns through the kernel entry). The exact sum
+// in two words rounded once by the reciprocal, as the whole path and not
+// only for carries and cancellations, took 7.0 for 16-digit operands 4
+// apart and 13.4 drawn, against 4.1 and 10.0 for dividing the shifted
+// operand alone in one word at the same stage of the work: it waits for
+// the sum, a digit count of two words and a division of two. The exact
+// reciprocal of a power of ten for a dividend below 2^56, one high
+// multiply and a shift with no correction, in place of the division
+// instruction measured the same, 3.69 against 3.66 and 6.97 against 6.90
+// drawn, and would have been a new table. Decoding each operand's form
+// without a branch (wordParts64) saved operands of mixed forms 6.90 to
+// 6.65 and cost operands of one form 3.66 to 4.64, and the far pair 2.37
+// to 3.30. The form is what is left on operands drawn at random: 6.9 ns,
+// against 5.4 when every coefficient is below 2^53.
 //
 // A decimal64 division was 297 instructions and 33 cycles, of which the
 // software division of two words by one was 28 percent and the general
