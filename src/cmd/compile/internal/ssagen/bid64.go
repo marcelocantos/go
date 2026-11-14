@@ -83,12 +83,15 @@ func (s *state) bidKernelOp64(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Va
 // does not carry into the exponent field leaves the stored header as it was.
 //
 // The operand the sum path takes is y for x + y and y with its sign flipped
-// for x - y: the two have one sign when the magnitudes add. Then
+// for x - y: the two have one sign when the magnitudes add.
 // addSameQuantum64 decides x and that operand of one sign and one exponent,
 // and subSameQuantum64 decides x and the operand flipped back, which share
-// x's header when the magnitudes subtract. Anything either refuses (other
-// exponents, a sum of more than 53 bits, a cancellation to zero, a second
-// form or a special) goes to the kernel with the original operands.
+// x's header when the magnitudes subtract. Each is one test and one branch.
+// The operator's own kind is tried first, the sum for + and the difference
+// for -, since operands of one sign are the commoner case (a running total,
+// a balance less a debit). Anything both refuse (other exponents, a sum of
+// more than 53 bits, a cancellation to zero, a second form or a special)
+// goes to the kernel with the original operands.
 func (s *state) bidAddSub64(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value {
 	result := ssaMarker("bidadd64") // one per lowering; see bidAddSub128
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
@@ -103,66 +106,64 @@ func (s *state) bidAddSub64(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Valu
 	if op == ir.OSUB {
 		yadd = s.newValue2(ssaop.OpXor64, u64, ys, signBit)
 	}
-
-	bAfter := s.f.NewBlock(block.BlockPlain)
-	bDiff := s.f.NewBlock(block.BlockPlain)
-	bSlow := s.f.NewBlock(block.BlockPlain)
-
-	// addSameQuantum64: s = x + y's coefficient, if x and y share sign and
-	// exponent, s did not carry out of the coefficient field and x is in
-	// the first form.
-	sum := s.newValue2(ssaop.OpAdd64, u64, xs, s.newValue2(ssaop.OpAnd64, u64, yadd, m))
-	bad := s.newValue2(ssaop.OpOr64, u64,
-		s.newValue2(ssaop.OpRsh64Ux64, u64,
-			s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpXor64, u64, xs, yadd), s.newValue2(ssaop.OpXor64, u64, sum, xs)), shift),
-		s.newValue2(ssaop.OpAnd64, u64, xs, inline))
-	ok := s.newValue2(ssaop.OpEq64, boolT, bad, zero)
-	b := s.endBlock()
-	b.Kind = block.BlockIf
-	b.SetControl(ok)
-	bSum := s.f.NewBlock(block.BlockPlain)
-	b.AddEdgeTo(bSum)
-	b.AddEdgeTo(bDiff)
-	s.startBlock(bSum)
-	s.vars[result] = s.newValue1(ssaop.OpCopy, rt, sum)
-	s.endBlock().AddEdgeTo(bAfter)
-
-	// subSameQuantum64 of x and ysub = yadd with its sign flipped: the
-	// difference of the coefficients, negated with x's sign flipped when
-	// it borrows, if x and ysub share sign and exponent, x is in the first
-	// form and the coefficients differ.
-	s.startBlock(bDiff)
 	ysub := s.newValue2(ssaop.OpXor64, u64, yadd, signBit)
-	diff := s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64),
-		s.newValue2(ssaop.OpAnd64, u64, xs, m), s.newValue2(ssaop.OpAnd64, u64, ysub, m), zero)
-	d := s.newValue1(ssaop.OpSelect0, u64, diff)
-	borrow := s.newValue1(ssaop.OpSelect1, u64, diff)
-	one := s.constInt64(u64, 1)
-	// d ^ -borrow + borrow is |d| when the difference borrowed.
-	mag := s.newValue2(ssaop.OpAdd64, u64, s.newValue2(ssaop.OpXor64, u64, d, s.newValue1(ssaop.OpNeg64, u64, borrow)), borrow)
-	header := s.newValue2(ssaop.OpXor64, u64,
-		s.newValue2(ssaop.OpAnd64, u64, xs, s.newValue1(ssaop.OpCom64, u64, m)),
-		s.newValue2(ssaop.OpLsh64x64, u64, borrow, s.constInt64(u64, 63)))
-	res := s.newValue2(ssaop.OpOr64, u64, header, mag)
-	bad = s.newValue2(ssaop.OpOr64, u64,
-		s.newValue2(ssaop.OpRsh64Ux64, u64,
-			s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpXor64, u64, xs, ysub), s.newValue2(ssaop.OpAnd64, u64, xs, inline)), shift),
-		// (d-1) &^ d has its top bit set only for d = 0.
-		s.newValue2(ssaop.OpRsh64Ux64, u64,
-			s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpSub64, u64, d, one), s.newValue1(ssaop.OpCom64, u64, d)),
-			s.constInt64(u64, 63)))
-	ok = s.newValue2(ssaop.OpEq64, boolT, bad, zero)
-	b = s.endBlock()
-	b.Kind = block.BlockIf
-	b.SetControl(ok)
-	bDiffOK := s.f.NewBlock(block.BlockPlain)
-	b.AddEdgeTo(bDiffOK)
-	b.AddEdgeTo(bSlow)
-	s.startBlock(bDiffOK)
-	s.vars[result] = s.newValue1(ssaop.OpCopy, rt, res)
-	s.endBlock().AddEdgeTo(bAfter)
+	bAfter := s.f.NewBlock(block.BlockPlain)
 
-	s.startBlock(bSlow)
+	// decide ends the current block with a branch on ok: to a block that
+	// takes r as the result, or to the next block, which it starts.
+	decide := func(r, ok *ssa.Value) {
+		b := s.endBlock()
+		b.Kind = block.BlockIf
+		b.SetControl(ok)
+		bOK, bNext := s.f.NewBlock(block.BlockPlain), s.f.NewBlock(block.BlockPlain)
+		b.AddEdgeTo(bOK)
+		b.AddEdgeTo(bNext)
+		s.startBlock(bOK)
+		s.vars[result] = s.newValue1(ssaop.OpCopy, rt, r)
+		s.endBlock().AddEdgeTo(bAfter)
+		s.startBlock(bNext)
+	}
+	// addSameQuantum64: x + y's coefficient, if x and yadd share sign and
+	// exponent, the sum did not carry out of the coefficient field and x is
+	// in the first form.
+	trySum := func() {
+		sum := s.newValue2(ssaop.OpAdd64, u64, xs, s.newValue2(ssaop.OpAnd64, u64, yadd, m))
+		bad := s.newValue2(ssaop.OpOr64, u64,
+			s.newValue2(ssaop.OpRsh64Ux64, u64,
+				s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpXor64, u64, xs, yadd), s.newValue2(ssaop.OpXor64, u64, sum, xs)), shift),
+			s.newValue2(ssaop.OpAnd64, u64, xs, inline))
+		decide(sum, s.newValue2(ssaop.OpEq64, boolT, bad, zero))
+	}
+	// subSameQuantum64 of x and ysub: the difference of the coefficients,
+	// negated with x's sign flipped when it borrows, if x and ysub share sign
+	// and exponent, x is in the first form and the coefficients differ.
+	tryDiff := func() {
+		diff := s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64),
+			s.newValue2(ssaop.OpAnd64, u64, xs, m), s.newValue2(ssaop.OpAnd64, u64, ysub, m), zero)
+		d := s.newValue1(ssaop.OpSelect0, u64, diff)
+		borrow := s.newValue1(ssaop.OpSelect1, u64, diff)
+		// d ^ -borrow + borrow is |d| when the difference borrowed.
+		mag := s.newValue2(ssaop.OpAdd64, u64, s.newValue2(ssaop.OpXor64, u64, d, s.newValue1(ssaop.OpNeg64, u64, borrow)), borrow)
+		header := s.newValue2(ssaop.OpXor64, u64,
+			s.newValue2(ssaop.OpAnd64, u64, xs, s.newValue1(ssaop.OpCom64, u64, m)),
+			s.newValue2(ssaop.OpLsh64x64, u64, borrow, s.constInt64(u64, 63)))
+		res := s.newValue2(ssaop.OpOr64, u64, header, mag)
+		bad := s.newValue2(ssaop.OpOr64, u64,
+			s.newValue2(ssaop.OpRsh64Ux64, u64,
+				s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpXor64, u64, xs, ysub), s.newValue2(ssaop.OpAnd64, u64, xs, inline)), shift),
+			// (d-1) &^ d has its top bit set only for d = 0.
+			s.newValue2(ssaop.OpRsh64Ux64, u64,
+				s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpSub64, u64, d, s.constInt64(u64, 1)), s.newValue1(ssaop.OpCom64, u64, d)),
+				s.constInt64(u64, 63)))
+		decide(res, s.newValue2(ssaop.OpEq64, boolT, bad, zero))
+	}
+	if op == ir.OSUB {
+		tryDiff()
+		trySum()
+	} else {
+		trySum()
+		tryDiff()
+	}
 	s.vars[result] = s.bidKernelOp64(op, rt, x, y)
 	s.endBlock().AddEdgeTo(bAfter)
 
