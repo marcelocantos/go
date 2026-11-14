@@ -16,8 +16,8 @@ import "math/decimal"
 
 func Add64(x, y decimal64) decimal64 {
 	// ppc64le:"DADD" -"CALL"
-	// amd64:"CALL runtime.dadd64"
-	// arm64:"CALL runtime.dadd64"
+	// amd64:"CALL internal/bid.addSlow64" -"CALL runtime.dadd64"
+	// arm64:"CALL internal/bid.addSlow64" -"CALL runtime.dadd64"
 	return x + y
 }
 
@@ -28,11 +28,22 @@ func MulAdd64(x, y, z decimal64) decimal64 {
 
 func Sub64(x, y decimal64) decimal64 {
 	// ppc64le:"DSUB" -"CALL"
+	// amd64:"CALL internal/bid.addSlow64" -"CALL runtime.dsub64"
+	// arm64:"CALL internal/bid.addSlow64" -"CALL runtime.dsub64"
 	return x - y
+}
+
+func Mul64(x, y decimal64) decimal64 {
+	// ppc64le:"DMUL" -"CALL"
+	// amd64:"CALL internal/bid.mulSlow64" -"CALL runtime.dmul64"
+	// arm64:"CALL internal/bid.mulSlow64" -"CALL runtime.dmul64"
+	return x * y
 }
 
 func Div64(x, y decimal64) decimal64 {
 	// ppc64le:"DDIV" -"CALL"
+	// amd64:"CALL internal/bid.div64" -"CALL runtime.ddiv64"
+	// arm64:"CALL internal/bid.div64" -"CALL runtime.ddiv64"
 	return x / y
 }
 
