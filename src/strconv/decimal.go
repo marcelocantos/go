@@ -20,22 +20,33 @@ package strconv
 //   - 'e' (-d.dddde±dd, a decimal exponent),
 //   - 'E' (-d.ddddE±dd, a decimal exponent),
 //   - 'f' (-ddd.dddd, no exponent),
-//   - 'g' ('e' for large exponents, 'f' otherwise), or
-//   - 'G' ('E' for large exponents, 'f' otherwise).
+//   - 'g' ('e' for large exponents, 'f' otherwise),
+//   - 'G' ('E' for large exponents, 'f' otherwise),
+//   - 'x' (-0xh.hhhhp±dd, a hexadecimal fraction and binary exponent), or
+//   - 'X' (-0Xh.hhhhP±dd, a hexadecimal fraction and binary exponent).
+//
+// 'x' and 'X' are laid out as FormatFloat lays them out, with a leading
+// digit of 1 (or 0 for a zero), and write the value of d rounded to nearest,
+// ties to even, at the number of hexadecimal digits asked for: most decimal
+// values have no finite binary fraction, so that rounds as 'e' with a
+// precision does. A decimal that is exactly a float64 value formats as
+// FormatFloat formats that float64, at any precision a float64 has.
 //
 // Any other byte, as for FormatFloat, gives "%" followed by that byte for a
-// finite value. That includes 'x' and 'X', which for a float write a
-// hexadecimal fraction and a binary exponent: a decimal's radix is ten, and
-// most decimal values have no finite form in radix two. NaN and the
-// infinities are "NaN", "+Inf" and "-Inf" whatever the format, as for a
-// float.
+// finite value. NaN and the infinities are "NaN", "+Inf" and "-Inf" whatever
+// the format, as for a float.
 //
 // The precision prec has FormatFloat's meaning, except for the special
-// precision -1. For a binary float that means the fewest digits that
-// round-trip the value. A decimal value also has a quantum, so it means all
-// the digits of the coefficient: 1.50 formats as "1.50", and [ParseDecimal]
-// of that string returns the same value and quantum. 'b' ignores the
-// precision, as it does for a float.
+// precision -1 with the decimal formats. For a binary float that means the
+// fewest digits that round-trip the value. A decimal value also has a
+// quantum, so with 'e', 'E', 'f', 'g' and 'G' it means all the digits of the
+// coefficient: 1.50 formats as "1.50", and [ParseDecimal] of that string
+// returns the same value and quantum. With 'x' and 'X' it means what it
+// means for a float: the fewest digits for which ParseDecimal, at the same
+// bitSize, returns the same value. Hexadecimal text has no quantum, so the
+// value comes back but not the member of its cohort: 1.50 formats as
+// "0x1.8p+00", which reads back as 1.5. 'b' ignores the precision, as it
+// does for a float.
 //
 // With 'g' and 'G' and the special precision -1, the result is the canonical
 // string. As for a float, it is in fixed notation unless the exponent of the

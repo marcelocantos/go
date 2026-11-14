@@ -627,12 +627,12 @@ func (f *fmt) fmtDecimal(d decimal128, size int, verb rune, prec int) {
 		f.zero = oldZero
 		return
 	}
-	// The sharp flag forces a decimal point and retains trailing zeros,
-	// as for floats, and as for floats it does not apply to %b.
+	// The sharp flag forces printing a decimal point for non-binary formats
+	// and retains trailing zeros, which we may need to restore.
 	if f.sharp && verb != 'b' {
 		digits := 0
 		switch verb {
-		case 'v', 'g', 'G':
+		case 'v', 'g', 'G', 'x':
 			digits = prec
 			// If no precision is set explicitly use a precision of 6.
 			if digits == -1 {
@@ -640,6 +640,8 @@ func (f *fmt) fmtDecimal(d decimal128, size int, verb rune, prec int) {
 			}
 		}
 
+		// Buffer pre-allocated with enough room for
+		// exponent notations of the form "e+123" or "p-1023".
 		var tailBuf [6]byte
 		tail := tailBuf[:0]
 
@@ -650,19 +652,28 @@ func (f *fmt) fmtDecimal(d decimal128, size int, verb rune, prec int) {
 			switch num[i] {
 			case '.':
 				hasDecimalPoint = true
-			case 'e', 'E':
+			case 'p', 'P':
 				tail = append(tail, num[i:]...)
 				num = num[:i]
+			case 'e', 'E':
+				if verb != 'x' && verb != 'X' {
+					tail = append(tail, num[i:]...)
+					num = num[:i]
+					break
+				}
+				fallthrough
 			default:
 				if num[i] != '0' {
 					sawNonzeroDigit = true
 				}
+				// Count significant digits after the first non-zero digit.
 				if sawNonzeroDigit {
 					digits--
 				}
 			}
 		}
 		if !hasDecimalPoint {
+			// Leading digit 0 should contribute once to digits.
 			if len(num) == 2 && num[1] == '0' {
 				digits--
 			}

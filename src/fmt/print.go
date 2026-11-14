@@ -460,13 +460,12 @@ func (p *pp) fmtFloat(arg any, value reflect.Value, v float64, size int, verb ru
 
 // fmtDecimal formats a decimal. It mirrors fmtFloat but uses
 // strconv.AppendDecimal. %b is the coefficient and decimal exponent, the
-// radix-ten form of a float's %b. %x and %X, a hexadecimal fraction and a
-// binary exponent, are radix-two notations and are not supported.
+// radix-ten form of a float's %b.
 func (p *pp) fmtDecimal(arg any, value reflect.Value, d decimal128, size int, verb rune) {
 	switch verb {
 	case 'v':
 		p.fmt.fmtDecimal(d, size, 'g', -1)
-	case 'b', 'g', 'G':
+	case 'b', 'g', 'G', 'x', 'X':
 		p.fmt.fmtDecimal(d, size, verb, -1)
 	case 'f', 'e', 'E':
 		p.fmt.fmtDecimal(d, size, verb, 6)

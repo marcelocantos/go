@@ -127,8 +127,7 @@ func init() {
 		{"%.3g", decimal128(-1234567.89), "-1.23e+06"},
 		// %b is the coefficient and the decimal exponent of its last
 		// digit, the radix-ten form of a float's %b; the precision and #
-		// do not apply, as for a float. %x and %X, radix-two notations,
-		// are bad verbs.
+		// do not apply, as for a float.
 		{"%b", decimal64(1.50), "150e-2"},
 		{"%b", decimal128(-123456e-78), "-123456e-78"},
 		{"%b", decimal64(1e3), "1e+3"},
@@ -140,8 +139,15 @@ func init() {
 		{"%.2b", decimal64(1.500), "1500e-3"},
 		{"%#b", decimal64(1.5), "15e-1"},
 		{"%b", namedDecimal(2.5), "25e-1"},
-		{"%x", decimal64(1.5), "%!x(decimal64=1.5)"},
-		{"%X", decimal128(1.5), "%!X(decimal128=1.5)"},
+		// %x and %X are a hexadecimal fraction and a binary exponent, as
+		// for a float: the value correctly rounded, or at no precision the
+		// fewest digits that read back as the value.
+		{"%x", decimal64(1.5), "0x1.8p+00"},
+		{"%X", decimal128(1.5), "0X1.8P+00"},
+		{"%x", decimal64(0.1), "0x1.999999999999ap-04"},
+		{"%.3x", decimal64(0.1), "0x1.99ap-04"},
+		{"%x", decimal64(0), "0x0p+00"},
+		{"%x", decimal64(1e-398), "0x1p-1322"},
 	}...)
 
 	scanTests = append(scanTests, []ScanTest{
@@ -209,6 +215,24 @@ func TestScanDecimalLikeFloat(t *testing.T) {
 		}
 		if derr == nil && Sprint(d) != tt.want {
 			t.Errorf("Sscan(%q) into decimal64 = %v, want %s", tt.in, d, tt.want)
+		}
+	}
+}
+
+// TestDecimalHexLikeFloat checks %x and %X, with their flags, width and
+// precision, against a float64 of the same value.
+func TestDecimalHexLikeFloat(t *testing.T) {
+	values := []float64{1.5, -2.25, 0.5, 1024, 3.75, 1.0 / 1024, 0}
+	formats := []string{"%x", "%X", "%.0x", "%.3x", "%.13X", "%+x", "% x", "%-14x|", "%14x", "%014x", "%#x", "%#.2x", "%#X", "%#.0x", "%+.2X"}
+	for _, f := range values {
+		d := decimal64(f)
+		for _, format := range formats {
+			if got, want := Sprintf(format, d), Sprintf(format, f); got != want {
+				t.Errorf("Sprintf(%q, decimal64(%v)) = %q; for float64 %q", format, f, got, want)
+			}
+			if got, want := Sprintf(format, decimal128(f)), Sprintf(format, f); got != want {
+				t.Errorf("Sprintf(%q, decimal128(%v)) = %q; for float64 %q", format, f, got, want)
+			}
 		}
 	}
 }

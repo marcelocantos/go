@@ -61,10 +61,11 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 	case 'e', 'E', 'f', 'g', 'G':
 	case 'b':
 		return appendDecimalB(dst, x)
+	case 'x', 'X':
+		return appendDecimalX(dst, x, fmt, prec, bitSize)
 	default:
 		// As FormatFloat does: the specials whatever the format, and
-		// otherwise "%" and the format. 'x' and 'X' are here: they are
-		// radix-two notations.
+		// otherwise "%" and the format.
 		switch kind, neg, _, _ := bid.Unpack128(x); kind {
 		case bid.KindNaN:
 			return append(dst, "NaN"...)

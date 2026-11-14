@@ -461,30 +461,49 @@ func (z nat) divSmall(d uint64) (nat, uint64) {
 // pow10Word is 10^19, the largest power of ten in a word.
 const pow10Word = 1e19
 
-// mulPow10 returns z × 10^k.
+// mulPow10 returns z × 10^k. It works in one buffer, grown in place.
 func (z nat) mulPow10(k int) nat {
-	for ; k >= 19; k -= 19 {
-		z = z.mulAdd(pow10Word, 0)
+	r := make(nat, len(z), len(z)+k/19+2)
+	copy(r, z)
+	for k > 0 {
+		step := min(k, 19)
+		k -= step
+		m := uint64pow10[step]
+		var carry uint64
+		for i, x := range r {
+			hi, lo := bits.Mul64(x, m)
+			lo, c := bits.Add64(lo, carry, 0)
+			r[i], carry = lo, hi+c
+		}
+		if carry != 0 {
+			r = append(r, carry)
+		}
 	}
-	return z.mulAdd(uint64pow10[k], 0)
+	return r.norm()
 }
 
 // divPow10 returns floor(z / 10^k) and whether the remainder is not zero.
+// It works in one buffer, which shrinks as the quotient does.
 func (z nat) divPow10(k int) (nat, bool) {
+	r := make(nat, len(z))
+	copy(r, z)
+	r = r.norm()
 	sticky := false
-	var rem uint64
-	for ; k >= 19 && len(z) > 0; k -= 19 {
-		z, rem = z.divSmall(pow10Word)
+	for k > 0 && len(r) > 0 {
+		step := min(k, 19)
+		k -= step
+		d := uint64pow10[step]
+		var rem uint64
+		for i := len(r) - 1; i >= 0; i-- {
+			r[i], rem = bits.Div64(rem, r[i], d)
+		}
 		sticky = sticky || rem != 0
+		r = r.norm()
 	}
-	if len(z) == 0 {
-		return z, sticky
+	if k > 0 {
+		return nil, sticky || len(z.norm()) > 0
 	}
-	if k >= 19 {
-		return nil, sticky
-	}
-	z, rem = z.divSmall(uint64pow10[k])
-	return z, sticky || rem != 0
+	return r, sticky
 }
 
 // decimal returns the decimal digits of z, "0" for zero.

@@ -1091,11 +1091,37 @@ func BenchmarkFormatDecimal64(b *testing.B) {
 		{"Exp", decimal64(-5.09e75), 'g', -1},
 		{"NegExp", decimal64(-5.11e-95), 'g', -1},
 		{"Fixed3", decimal64(3.14159), 'f', 3},
+		{"HexShortest", decimal64(339.7784), 'x', -1},
+		{"Hex6", decimal64(339.7784), 'x', 6},
+		{"HexExp", decimal64(-5.09e75), 'x', -1},
+		{"HexNegExp", decimal64(-5.11e-95), 'x', -1},
+		{"HexExact", decimal64(1.5), 'x', -1},
 	}
 	for _, bm := range benchmarks {
 		b.Run(bm.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				FormatDecimal(decimal128(bm.d), bm.fmt, bm.prec, 64)
+			}
+		})
+	}
+}
+
+func BenchmarkFormatDecimal128Hex(b *testing.B) {
+	benchmarks := []struct {
+		name string
+		d    decimal128
+		prec int
+	}{
+		{"Shortest", 339.7784, -1},
+		{"Prec13", 339.7784, 13},
+		{"Full", 1.234567890123456789012345678901234, -1},
+		{"Smallest", 1e-6176, -1},
+		{"Largest", 9.999999999999999999999999999999999e6144, -1},
+	}
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				FormatDecimal(bm.d, 'x', bm.prec, 128)
 			}
 		})
 	}
@@ -1555,9 +1581,10 @@ func hexDecimalModel(s string, prec, etiny, emax int) (string, bool) {
 
 // TestFormatDecimalFormatsLikeFloat checks the format bytes and bit sizes
 // against FormatFloat's handling of them: 'b' writes the coefficient and its
-// decimal exponent, an unknown byte (and 'x' and 'X', which are radix-two
-// notations) gives "%" and the byte for a finite value, the specials are
-// written whatever the format, and bitSize 64 rounds to decimal64 first.
+// decimal exponent, 'x' and 'X' a hexadecimal fraction and a binary
+// exponent, an unknown byte gives "%" and the byte for a finite value, the
+// specials are written whatever the format, and bitSize 64 rounds to
+// decimal64 first.
 func TestFormatDecimalFormatsLikeFloat(t *testing.T) {
 	d := func(s string) decimal128 {
 		x, err := ParseDecimal(s, 128)
@@ -1580,8 +1607,8 @@ func TestFormatDecimalFormatsLikeFloat(t *testing.T) {
 		{"-0.00", 'b', -1, "-0e-2"},
 		{"NaN", 'b', -1, "NaN"},
 		{"-Inf", 'b', -1, "-Inf"},
-		{"1.50", 'x', -1, "%x"},
-		{"1.50", 'X', 4, "%X"},
+		{"1.50", 'x', -1, "0x1.8p+00"},
+		{"1.50", 'X', 4, "0X1.8000P+00"},
 		{"-1.50", 'z', -1, "%z"},
 		{"0", 'v', -1, "%v"},
 		{"NaN", 'z', -1, "NaN"},
@@ -1632,4 +1659,185 @@ func TestFormatDecimalFormatsLikeFloat(t *testing.T) {
 			}()
 		}
 	}
+}
+
+// TestFormatDecimalHexLikeFloat checks 'x' and 'X' against FormatFloat on
+// decimals that are exactly float64 values, m × 2^k with a short m, at
+// precision -1 and at the explicit precisions a float64 has.
+func TestFormatDecimalHexLikeFloat(t *testing.T) {
+	r := rand.New(rand.NewSource(2))
+	n := 0
+	for _, w := range []struct{ bits, mbits, kmax int }{{64, 10, 12}, {128, 20, 30}} {
+		for range 2000 {
+			m := 1 + r.Int63n(1<<w.mbits-1)
+			k := r.Intn(2*w.kmax+1) - w.kmax
+			f := float64(m) * mathPow2(k)
+			if r.Intn(2) == 0 {
+				f = -f
+			}
+			// The exact decimal of f: m × 5^-k × 10^k for negative k.
+			s := new(big.Rat).SetFloat64(f).FloatString(max(-k, 0))
+			d, err := ParseDecimal(s, w.bits)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if back, _ := ParseFloat(FormatDecimal(d, 'g', -1, w.bits), 64); back != f {
+				t.Fatalf("%s is not exact in decimal%d", s, w.bits)
+			}
+			for prec := -1; prec <= 13; prec++ {
+				for _, format := range []byte{'x', 'X'} {
+					want := FormatFloat(f, format, prec, 64)
+					if got := FormatDecimal(d, format, prec, w.bits); got != want {
+						t.Errorf("FormatDecimal(%s, %q, %d, %d) = %s; FormatFloat gives %s", s, format, prec, w.bits, got, want)
+					}
+					n++
+				}
+			}
+		}
+	}
+	for _, s := range []string{"0", "-0", "NaN", "Inf", "-Inf"} {
+		d, _ := ParseDecimal(s, 128)
+		f, _ := ParseFloat(s, 64)
+		if s == "-0" {
+			f = mathCopysignNeg(f)
+		}
+		for _, prec := range []int{-1, 0, 3} {
+			if got, want := FormatDecimal(d, 'x', prec, 128), FormatFloat(f, 'x', prec, 64); got != want {
+				t.Errorf("FormatDecimal(%s, 'x', %d) = %s; FormatFloat gives %s", s, prec, got, want)
+			}
+		}
+	}
+	if n < 50000 {
+		t.Fatalf("only %d comparisons", n)
+	}
+}
+
+func mathPow2(k int) float64 {
+	f := 1.0
+	for ; k > 0; k-- {
+		f *= 2
+	}
+	for ; k < 0; k++ {
+		f /= 2
+	}
+	return f
+}
+
+func mathCopysignNeg(f float64) float64 { return -(f - f) - 0 }
+
+// TestFormatDecimalHexOracle checks 'x' against a math/big model over the
+// whole exponent range of both widths: the value correctly rounded, ties to
+// even, at 0 to 40 hexadecimal digits, and at precision -1 the fewest digits
+// that ParseDecimal reads back as the value.
+func TestFormatDecimalHexOracle(t *testing.T) {
+	r := rand.New(rand.NewSource(3))
+	count := 150
+	if testing.Short() {
+		count = 20
+	}
+	for _, w := range []struct{ bits, prec, minExp, maxExp int }{{64, 16, -398, 369}, {128, 34, -6176, 6111}} {
+		for i := range count {
+			nd := 1 + r.Intn(w.prec)
+			digits := []byte{byte('1' + r.Intn(9))}
+			for range nd - 1 {
+				digits = append(digits, byte('0'+r.Intn(10)))
+			}
+			q := r.Intn(w.maxExp-w.minExp+1) + w.minExp
+			switch i % 10 { // the ends of the range, which need the most work
+			case 0:
+				q = w.minExp
+			case 1:
+				q = w.maxExp
+			}
+			neg := r.Intn(2) == 0
+			text := string(digits) + "e" + Itoa(q)
+			if neg {
+				text = "-" + text
+			}
+			d, err := ParseDecimal(text, w.bits)
+			if err != nil {
+				t.Fatalf("%s: %v", text, err)
+			}
+			v, _ := new(big.Rat).SetString(text)
+			for prec := 0; prec <= 40; prec++ {
+				want := hexModel(v, prec)
+				if got := FormatDecimal(d, 'x', prec, w.bits); got != want {
+					t.Errorf("FormatDecimal(%s, 'x', %d, %d) = %s, want %s", text, prec, w.bits, got, want)
+				}
+			}
+			short := FormatDecimal(d, 'x', -1, w.bits)
+			back, err := ParseDecimal(short, w.bits)
+			if err != nil || back != d {
+				t.Errorf("ParseDecimal(FormatDecimal(%s, 'x', -1, %d) = %s) = %v, %v; want the value back", text, w.bits, short, back, err)
+			}
+			// No fewer digits read back as the value.
+			if n := hexDigitsAfterPoint(short); n > 0 {
+				shorter := hexModel(v, n-1)
+				if b, err := ParseDecimal(shorter, w.bits); err == nil && b == d {
+					t.Errorf("FormatDecimal(%s, 'x', -1, %d) = %s, but %s reads back too", text, w.bits, short, shorter)
+				}
+			}
+		}
+	}
+}
+
+// hexModel writes the nonzero rational v in the 'x' form at prec digits,
+// rounded to nearest, ties to even, with math/big.
+func hexModel(v *big.Rat, prec int) string {
+	sign := ""
+	if v.Sign() < 0 {
+		sign = "-"
+		v = new(big.Rat).Neg(v)
+	}
+	pow2 := func(k int) *big.Rat {
+		p := new(big.Int).Lsh(big.NewInt(1), uint(max(k, -k)))
+		if k >= 0 {
+			return new(big.Rat).SetInt(p)
+		}
+		return new(big.Rat).SetFrac(big.NewInt(1), p)
+	}
+	e := v.Num().BitLen() - v.Denom().BitLen()
+	for v.Cmp(pow2(e)) < 0 {
+		e--
+	}
+	for v.Cmp(pow2(e+1)) >= 0 {
+		e++
+	}
+	scaled := new(big.Rat).Mul(v, pow2(4*prec-e))
+	m, rem := new(big.Int).QuoRem(scaled.Num(), scaled.Denom(), new(big.Int))
+	switch new(big.Int).Lsh(rem, 1).Cmp(scaled.Denom()) {
+	case 1:
+		m.Add(m, big.NewInt(1))
+	case 0:
+		if m.Bit(0) == 1 {
+			m.Add(m, big.NewInt(1))
+		}
+	}
+	if m.BitLen() > 4*prec+1 {
+		m.Rsh(m, 1)
+		e++
+	}
+	frac := new(big.Int).Sub(m, new(big.Int).Lsh(big.NewInt(1), uint(4*prec)))
+	s := sign + "0x1"
+	if prec > 0 {
+		h := frac.Text(16)
+		s += "." + strings.Repeat("0", prec-len(h)) + h
+	}
+	es := Itoa(max(e, -e))
+	if len(es) < 2 {
+		es = "0" + es
+	}
+	if e < 0 {
+		return s + "p-" + es
+	}
+	return s + "p+" + es
+}
+
+func hexDigitsAfterPoint(s string) int {
+	dot := strings.IndexByte(s, '.')
+	p := strings.IndexByte(s, 'p')
+	if dot < 0 {
+		return 0
+	}
+	return p - dot - 1
 }

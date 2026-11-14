@@ -823,7 +823,7 @@ const (
 	argComplex
 	argPointer
 	argError
-	argDecimal               // decimal64 and decimal128, which have no %x or %X
+	argDecimal               // decimal64 and decimal128
 	anyType    printfArgType = ^0
 )
 
@@ -868,8 +868,8 @@ var printVerbs = []printVerb{
 	{'U', "-#", argRune | argInt},
 	{'v', allFlags, anyType},
 	{'w', allFlags, argError},
-	{'x', sharpNumFlag, argRune | argInt | argString | argPointer | argFloat | argComplex},
-	{'X', sharpNumFlag, argRune | argInt | argString | argPointer | argFloat | argComplex},
+	{'x', sharpNumFlag, argRune | argInt | argString | argPointer | argFloat | argComplex | argDecimal},
+	{'X', sharpNumFlag, argRune | argInt | argString | argPointer | argFloat | argComplex | argDecimal},
 }
 
 // okPrintfArg compares the operation to the arguments actually present,

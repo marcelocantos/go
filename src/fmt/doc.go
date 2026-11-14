@@ -66,14 +66,17 @@ Floating-point and complex constituents:
 	For formats other than %b the exponent is at least two digits.
 
 Decimal floating-point (decimal64, decimal128) take the verbs of
-floating-point values but %x and %X, which write a hexadecimal fraction
-and a power of two, a notation in radix two:
+floating-point values:
 
 	%b	decimalless scientific notation with exponent a power of ten,
 		the coefficient and the exponent of its last digit, in the
 		manner of strconv.FormatDecimal with the 'b' format,
 		e.g. -123456e-78
 	%e %E %f %F %g %G	as for floating-point values
+	%x %X	as for floating-point values, of the decimal's value
+		rounded to the precision; without a precision, the fewest
+		digits that read back as the value, which does not keep
+		the quantum, e.g. 0x1.8p+00 for 1.50
 
 	A decimal value has a quantum, the exponent of its last digit, which
 	the value alone does not fix: 1.5 and 1.50 are equal, and differ in
