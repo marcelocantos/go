@@ -6,7 +6,11 @@
 
 package fmt_test
 
-import "math/decimal"
+import (
+	. "fmt"
+	"math/decimal"
+	"testing"
+)
 
 // The decimal cases of the formatting and scanning tables. They live in
 // their own file because the external test package is not compiled as
@@ -130,6 +134,14 @@ func init() {
 		{"-1.5\n", &decimal64Val, decimal64(-1.5)},
 		{"0\n", &decimal64Val, decimal64(0)},
 		{"123.456\n", &decimal128Val, decimal128(123.456)},
+		// What a float accepts: hexadecimal, underscores and the form
+		// with a binary exponent that %b writes for a float.
+		{"0x1p-2\n", &decimal64Val, decimal64(0.25)},
+		{"0x1.8p1\n", &decimal128Val, decimal128(3)},
+		{"1_000.5\n", &decimal128Val, decimal128(1000.5)},
+		{"1.2p4\n", &decimal64Val, decimal64(19.2)},
+		{"-3p-2\n", &decimal128Val, decimal128(-0.75)},
+		{"150e-2\n", &decimal64Val, decimal64(1.50)},
 	}...)
 
 	scanfTests = append(scanfTests, []ScanfTest{
@@ -148,4 +160,38 @@ func init() {
 		{"%v", &decimal64Val},
 		{"%v", &decimal128Val},
 	}...)
+}
+
+// TestScanDecimalLikeFloat checks that Sscan reads into a decimal what it
+// reads into a float, with the value and quantum ParseDecimal gives.
+func TestScanDecimalLikeFloat(t *testing.T) {
+	for _, tt := range []struct{ in, want string }{
+		{"1.50", "1.50"},
+		{"1_000.50", "1000.50"},
+		{"0x1p-2", "0.25"},
+		{"0x10p0", "16"},
+		{"1.2p4", "19.2"},
+		{"1p-1", "0.5"},
+		{"1_0p1", "20"},
+		{"+Inf", "+Inf"},
+		{"-inf", "-Inf"},
+		{"nan", "NaN"},
+		{"-nan", ""},
+		{"snan", ""},
+		{"0x", ""},
+		{"1.2p", ""},
+		{"1.2p_4", ""},
+	} {
+		var f float64
+		_, ferr := Sscan(tt.in, &f)
+		var d decimal64
+		_, derr := Sscan(tt.in, &d)
+		if (ferr == nil) != (derr == nil) {
+			t.Errorf("Sscan(%q): decimal64 error %v, float64 error %v", tt.in, derr, ferr)
+			continue
+		}
+		if derr == nil && Sprint(d) != tt.want {
+			t.Errorf("Sscan(%q) into decimal64 = %v, want %s", tt.in, d, tt.want)
+		}
+	}
 }

@@ -386,15 +386,58 @@ var atod64Tests = []atodTest{
 	{" Inf", "0", ErrSyntax},
 	{"--Inf", "0", ErrSyntax},
 	{"+-1", "0", ErrSyntax},
-	{"-NaN", "NaN", nil},
-	{"snan", "NaN", nil},
+	// As for ParseFloat, a NaN has no sign and there is no signaling NaN.
+	{"-NaN", "0", ErrSyntax},
+	{"+nan", "0", ErrSyntax},
+	{"snan", "0", ErrSyntax},
+	{"sNaN", "0", ErrSyntax},
+	{"-sNaN", "0", ErrSyntax},
+	{"nan", "NaN", nil},
 	{"INF", "+Inf", nil},
 	{"+INFINITY", "+Inf", nil},
 
-	// Not decimal floating-point numerals.
-	{"1_000", "0", ErrSyntax},
+	// Underscores, as ParseFloat takes them: between digits only.
+	{"1_000", "1000", nil},
+	{"1_000.50", "1000.50", nil},
+	{"-1_0.5_0e1_0", "-1.050e+11", nil},
+	{"0_1", "1", nil},
+	{"_1", "0", ErrSyntax},
+	{"1_", "0", ErrSyntax},
+	{"1__0", "0", ErrSyntax},
+	{"1_.5", "0", ErrSyntax},
+	{"1._5", "0", ErrSyntax},
+	{"1_e5", "0", ErrSyntax},
+	{"1e_5", "0", ErrSyntax},
+
+	// Hexadecimal, as ParseFloat reads it. The value is exact in binary; an
+	// integer that fits has exponent 0 and any other exact value the
+	// smallest coefficient, as a constant without a quantum converts.
+	{"0x1p-2", "0.25", nil},
+	{"0x1.8p1", "3", nil},
+	{"0X1P+1", "2", nil},
+	{"0x10p0", "16", nil},
+	{"0xap0", "10", nil},
+	{"-0x1p-1", "-0.5", nil},
+	{"0x_1p0", "1", nil},
+	{"0x1_0p0", "16", nil},
+	{"0x.8p1", "1", nil},
+	{"0x0p0", "0", nil},
+	{"-0x0.0p99", "-0", nil},
+	{"0x1p-1074", "4.940656458412465e-324", nil},
+	{"0x1p53", "9.007199254740992e+15", nil},
+	{"0x1p54", "1.801439850948198e+16", nil},
+	{"0x1.fffffffffffffp1023", "1.797693134862316e+308", nil},
+	{"0x1p+2000", "+Inf", ErrRange},
+	{"-0x1p+2000", "-Inf", ErrRange},
+	{"0x1p-2000", "0e-398", nil},
 	{"0x10", "0", ErrSyntax},
-	{"0x1p4", "0", ErrSyntax},
+	{"0x", "0", ErrSyntax},
+	{"0xp1", "0", ErrSyntax},
+	{"0x.p1", "0", ErrSyntax},
+	{"0x1p", "0", ErrSyntax},
+	{"0x1_p0", "0", ErrSyntax},
+	{"0x1g1", "0", ErrSyntax},
+
 	{" 1", "0", ErrSyntax},
 	{"1 ", "0", ErrSyntax},
 }
@@ -512,7 +555,14 @@ var atod128Tests = []atodTest{
 	{"Infoo", "0", ErrSyntax},
 	{"Infinityx", "0", ErrSyntax},
 	{"-Inf", "-Inf", nil},
-	{"-NaN", "NaN", nil},
+	{"-NaN", "0", ErrSyntax},
+	{"1_000.000_001", "1000.000001", nil},
+	{"0x1p-2", "0.25", nil},
+	{"0x1p100", "1.267650600228229401496703205376e+30", nil},
+	{"0x1p113", "1.038459371706965525706099265844019e+34", nil},
+	{"0x1p-1074", "4.940656458412465441765687928682214e-324", nil},
+	{"0x1p+30000", "+Inf", ErrRange},
+	{"0x1p-30000", "0e-6176", nil},
 
 	// Zeros
 	{"0", "0", nil},
@@ -1335,4 +1385,170 @@ func mulhi64(a, b uint64) uint64 {
 	w1, w2 := t&mask, t>>32
 	w1 += a0 * b1
 	return a1*b1 + w2 + w1>>32
+}
+
+// TestParseDecimalGrammarLikeFloat checks that ParseDecimal accepts exactly
+// the strings ParseFloat accepts.
+func TestParseDecimalGrammarLikeFloat(t *testing.T) {
+	strs := []string{
+		"", "+", "-", ".", "+.", "e5", "1", "+1", "-1", ".5", "5.", "1e5", "1E+5", "1e-5", "1e", "1e+",
+		"1.2.3", "1..2", "--1", "+-1", " 1", "1 ", "1x",
+		"1_000", "_1", "1_", "1__0", "1_.5", "1._5", "1_e5", "1e_5", "1e1_0", "0_1", "1_0.5_0", ".5_0", "+_1", "-1_0",
+		"0x1p-2", "0x1.8p1", "0X1P+1", "0x1", "0x", "0x.p1", "0x.8p1", "0x_1p0", "0x1_0p0", "0x1p1_0", "0x1_p0",
+		"0x1.Fp+2", "0xp1", "0x1p", "0x1p+", "0x1g1", "-0x1p0", "+0x1p0", "0x1.p0", "0x.1p0", "0x1e1p0", "0x1e1",
+		"0b101", "0o17", "0x1.8", "1.2p4", "1p4",
+		"nan", "NaN", "NAN", "+nan", "-nan", "snan", "sNaN", "nan1", "nana",
+		"inf", "Inf", "+inf", "-inf", "infinity", "-Infinity", "+INFINITY", "infin", "infinityx", "-in", "i",
+	}
+	for _, s := range strs {
+		_, ferr := ParseFloat(s, 64)
+		for _, bits := range []int{64, 128} {
+			_, derr := ParseDecimal(s, bits)
+			fsyn := ferr != nil && ferr.(*NumError).Err == ErrSyntax
+			dsyn := derr != nil && derr.(*NumError).Err == ErrSyntax
+			if fsyn != dsyn {
+				t.Errorf("ParseDecimal(%q, %d) error %v; ParseFloat gives %v", s, bits, derr, ferr)
+			}
+		}
+	}
+}
+
+// TestParseDecimalHex checks the conversion of hexadecimal text against an
+// exact model built on math/big: one rounding to nearest even from the exact
+// binary value, and the quantum a constant without one takes. Among the
+// values are exact ties of the decimal format, which are dyadic when the
+// tie lies above the units digit, and their binary neighbours.
+func TestParseDecimalHex(t *testing.T) {
+	r := rand.New(rand.NewSource(1))
+	n := 0
+	for _, f := range []struct {
+		bits, prec, etiny, emax int
+	}{{64, 16, -398, 369}, {128, 34, -6176, 6111}} {
+		check := func(s string) {
+			t.Helper()
+			want, ok := hexDecimalModel(s, f.prec, f.etiny, f.emax)
+			if !ok {
+				return
+			}
+			n++
+			got, err := ParseDecimal(s, f.bits)
+			if err != nil {
+				t.Errorf("ParseDecimal(%q, %d): %v", s, f.bits, err)
+				return
+			}
+			w, err := ParseDecimal(want, f.bits)
+			if err != nil {
+				t.Fatalf("model numeral %q: %v", want, err)
+			}
+			if FormatDecimal(got, 'e', -1, f.bits) != FormatDecimal(w, 'e', -1, f.bits) {
+				t.Errorf("ParseDecimal(%q, %d) = %s, want %s", s, f.bits, FormatDecimal(got, 'e', -1, f.bits), FormatDecimal(w, 'e', -1, f.bits))
+			}
+		}
+		for range 3000 {
+			nd := 1 + r.Intn(40)
+			var b strings.Builder
+			if r.Intn(2) == 0 {
+				b.WriteByte('-')
+			}
+			b.WriteString("0x")
+			point := r.Intn(nd + 1)
+			for i := range nd {
+				if i == point && r.Intn(2) == 0 {
+					b.WriteByte('.')
+				}
+				b.WriteByte("0123456789abcdef"[r.Intn(16)])
+			}
+			b.WriteString("p")
+			b.WriteString(Itoa(r.Intn(2*4*f.emax) - 4*f.emax - 160))
+			check(b.String())
+		}
+		// Ties (2c+1) × 10^q / 2 with q >= 1, and the values one unit of a
+		// long binary mantissa either side.
+		for range 1000 {
+			c := new(big.Int).Rand(r, new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(f.prec)), nil))
+			c.Mul(c, big.NewInt(2))
+			c.Add(c, big.NewInt(1))
+			q := 1 + r.Intn(30)
+			tie := new(big.Int).Mul(c, new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(q)), nil))
+			// tie / 2 is an integer since 10^q is even.
+			tie.Rsh(tie, 1)
+			check("0x" + tie.Text(16) + "p0")
+			shifted := new(big.Int).Lsh(tie, 64)
+			check("0x" + new(big.Int).Add(shifted, big.NewInt(1)).Text(16) + "p-64")
+			check("0x" + new(big.Int).Sub(shifted, big.NewInt(1)).Text(16) + "p-64")
+		}
+	}
+	if n < 6000 {
+		t.Fatalf("only %d values checked", n)
+	}
+}
+
+// hexDecimalModel returns, for the hexadecimal literal s, a decimal numeral
+// that denotes the expected result exactly, with its quantum, and ok = false
+// for a value beyond the largest finite one.
+func hexDecimalModel(s string, prec, etiny, emax int) (string, bool) {
+	v, ok := new(big.Rat).SetString(s)
+	if !ok {
+		panic("bad hex " + s)
+	}
+	sign := ""
+	if v.Sign() < 0 || strings.HasPrefix(s, "-") {
+		sign = "-"
+	}
+	v.Abs(v)
+	if v.Sign() == 0 {
+		return sign + "0", true
+	}
+	pow := func(k int) *big.Rat {
+		p := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(max(k, -k))), nil)
+		if k >= 0 {
+			return new(big.Rat).SetInt(p)
+		}
+		return new(big.Rat).SetFrac(big.NewInt(1), p)
+	}
+	// lead: 10^lead <= v < 10^(lead+1).
+	lead := int(float64(v.Num().BitLen()-v.Denom().BitLen()) * 0.30103)
+	for v.Cmp(pow(lead)) < 0 {
+		lead--
+	}
+	for v.Cmp(pow(lead+1)) >= 0 {
+		lead++
+	}
+	q := max(lead-prec+1, etiny)
+	scaled := new(big.Rat).Mul(v, pow(-q))
+	c, rem := new(big.Int).QuoRem(scaled.Num(), scaled.Denom(), new(big.Int))
+	exact := rem.Sign() == 0
+	if !exact {
+		// To nearest, ties to even.
+		twice := new(big.Int).Lsh(rem, 1)
+		switch twice.Cmp(scaled.Denom()) {
+		case 1:
+			c.Add(c, big.NewInt(1))
+		case 0:
+			if c.Bit(0) == 1 {
+				c.Add(c, big.NewInt(1))
+			}
+		}
+		if len(c.String()) > prec {
+			c.Quo(c, big.NewInt(10))
+			q++
+		}
+		if q > emax {
+			return "", false
+		}
+		return sign + c.String() + "e" + Itoa(q), true
+	}
+	if q > emax {
+		return "", false
+	}
+	digits := c.String()
+	for len(digits) > 1 && digits[len(digits)-1] == '0' {
+		digits = digits[:len(digits)-1]
+		q++
+	}
+	if q > 0 && len(digits)+q <= prec {
+		digits += strings.Repeat("0", q)
+		q = 0
+	}
+	return sign + digits + "e" + Itoa(q), true
 }

@@ -30,6 +30,9 @@ func FormatDecimal(d decimal128, fmt byte, prec, bitSize int) string
 //go:linkname ParseDecimal strconv.parseDecimal
 func ParseDecimal(s string, bitSize int) (decimal128, error)
 
+//go:linkname ParseDecimalBinExp strconv.parseDecimalBinExp
+func ParseDecimalBinExp(mant string, exp2 int, bitSize int) (decimal128, error)
+
 //go:linkname AppendDecimal strconv.appendDecimal
 func AppendDecimal(dst []byte, d decimal128, fmt byte, prec, bitSize int) []byte
 

@@ -32,22 +32,33 @@ func AppendDecimal(dst []byte, d decimal128, fmt byte, prec, bitSize int) []byte
 	return appendDecimal(dst, d, fmt, prec, bitSize)
 }
 
-// ParseDecimal converts a string to a decimal value of the given bitSize, 64 or
-// 128, rounded to nearest even from the exact value the string denotes. The
-// result has type decimal128 whatever the bitSize, as [ParseFloat]'s result has
-// type float64; it converts to decimal64 without changing its value or quantum
-// if bitSize is 64.
+// ParseDecimal converts the string s to a decimal value of the given bitSize,
+// 64 for decimal64 or 128 for decimal128, rounded to nearest even from the
+// exact value s denotes. The result has type decimal128 whatever the bitSize,
+// as [ParseFloat]'s result has type float64; it converts to decimal64 without
+// changing its value or quantum if bitSize is 64. As for ParseFloat, a
+// bitSize other than 64 is taken as the larger size, 128.
 //
-// The string is a decimal numeral (an optional sign, digits with an optional
-// point, and an optional exponent) or one of the words "inf", "infinity",
-// "nan" and "snan", with an optional sign and in any case. Nothing else is
-// accepted: no surrounding space, no underscores, no hexadecimal form, and
-// no characters after a word. The quantum of the result is that of the numeral
-// if the value is exact.
+// ParseDecimal accepts what ParseFloat accepts: decimal and hexadecimal
+// floating-point numbers as defined by the Go syntax for [floating-point
+// literals], underscores included, the string "NaN", and the (possibly
+// signed) strings "Inf" and "Infinity", ignoring case. There is no signaling
+// NaN and no signed NaN, as for ParseFloat.
 //
-// If s is not syntactically well-formed, ParseDecimal returns zero and
-// err.Err = ErrSyntax. If s is well-formed but rounds to a magnitude beyond the
-// largest value of the size, ParseDecimal returns ±Inf and err.Err = ErrRange.
-// As with [ParseFloat], a value too small for the format is not an error:
-// it rounds to a subnormal value or to zero.
+// A decimal numeral gives the quantum of its digits if its value is exact:
+// "1.50" is 1.50, not 1.5. A hexadecimal numeral has no quantum, and the
+// result's exponent is chosen as for a constant without one (see
+// "Conversions" in the Go specification): an exact value that is an integer
+// that fits has exponent 0, another exact value has the smallest coefficient
+// that holds it ("0x1p-2" is 0.25), and an inexact value, which is rounded
+// once from the exact binary value, keeps every digit of the result.
+//
+// The errors that ParseDecimal returns have concrete type [*NumError] and
+// include err.Num = s. If s is not syntactically well-formed, ParseDecimal
+// returns zero and err.Err = ErrSyntax. If s is well-formed but rounds to a
+// magnitude beyond the largest value of the size, ParseDecimal returns ±Inf
+// and err.Err = ErrRange. As with ParseFloat, a value too small for the
+// format is not an error: it rounds to a subnormal value or to zero.
+//
+// [floating-point literals]: https://go.dev/ref/spec#Floating-point_literals
 func ParseDecimal(s string, bitSize int) (decimal128, error) { return parseDecimal(s, bitSize) }

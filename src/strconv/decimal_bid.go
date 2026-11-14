@@ -11,12 +11,13 @@ import (
 )
 
 // The conversions between decimal values and text are those of
-// internal/bid: parseDecimal reads its input with bid.Parse64 or bid.Parse128,
-// and formatDecimal and appendDecimal take
-// the coefficient digits, sign and quantum from bid.UnpackDigits128. This
-// file owns the format verbs and precision, and the layout of the digits
-// that follows from them. Whenever a precision asks for fewer digits than
-// a value has, the value is rounded by the kernel's Quantize.
+// internal/bid: parseDecimal reads its input with bid.Parse64 or
+// bid.Parse128 once decimal_parse.go has put Go's syntax into the kernel's,
+// and formatDecimal and appendDecimal take the coefficient digits, sign and
+// quantum from bid.UnpackDigits128. This file owns the format verbs and
+// precision, and the layout of the digits that follows from them. Whenever
+// a precision asks for fewer digits than a value has, the value is
+// rounded by the kernel's Quantize.
 
 // formatDecimal converts a decimal128 value to a string.
 // The format fmt and precision prec follow the same rules as [FormatFloat],
@@ -181,38 +182,12 @@ func copyDecimalDigits(dst, src []byte) {
 	copy(dst, src)
 }
 
-// parseDecimal converts a string to a decimal value of the given bitSize, 64 or
-// 128, rounded to nearest even from the exact value the string denotes. The
-// result has type decimal128 whatever the bitSize, as [ParseFloat]'s result has
-// type float64; it converts to decimal64 without changing its value or quantum
-// if bitSize is 64.
-//
-// The string is a decimal numeral (an optional sign, digits with an optional
-// point, and an optional exponent) or one of the words "inf", "infinity",
-// "nan" and "snan", with an optional sign and in any case. Nothing else is
-// accepted: no surrounding space, no underscores, no hexadecimal form, and
-// no characters after a word. The quantum of the result is that of the numeral
-// if the value is exact.
-//
-// If s is not syntactically well-formed, parseDecimal returns zero and
-// err.Err = ErrSyntax. If s is well-formed but rounds to a magnitude beyond the
-// largest value of the size, parseDecimal returns ±Inf and err.Err = ErrRange.
-// As with [ParseFloat], a value too small for the format is not an error:
-// it rounds to a subnormal value or to zero.
+// parseDecimal converts a string to a decimal value of the given bitSize, as
+// [ParseDecimal] documents.
 //
 //go:linkname parseDecimal
 func parseDecimal(s string, bitSize int) (decimal128, error) {
-	var d decimal128
-	var st bid.Status
-	if bitSize == 64 {
-		var x uint64
-		x, st = bid.Parse64(s, bid.ToNearestEven)
-		d = decimal128(decimal.BID64frombits(x))
-	} else {
-		var x bid.Uint128
-		x, st = bid.Parse128(s, bid.ToNearestEven)
-		d = decimal.BID128frombits(x.Hi, x.Lo)
-	}
+	d, st := readDecimal(s, bitSize)
 	if st&bid.Syntax != 0 {
 		return 0, syntaxError("ParseDecimal", s)
 	}

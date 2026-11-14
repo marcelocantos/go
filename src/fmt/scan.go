@@ -804,18 +804,32 @@ func (s *ss) convertFloat(str string, n int) float64 {
 	return f
 }
 
-// convertDecimal64 converts the string to a decimal64 value.
-func (s *ss) convertDecimal64(str string) decimal64 {
-	d, err := decimalreflect.ParseDecimal(str, 64)
-	if err != nil {
-		s.error(err)
+// convertDecimal converts the string to a decimal value of the given bitSize,
+// as convertFloat converts it to a float: ParseDecimal reads what ParseFloat
+// reads, and the mantissa of fmt's own form with a binary exponent ("1.2p4")
+// is scaled by that power of two. A decimal is not scaled by a power of two
+// exactly, so the scaling is part of the one rounding.
+func (s *ss) convertDecimal(str string, bitSize int) decimal128 {
+	if p := indexRune(str, 'p'); p >= 0 && !hasX(str) {
+		m, err := strconv.Atoi(str[p+1:])
+		if err != nil {
+			// Put full string into error.
+			if e, ok := err.(*strconv.NumError); ok {
+				e.Num = str
+			}
+			s.error(err)
+		}
+		d, err := decimalreflect.ParseDecimalBinExp(str[:p], m, bitSize)
+		if err != nil {
+			// Put full string into error.
+			if e, ok := err.(*strconv.NumError); ok {
+				e.Num = str
+			}
+			s.error(err)
+		}
+		return d
 	}
-	return decimal64(d)
-}
-
-// convertDecimal128 converts the string to a decimal128 value.
-func (s *ss) convertDecimal128(str string) decimal128 {
-	d, err := decimalreflect.ParseDecimal(str, 128)
+	d, err := decimalreflect.ParseDecimal(str, bitSize)
 	if err != nil {
 		s.error(err)
 	}
@@ -1031,13 +1045,13 @@ func (s *ss) scanOne(verb rune, arg any) {
 		if s.okVerb(verb, floatVerbs, "decimal64") {
 			s.SkipSpace()
 			s.notEOF()
-			*v = s.convertDecimal64(s.floatToken())
+			*v = decimal64(s.convertDecimal(s.floatToken(), 64))
 		}
 	case *decimal128:
 		if s.okVerb(verb, floatVerbs, "decimal128") {
 			s.SkipSpace()
 			s.notEOF()
-			*v = s.convertDecimal128(s.floatToken())
+			*v = s.convertDecimal(s.floatToken(), 128)
 		}
 	case *string:
 		*v = s.convertString(verb)
@@ -1082,23 +1096,13 @@ func (s *ss) scanOne(verb rune, arg any) {
 			if s.okVerb(verb, floatVerbs, "decimal64") {
 				s.SkipSpace()
 				s.notEOF()
-				tok := s.floatToken()
-				d, err := decimalreflect.ParseDecimal(tok, 64)
-				if err != nil {
-					s.error(err)
-				}
-				decimalreflect.SetDecimal(v, d)
+				decimalreflect.SetDecimal(v, s.convertDecimal(s.floatToken(), 64))
 			}
 		case decimalreflect.Decimal128:
 			if s.okVerb(verb, floatVerbs, "decimal128") {
 				s.SkipSpace()
 				s.notEOF()
-				tok := s.floatToken()
-				d, err := decimalreflect.ParseDecimal(tok, 128)
-				if err != nil {
-					s.error(err)
-				}
-				decimalreflect.SetDecimal(v, d)
+				decimalreflect.SetDecimal(v, s.convertDecimal(s.floatToken(), 128))
 			}
 		default:
 			s.errorString("can't scan type: " + val.Type().String())
