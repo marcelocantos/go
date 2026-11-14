@@ -149,7 +149,7 @@ type Type interface {
 
 	// Bits returns the size of the type in bits.
 	// It panics if the type's Kind is not one of the
-	// sized or unsized Int, Uint, Float, or Complex kinds.
+	// sized or unsized Int, Uint, Float, Complex, or Decimal kinds.
 	Bits() int
 
 	// ChanDir returns a channel type's direction.
@@ -630,7 +630,7 @@ func (t *rtype) Bits() int {
 		panic("reflect: Bits of nil Type")
 	}
 	k := t.Kind()
-	if k < Int || k > Complex128 {
+	if (k < Int || k > Complex128) && k != decimal64Kind && k != decimal128Kind {
 		panic("reflect: Bits of non-arithmetic Type " + t.String())
 	}
 	return int(t.t.Size_) * 8

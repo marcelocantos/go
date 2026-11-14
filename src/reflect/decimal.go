@@ -23,3 +23,28 @@ func (v Value) Decimal() decimal128 { return decimalValue(v) }
 // SetDecimal sets v to x. It panics unless v is settable and has kind
 // Decimal64 or Decimal128.
 func (v Value) SetDecimal(x decimal128) { setDecimalValue(v, x) }
+
+// OverflowDecimal reports whether the decimal128 x cannot be represented by
+// v's type, as [Value.OverflowFloat] does for floats: only a finite x beyond
+// the type's largest finite value counts, not one that rounds.
+// It panics if v's Kind is not [Decimal64] or [Decimal128].
+func (v Value) OverflowDecimal(x decimal128) bool {
+	switch v.kind() {
+	case Decimal64:
+		return overflowDecimal64(x)
+	case Decimal128:
+		return false
+	}
+	panic(&ValueError{"reflect.Value.OverflowDecimal", v.kind()})
+}
+
+func overflowDecimal64(x decimal128) bool {
+	const (
+		maxDecimal64  decimal128 = 9.999999999999999e384
+		maxDecimal128 decimal128 = 9.999999999999999999999999999999999e6144
+	)
+	if x < 0 {
+		x = -x
+	}
+	return maxDecimal64 < x && x <= maxDecimal128
+}
