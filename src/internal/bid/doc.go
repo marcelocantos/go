@@ -2539,6 +2539,18 @@
 // computing the carried sum beside the plain one, each cost the other
 // sums more than they gained here.
 //
+// The compiler's front for decimal64 sums and differences of one exponent
+// (cmd/compile/internal/ssagen/bid64.go) tests the sum of one sign and then
+// the difference of two, each with a branch. Written instead without a
+// branch on the signs, the two coefficients made signed integers and added
+// in one word under one test, it took random money amounts of random signs
+// from 5.7 to 2.6 ns, but amounts of one sign drawn at random from 1.7 to
+// 2.6 and the fixed money pair from 0.55 to 1.6 (Apple M4 Max, 2026-11-14,
+// the side-by-side harness, six interleaved rounds): the branches cost
+// only when the signs alternate unpredictably, and sums of one sign, as in
+// a running total, are the commoner case. decimal128's front branches the
+// same way.
+//
 // Addition of decimal64 values, three alternatives to addSlow64's path
 // (Apple M4 Max, 2026-11-14, ns through the kernel entry). The exact sum
 // in two words rounded once by the reciprocal, as the whole path and not
