@@ -628,8 +628,8 @@ func (f *fmt) fmtDecimal(d decimal128, size int, verb rune, prec int) {
 		return
 	}
 	// The sharp flag forces a decimal point and retains trailing zeros,
-	// as for floats.
-	if f.sharp {
+	// as for floats, and as for floats it does not apply to %b.
+	if f.sharp && verb != 'b' {
 		digits := 0
 		switch verb {
 		case 'v', 'g', 'G':

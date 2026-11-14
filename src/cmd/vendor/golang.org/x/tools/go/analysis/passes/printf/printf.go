@@ -823,7 +823,8 @@ const (
 	argComplex
 	argPointer
 	argError
-	anyType printfArgType = ^0
+	argDecimal               // decimal64 and decimal128, which have no %x or %X
+	anyType    printfArgType = ^0
 )
 
 type printVerb struct {
@@ -848,15 +849,15 @@ var printVerbs = []printVerb{
 	// '#' is alternate format for several verbs.
 	// ' ' is spacer for numbers
 	{'%', noFlag, 0},
-	{'b', sharpNumFlag, argInt | argFloat | argComplex | argPointer},
+	{'b', sharpNumFlag, argInt | argFloat | argComplex | argPointer | argDecimal},
 	{'c', "-", argRune | argInt},
 	{'d', numFlag, argInt | argPointer}, // note: when analyzing go1.27+ code, argPointer is disallowed
-	{'e', sharpNumFlag, argFloat | argComplex},
-	{'E', sharpNumFlag, argFloat | argComplex},
-	{'f', sharpNumFlag, argFloat | argComplex},
-	{'F', sharpNumFlag, argFloat | argComplex},
-	{'g', sharpNumFlag, argFloat | argComplex},
-	{'G', sharpNumFlag, argFloat | argComplex},
+	{'e', sharpNumFlag, argFloat | argComplex | argDecimal},
+	{'E', sharpNumFlag, argFloat | argComplex | argDecimal},
+	{'f', sharpNumFlag, argFloat | argComplex | argDecimal},
+	{'F', sharpNumFlag, argFloat | argComplex | argDecimal},
+	{'g', sharpNumFlag, argFloat | argComplex | argDecimal},
+	{'G', sharpNumFlag, argFloat | argComplex | argDecimal},
 	{'o', sharpNumFlag, argInt | argPointer},
 	{'O', sharpNumFlag, argInt | argPointer},
 	{'p', "-#", argPointer},

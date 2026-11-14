@@ -125,6 +125,23 @@ func init() {
 		{"%v", decimal128(1234567.890123456789012345678901234), "1.234567890123456789012345678901234e+06"},
 		{"%G", decimal128(1234567.89), "1.23456789E+06"},
 		{"%.3g", decimal128(-1234567.89), "-1.23e+06"},
+		// %b is the coefficient and the decimal exponent of its last
+		// digit, the radix-ten form of a float's %b; the precision and #
+		// do not apply, as for a float. %x and %X, radix-two notations,
+		// are bad verbs.
+		{"%b", decimal64(1.50), "150e-2"},
+		{"%b", decimal128(-123456e-78), "-123456e-78"},
+		{"%b", decimal64(1e3), "1e+3"},
+		{"%b", decimal64(0), "0e+0"},
+		{"%+b", decimal64(1.5), "+15e-1"},
+		{"%8b", decimal64(1.5), "   15e-1"},
+		{"%-8b|", decimal64(1.5), "15e-1   |"},
+		{"%08b", decimal64(-1.5), "-0015e-1"},
+		{"%.2b", decimal64(1.500), "1500e-3"},
+		{"%#b", decimal64(1.5), "15e-1"},
+		{"%b", namedDecimal(2.5), "25e-1"},
+		{"%x", decimal64(1.5), "%!x(decimal64=1.5)"},
+		{"%X", decimal128(1.5), "%!X(decimal128=1.5)"},
 	}...)
 
 	scanTests = append(scanTests, []ScanTest{

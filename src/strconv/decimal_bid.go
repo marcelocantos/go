@@ -57,6 +57,26 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 	hi, lo := decimal.BID128bits(d)
 	x := bid.Uint128{Hi: hi, Lo: lo}
 
+	switch fmt {
+	case 'e', 'E', 'f', 'g', 'G':
+	case 'b':
+		return appendDecimalB(dst, x)
+	default:
+		// As FormatFloat does: the specials whatever the format, and
+		// otherwise "%" and the format. 'x' and 'X' are here: they are
+		// radix-two notations.
+		switch kind, neg, _, _ := bid.Unpack128(x); kind {
+		case bid.KindNaN:
+			return append(dst, "NaN"...)
+		case bid.KindInf:
+			if neg {
+				return append(dst, "-Inf"...)
+			}
+			return append(dst, "+Inf"...)
+		}
+		return append(dst, '%', fmt)
+	}
+
 	// A short coefficient at or just below the units place and below 10^6
 	// (money and most quantities) is plain digits around a point in every
 	// notation that keeps all the digits, which is each verb but 'e' and
@@ -158,6 +178,38 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 		return appendZero(dst, v.neg, fmt, prec)
 	}
 	return formatDigits(dst, v.neg, v.exp, v.digs[len(v.digs)-v.n:], normalFormat(fmt), prec)
+}
+
+// appendDecimalB appends the 'b' form of x: the coefficient in decimal, 'e',
+// and the exponent of its last digit with its sign, as a float's 'b' writes
+// its integer significand, 'p' and a power of two. "150e-2" is 1.50 and
+// "0e+0" the zero value. NaN and the infinities are written as for every
+// format.
+func appendDecimalB(dst []byte, x bid.Uint128) []byte {
+	var digs [bid.Precision128]byte
+	kind, neg, n, exp := bid.UnpackDigits128(&digs, x)
+	switch kind {
+	case bid.KindNaN:
+		return append(dst, "NaN"...)
+	case bid.KindInf:
+		if neg {
+			return append(dst, "-Inf"...)
+		}
+		return append(dst, "+Inf"...)
+	}
+	if neg {
+		dst = append(dst, '-')
+	}
+	if n == 0 {
+		dst = append(dst, '0')
+	} else {
+		dst = append(dst, digs[len(digs)-n:]...)
+	}
+	dst = append(dst, 'e')
+	if exp >= 0 {
+		dst = append(dst, '+')
+	}
+	return AppendInt(dst, int64(exp), 10)
 }
 
 // copyDecimalDigits copies a non-overlapping coefficient span; dst must be at
@@ -262,8 +314,8 @@ func (v *finite) round(x bid.Uint128, format byte, prec int) {
 
 // --- Layout ---
 
-// normalFormat is the verb that formatDigits lays out for fmt: unknown
-// verbs are 'g'.
+// normalFormat is the verb that formatDigits lays out for fmt, one of the
+// verbs appendDecimal lays out: 'e', 'E', 'f', 'g' and 'G'.
 func normalFormat(fmt byte) byte {
 	switch fmt {
 	case 'e', 'E', 'f', 'g', 'G':

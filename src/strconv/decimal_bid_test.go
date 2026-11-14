@@ -844,7 +844,7 @@ func TestAppendDecimalCanonicalCapacity(t *testing.T) {
 						bits, _ := bid.Pack128(neg, bid.Uint128{Hi: hi, Lo: c.Uint64()}, exp)
 						x = decimal.BID128frombits(bits.Hi, bits.Lo)
 					}
-					for _, format := range []byte{'e', 'E', 'g', 'G', 'f', '?'} {
+					for _, format := range []byte{'e', 'E', 'g', 'G', 'f'} {
 						e := exp + n - 1
 						scientific := format == 'e' || format == 'E' || format != 'f' && (e < -4 || e >= 6 || exp > 0)
 						want := ""
@@ -897,7 +897,7 @@ func TestAppendDecimalShort(t *testing.T) {
 				bits, _ := bid.Pack128(neg, bid.Uint128{Lo: c.Uint64()}, exp)
 				x := decimal.BID128frombits(bits.Hi, bits.Lo)
 				n := len(coeff)
-				for _, format := range []byte{'e', 'E', 'g', 'G', 'f', '?'} {
+				for _, format := range []byte{'e', 'E', 'g', 'G', 'f'} {
 					for _, prec := range []int{-1, 2} {
 						want := ""
 						if prec < 0 {
@@ -1551,4 +1551,85 @@ func hexDecimalModel(s string, prec, etiny, emax int) (string, bool) {
 		q = 0
 	}
 	return sign + digits + "e" + Itoa(q), true
+}
+
+// TestFormatDecimalFormatsLikeFloat checks the format bytes and bit sizes
+// against FormatFloat's handling of them: 'b' writes the coefficient and its
+// decimal exponent, an unknown byte (and 'x' and 'X', which are radix-two
+// notations) gives "%" and the byte for a finite value, the specials are
+// written whatever the format, and bitSize 64 rounds to decimal64 first.
+func TestFormatDecimalFormatsLikeFloat(t *testing.T) {
+	d := func(s string) decimal128 {
+		x, err := ParseDecimal(s, 128)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return x
+	}
+	for _, tt := range []struct {
+		in   string
+		fmt  byte
+		prec int
+		want string
+	}{
+		{"1.50", 'b', -1, "150e-2"},
+		{"1.50", 'b', 3, "150e-2"},
+		{"-123456e-78", 'b', -1, "-123456e-78"},
+		{"1E+3", 'b', -1, "1e+3"},
+		{"0", 'b', -1, "0e+0"},
+		{"-0.00", 'b', -1, "-0e-2"},
+		{"NaN", 'b', -1, "NaN"},
+		{"-Inf", 'b', -1, "-Inf"},
+		{"1.50", 'x', -1, "%x"},
+		{"1.50", 'X', 4, "%X"},
+		{"-1.50", 'z', -1, "%z"},
+		{"0", 'v', -1, "%v"},
+		{"NaN", 'z', -1, "NaN"},
+		{"+Inf", 'x', -1, "+Inf"},
+		{"-Inf", '?', 2, "-Inf"},
+	} {
+		for _, bits := range []int{64, 128} {
+			if got := FormatDecimal(d(tt.in), tt.fmt, tt.prec, bits); got != tt.want {
+				t.Errorf("FormatDecimal(%s, %q, %d, %d) = %q, want %q", tt.in, tt.fmt, tt.prec, bits, got, tt.want)
+			}
+		}
+	}
+	for _, x := range []float64{1.5, -2.25, 0} {
+		for _, f := range []byte{'z', 'v', '?'} {
+			want := FormatFloat(x, f, -1, 64)
+			got := FormatDecimal(decimal128(x), f, -1, 128)
+			if got != want {
+				t.Errorf("FormatDecimal(%v, %q) = %q; FormatFloat gives %q", x, f, got, want)
+			}
+		}
+	}
+
+	// bitSize 64 narrows, as bitSize 32 does for FormatFloat.
+	x := d("1.234567890123456789012345678901234")
+	if got, want := FormatDecimal(x, 'g', -1, 64), "1.234567890123457"; got != want {
+		t.Errorf("FormatDecimal(34 digits, 'g', -1, 64) = %q, want %q", got, want)
+	}
+	if got, want := string(AppendDecimal([]byte("x="), x, 'e', -1, 64)), "x=1.234567890123457e+00"; got != want {
+		t.Errorf("AppendDecimal(34 digits, 'e', -1, 64) = %q, want %q", got, want)
+	}
+	if got, want := FormatDecimal(d("1e400"), 'g', -1, 64), "+Inf"; got != want {
+		t.Errorf("FormatDecimal(1e400, 'g', -1, 64) = %q, want %q", got, want)
+	}
+
+	for _, bits := range []int{0, 16, 32, 63, 65, 127, 129} {
+		for name, f := range map[string]func(){
+			"FormatDecimal": func() { FormatDecimal(1, 'g', -1, bits) },
+			"AppendDecimal": func() { AppendDecimal(nil, 1, 'g', -1, bits) },
+		} {
+			func() {
+				defer func() {
+					want := "strconv: illegal " + name + " bitSize"
+					if r := recover(); r != want {
+						t.Errorf("%s with bitSize %d: recovered %v, want panic %q", name, bits, r, want)
+					}
+				}()
+				f()
+			}()
+		}
+	}
 }
