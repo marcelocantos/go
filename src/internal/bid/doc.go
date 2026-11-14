@@ -1830,24 +1830,19 @@
 // one cost a frame and a second call on every such operand pair, 0.6 to
 // 0.8 ns of an addition's 9. Those functions' parameters are therefore a
 // contract with the compiler, which passes a decimal128 as its two words,
-// high first, as Uint128 lays them out. The decimal64 operator / is lowered
-// the same way on those targets, to a call of div64 with the rounding mode,
-// whose parameters are a contract too. AddSlow128 and its relatives export
+// high first, as Uint128 lays them out. AddSlow128 and its relatives export
 // the same paths for the tests and the benchmark rows. The general paths
-// take every operand, so no result depends on any of this. The decimal64
-// operators on the same targets have the fronts of add64, sub64 and mul64
-// written in SSA and call what they refuse the same way, with the rounding
-// mode: addSlow64 for a sum or a difference (as x + -y), mulSlow64 and
-// div64 (ssagen.bidAddSub64 and bidKernelOp64), whose parameters are then
-// a contract with the compiler as well, a decimal64 as its one word.
+// take every operand, so no result depends on any of this.
 //
 // The decimal64 operators have the same arrangement on amd64 and arm64:
 // the compiler writes the fronts addSameQuantum64, subSameQuantum64 and
-// mulShort64 in SSA and calls addSlow64, mulSlow64 and div64 with the
-// mode for every operand pair they refuse
-// (cmd/compile/internal/ssagen/bid64.go), so those functions' parameters
-// are a contract with it too. mulSlow64 is not the general path itself:
-// it has a straight path in front of mulLong64 ("Straight paths").
+// mulShort64 in SSA and calls addSlow64 (for a difference, with y negated
+// unless it is a NaN), mulSlow64 and div64, with the rounding mode, for
+// every operand pair they refuse and for every division
+// (cmd/compile/internal/ssagen/bid64.go). Those functions' parameters are
+// a contract with it too, a decimal64 as its one word. None of the three
+// is the general path itself: each has a straight path in front of
+// addLong64, mulLong64 or divLong64 ("Straight paths").
 //
 // FMA128 has a front of another kind: a test that the three coefficients
 // fit a word each, which sends them to fmaLong128 and its word paths, and
