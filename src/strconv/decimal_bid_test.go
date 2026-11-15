@@ -1841,3 +1841,224 @@ func hexDigitsAfterPoint(s string) int {
 	}
 	return p - dot - 1
 }
+
+// TestFormatDecimalHexPaths drives the three routes of 'x': the product
+// decides most values, integer arithmetic the ones that are exactly binary
+// fractions (on which the product, unable to see the exactness, would give
+// up), and the exact path the ones the others cannot (a rounding boundary
+// within the product's error, and exponents outside its table). Ties of explicit precisions (dyadic values exactly
+// halfway between two n-digit results), their decimal neighbours, values
+// whose interval of read-back values ends exactly at a candidate (the
+// coefficient's parity then decides), and exponents outside the table are
+// checked against math/big, and both paths must have run.
+func TestFormatDecimalHexPaths(t *testing.T) {
+	var paths [3]int
+	defer SetHexPathHook(func(path int) { paths[path]++ })()
+	r := rand.New(rand.NewSource(4))
+	check := func(text string, bits, prec int) {
+		t.Helper()
+		d, err := ParseDecimal(text, bits)
+		if err != nil {
+			t.Fatalf("%s: %v", text, err)
+		}
+		v, _ := new(big.Rat).SetString(FormatDecimal(d, 'e', -1, bits))
+		if prec >= 0 {
+			if got, want := FormatDecimal(d, 'x', prec, bits), hexModel(v, prec); got != want {
+				t.Errorf("FormatDecimal(%s, 'x', %d, %d) = %s, want %s", text, prec, bits, got, want)
+			}
+			return
+		}
+		short := FormatDecimal(d, 'x', -1, bits)
+		if back, err := ParseDecimal(short, bits); err != nil || back != d {
+			t.Errorf("FormatDecimal(%s, 'x', -1, %d) = %s reads back as %v, %v", text, bits, short, back, err)
+		}
+		if n := hexDigitsAfterPoint(short); n > 0 {
+			if b, err := ParseDecimal(hexModel(v, n-1), bits); err == nil && b == d {
+				t.Errorf("FormatDecimal(%s, 'x', -1, %d) = %s is not the shortest", text, bits, short)
+			}
+		}
+	}
+	exact := func(v *big.Rat, digits int) (string, bool) {
+		s := v.FloatString(digits)
+		s = strings.TrimRight(strings.TrimRight(s, "0"), ".")
+		return s, len(strings.ReplaceAll(strings.TrimLeft(strings.ReplaceAll(s, ".", ""), "-0"), ".", "")) > 0
+	}
+	for _, w := range []struct{ bits, maxN, prec, q5 int }{{64, 3, 16, 15}, {128, 6, 34, 33}} {
+		for range 400 {
+			// A tie at n digits: 2^j × (1 + (2k+1)/2^(4n+1)).
+			n := r.Intn(w.maxN + 1)
+			k := r.Int63n(1 << (4 * n))
+			j := r.Intn(41) - 20
+			num := new(big.Int).Lsh(big.NewInt(1), uint(4*n+1))
+			num.Add(num, big.NewInt(2*k+1))
+			v := new(big.Rat).SetFrac(num, new(big.Int).Lsh(big.NewInt(1), uint(4*n+1)))
+			if j >= 0 {
+				v.Mul(v, new(big.Rat).SetInt(new(big.Int).Lsh(big.NewInt(1), uint(j))))
+			} else {
+				v.Quo(v, new(big.Rat).SetInt(new(big.Int).Lsh(big.NewInt(1), uint(-j))))
+			}
+			s, _ := exact(v, 4*n+1+20)
+			if d, err := ParseDecimal(s, w.bits); err != nil || FormatDecimal(d, 'e', -1, w.bits) != FormatDecimal(mustParse(t, s, 128), 'e', -1, 128) {
+				continue // more digits than the width holds
+			}
+			for _, prec := range []int{n, -1} {
+				check(s, w.bits, prec)
+			}
+			// The decimal neighbours of the tie, a unit of the last place
+			// away, which the product decides.
+			d := mustParse(t, s, w.bits)
+			for _, nb := range []decimal128{decimal.Nextafter(d, decimal.Inf[decimal128](1)), decimal.Nextafter(d, decimal.Inf[decimal128](-1))} {
+				if w.bits == 64 {
+					nb = decimal128(decimal.Nextafter(decimal64(d), decimal.Inf[decimal64](int(1-2*boolInt(nb < d)))))
+				}
+				check(FormatDecimal(nb, 'e', -1, w.bits), w.bits, n)
+			}
+		}
+		// A bound at a candidate: 2C+1 or 2C-1 a multiple of 5^q5, so that
+		// (2C±1) × 10^-q5 / 2 is dyadic.
+		p5 := new(big.Int).Exp(big.NewInt(5), big.NewInt(int64(w.q5)), nil)
+		lo := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(w.prec-1)), nil)
+		for range 200 {
+			tt := new(big.Int).Rand(r, new(big.Int).Div(new(big.Int).Mul(lo, big.NewInt(18)), p5))
+			tt.SetBit(tt, 0, 1) // odd, so that 2C±1 is
+			tc := new(big.Int).Mul(tt, p5)
+			for _, sign := range []int64{-1, 1} {
+				c := new(big.Int).Sub(tc, big.NewInt(sign)) // 2C = t×5^q5 ∓ 1
+				c.Rsh(c, 1)
+				if c.Cmp(lo) < 0 || len(c.String()) > w.prec {
+					continue
+				}
+				check(c.String()+"e-"+Itoa(w.q5), w.bits, -1)
+			}
+		}
+		// Exponents beyond the table, from either end of the range.
+		for range 30 {
+			q := -340 - r.Intn(40)
+			if r.Intn(2) == 0 {
+				q = 340 + r.Intn(29)
+			}
+			text := Itoa(1+r.Intn(999999)) + "e" + Itoa(q)
+			check(text, w.bits, -1)
+			check(text, w.bits, r.Intn(30))
+		}
+	}
+	product, binary, slow := paths[HexPathProduct], paths[HexPathBinary], paths[HexPathExact]
+	if product < 500 || binary < 500 || slow < 100 {
+		t.Errorf("product %d times, exact binary value %d, exact path %d; want each to have run often", product, binary, slow)
+	}
+	t.Logf("product %d, exact binary value %d, exact path %d", product, binary, slow)
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func mustParse(t *testing.T, s string, bits int) decimal128 {
+	t.Helper()
+	d, err := ParseDecimal(s, bits)
+	if err != nil {
+		t.Fatalf("%s: %v", s, err)
+	}
+	return d
+}
+
+// TestFormatDecimalHexLongPrecision checks 'x' at precision 1,000,000 for a
+// decimal128 at the least exponent, whose expansion does not terminate,
+// against math/big.
+func TestFormatDecimalHexLongPrecision(t *testing.T) {
+	const prec = 1_000_000
+	c, _ := new(big.Int).SetString("1234567890123456789012345678901234", 10)
+	d := mustParse(t, c.String()+"e-6176", 128)
+	got := FormatDecimal(d, 'x', prec, 128)
+
+	// v = c / 10^6176 is below 1; e is the exponent of its leading bit,
+	// 2^e <= v < 2^(e+1), that is den <= c × 2^-e < 2 den. The digits are
+	// floor(v × 2^(4 prec - e)) rounded to nearest, ties to even.
+	den := new(big.Int).Exp(big.NewInt(10), big.NewInt(6176), nil)
+	one := big.NewInt(1)
+	e := c.BitLen() - den.BitLen()
+	for new(big.Int).Lsh(c, uint(-e)).Cmp(den) < 0 {
+		e--
+	}
+	for new(big.Int).Lsh(c, uint(-e-1)).Cmp(den) >= 0 {
+		e++
+	}
+	num := new(big.Int).Lsh(c, uint(4*prec-e))
+	m, rem := new(big.Int).QuoRem(num, den, new(big.Int))
+	switch new(big.Int).Lsh(rem, 1).Cmp(den) {
+	case 1:
+		m.Add(m, one)
+	case 0:
+		if m.Bit(0) == 1 {
+			m.Add(m, one)
+		}
+	}
+	if m.BitLen() > 4*prec+1 {
+		m.Rsh(m, 1)
+		e++
+	}
+	frac := new(big.Int).Sub(m, new(big.Int).Lsh(one, uint(4*prec))).Text(16)
+	want := "0x1." + strings.Repeat("0", prec-len(frac)) + frac + "p-" + Itoa(-e)
+	if got != want {
+		i := 0
+		for i < len(got) && i < len(want) && got[i] == want[i] {
+			i++
+		}
+		t.Fatalf("FormatDecimal(%se-6176, 'x', %d) differs from math/big at byte %d of %d", c, prec, i, len(want))
+	}
+}
+
+// BenchmarkFormatDecimalHex measures 'x' on typical values at precision -1
+// and small precisions, at both widths, beside FormatFloat's 'x' on the
+// float64 of the same value as a yardstick, and at a large precision.
+func BenchmarkFormatDecimalHex(b *testing.B) {
+	values := []struct {
+		name string
+		s    string
+	}{
+		{"Money", "19.99"},
+		{"Amount", "1234567.89"},
+		{"Integer", "33909"},
+		{"Half", "1.5"},
+		{"Small", "1e-10"},
+		{"Large", "3.14159e10"},
+	}
+	for _, v := range values {
+		f, _ := ParseFloat(v.s, 64)
+		d64, _ := ParseDecimal(v.s, 64)
+		d128, _ := ParseDecimal(v.s, 128)
+		for _, prec := range []int{-1, 4, 13} {
+			name := v.name + "/prec=" + Itoa(prec)
+			b.Run(name+"/float64", func(b *testing.B) {
+				for range b.N {
+					FormatFloat(f, 'x', prec, 64)
+				}
+			})
+			b.Run(name+"/decimal64", func(b *testing.B) {
+				for range b.N {
+					FormatDecimal(d64, 'x', prec, 64)
+				}
+			})
+			b.Run(name+"/decimal128", func(b *testing.B) {
+				for range b.N {
+					FormatDecimal(d128, 'x', prec, 128)
+				}
+			})
+		}
+	}
+	d, _ := ParseDecimal("1234567890123456789012345678901234e-6176", 128)
+	f := 1.234567890123457e-300
+	b.Run("LongPrecision/prec=1000000/float64", func(b *testing.B) {
+		for range b.N {
+			FormatFloat(f, 'x', 1_000_000, 64)
+		}
+	})
+	b.Run("LongPrecision/prec=1000000/decimal128", func(b *testing.B) {
+		for range b.N {
+			FormatDecimal(d, 'x', 1_000_000, 128)
+		}
+	})
+}

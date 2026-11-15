@@ -235,4 +235,11 @@ func TestDecimalHexLikeFloat(t *testing.T) {
 			}
 		}
 	}
+	// fmt's limit on precision applies, as for a float.
+	for _, p := range []int{1_000_000, 1_000_001} {
+		got, want := Sprintf("%.*x", p, decimal64(1.5)), Sprintf("%.*x", p, 1.5)
+		if got != want {
+			t.Errorf("Sprintf(%%.*x, %d, decimal64(1.5)) = %.40q…; for float64 %.40q…", p, got, want)
+		}
+	}
 }

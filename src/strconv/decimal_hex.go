@@ -35,12 +35,39 @@ func appendDecimalX(dst []byte, x bid.Uint128, fmt byte, prec, bitSize int) []by
 	if coeff == (bid.Uint128{}) {
 		return appendHexFloat(dst, neg, nil, 0, max(prec, 0), fmt)
 	}
-	c := nat{coeff.Lo, coeff.Hi}.norm()
 	if prec >= 0 {
-		m, e := hexRound(c, q, prec)
+		if b1, b0, e2, ok := exactBinary(coeff.Hi, coeff.Lo, q); ok {
+			if mh, ml, e, ok := hexRoundExact(b1, b0, e2, prec); ok {
+				if hexPathHook != nil {
+					hexPathHook(hexPathBinary)
+				}
+				return appendHexFloat(dst, neg, nat{ml, mh}.norm(), e, prec, fmt)
+			}
+		} else if x, y, b, ok := scaleFast(coeff.Hi, coeff.Lo, q); ok {
+			if mh, ml, e, ok := hexRoundFast(x, y, b, prec); ok {
+				if hexPathHook != nil {
+					hexPathHook(hexPathProduct)
+				}
+				return appendHexFloat(dst, neg, nat{ml, mh}.norm(), e, prec, fmt)
+			}
+		}
+		if hexPathHook != nil {
+			hexPathHook(hexPathExact)
+		}
+		m, e := hexRound(nat{coeff.Lo, coeff.Hi}.norm(), q, prec)
 		return appendHexFloat(dst, neg, m, e, prec, fmt)
 	}
 
+	if mh, ml, e, n, path, ok := hexShortestFast(coeff.Hi, coeff.Lo, q, bitSize); ok {
+		if hexPathHook != nil {
+			hexPathHook(path)
+		}
+		return appendHexFloat(dst, neg, nat{ml, mh}.norm(), e, n, fmt)
+	}
+	if hexPathHook != nil {
+		hexPathHook(hexPathExact)
+	}
+	c := nat{coeff.Lo, coeff.Hi}.norm()
 	if m, e, n, ok := hexShortest(c, q, bitSize); ok {
 		return appendHexFloat(dst, neg, m, e, n, fmt)
 	}

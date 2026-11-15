@@ -286,3 +286,20 @@ func (d *decimal) assignCoeff(hi, lo uint64, exp10 int, neg bool) {
 	d.neg = neg
 	trim(d)
 }
+
+// Pow10Ceil returns the 128-bit power of ten that the parsers scale by:
+// D = hi×2^64 + lo in [2^127, 2^128) and b such that 10^p × 2^b is at most D
+// and more than D-1, that is, D is 10^p × 2^b rounded up. ok is false for a p
+// outside the table, from -348 to 347.
+func Pow10Ceil(p int) (hi, lo uint64, b int, ok bool) {
+	if p < pow10Min || p > pow10Max {
+		return 0, 0, 0, false
+	}
+	// The table holds D as hi×2^64 - lo when lo is not zero.
+	t := &pow10Tab[p-pow10Min]
+	hi, lo = t.hi, t.lo
+	if lo != 0 {
+		hi, lo = hi-1, -lo
+	}
+	return hi, lo, 127 - log2Pow10(p), true
+}

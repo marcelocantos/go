@@ -541,3 +541,36 @@ func TestCoeffScaleBand(t *testing.T) {
 		}
 	}
 }
+
+// TestPow10Ceil checks every entry against math/big: D is 10^p × 2^b
+// rounded up, in [2^127, 2^128).
+func TestPow10Ceil(t *testing.T) {
+	one := big.NewInt(1)
+	for p := -348; p <= 347; p++ {
+		hi, lo, b, ok := Pow10Ceil(p)
+		if !ok {
+			t.Fatalf("Pow10Ceil(%d) not ok", p)
+		}
+		d := new(big.Int).Lsh(new(big.Int).SetUint64(hi), 64)
+		d.Or(d, new(big.Int).SetUint64(lo))
+		if d.BitLen() != 128 {
+			t.Fatalf("Pow10Ceil(%d) = %x, not 128 bits", p, d)
+		}
+		v := new(big.Rat).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(max(p, -p))), nil))
+		if p < 0 {
+			v.Inv(v)
+		}
+		if b >= 0 {
+			v.Mul(v, new(big.Rat).SetInt(new(big.Int).Lsh(one, uint(b))))
+		} else {
+			v.Quo(v, new(big.Rat).SetInt(new(big.Int).Lsh(one, uint(-b))))
+		}
+		dr := new(big.Rat).SetInt(d)
+		if v.Cmp(dr) > 0 || new(big.Rat).Sub(dr, v).Cmp(big.NewRat(1, 1)) >= 0 {
+			t.Errorf("Pow10Ceil(%d) = %x × 2^-%d is not 10^%d rounded up", p, d, b, p)
+		}
+	}
+	if _, _, _, ok := Pow10Ceil(348); ok {
+		t.Error("Pow10Ceil(348) ok")
+	}
+}
