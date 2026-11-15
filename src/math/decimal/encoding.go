@@ -11,10 +11,11 @@ import (
 	impl "internal/decimal"
 )
 
-// Representation identifies the stored representation of a decimal value.
-// It describes the words returned by math.Decimal64bits and math.Decimal128bits,
-// rather than an interchange encoding. Both representations XOR the native
-// IEEE encoding with the encoding of 0E+0 so that all-zero memory is Go's zero.
+// Representation identifies how a decimal value is stored in memory, which
+// only package unsafe can observe: math.Decimal64bits and math.Decimal128bits
+// return the BID interchange encoding on every target, as BID64bits and
+// BID128bits do. Both representations XOR the native IEEE encoding with the
+// encoding of 0E+0 so that all-zero memory is Go's zero.
 type Representation uint8
 
 const (
@@ -32,13 +33,16 @@ const (
 // BID64bits returns the IEEE 754 BID encoding of d, without the zero-value XOR.
 // If the native representation uses DPD, this converts the value to canonical
 // BID, preserving its sign, quantum and NaN payload. If it uses BID, every
-// encoding bit is preserved. For exact stored bits, use math.Decimal64bits.
+// encoding bit is preserved. It is the same function as math.Decimal64bits,
+// which is to decimal64 what math.Float64bits is to float64; this package
+// keeps it beside DPD64bits so that both interchange encodings are named.
 func BID64bits(d decimal64) uint64 { return impl.BID64bits(d) }
 
 // BID64frombits returns the decimal64 denoted by the IEEE 754 BID encoding b.
 // It applies the native zero-value XOR. If the native representation uses DPD,
 // it converts to canonical DPD; non-canonical BID encodings are interpreted as
-// their IEEE values. If it uses BID, every encoding bit is preserved.
+// their IEEE values. If it uses BID, every encoding bit is preserved. It is the
+// same function as math.Decimal64frombits.
 func BID64frombits(b uint64) decimal64 { return impl.BID64frombits(b) }
 
 // BID128bits is BID64bits for decimal128. It returns the high word first,
@@ -51,7 +55,7 @@ func BID128frombits(hi, lo uint64) decimal128 { return impl.BID128frombits(hi, l
 // DPD64bits returns the IEEE 754 DPD encoding of d, without the zero-value XOR.
 // If the native representation uses BID, this converts the value to canonical
 // DPD, preserving its sign, quantum and NaN payload. If it uses DPD, every
-// encoding bit is preserved. For exact stored bits, use math.Decimal64bits.
+// encoding bit is preserved.
 func DPD64bits(d decimal64) uint64 { return impl.DPD64bits(d) }
 
 // DPD64frombits returns the decimal64 denoted by the IEEE 754 DPD encoding b.
