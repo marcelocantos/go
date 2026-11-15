@@ -21,7 +21,7 @@ func minW(x, y coefW) coefW {
 	// mask and not by a branch; members of one cohort, rarer, by one.
 	takeY := b2u(c > 0) | b2u(c == 0)&b2u(SignbitW(y))&^b2u(SignbitW(x))
 	// Of two members of one cohort, the one totalOrder puts first.
-	if c == 0 && SignbitW(x) == SignbitW(y) && totalBeforeW(y, x) {
+	if c == 0 && x != y && SignbitW(x) == SignbitW(y) && totalBeforeW(y, x) {
 		takeY = 1
 	}
 	return resultW(cSelW(-takeY, x, y))
@@ -35,7 +35,7 @@ func maxW(x, y coefW) coefW {
 	}
 	takeY := b2u(c < 0) | b2u(c == 0)&b2u(SignbitW(x))&^b2u(SignbitW(y))
 	// Of two members of one cohort, the one totalOrder puts last.
-	if c == 0 && SignbitW(x) == SignbitW(y) && totalBeforeW(x, y) {
+	if c == 0 && x != y && SignbitW(x) == SignbitW(y) && totalBeforeW(x, y) {
 		takeY = 1
 	}
 	return resultW(cSelW(-takeY, x, y))

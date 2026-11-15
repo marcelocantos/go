@@ -20,7 +20,7 @@ func min64(x, y coef64) coef64 {
 	// mask and not by a branch; members of one cohort, rarer, by one.
 	takeY := b2u(c > 0) | b2u(c == 0)&b2u(Signbit64(y))&^b2u(Signbit64(x))
 	// Of two members of one cohort, the one totalOrder puts first.
-	if c == 0 && Signbit64(x) == Signbit64(y) && totalBefore64(y, x) {
+	if c == 0 && x != y && Signbit64(x) == Signbit64(y) && totalBefore64(y, x) {
 		takeY = 1
 	}
 	return result64(cSel64(-takeY, x, y))
@@ -34,7 +34,7 @@ func max64(x, y coef64) coef64 {
 	}
 	takeY := b2u(c < 0) | b2u(c == 0)&b2u(Signbit64(x))&^b2u(Signbit64(y))
 	// Of two members of one cohort, the one totalOrder puts last.
-	if c == 0 && Signbit64(x) == Signbit64(y) && totalBefore64(x, y) {
+	if c == 0 && x != y && Signbit64(x) == Signbit64(y) && totalBefore64(x, y) {
 		takeY = 1
 	}
 	return result64(cSel64(-takeY, x, y))

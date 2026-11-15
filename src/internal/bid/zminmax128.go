@@ -20,7 +20,7 @@ func min128(x, y coef128) coef128 {
 	// mask and not by a branch; members of one cohort, rarer, by one.
 	takeY := b2u(c > 0) | b2u(c == 0)&b2u(Signbit128(y))&^b2u(Signbit128(x))
 	// Of two members of one cohort, the one totalOrder puts first.
-	if c == 0 && Signbit128(x) == Signbit128(y) && totalBefore128(y, x) {
+	if c == 0 && x != y && Signbit128(x) == Signbit128(y) && totalBefore128(y, x) {
 		takeY = 1
 	}
 	return result128(cSel128(-takeY, x, y))
@@ -34,7 +34,7 @@ func max128(x, y coef128) coef128 {
 	}
 	takeY := b2u(c < 0) | b2u(c == 0)&b2u(Signbit128(x))&^b2u(Signbit128(y))
 	// Of two members of one cohort, the one totalOrder puts last.
-	if c == 0 && Signbit128(x) == Signbit128(y) && totalBefore128(x, y) {
+	if c == 0 && x != y && Signbit128(x) == Signbit128(y) && totalBefore128(x, y) {
 		takeY = 1
 	}
 	return result128(cSel128(-takeY, x, y))
