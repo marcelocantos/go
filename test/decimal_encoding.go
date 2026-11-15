@@ -5,8 +5,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Exercise the public bits and interchange-codec APIs through a compiled
-// user program on both software BID and hardware DPD targets.
+// Exercise the public stored-bits and interchange-codec APIs through a
+// compiled user program on both software BID and hardware DPD targets.
 package main
 
 import (
@@ -17,26 +17,18 @@ import (
 )
 
 func main() {
-	// The bits functions give the BID interchange encoding on every
-	// target, as Float64bits gives the IEEE binary encoding.
-	if math.Decimal64bits(0) != 0x31c0000000000000 || math.Decimal64bits(1) != 0x31c0000000000001 {
-		panic("BID bits")
+	if math.Decimal64bits(0) != 0 {
+		panic("zero stored bits")
 	}
-	if hi, lo := math.Decimal128bits(1); hi != 0x3040000000000000 || lo != 1 {
-		panic("BID words")
-	}
-	if math.Decimal64bits(1.50) != decimal.BID64bits(1.50) {
-		panic("bits differ from BID64bits")
+	if hi, lo := math.Decimal128bits(0); hi != 0 || lo != 0 {
+		panic("zero stored words")
 	}
 	const pattern = uint64(0x7dffffffffffffff)
-	if runtime.GOARCH != "ppc64le" {
-		// Stored in BID, every pattern survives.
-		if math.Decimal64bits(math.Decimal64frombits(pattern)) != pattern {
-			panic("raw bits changed")
-		}
-		if hi, lo := math.Decimal128bits(math.Decimal128frombits(pattern, ^pattern)); hi != pattern || lo != ^pattern {
-			panic("raw words changed")
-		}
+	if math.Decimal64bits(math.Decimal64frombits(pattern)) != pattern {
+		panic("raw bits changed")
+	}
+	if hi, lo := math.Decimal128bits(math.Decimal128frombits(pattern, ^pattern)); hi != pattern || lo != ^pattern {
+		panic("raw words changed")
 	}
 	want := decimal.BIDXOR
 	if runtime.GOARCH == "ppc64le" {
