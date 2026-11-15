@@ -1215,7 +1215,7 @@ func gdaPowerDivergence(f *format, x, y, want, got bits) string {
 // under "Minimum and maximum".
 const (
 	skipMinMaxNaN    = "contract: Min/Max return NaN if either operand is NaN (GDA returns the number)"
-	skipMinMaxCohort = "contract: Min/Max return x for operands equal in value and sign (GDA chooses by exponent)"
+	skipMinMaxCohort = "contract: Min/Max order members of one cohort by totalOrder, smaller exponent first for positive values (754-2008's minNum and maxNum leave the choice open)"
 	skipMinMaxZero   = "contract: Min/Max order -0 before +0, as IEEE 754-2019 minimum and maximum do (754-2008 minNum and maxNum leave the zero's sign open)"
 )
 
@@ -1252,7 +1252,8 @@ func minMaxDivergence(f *format, x, y, want, got bits) string {
 			return skipMinMaxNaN
 		}
 	case a.kind == finite && b.kind == finite && a.neg == b.neg && cmpValue(a, b) == 0:
-		if want == canon(y) && got == canon(x) && canon(x) != canon(y) {
+		cx, cy := canon(x), canon(y)
+		if cx != cy && (want == cy && got == cx || want == cx && got == cy) {
 			return skipMinMaxCohort
 		}
 	case a.kind == finite && b.kind == finite && a.neg != b.neg && a.coeff.Sign() == 0 && b.coeff.Sign() == 0:
@@ -1288,6 +1289,7 @@ func TestMinMaxDivergence(t *testing.T) {
 		{"cohort of zeros", d("0E1"), d("0E2"), d("0E2"), d("0E1"), skipMinMaxCohort},
 		{"cohort, target returned a third value", d("1.0"), d("1"), d("1"), d("1.00"), ""},
 		{"cohort, target returned y", d("1.0"), d("1"), d("1"), d("1"), ""},
+		{"cohort, x expected, y returned", d("1.0"), d("1"), d("1.0"), d("1"), skipMinMaxCohort},
 		{"opposite zeros, the other zero expected", d("0"), d("-0"), d("0"), d("-0"), skipMinMaxZero},
 		{"opposite zeros, a third value", d("0"), d("-0"), d("1"), d("-0"), ""},
 		{"opposite zeros, the target returned a third value", d("0"), d("-0"), d("0"), d("0.0"), ""},
@@ -3269,7 +3271,9 @@ func TestIntelLineParser(t *testing.T) {
 		{"bid64_maxnum 0 1 2 [31c0000000000001] 00", fail},
 		{"bid64_maxnum 0 QNaN 3 [31c0000000000003] 00", "contract: Min/Max return NaN"},
 		{"bid64_maxnum 0 QNaN 3 [31c0000000000004] 00", fail},
-		{"bid64_maxnum 0 1.0 1 [31c0000000000001] 00", "contract: Min/Max return x"},
+		{"bid64_maxnum 0 1.0 1 [31c0000000000001] 00", pass},
+		{"bid64_maxnum 0 1 1.0 [31c0000000000001] 00", pass},
+		{"bid64_minnum 0 1 1.0 [31c0000000000001] 00", "contract: Min/Max order members of one cohort by totalOrder"},
 		{"bid64_minnum 0 -0 0 [31c0000000000000] 00", "contract: Min/Max order -0"},
 		{"bid64_minnum_mag 0 -1 2 [b1c0000000000001] 00", "op: minNumMag"},
 		// Predicates, ordering, class.

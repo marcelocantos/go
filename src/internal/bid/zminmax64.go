@@ -17,8 +17,12 @@ func min64(x, y coef64) coef64 {
 	// y if it is the lesser, or equal with the negative sign: operands of
 	// equal value and unlike sign can only be zeros, and -0 is the lesser.
 	// Which operand that is lies in their values, so it is chosen by a
-	// mask and not by a branch.
+	// mask and not by a branch; members of one cohort, rarer, by one.
 	takeY := b2u(c > 0) | b2u(c == 0)&b2u(Signbit64(y))&^b2u(Signbit64(x))
+	// Of two members of one cohort, the one totalOrder puts first.
+	if c == 0 && Signbit64(x) == Signbit64(y) && totalBefore64(y, x) {
+		takeY = 1
+	}
 	return result64(cSel64(-takeY, x, y))
 }
 
@@ -29,7 +33,37 @@ func max64(x, y coef64) coef64 {
 		return nan64(x, y, y)
 	}
 	takeY := b2u(c < 0) | b2u(c == 0)&b2u(Signbit64(x))&^b2u(Signbit64(y))
+	// Of two members of one cohort, the one totalOrder puts last.
+	if c == 0 && Signbit64(x) == Signbit64(y) && totalBefore64(x, y) {
+		takeY = 1
+	}
 	return result64(cSel64(-takeY, x, y))
+}
+
+// totalBefore64 reports, for operands a and b of equal value and sign, whether
+// IEEE 754-2019's totalOrder (clause 5.10) puts a strictly before b: for
+// positive values the one with the smaller exponent, for negative values the
+// one with the larger. Two infinities of one sign are not ordered.
+func totalBefore64(a, b coef64) bool {
+	ea, oka := exponentOf64(a)
+	eb, okb := exponentOf64(b)
+	if !oka || !okb {
+		return false
+	}
+	if Signbit64(a) {
+		return ea > eb
+	}
+	return ea < eb
+}
+
+// exponentOf64 returns the exponent of the finite x, a non-canonical
+// encoding reading as the zero Unpack gives, and false for an infinity.
+func exponentOf64(x coef64) (int, bool) {
+	if _, _, e, ok := unpackFirst64(x); ok {
+		return e, true
+	}
+	k, _, _, e := unpackRest64(x)
+	return e, k == KindFinite
 }
 
 // result64 returns the canonical encoding of the non-NaN value x, which

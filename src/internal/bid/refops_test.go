@@ -395,7 +395,21 @@ func (f *format) minMax(x, y bits, wantMax bool) bits {
 		}
 		return f.encode(a)
 	}
-	if c == 0 || c < 0 != wantMax {
+	if c == 0 {
+		// Members of one cohort, or two infinities of one sign: the one
+		// totalOrder puts first for Min and last for Max. For positive
+		// values that is the smaller exponent first; for negative values
+		// the larger.
+		if a.kind != finite || a.exp == b.exp {
+			return f.encode(a)
+		}
+		aFirst := a.exp < b.exp != a.neg
+		if aFirst != wantMax {
+			return f.encode(a)
+		}
+		return f.encode(b)
+	}
+	if c < 0 != wantMax {
 		return f.encode(a)
 	}
 	return f.encode(b)

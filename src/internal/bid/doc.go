@@ -583,12 +583,15 @@
 // the number when only one operand is a NaN.
 //
 // The rest is this package's choice. The NaN returned is the operand
-// "NaN results" chooses, made quiet. When the operands are equal in value
-// and sign, including two members of one cohort with different
-// exponents, the result is x, canonicalized. Divergence from GDA: GDA
-// chooses by exponent, so Max64(1.0, 1) is 1.0 here and 1 in GDA. The
-// preferred exponent of the result is that of the operand returned, so
-// the exponent is preserved.
+// "NaN results" chooses, made quiet. Of two operands equal in value and
+// sign, two members of one cohort, the result is the one totalOrder
+// (clause 5.10) puts first for Min and last for Max: for positive values
+// the smaller exponent first, for negative values the larger, so
+// Min64(1, 1.0) and Min64(1.0, 1) are both 1.0, Max64 of either is 1,
+// and Min64(-1.0, -1) is -1. That extends the rule that -0 is less than
+// +0, which is totalOrder's too, to the cohorts, and leaves Min and Max
+// commutative and associative bit for bit, as the Go built-ins are. The
+// operand returned is canonicalized and keeps its exponent.
 //
 // # Format conversions
 //
@@ -794,8 +797,8 @@
 //	Int64To128(-9223372036854775808) = -9223372036854775808
 //	Uint64To128(18446744073709551615) = 18446744073709551615
 //	Min64(1.0, 1) = 1.0
-//	Min64(1, 1.0) = 1
-//	Max64(1.0, 1) = 1.0
+//	Min64(1, 1.0) = 1.0
+//	Max64(1.0, 1) = 1
 //	Parse64("1.50", ToNearestEven) = 1.50, Exact
 //	Parse64("1.5E+3", ToNearestEven) = 1.5E+3, Exact
 //	Parse64("1.5e3", ToNearestEven) = 1.5E+3, Exact
@@ -1392,7 +1395,7 @@
 //	Max64(-0, 0) = 0
 //	Max64(0, -0) = 0
 //	Max64(1, 1.0) = 1
-//	Min64(-1.0, -1) = -1.0
+//	Min64(-1.0, -1) = -1
 //	Min64(-Infinity, 5) = -Infinity
 //	Max64(Infinity, 5) = Infinity
 //

@@ -201,12 +201,42 @@ func (s *state) dpdSignbit(w *ssa.Value) *ssa.Value {
 	return s.newValue2(ssaop.OpLess64, types.Types[types.TBOOL], s.newValue1(ssaop.OpCopy, types.Types[types.TINT64], w), s.constInt64(types.Types[types.TINT64], 0))
 }
 
+// dpdExponent returns the biased exponent of the finite DPD value whose
+// (high) word is w: the two leading bits from the combination field (bits
+// 62 to 58), from its first two bits unless those are 11 and then from its
+// next two, and the exponent continuation below it, 8 bits for decimal64
+// and 12 for decimal128 (IEEE 754-2019 clause 3.5.2).
+func (s *state) dpdExponent(w *ssa.Value, wide bool) *ssa.Value {
+	u64, i64 := types.Types[types.TUINT64], types.Types[types.TINT64]
+	boolT := types.Types[types.TBOOL]
+	shr := func(v *ssa.Value, n int64) *ssa.Value {
+		return s.newValue2(ssaop.OpRsh64Ux64, u64, v, s.constInt64(u64, n))
+	}
+	and := func(v *ssa.Value, m int64) *ssa.Value {
+		return s.newValue2(ssaop.OpAnd64, u64, v, s.constInt64(u64, m))
+	}
+	const combShift = 58
+	g := and(shr(w, combShift), 31)
+	first, second := shr(g, 3), and(shr(g, 1), 3)
+	lead := s.newValue3(ssaop.OpCondSelect, u64, second, first,
+		s.newValue2(ssaop.OpEq64, boolT, first, s.constInt64(u64, 3)))
+	contBits := int64(8)
+	if wide {
+		contBits = 12
+	}
+	cont := and(shr(w, combShift-contBits), 1<<contBits-1)
+	e := s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpLsh64x64, u64, lead, s.constInt64(u64, contBits)), cont)
+	return s.newValue1(ssaop.OpCopy, i64, e)
+}
+
 // dpdMinMax is the built-in min (or max, if isMax) of the decimals x and y,
 // as internal/bid's Min64 and Max64 define it. If either is a NaN the result
 // is the NaN that "NaN results" chooses, made quiet, which is what DADD of
 // the two operands gives; that path is a branch, since NaNs are rare.
 // Otherwise the result is the lesser (greater) by value with -0 below +0,
-// and x when they are equal in value and sign. Divergence: Min64 also
+// and of two equal in value and sign, members of one cohort, the one
+// totalOrder puts first (last): for positive values the smaller exponent
+// first, for negative values the larger. Divergence: Min64 also
 // canonicalizes x, but every DPD encoding is canonical in value, and a
 // redundant declet survives only from unsafe memory, so the result is the
 // operand's encoding as it is.
@@ -267,7 +297,25 @@ func (s *state) dpdMinMax(isMax bool, rt *types.Type, x, y *ssa.Value) *ssa.Valu
 		below = less(yh, yl, xh, xl)
 		signs = s.newValue2(ssaop.OpAndB, boolT, sy, s.newValue1(ssaop.OpNot, boolT, sx))
 	}
-	pickY := s.newValue2(ssaop.OpOrB, boolT, below, s.newValue2(ssaop.OpAndB, boolT, eq, signs))
+	// Members of one cohort: equal, of one sign, with y's exponent the one
+	// totalOrder wants. The exponents are read from the DPD words; two
+	// infinities of one sign, whose words hold no exponent, give either.
+	ex, ey := s.dpdExponent(xh, wide), s.dpdExponent(yh, wide)
+	and2 := func(a, b *ssa.Value) *ssa.Value { return s.newValue2(ssaop.OpAndB, boolT, a, b) }
+	or2 := func(a, b *ssa.Value) *ssa.Value { return s.newValue2(ssaop.OpOrB, boolT, a, b) }
+	pos, neg := s.newValue1(ssaop.OpNot, boolT, sx), sx
+	ySmaller := s.newValue2(ssaop.OpLess64, boolT, ey, ex)
+	yLarger := s.newValue2(ssaop.OpLess64, boolT, ex, ey)
+	// For min, y wins if totalOrder puts it first: the smaller exponent of
+	// positive values, the larger of negative ones. For max, if it puts it
+	// last.
+	yWins := or2(and2(pos, ySmaller), and2(neg, yLarger))
+	if isMax {
+		yWins = or2(and2(pos, yLarger), and2(neg, ySmaller))
+	}
+	sameSign := s.newValue2(ssaop.OpEqB, boolT, sx, sy)
+	cohort := and2(eq, and2(sameSign, yWins))
+	pickY := s.newValue2(ssaop.OpOrB, boolT, below, s.newValue2(ssaop.OpOrB, boolT, s.newValue2(ssaop.OpAndB, boolT, eq, signs), cohort))
 	u64 := types.Types[types.TUINT64]
 	if wide {
 		hi := s.newValue3(ssaop.OpCondSelect, u64, yh, xh, pickY)

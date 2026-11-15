@@ -3,19 +3,22 @@
 # license that can be found in the LICENSE file.
 
 # Min and Max with the semantics of the Go built-ins ("Minimum and
-# maximum"): a NaN operand gives NaN, -0 is less than +0, and equal
-# operands give x canonicalized. The returned operand keeps its exponent.
+# maximum"): a NaN operand gives NaN, -0 is less than +0, and of two
+# operands equal in value and sign the one IEEE 754-2019's totalOrder puts
+# first (Min) or last (Max): for positive values the smaller exponent
+# first, for negative values the larger. The returned operand keeps its
+# exponent, canonicalized.
 
 # --- Min64 ---
 
 Min64 - exact 3 2 -> 2
 Min64 - exact -10 3 -> -10
 Min64 - exact 1.0 1 -> 1.0
-Min64 - exact 1 1.0 -> 1
-Min64 - exact -1.0 -1 -> -1.0
+Min64 - exact 1 1.0 -> 1.0
+Min64 - exact -1.0 -1 -> -1
 Min64 - exact 1 2 -> 1
-Min64 - exact 2.5 2.50 -> 2.5
-Min64 - exact 1E+2 100 -> 1E+2
+Min64 - exact 2.5 2.50 -> 2.50
+Min64 - exact 1E+2 100 -> 100
 Min64 - exact 1E+2 99 -> 99
 Min64 - exact -9.999999999999999E+384 1E+369 -> -9.999999999999999E+384
 Min64 - exact 1.000000000000001 1 -> 1
@@ -64,8 +67,8 @@ Min64 - noncanon 0x6007ffffffffffff 1E-398 -> 0E-398
 Min128 - exact 3 2 -> 2
 Min128 - exact -10 3 -> -10
 Min128 - exact 1.0 1 -> 1.0
-Min128 - exact 1 1.0 -> 1
-Min128 - exact -1.0 -1 -> -1.0
+Min128 - exact 1 1.0 -> 1.0
+Min128 - exact -1.0 -1 -> -1
 Min128 - exact -9.999999999999999999999999999999999E+6144 1 -> -9.999999999999999999999999999999999E+6144
 
 Min128 - underflow 1E-6176 2E-6176 -> 1E-6176
@@ -96,7 +99,7 @@ Min128 - noncanon -1 0x6c100000000000000000000000000000 -> -1
 
 Max64 - exact 3 2 -> 3
 Max64 - exact -10 3 -> 3
-Max64 - exact 1.0 1 -> 1.0
+Max64 - exact 1.0 1 -> 1
 Max64 - exact 1 1.0 -> 1
 Max64 - exact -1.0 -1 -> -1.0
 Max64 - exact 1 2 -> 2
@@ -117,7 +120,7 @@ Max64 - zero 0 0 -> 0
 Max64 - zero -0 -0 -> -0
 Max64 - zero 0.00 -0 -> 0.00
 Max64 - zero -0 0E+5 -> 0E+5
-Max64 - zero 0.00 0 -> 0.00
+Max64 - zero 0.00 0 -> 0
 Max64 - zero 0 -1E-398 -> 0
 Max64 - zero -0 1 -> 1
 
@@ -141,7 +144,7 @@ Max64 - nan Infinity 0xfc00000000000006 -> 0xfc00000000000006
 Max64 - noncanon 0x6c77ffffffffffff -1 -> 0
 Max64 - noncanon -1 0x6c77ffffffffffff -> 0
 Max64 - noncanon 1 0x6c77ffffffffffff -> 1
-Max64 - noncanon 0xec9fffffffffffff -0 -> -0E+5
+Max64 - noncanon 0xec9fffffffffffff -0 -> -0
 Max64 - noncanon 0x6c77ffffffffffff 0x6c77ffffffffffff -> 0
 Max64 - noncanon 0x77ffffffffffffff -0E+369 -> 0E+369
 
@@ -149,7 +152,7 @@ Max64 - noncanon 0x77ffffffffffffff -0E+369 -> 0E+369
 
 Max128 - exact 3 2 -> 3
 Max128 - exact -10 3 -> 3
-Max128 - exact 1.0 1 -> 1.0
+Max128 - exact 1.0 1 -> 1
 Max128 - exact 1 1.0 -> 1
 Max128 - exact -1.0 -1 -> -1.0
 Max128 - exact 9.999999999999999999999999999999999E+6144 1 -> 9.999999999999999999999999999999999E+6144
@@ -175,5 +178,5 @@ Max128 - nan 0x7c000000000000000000000000000001 0x7e0000000000000000000000000000
 
 Max128 - noncanon 0x3041ed09bead87c0378d8e6400000000 -1 -> 0
 Max128 - noncanon 1 0x3041ed09bead87c0378d8e6400000000 -> 1
-Max128 - noncanon 0xb047ed09bead87c0378d8e6400000000 -0 -> -0E+3
+Max128 - noncanon 0xb047ed09bead87c0378d8e6400000000 -0 -> -0
 Max128 - noncanon 0x6c100000000000000000000000000000 0x3041ffffffffffffffffffffffffffff -> 0

@@ -215,7 +215,8 @@ func Quantum128(x Uint128) Uint128 {
 // decimal64, which is also the Go min built-in: if either operand is a NaN
 // the result is a NaN operand made quiet, chosen as "NaN results" in the
 // package documentation says; otherwise it is the lesser operand, with -0
-// less than +0, and x when the operands are equal. It is not IEEE
+// less than +0, and of two members of one cohort the one totalOrder puts
+// first. It is not IEEE
 // 754-2008's minNum, which 754-2019 deleted; see "Minimum and maximum" in
 // the package documentation.
 func Min64(x, y uint64) uint64 {
@@ -230,8 +231,9 @@ func Min128(x, y Uint128) Uint128 {
 // Max64 is the maximum operation of IEEE 754-2019 clause 9.6 for
 // decimal64, which is also the Go max built-in: if either operand is a NaN
 // the result is a NaN operand made quiet, as for Min64; otherwise it
-// is the greater operand, with +0 greater than -0, and x when the operands
-// are equal. See "Minimum and maximum" in the package documentation.
+// is the greater operand, with +0 greater than -0, and of two members of
+// one cohort the one totalOrder puts last. See "Minimum and maximum" in the
+// package documentation.
 func Max64(x, y uint64) uint64 {
 	return max64(x, y)
 }

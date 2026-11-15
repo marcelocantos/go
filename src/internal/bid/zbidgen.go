@@ -261,6 +261,14 @@ func max64(x, y coef64) coef64 {
 	return *new(coef64)
 }
 
+func totalBefore64(a, b coef64) bool {
+	return *new(bool)
+}
+
+func exponentOf64(x coef64) (int, bool) {
+	return *new(int), *new(bool)
+}
+
 func result64(x coef64) coef64 {
 	return *new(coef64)
 }
@@ -271,6 +279,14 @@ func min128(x, y coef128) coef128 {
 
 func max128(x, y coef128) coef128 {
 	return *new(coef128)
+}
+
+func totalBefore128(a, b coef128) bool {
+	return *new(bool)
+}
+
+func exponentOf128(x coef128) (int, bool) {
+	return *new(int), *new(bool)
 }
 
 func result128(x coef128) coef128 {

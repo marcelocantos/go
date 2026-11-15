@@ -10,6 +10,7 @@ import (
 	"cmd/compile/internal/syntax"
 	"go/constant"
 	"go/token"
+	"internal/constdecimal"
 	. "internal/types/errors"
 )
 
@@ -682,7 +683,8 @@ func (check *Checker) builtin(x *operand, call *syntax.CallExpr, id builtinId) (
 				}
 
 				if x.mode() == constant_ && a.mode() == constant_ {
-					if constant.Compare(a.val, op, x.val) {
+					if constant.Compare(a.val, op, x.val) ||
+						constant.Compare(a.val, token.EQL, x.val) && cohortWins(a.val, x.val, id == _Max) {
 						*x = *a
 					}
 				} else {
@@ -1223,4 +1225,57 @@ func arrayPtrDeref(typ Type) Type {
 		}
 	}
 	return typ
+}
+
+// cohortWins reports, for constants a and x of equal value, whether a is the
+// one min (or max, if isMax) returns: as at run time, the member of the
+// cohort that IEEE 754-2019's totalOrder puts first (last), the smaller
+// exponent first for a positive value and the larger for a negative one. A
+// constant without a quantum takes the exponent a conversion would give it:
+// 0 for an integer, otherwise that of its shortest decimal expansion. Other
+// constants of equal value are interchangeable.
+func cohortWins(a, x constant.Value, isMax bool) bool {
+	ea, oka := cohortExponent(a)
+	ex, okx := cohortExponent(x)
+	if !oka || !okx || ea == ex {
+		return false
+	}
+	before := ea < ex // a before x in totalOrder, for a positive value
+	if constant.Sign(a) < 0 {
+		before = ea > ex
+	}
+	return before != isMax
+}
+
+// cohortExponent returns the decimal exponent of the constant v, its
+// quantum if it has one, and false if it has none and no terminating
+// decimal expansion.
+func cohortExponent(v constant.Value) (int, bool) {
+	if e, ok := constdecimal.Quantum(v); ok {
+		return e, true
+	}
+	if v.Kind() != constant.Int && v.Kind() != constant.Float {
+		return 0, false
+	}
+	d := constant.Denom(constant.ToFloat(v))
+	if d.Kind() != constant.Int {
+		return 0, false
+	}
+	// d is 2^a × 5^b for a terminating expansion of max(a, b) places.
+	places := 0
+	for _, p := range []int64{2, 5} {
+		n := 0
+		for {
+			q := constant.BinaryOp(d, token.QUO_ASSIGN, constant.MakeInt64(p))
+			if constant.Compare(constant.BinaryOp(q, token.MUL, constant.MakeInt64(p)), token.NEQ, d) {
+				break
+			}
+			d, n = q, n+1
+		}
+		places = max(places, n)
+	}
+	if constant.Compare(d, token.NEQ, constant.MakeInt64(1)) {
+		return 0, false
+	}
+	return -places, true
 }
