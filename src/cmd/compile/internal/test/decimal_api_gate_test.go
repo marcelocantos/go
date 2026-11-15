@@ -19,7 +19,6 @@ import (
 func TestDecimalPublicAPIGate(t *testing.T) {
 	testenv.MustHaveGoBuild(t)
 	for _, tc := range []struct{ pkg, use string }{
-		{"math", "p.Decimal64bits"},
 		{"reflect", "p.Decimal64"},
 		{"reflect", "p.Value.Decimal"},
 		{"strconv", "p.ParseDecimal"},
@@ -27,6 +26,7 @@ func TestDecimalPublicAPIGate(t *testing.T) {
 		{"go/types", "p.IsDecimal"},
 		{"debug/dwarf", "p.DecimalFloatType{}"},
 		{"math/decimal", "p.ToZero"},
+		{"math/decimal", "p.Native64bits"},
 	} {
 		t.Run(tc.pkg+"/"+tc.use, func(t *testing.T) {
 			dir := t.TempDir()

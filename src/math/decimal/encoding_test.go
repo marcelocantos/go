@@ -7,7 +7,6 @@
 package decimal_test
 
 import (
-	"math"
 	"math/decimal"
 	"math/rand/v2"
 	"runtime"
@@ -39,7 +38,7 @@ func TestDecimalEncoding(t *testing.T) {
 		if got := decimal.DPD64bits(c.x); got != c.dpd {
 			t.Errorf("DPD64bits(%v) = %#x, want %#x", c.x, got, c.dpd)
 		}
-		if a, b := decimal.BID64frombits(c.bid), decimal.DPD64frombits(c.dpd); math.Decimal64bits(a) != math.Decimal64bits(c.x) || math.Decimal64bits(b) != math.Decimal64bits(c.x) {
+		if a, b := decimal.BID64frombits(c.bid), decimal.DPD64frombits(c.dpd); decimal.Native64bits(a) != decimal.Native64bits(c.x) || decimal.Native64bits(b) != decimal.Native64bits(c.x) {
 			t.Errorf("decimal64 codecs disagree for %v", c.x)
 		}
 		q := decimal128(c.x)

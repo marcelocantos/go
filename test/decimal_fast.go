@@ -8,7 +8,7 @@
 package main
 
 import (
-	"math"
+	"math/decimal"
 	"runtime"
 )
 
@@ -60,8 +60,8 @@ func pressure(a, b [5]named, live *[5]int) ([5]named, *[5]int) {
 }
 
 func check(x, y decimal128) {
-	xh, xl := math.Decimal128bits(x)
-	yh, yl := math.Decimal128bits(y)
+	xh, xl := decimal.Native128bits(x)
+	yh, yl := decimal.Native128bits(y)
 	if xh != yh || xl != yl {
 		panic("decimal result bits")
 	}

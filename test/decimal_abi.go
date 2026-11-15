@@ -10,7 +10,7 @@
 // of every decimal128 field, rather than treating it as one register value.
 package main
 
-import "math"
+import "math/decimal"
 
 type D decimal128
 type one struct{ A D }
@@ -46,8 +46,8 @@ func forwardThree(x three) three { return returnThree(x) }
 func mixedResults(b []byte, x three) ([]byte, three) { return b, x }
 
 func check(got, want D) {
-	gh, gl := math.Decimal128bits(decimal128(got))
-	wh, wl := math.Decimal128bits(decimal128(want))
+	gh, gl := decimal.Native128bits(decimal128(got))
+	wh, wl := decimal.Native128bits(decimal128(want))
 	if gh != wh || gl != wl {
 		panic("decimal128 argument or result changed bits")
 	}

@@ -4,21 +4,20 @@
 
 //go:build goexperiment.decimal
 
-package math_test
+package decimal_test
 
 import (
-	"math"
 	"math/decimal"
 	"math/rand/v2"
 	"testing"
 	"unsafe"
 )
 
-func TestDecimalStoredBits(t *testing.T) {
-	if math.Decimal64bits(0) != 0 {
+func TestNativeBits(t *testing.T) {
+	if decimal.Native64bits(0) != 0 {
 		t.Fatal("decimal64 zero has nonzero stored bits")
 	}
-	if hi, lo := math.Decimal128bits(0); hi != 0 || lo != 0 {
+	if hi, lo := decimal.Native128bits(0); hi != 0 || lo != 0 {
 		t.Fatal("decimal128 zero has nonzero stored bits")
 	}
 	// All patterns must survive: finite values, non-canonical encodings,
@@ -29,29 +28,29 @@ func TestDecimalStoredBits(t *testing.T) {
 		patterns = append(patterns, r.Uint64())
 	}
 	for _, b := range patterns {
-		d := math.Decimal64frombits(b)
+		d := decimal.Native64frombits(b)
 		if got := *(*uint64)(unsafe.Pointer(&d)); got != b {
 			t.Fatalf("decimal64 memory %#x, want %#x", got, b)
 		}
-		if got := math.Decimal64bits(d); got != b {
+		if got := decimal.Native64bits(d); got != b {
 			t.Fatalf("decimal64 bits round trip %#x, want %#x", got, b)
 		}
 		lo := r.Uint64()
-		q := math.Decimal128frombits(b, lo)
+		q := decimal.Native128frombits(b, lo)
 		words := *(*[2]uint64)(unsafe.Pointer(&q))
 		if words != [2]uint64{lo, b} {
 			t.Fatalf("decimal128 memory %#x, want [lo=%#x hi=%#x]", words, lo, b)
 		}
-		if hi2, lo2 := math.Decimal128bits(q); hi2 != b || lo2 != lo {
+		if hi2, lo2 := decimal.Native128bits(q); hi2 != b || lo2 != lo {
 			t.Fatalf("decimal128 bits round trip (%#x,%#x), want (%#x,%#x)", hi2, lo2, b, lo)
 		}
 	}
 }
 
-// TestDecimalStoredBitsFixed pins the stored bits of a few values. They
+// TestNativeBitsFixed pins the stored bits of a few values. They
 // depend on the target's representation, BID or DPD, and on nothing else:
 // a big-endian target gives the same words as a little-endian one.
-func TestDecimalStoredBitsFixed(t *testing.T) {
+func TestNativeBitsFixed(t *testing.T) {
 	type want struct {
 		b64    uint64
 		hi, lo uint64
@@ -71,11 +70,11 @@ func TestDecimalStoredBitsFixed(t *testing.T) {
 		if decimal.NativeRepresentation == decimal.DPDXOR {
 			w = c.dpd
 		}
-		if got := math.Decimal64bits(c.d64); got != w.b64 {
-			t.Errorf("Decimal64bits(%v) = %#x, want %#x", c.d64, got, w.b64)
+		if got := decimal.Native64bits(c.d64); got != w.b64 {
+			t.Errorf("Native64bits(%v) = %#x, want %#x", c.d64, got, w.b64)
 		}
-		if hi, lo := math.Decimal128bits(c.d128); hi != w.hi || lo != w.lo {
-			t.Errorf("Decimal128bits(%v) = %#x, %#x, want %#x, %#x", c.d128, hi, lo, w.hi, w.lo)
+		if hi, lo := decimal.Native128bits(c.d128); hi != w.hi || lo != w.lo {
+			t.Errorf("Native128bits(%v) = %#x, %#x, want %#x, %#x", c.d128, hi, lo, w.hi, w.lo)
 		}
 	}
 }

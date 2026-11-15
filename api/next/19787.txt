@@ -14,10 +14,6 @@ pkg go/types, const IsDecimal = 128 #19787
 pkg go/types, const IsDecimal BasicInfo #19787
 pkg go/types, const IsNumeric = 154 #19787
 pkg go/types, const IsOrdered = 170 #19787
-pkg math, func Decimal128bits(decimal128) (uint64, uint64) #19787
-pkg math, func Decimal128frombits(uint64, uint64) decimal128 #19787
-pkg math, func Decimal64bits(decimal64) uint64 #19787
-pkg math, func Decimal64frombits(uint64) decimal64 #19787
 pkg math/decimal, const BIDXOR = 0 #19787
 pkg math/decimal, const BIDXOR Representation #19787
 pkg math/decimal, const DPDXOR = 1 #19787
@@ -54,6 +50,10 @@ pkg math/decimal, func IsNaN[$0 Decimal]($0) bool #19787
 pkg math/decimal, func Mod[$0 Decimal]($0, $0) $0 #19787
 pkg math/decimal, func NaNWithPayload[$0 Decimal]($0) $0 #19787
 pkg math/decimal, func NaN[$0 Decimal]() $0 #19787
+pkg math/decimal, func Native128bits(decimal128) (uint64, uint64) #19787
+pkg math/decimal, func Native128frombits(uint64, uint64) decimal128 #19787
+pkg math/decimal, func Native64bits(decimal64) uint64 #19787
+pkg math/decimal, func Native64frombits(uint64) decimal64 #19787
 pkg math/decimal, func Payload[$0 Decimal]($0) $0 #19787
 pkg math/decimal, func QuantizeMode[$0 Decimal]($0, $0, RoundingMode) $0 #19787
 pkg math/decimal, func Quantize[$0 Decimal]($0, $0) $0 #19787

@@ -9,10 +9,11 @@ package decimal
 import (
 	"internal/bid"
 	impl "internal/decimal"
+	"unsafe"
 )
 
 // Representation identifies the stored representation of a decimal value.
-// It describes the words returned by math.Decimal64bits and math.Decimal128bits,
+// It describes the words returned by [Native64bits] and [Native128bits],
 // rather than an interchange encoding. Both representations XOR the native
 // IEEE encoding with the encoding of 0E+0 so that all-zero memory is Go's zero.
 type Representation uint8
@@ -32,7 +33,7 @@ const (
 // BID64bits returns the IEEE 754 BID encoding of d, without the zero-value XOR.
 // If the native representation uses DPD, this converts the value to canonical
 // BID, preserving its sign, quantum and NaN payload. If it uses BID, every
-// encoding bit is preserved. For exact stored bits, use math.Decimal64bits.
+// encoding bit is preserved. For exact stored bits, use [Native64bits].
 func BID64bits(d decimal64) uint64 { return impl.BID64bits(d) }
 
 // BID64frombits returns the decimal64 denoted by the IEEE 754 BID encoding b.
@@ -51,7 +52,7 @@ func BID128frombits(hi, lo uint64) decimal128 { return impl.BID128frombits(hi, l
 // DPD64bits returns the IEEE 754 DPD encoding of d, without the zero-value XOR.
 // If the native representation uses BID, this converts the value to canonical
 // DPD, preserving its sign, quantum and NaN payload. If it uses DPD, every
-// encoding bit is preserved. For exact stored bits, use math.Decimal64bits.
+// encoding bit is preserved. For exact stored bits, use [Native64bits].
 func DPD64bits(d decimal64) uint64 { return impl.DPD64bits(d) }
 
 // DPD64frombits returns the decimal64 denoted by the IEEE 754 DPD encoding b.
@@ -66,3 +67,35 @@ func DPD128bits(d decimal128) (hi, lo uint64) { return impl.DPD128bits(d) }
 
 // DPD128frombits is DPD64frombits for decimal128, with the high word first.
 func DPD128frombits(hi, lo uint64) decimal128 { return impl.DPD128frombits(hi, lo) }
+
+// Native64bits returns the exact stored representation of d, including the
+// zero-value XOR. The representation is implementation-dependent:
+// [NativeRepresentation] names what the bits mean, and the BID and DPD codecs
+// convert to and from the interchange encodings. No encoding conversion or
+// canonicalization is performed.
+// Native64bits(Native64frombits(x)) == x for every x.
+func Native64bits(d decimal64) uint64 { return *(*uint64)(unsafe.Pointer(&d)) }
+
+// Native64frombits returns the decimal64 with the exact stored bits b.
+// Every bit pattern is preserved, including non-canonical encodings.
+// Native64frombits(Native64bits(x)) has exactly the same bits as x.
+func Native64frombits(b uint64) decimal64 { return *(*decimal64)(unsafe.Pointer(&b)) }
+
+// Native128bits returns the exact stored representation of d as its high
+// and low uint64 words, including the zero-value XOR. See [Native64bits];
+// [NativeRepresentation] names what the words mean. The word order of the
+// result is independent of the target's byte order.
+func Native128bits(d decimal128) (hi, lo uint64) {
+	p := (*[2]uint64)(unsafe.Pointer(&d)) // decimal128 is stored as [lo, hi]
+	return p[1], p[0]
+}
+
+// Native128frombits returns the decimal128 with the exact stored words hi
+// and lo. Every bit pattern is preserved without encoding conversion.
+// Native128bits(Native128frombits(hi, lo)) returns (hi, lo) for every pair.
+func Native128frombits(hi, lo uint64) decimal128 {
+	var d decimal128
+	p := (*[2]uint64)(unsafe.Pointer(&d))
+	p[0], p[1] = lo, hi
+	return d
+}

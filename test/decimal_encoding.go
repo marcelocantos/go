@@ -11,23 +11,22 @@ package main
 
 import (
 	"encoding/binary"
-	"math"
 	"math/decimal"
 	"runtime"
 )
 
 func main() {
-	if math.Decimal64bits(0) != 0 {
+	if decimal.Native64bits(0) != 0 {
 		panic("zero stored bits")
 	}
-	if hi, lo := math.Decimal128bits(0); hi != 0 || lo != 0 {
+	if hi, lo := decimal.Native128bits(0); hi != 0 || lo != 0 {
 		panic("zero stored words")
 	}
 	const pattern = uint64(0x7dffffffffffffff)
-	if math.Decimal64bits(math.Decimal64frombits(pattern)) != pattern {
+	if decimal.Native64bits(decimal.Native64frombits(pattern)) != pattern {
 		panic("raw bits changed")
 	}
-	if hi, lo := math.Decimal128bits(math.Decimal128frombits(pattern, ^pattern)); hi != pattern || lo != ^pattern {
+	if hi, lo := decimal.Native128bits(decimal.Native128frombits(pattern, ^pattern)); hi != pattern || lo != ^pattern {
 		panic("raw words changed")
 	}
 	want := decimal.BIDXOR
@@ -39,18 +38,18 @@ func main() {
 	}
 	x := decimal64(1.50)
 	y := decimal128(1.50)
-	if a := decimal.BID64frombits(decimal.BID64bits(x)); math.Decimal64bits(a) != math.Decimal64bits(x) {
+	if a := decimal.BID64frombits(decimal.BID64bits(x)); decimal.Native64bits(a) != decimal.Native64bits(x) {
 		panic("BID64 quantum")
 	}
-	if a := decimal.DPD64frombits(decimal.DPD64bits(x)); math.Decimal64bits(a) != math.Decimal64bits(x) {
+	if a := decimal.DPD64frombits(decimal.DPD64bits(x)); decimal.Native64bits(a) != decimal.Native64bits(x) {
 		panic("DPD64 quantum")
 	}
-	hi, lo := math.Decimal128bits(y)
+	hi, lo := decimal.Native128bits(y)
 	for _, a := range []decimal128{
 		decimal.BID128frombits(decimal.BID128bits(y)),
 		decimal.DPD128frombits(decimal.DPD128bits(y)),
 	} {
-		if ah, al := math.Decimal128bits(a); ah != hi || al != lo {
+		if ah, al := decimal.Native128bits(a); ah != hi || al != lo {
 			panic("decimal128 codec quantum")
 		}
 	}
