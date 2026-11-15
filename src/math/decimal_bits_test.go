@@ -8,6 +8,7 @@ package math_test
 
 import (
 	"math"
+	"math/decimal"
 	"math/rand/v2"
 	"testing"
 	"unsafe"
@@ -43,6 +44,38 @@ func TestDecimalStoredBits(t *testing.T) {
 		}
 		if hi2, lo2 := math.Decimal128bits(q); hi2 != b || lo2 != lo {
 			t.Fatalf("decimal128 bits round trip (%#x,%#x), want (%#x,%#x)", hi2, lo2, b, lo)
+		}
+	}
+}
+
+// TestDecimalStoredBitsFixed pins the stored bits of a few values. They
+// depend on the target's representation, BID or DPD, and on nothing else:
+// a big-endian target gives the same words as a little-endian one.
+func TestDecimalStoredBitsFixed(t *testing.T) {
+	type want struct {
+		b64    uint64
+		hi, lo uint64
+	}
+	cases := []struct {
+		d64  decimal64
+		d128 decimal128
+		bid  want // IEEE BID XORed with the BID encoding of 0E+0
+		dpd  want // IEEE DPD XORed with the DPD encoding of 0E+0
+	}{
+		{1, 1, want{0x1, 0, 0x1}, want{0x1, 0, 0x1}},
+		{-1.5, -1.5, want{0x806000000000000f, 0x807e000000000000, 0xf}, want{0x800c000000000015, 0x800fc00000000000, 0x15}},
+		{19.99, 19.99, want{0x00400000000007cf, 0x007c000000000000, 0x7cf}, want{0x00080000000004ff, 0x000f800000000000, 0x4ff}},
+	}
+	for _, c := range cases {
+		w := c.bid
+		if decimal.NativeRepresentation == decimal.DPDXOR {
+			w = c.dpd
+		}
+		if got := math.Decimal64bits(c.d64); got != w.b64 {
+			t.Errorf("Decimal64bits(%v) = %#x, want %#x", c.d64, got, w.b64)
+		}
+		if hi, lo := math.Decimal128bits(c.d128); hi != w.hi || lo != w.lo {
+			t.Errorf("Decimal128bits(%v) = %#x, %#x, want %#x, %#x", c.d128, hi, lo, w.hi, w.lo)
 		}
 	}
 }
