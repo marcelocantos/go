@@ -148,7 +148,7 @@ func divLong128(x, y coef128, mode Mode) coef128 {
 		exp := xe - ye - k
 		face := MinExp128 < exp && exp <= MaxExp128 && exp+Precision128-1 >= Emin128
 		var rem coef128
-		if face && mode != TowardZero && mode != TowardPositive && mode != TowardNegative {
+		if face && (mode <= ToNearestAway || mode > TowardPositive) {
 			// To nearest, inside the exponent range of roundFace128's proof:
 			// the dividend is biased by half the divisor, and the quotient
 			// of n + ⌊yc/2⌋ by yc is the quotient of n by yc rounded to

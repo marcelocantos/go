@@ -2078,3 +2078,57 @@ BenchmarkKernel/UnpackDigits/128/mixed-16                    	10796625	        1
 BenchmarkKernel/UnpackDigits/128/mixed-16                    	11426620	        10.36 ns/op	       0 B/op	       0 allocs/op
 BenchmarkKernel/UnpackDigits/128/mixed-16                    	12007554	         9.989 ns/op	       0 B/op	       0 allocs/op
 PASS
+
+# The QuoQuantize and RoundWide rows were added later, with the same
+# command restricted to them (-test.bench 'BenchmarkKernel/(QuoQuantize|RoundWide)/'),
+# on 2026-11-16 on the same machine at load 5.67 7.78 8.75 at the start and
+# 5.79 7.74 8.73 at the end, on the tree of the commit that adds them; the
+# lines below are that output unedited.
+BenchmarkKernel/QuoQuantize/64/money-16         	16829508	         7.270 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/QuoQuantize/64/money-16         	16639222	         7.109 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/QuoQuantize/64/money-16         	16826163	         7.136 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/QuoQuantize/64/money-16         	17196800	         7.134 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/QuoQuantize/64/money-16         	17022582	         7.042 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/QuoQuantize/64/money-16         	16396521	         7.030 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/QuoQuantize/64/money-16         	16981130	         7.042 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/QuoQuantize/64/money-16         	17620821	         7.056 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/QuoQuantize/128/money-16        	 9227781	        12.65 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/QuoQuantize/128/money-16        	 9728282	        12.53 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/QuoQuantize/128/money-16        	 9673778	        12.18 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/QuoQuantize/128/money-16        	 9983152	        11.97 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/QuoQuantize/128/money-16        	10023038	        13.12 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/QuoQuantize/128/money-16        	 8954917	        13.03 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/QuoQuantize/128/money-16        	 8865902	        13.37 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/QuoQuantize/128/money-16        	 9732556	        13.04 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/exact-16           	14428785	         8.746 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/exact-16           	13737966	         8.775 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/exact-16           	14672617	         8.968 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/exact-16           	12818058	         8.912 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/exact-16           	13541024	         8.346 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/exact-16           	15113587	         8.456 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/exact-16           	14825186	         8.252 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/exact-16           	14274171	         8.150 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/inexact-16         	14150804	         8.320 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/inexact-16         	14970525	         7.947 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/inexact-16         	13647348	         8.442 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/inexact-16         	14091603	         7.907 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/inexact-16         	13832918	         8.155 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/inexact-16         	13972646	         8.512 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/inexact-16         	14727314	         8.107 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/inexact-16         	14540752	         8.523 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/wide-16            	13415252	         8.831 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/wide-16            	13448830	         9.221 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/wide-16            	13630684	         8.884 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/wide-16            	13767717	         8.864 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/wide-16            	12765956	         9.190 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/wide-16            	12347850	         9.003 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/wide-16            	13154709	         9.012 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/wide-16            	13346308	         9.187 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/subnormal-16       	13803746	         8.166 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/subnormal-16       	14119029	         8.386 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/subnormal-16       	14853705	         8.759 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/subnormal-16       	13826742	         8.449 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/subnormal-16       	14730102	         8.718 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/subnormal-16       	13459201	         8.989 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/subnormal-16       	13509013	         8.836 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/RoundWide/64/subnormal-16       	12944110	         8.555 ns/op	       0 B/op	       0 allocs/op

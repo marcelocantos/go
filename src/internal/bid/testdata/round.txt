@@ -244,3 +244,24 @@ Round128 even zero false 0 -2 false -> 0.00 Exact
 Round128 even zero true 1 -6177 false -> -0E-6176 Inexact|Underflow
 Round128 up zero true 1 -6177 false -> -0E-6176 Inexact|Underflow
 Round128 even zero true 0 0 true -> -0E-6176 Inexact|Underflow
+
+# AwayFromZero (the GDA round-up direction): every inexact magnitude up.
+Round64 awayzero inexact false 12345678901234561 0 false -> 1.234567890123457E+16 Inexact
+Round64 awayzero inexact true 12345678901234561 0 false -> -1.234567890123457E+16 Inexact
+Round64 awayzero inexact false 1 0 true -> 1.000000000000001 Inexact
+
+# RoundWide64: Round64 for a coefficient of up to 128 bits.
+RoundWide64 even exact false 1 0 false -> 1 Exact
+RoundWide64 even exact false 10000000000000000 0 false -> 1.000000000000000E+16 Exact
+RoundWide64 even inexact false 123456789012345678901234567890 0 false -> 1.234567890123457E+29 Inexact
+RoundWide64 zero inexact true 123456789012345678901234567890 0 false -> -1.234567890123456E+29 Inexact
+RoundWide64 awayzero inexact false 123456789012345610000000000000 0 true -> 1.234567890123457E+29 Inexact
+RoundWide64 even tie false 12345678901234565 0 false -> 1.234567890123456E+16 Inexact
+RoundWide64 away tie false 12345678901234565 0 false -> 1.234567890123457E+16 Inexact
+RoundWide64 even carry false 99999999999999999999999999999999999 0 false -> 1.000000000000000E+35 Inexact
+RoundWide64 even overflow false 1 400 false -> Infinity Inexact|Overflow
+RoundWide64 even zero true 0 0 false -> -0 Exact
+RoundWide64 even clamp false 0 -500 false -> 0E-398 Exact
+RoundWide64 even clamp false 1 370 false -> 1.0E+370 Exact
+RoundWide64 even underflow false 15 -399 false -> 2E-398 Inexact|Underflow
+RoundWide64 up underflow false 123456789012345678901234567890 -428 false -> 1E-398 Inexact|Underflow

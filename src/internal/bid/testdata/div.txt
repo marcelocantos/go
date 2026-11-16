@@ -277,3 +277,13 @@ Div128 even noncanon 0x3041ed09bead87c0378d8e6400000000 2 -> 0
 Div128 even noncanon 1 0x3041ed09bead87c0378d8e6400000000 -> Infinity
 Div128 even noncanon 0x6c100000000000000000000000000000 0x3041ffffffffffffffffffffffffffff -> NaN
 Div128 even noncanon 0xb047ed09bead87c0378d8e6400000000 1E+2 -> -0E+1
+
+# AwayFromZero (the GDA round-up direction): every inexact magnitude up.
+Div64 awayzero exact 1 4 -> 0.25
+Div64 awayzero inexact 1 3 -> 0.3333333333333334
+Div64 awayzero inexact -1 3 -> -0.3333333333333334
+Div64 awayzero inexact 2 3 -> 0.6666666666666667
+Div64 awayzero tie 2000000000000001 2 -> 1000000000000001
+Div64 awayzero tie -2000000000000001 2 -> -1000000000000001
+Div128 awayzero inexact 1 3 -> 0.3333333333333333333333333333333334
+Div128 awayzero inexact -2 3 -> -0.6666666666666666666666666666666667

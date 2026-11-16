@@ -49,6 +49,8 @@ type conformanceOps struct {
 	RoundToIntegral128             func(x bid.Uint128, mode bid.Mode) bid.Uint128
 	Quantize64                     func(x, y uint64, mode bid.Mode) uint64
 	Quantize128                    func(x, y bid.Uint128, mode bid.Mode) bid.Uint128
+	QuoQuantize64                  func(x, y, q uint64, mode bid.Mode) uint64
+	QuoQuantize128                 func(x, y, q bid.Uint128, mode bid.Mode) bid.Uint128
 	Reduce64                       func(x uint64) uint64
 	Reduce128                      func(x bid.Uint128) bid.Uint128
 	SameQuantum64                  func(x, y uint64) bool
@@ -59,8 +61,9 @@ type conformanceOps struct {
 	Min128, Max128                 func(x, y bid.Uint128) bid.Uint128
 
 	// round.go
-	Round64  func(neg bool, coeff uint64, exp int, sticky bool, mode bid.Mode) (uint64, bid.Status)
-	Round128 func(neg bool, coeff bid.Uint128, exp int, sticky bool, mode bid.Mode) (bid.Uint128, bid.Status)
+	Round64     func(neg bool, coeff uint64, exp int, sticky bool, mode bid.Mode) (uint64, bid.Status)
+	Round128    func(neg bool, coeff bid.Uint128, exp int, sticky bool, mode bid.Mode) (bid.Uint128, bid.Status)
+	RoundWide64 func(neg bool, coeff bid.Uint128, exp int, sticky bool, mode bid.Mode) (uint64, bid.Status)
 
 	// compare.go
 	Equal64, Less64, LessEqual64, TotalOrder64     func(x, y uint64) bool
@@ -126,12 +129,13 @@ var kernelOps = conformanceOps{
 	Rem64: bid.Rem64, Mod64: bid.Mod64, Rem128: bid.Rem128, Mod128: bid.Mod128,
 	RoundToIntegral64: bid.RoundToIntegral64, RoundToIntegral128: bid.RoundToIntegral128,
 	Quantize64: bid.Quantize64, Quantize128: bid.Quantize128,
+	QuoQuantize64: bid.QuoQuantize64, QuoQuantize128: bid.QuoQuantize128,
 	Reduce64: bid.Reduce64, Reduce128: bid.Reduce128,
 	SameQuantum64: bid.SameQuantum64, SameQuantum128: bid.SameQuantum128,
 	Quantum64: bid.Quantum64, Quantum128: bid.Quantum128,
 	Min64: bid.Min64, Max64: bid.Max64, Min128: bid.Min128, Max128: bid.Max128,
 
-	Round64: bid.Round64, Round128: bid.Round128,
+	Round64: bid.Round64, Round128: bid.Round128, RoundWide64: bid.RoundWide64,
 
 	Equal64: bid.Equal64, Less64: bid.Less64, LessEqual64: bid.LessEqual64, TotalOrder64: bid.TotalOrder64,
 	Equal128: bid.Equal128, Less128: bid.Less128, LessEqual128: bid.LessEqual128, TotalOrder128: bid.TotalOrder128,
@@ -172,9 +176,10 @@ var kernelOps = conformanceOps{
 var conformanceOpNames = []string{
 	"Add64", "Add128", "Sub64", "Sub128", "Mul64", "Mul128", "Div64", "Div128", "FMA64", "FMA128",
 	"Rem64", "Rem128", "Mod64", "Mod128",
-	"RoundToIntegral64", "RoundToIntegral128", "Quantize64", "Quantize128", "Reduce64", "Reduce128",
+	"RoundToIntegral64", "RoundToIntegral128", "Quantize64", "Quantize128",
+	"QuoQuantize64", "QuoQuantize128", "Reduce64", "Reduce128",
 	"SameQuantum64", "SameQuantum128", "Quantum64", "Quantum128", "Min64", "Min128", "Max64", "Max128",
-	"Round64", "Round128",
+	"Round64", "Round128", "RoundWide64",
 	"Equal64", "Equal128", "Less64", "Less128", "LessEqual64", "LessEqual128",
 	"Compare64", "Compare128", "TotalOrder64", "TotalOrder128", "Key64", "Key128",
 	"Widen", "Narrow", "Int64To64", "Int64To128", "Uint64To64", "Uint64To128",
@@ -200,14 +205,15 @@ var conformanceClasses = []string{
 
 // conformanceModes maps the mode token of a vector to a Mode. A token of
 // one or more digits is the Mode with that numeric value, so the suite can
-// name a Mode outside the five defined ones; "-" is for operations that
+// name a Mode outside the six defined ones; "-" is for operations that
 // take no mode.
 var conformanceModes = map[string]bid.Mode{
-	"even": bid.ToNearestEven,
-	"away": bid.ToNearestAway,
-	"zero": bid.TowardZero,
-	"up":   bid.TowardPositive,
-	"down": bid.TowardNegative,
+	"even":     bid.ToNearestEven,
+	"away":     bid.ToNearestAway,
+	"zero":     bid.TowardZero,
+	"awayzero": bid.AwayFromZero,
+	"up":       bid.TowardPositive,
+	"down":     bid.TowardNegative,
 }
 
 // A vector is one line of the suite: an operation, a mode, a boundary
@@ -827,6 +833,14 @@ func (ops *conformanceOps) eval(v *vector) (got, want []string, skipped bool, er
 		x, y := a.dec128(), a.dec128()
 		want = []string{w.wantDec128()}
 		run = func() { g(show128(ops.Quantize128(x, y, m))) }
+	case "QuoQuantize64":
+		x, y, q := a.dec64(), a.dec64(), a.dec64()
+		want = []string{w.wantDec64()}
+		run = func() { g(show64(ops.QuoQuantize64(x, y, q, m))) }
+	case "QuoQuantize128":
+		x, y, q := a.dec128(), a.dec128(), a.dec128()
+		want = []string{w.wantDec128()}
+		run = func() { g(show128(ops.QuoQuantize128(x, y, q, m))) }
 	case "Reduce64", "Neg64", "Abs64", "Quantum64", "Payload64", "NaNWithPayload64", "SignalingNaNWithPayload64":
 		fn := map[string]func(x uint64) uint64{
 			"Reduce64": ops.Reduce64, "Neg64": ops.Neg64, "Abs64": ops.Abs64, "Quantum64": ops.Quantum64,
@@ -885,6 +899,10 @@ func (ops *conformanceOps) eval(v *vector) (got, want []string, skipped bool, er
 		neg, coeff, exp, sticky := a.boolean(), a.uint128(), a.int(), a.boolean()
 		want = []string{w.wantDec128(), w.wantStatus()}
 		run = func() { x, s := ops.Round128(neg, coeff, exp, sticky, m); g(show128(x), showStatus(s)) }
+	case "RoundWide64":
+		neg, coeff, exp, sticky := a.boolean(), a.uint128(), a.int(), a.boolean()
+		want = []string{w.wantDec64(), w.wantStatus()}
+		run = func() { x, s := ops.RoundWide64(neg, coeff, exp, sticky, m); g(show64(x), showStatus(s)) }
 	case "Widen":
 		x := a.dec64()
 		want = []string{w.wantDec128()}

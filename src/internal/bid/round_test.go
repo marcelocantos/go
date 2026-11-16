@@ -196,7 +196,7 @@ func TestRoundBoundaries(t *testing.T) {
 // sticky bit, against the reference: the table above fixes one mode per
 // line, and this covers the rest.
 func TestRoundAllModesAgainstReference(t *testing.T) {
-	modes := []bid.Mode{bid.ToNearestEven, bid.ToNearestAway, bid.TowardZero, bid.TowardPositive, bid.TowardNegative, bid.Mode(7)}
+	modes := []bid.Mode{bid.ToNearestEven, bid.ToNearestAway, bid.TowardZero, bid.AwayFromZero, bid.TowardPositive, bid.TowardNegative, bid.Mode(7)}
 	for _, tt := range roundBoundaryTests {
 		c := roundCoeff(t, tt.coeff)
 		for _, neg := range []bool{false, true} {

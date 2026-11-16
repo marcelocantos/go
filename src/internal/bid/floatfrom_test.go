@@ -18,7 +18,7 @@ import (
 	"testing"
 )
 
-var floatFromModes = []bid.Mode{bid.ToNearestEven, bid.ToNearestAway, bid.TowardZero, bid.TowardPositive, bid.TowardNegative}
+var floatFromModes = []bid.Mode{bid.ToNearestEven, bid.ToNearestAway, bid.TowardZero, bid.AwayFromZero, bid.TowardPositive, bid.TowardNegative}
 
 func floatFromBigMode(m bid.Mode) big.RoundingMode {
 	switch m {
@@ -26,6 +26,8 @@ func floatFromBigMode(m bid.Mode) big.RoundingMode {
 		return big.ToNearestAway
 	case bid.TowardZero:
 		return big.ToZero
+	case bid.AwayFromZero:
+		return big.AwayFromZero
 	case bid.TowardPositive:
 		return big.ToPositiveInf
 	case bid.TowardNegative:
@@ -163,7 +165,7 @@ func floatFromExpect(t *testing.T, f *format, c *big.Int, q int, b binary, neare
 			switch {
 			case m == bid.TowardZero, m == bid.TowardPositive && neg, m == bid.TowardNegative && !neg:
 				want = toward
-			case m == bid.TowardPositive || m == bid.TowardNegative:
+			case m == bid.TowardPositive || m == bid.TowardNegative || m == bid.AwayFromZero:
 				want = away
 			}
 			if neg {
@@ -290,6 +292,7 @@ func TestFloatFromBinaryTies(t *testing.T) {
 							bid.ToNearestEven: even,
 							bid.ToNearestAway: away,
 							bid.TowardZero:    lo,
+							bid.AwayFromZero:  hi,
 						}
 						if neg {
 							wants[bid.TowardPositive], wants[bid.TowardNegative] = lo, hi
@@ -569,7 +572,7 @@ func TestFloatFromSpecials(t *testing.T) {
 			check("Float32From128(non-canonical, first form)", f32(nc), b2u(neg)<<31)
 		}
 	}
-	// A Mode outside the five behaves as ToNearestEven.
+	// A Mode outside the six behaves as ToNearestEven.
 	tie, _ := bid.Pack64(false, 9007199254740993, 0)
 	if got, want := bid.Float64From64(tie, 7), bid.Float64From64(tie, bid.ToNearestEven); got != want {
 		t.Errorf("mode 7 = %v, want %v", got, want)

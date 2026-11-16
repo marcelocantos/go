@@ -1,0 +1,164 @@
+# Copyright 2026 The Go Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# QuoQuantize: x / y rounded once, in the mode, to the exponent of q, which
+# is Quantize of the exact quotient. It is not an IEEE 754-2019 operation;
+# it is division to a fixed scale (SQL DECIMAL, Java's
+# BigDecimal.divide(divisor, scale, mode)). The result has the exponent of
+# q and the sign of x / y; the sign and coefficient of q are ignored. When
+# the rounded coefficient would exceed Precision digits, the result is NaN
+# (class overflow). The special cases are those of dividing and then
+# quantizing. The expected results were computed in exact rational
+# arithmetic (Python's fractions), not by the kernel or the reference model.
+# The two 2.009999... vectors are the double rounding the operation exists
+# to avoid: Div64 rounds 1.0049999999999995 to 1.005000000000000, which
+# quantizes half up to 1.01.
+
+# --- QuoQuantize64 ---
+
+QuoQuantize64 even exact 1 4 0.01 -> 0.25
+QuoQuantize64 even exact 10 4 0.01 -> 2.50
+QuoQuantize64 even exact 18750.000000 12 0.01 -> 1562.50
+QuoQuantize64 even exact 1.50 3 0.0001 -> 0.5000
+QuoQuantize64 even exact 100 4 1 -> 25
+QuoQuantize64 even exact 1E+5 4 1E+2 -> 2.50E+4
+QuoQuantize64 even exact -7.5 2.5 0.1 -> -3.0
+QuoQuantize64 even exact 6 -3 1E-15 -> -2.000000000000000
+QuoQuantize64 zero exact 9 3 0.01 -> 3.00
+QuoQuantize64 awayzero exact 9 3 0.01 -> 3.00
+QuoQuantize64 even exact 1.23456789E-390 1 1E-398 -> 1.23456789E-390
+QuoQuantize64 even inexact 1 3 0.01 -> 0.33
+QuoQuantize64 away inexact 2 3 0.01 -> 0.67
+QuoQuantize64 zero inexact 2 3 0.01 -> 0.66
+QuoQuantize64 awayzero inexact 1 3 0.01 -> 0.34
+QuoQuantize64 up inexact 1 3 0.01 -> 0.34
+QuoQuantize64 down inexact 1 3 0.01 -> 0.33
+QuoQuantize64 awayzero inexact -1 3 0.01 -> -0.34
+QuoQuantize64 up inexact -1 3 0.01 -> -0.33
+QuoQuantize64 down inexact -1 3 0.01 -> -0.34
+QuoQuantize64 even inexact 1 3 1E-15 -> 0.333333333333333
+QuoQuantize64 even inexact 2 3 1E-15 -> 0.666666666666667
+QuoQuantize64 away inexact 2.009999999999999 2 0.01 -> 1.00
+QuoQuantize64 even inexact 2.009999999999999 2 0.01 -> 1.00
+QuoQuantize64 zero inexact 7 1 1E+1 -> 0E+1
+QuoQuantize64 even inexact 7 1 1E+1 -> 1E+1
+QuoQuantize64 awayzero inexact 1E-20 1 0.01 -> 0.01
+QuoQuantize64 up inexact 1E-20 1 0.01 -> 0.01
+QuoQuantize64 even inexact 1E-20 1 0.01 -> 0.00
+QuoQuantize64 awayzero inexact -1E-20 1 0.01 -> -0.01
+QuoQuantize64 down inexact -1E-20 1 0.01 -> -0.01
+QuoQuantize64 zero inexact 9999999999999999 7 1 -> 1428571428571428
+QuoQuantize64 even inexact 1 7 1E-16 -> 0.1428571428571429
+QuoQuantize64 even tie 1 8 0.01 -> 0.12
+QuoQuantize64 away tie 1 8 0.01 -> 0.13
+QuoQuantize64 zero tie 1 8 0.01 -> 0.12
+QuoQuantize64 awayzero tie 1 8 0.01 -> 0.13
+QuoQuantize64 up tie 1 8 0.01 -> 0.13
+QuoQuantize64 down tie 1 8 0.01 -> 0.12
+QuoQuantize64 even tie -1 8 0.01 -> -0.12
+QuoQuantize64 away tie -1 8 0.01 -> -0.13
+QuoQuantize64 awayzero tie -1 8 0.01 -> -0.13
+QuoQuantize64 up tie -1 8 0.01 -> -0.12
+QuoQuantize64 down tie -1 8 0.01 -> -0.13
+QuoQuantize64 even tie 0.06 12 0.01 -> 0.00
+QuoQuantize64 away tie 0.06 12 0.01 -> 0.01
+QuoQuantize64 even tie 3 2 1 -> 2
+QuoQuantize64 even tie 5 2 1 -> 2
+QuoQuantize64 even tie 1 2 1E+0 -> 0
+QuoQuantize64 even tie 25 1 1E+1 -> 2E+1
+QuoQuantize64 even carry 9.999 1 0.01 -> 10.00
+QuoQuantize64 awayzero carry 9.991 1 0.01 -> 10.00
+QuoQuantize64 even carry 9999999999999999 10 1 -> 1000000000000000
+QuoQuantize64 up carry 99.99999999999999 1 0.01 -> 100.00
+QuoQuantize64 even overflow 9999999999999999 0.1 1 -> NaN
+QuoQuantize64 even inexact 1 3 1E-16 -> 0.3333333333333333
+QuoQuantize64 even overflow 1 1 1E-16 -> NaN
+QuoQuantize64 even overflow 9.999999999999999E+384 0.1 1E+369 -> NaN
+QuoQuantize64 zero overflow 9.999999999999999E+384 0.1 1E+369 -> NaN
+QuoQuantize64 down overflow 9.999999999999999E+384 0.1 1E+369 -> NaN
+QuoQuantize64 up overflow -9.999999999999999E+384 0.1 1E+369 -> NaN
+QuoQuantize64 awayzero exact 1 1E-383 1E+369 -> 1.00000000000000E+383
+QuoQuantize64 even underflow 1E-390 3 1E-398 -> 3.3333333E-391
+QuoQuantize64 down underflow -1E-390 3 1E-398 -> -3.3333334E-391
+QuoQuantize64 even underflow 1E-398 3 1E-398 -> 0E-398
+QuoQuantize64 up underflow 1E-398 3 1E-398 -> 1E-398
+QuoQuantize64 even zero 0 5 0.01 -> 0.00
+QuoQuantize64 even zero -0 5 0.01 -> -0.00
+QuoQuantize64 even zero 0 -5 0.01 -> -0.00
+QuoQuantize64 even zero 0E+10 7 1E-5 -> 0.00000
+QuoQuantize64 down zero 0.00 3 1 -> 0
+QuoQuantize64 even zero 5 Infinity 0.01 -> 0.00
+QuoQuantize64 even zero -5 Infinity 1E+3 -> -0E+3
+QuoQuantize64 even inf Infinity 2 Infinity -> Infinity
+QuoQuantize64 even inf -Infinity 2 Infinity -> -Infinity
+QuoQuantize64 even inf Infinity -2 -Infinity -> -Infinity
+QuoQuantize64 even inf Infinity 2 0.01 -> NaN
+QuoQuantize64 even inf 1 0 Infinity -> Infinity
+QuoQuantize64 even inf -1 0 Infinity -> -Infinity
+QuoQuantize64 even inf 1 0 0.01 -> NaN
+QuoQuantize64 even inf 1 Infinity Infinity -> NaN
+QuoQuantize64 even inf Infinity Infinity Infinity -> NaN
+QuoQuantize64 even inf Infinity Infinity 1 -> NaN
+QuoQuantize64 even inf 2 3 Infinity -> NaN
+QuoQuantize64 even nan 0 0 0.01 -> NaN
+QuoQuantize64 even nan 0 0 Infinity -> NaN
+QuoQuantize64 even nan NaN 1 0.01 -> NaN
+QuoQuantize64 even nan 1 NaN 0.01 -> NaN
+QuoQuantize64 even nan 1 1 NaN -> NaN
+QuoQuantize64 even nan sNaN 1 0.01 -> NaN
+QuoQuantize64 even nan 1 1 sNaN -> NaN
+QuoQuantize64 even nan Infinity 0 NaN -> NaN
+
+# --- QuoQuantize128 ---
+
+QuoQuantize128 even exact 1 4 0.01 -> 0.25
+QuoQuantize128 even exact 18750.000000 12 0.01 -> 1562.50
+QuoQuantize128 even exact 1 3E+2 1E+2 -> 0E+2
+QuoQuantize128 even exact 1E+6111 1 1E+6111 -> 1E+6111
+QuoQuantize128 even inexact 1 3 1E-33 -> 0.333333333333333333333333333333333
+QuoQuantize128 even inexact 2 3 1E-34 -> 0.6666666666666666666666666666666667
+QuoQuantize128 awayzero inexact 1 3 1E-33 -> 0.333333333333333333333333333333334
+QuoQuantize128 down inexact -2 3 0.01 -> -0.67
+QuoQuantize128 away inexact 2.009999999999999999999999999999999 2 0.01 -> 1.00
+QuoQuantize128 even inexact 1 7 1E-34 -> 0.1428571428571428571428571428571429
+QuoQuantize128 zero inexact 1E-100 1 1E-50 -> 0E-50
+QuoQuantize128 awayzero inexact 1E-100 1 1E-50 -> 1E-50
+QuoQuantize128 even tie 1 8 0.01 -> 0.12
+QuoQuantize128 away tie 1 8 0.01 -> 0.13
+QuoQuantize128 awayzero tie -1 8 0.01 -> -0.13
+QuoQuantize128 even tie 0.06 12 0.01 -> 0.00
+QuoQuantize128 even tie 1E+33 2E+34 0.01 -> 0.05
+QuoQuantize128 even carry 9999999999999999999999999999999999 10 1 -> 1000000000000000000000000000000000
+QuoQuantize128 even carry 9.999 1 0.01 -> 10.00
+QuoQuantize128 even overflow 1 3 1E-35 -> NaN
+QuoQuantize128 even overflow 9999999999999999999999999999999999 0.1 1 -> NaN
+QuoQuantize128 zero overflow 9.999999999999999999999999999999999E+6144 0.1 1E+6111 -> NaN
+QuoQuantize128 up overflow 9.999999999999999999999999999999999E+6144 0.1 1E+6111 -> NaN
+QuoQuantize128 even underflow 1E-6170 3 1E-6176 -> 3.33333E-6171
+QuoQuantize128 up underflow 1E-6176 3 1E-6176 -> 1E-6176
+QuoQuantize128 even zero 0 5 0.01 -> 0.00
+QuoQuantize128 even zero -0 5 0.01 -> -0.00
+QuoQuantize128 even zero 5 -Infinity 1E-6176 -> -0E-6176
+QuoQuantize128 even inf Infinity 2 Infinity -> Infinity
+QuoQuantize128 even inf 1 0 Infinity -> Infinity
+QuoQuantize128 even inf 1 0 0.01 -> NaN
+QuoQuantize128 even inf 2 3 Infinity -> NaN
+QuoQuantize128 even nan 0 0 0.01 -> NaN
+QuoQuantize128 even nan NaN 1 0.01 -> NaN
+QuoQuantize128 even nan 1 sNaN 0.01 -> NaN
+
+# Non-canonical encodings read as a zero with their encoded exponent:
+# 0x6c77ffffffffffff and 0x3041ed09bead87c0378d8e6400000000 are +0 at
+# exponent 0, 0xec9fffffffffffff is -0E+5 and
+# 0xb047ed09bead87c0378d8e6400000000 is -0E+3.
+QuoQuantize64 even noncanon 0x6c77ffffffffffff 3 0.01 -> 0.00
+QuoQuantize64 even noncanon 1 0x6c77ffffffffffff 0.01 -> NaN
+QuoQuantize64 even noncanon 1 4 0x6c77ffffffffffff -> 0
+QuoQuantize64 away noncanon 1 2 0x6c77ffffffffffff -> 1
+QuoQuantize64 even noncanon 1 4 0xec9fffffffffffff -> 0E+5
+QuoQuantize64 even noncanon 0xec9fffffffffffff 2 0.1 -> -0.0
+QuoQuantize128 even noncanon 0x3041ed09bead87c0378d8e6400000000 3 0.01 -> 0.00
+QuoQuantize128 even noncanon 1 0x3041ed09bead87c0378d8e6400000000 0.01 -> NaN
+QuoQuantize128 away noncanon 1 2 0x3041ed09bead87c0378d8e6400000000 -> 1
+QuoQuantize128 even noncanon 0xb047ed09bead87c0378d8e6400000000 2 0.1 -> -0.0

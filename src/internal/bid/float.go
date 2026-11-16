@@ -180,13 +180,15 @@ func float32Parts(f float32) (kind Kind, neg bool, m uint64, e int) {
 }
 
 // binaryRounding returns the direction of the magnitude of a value of sign
-// neg that mode selects. A Mode outside the five behaves as ToNearestEven.
+// neg that mode selects. A Mode outside the six behaves as ToNearestEven.
 func binaryRounding(mode Mode, neg bool) strconv.Rounding {
 	switch mode {
 	case ToNearestAway:
 		return strconv.RoundNearestAway
 	case TowardZero:
 		return strconv.RoundTowardZero
+	case AwayFromZero:
+		return strconv.RoundAwayFromZero
 	case TowardPositive:
 		if neg {
 			return strconv.RoundTowardZero

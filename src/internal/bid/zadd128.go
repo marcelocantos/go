@@ -230,7 +230,7 @@ func addLong128(x, y coef128, mode Mode) coef128 {
 				// To nearest there is nothing to decide: X + f rounds
 				// down to X and (X - 1) + (1 - f) up to X, whatever the
 				// parity, and 10^Precision128 is roundFace128's carry.
-				if mode != TowardZero && mode != TowardPositive && mode != TowardNegative {
+				if mode <= ToNearestAway || mode > TowardPositive {
 					return roundFace128(xneg, near, xe-m, classZero, mode)
 				}
 				return roundFace128(xneg, p, xe-m, class, mode)
@@ -322,7 +322,7 @@ func addLong128(x, y coef128, mode Mode) coef128 {
 // q has Precision128 digits, so round128's place of the result is exp itself:
 // it pads nothing, discards no digit of q, and its class is the caller's.
 // Its decision is then roundInc(class, mode, neg, odd(q)), the one row of
-// the five-mode table this function takes, ties included: a swamped
+// the six-mode table this function takes, ties included: a swamped
 // addend's class is never classHalf, the others' may be, and roundInc
 // decides a tie as round128 would. The class is never classZero: roundInc
 // takes an inexact value, and an exact one goes to round128. An increment of

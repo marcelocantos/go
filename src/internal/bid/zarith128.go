@@ -248,7 +248,7 @@ func roundFinite128(neg bool, c coef128, exp int, mode Mode, floor int) (coef128
 
 // round128 is the general rounding routine of the package. Together with
 // its bounded-coefficient helper roundFinite128, it is the only way an
-// operation produces a rounded result under each of the five modes, but
+// operation produces a rounded result under each of the six modes, but
 // for the face-value rounding of add128's swamped addend, roundFace128 in
 // add_tmpl.go (see "Face-value rounding" in the package documentation),
 // which takes the one step of this routine that such an input reaches.

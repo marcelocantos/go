@@ -20,7 +20,7 @@ import (
 	"testing"
 )
 
-var floatToModes = []bid.Mode{bid.ToNearestEven, bid.ToNearestAway, bid.TowardZero, bid.TowardPositive, bid.TowardNegative}
+var floatToModes = []bid.Mode{bid.ToNearestEven, bid.ToNearestAway, bid.TowardZero, bid.AwayFromZero, bid.TowardPositive, bid.TowardNegative}
 
 // floatToOracle returns the parts of the finite v rounded to f in mode m
 // with preferred exponent 0: the sign, the coefficient and the exponent. The
@@ -75,6 +75,8 @@ func floatToOracle(f *format, v float64, m bid.Mode) (neg bool, c *big.Int, exp 
 	case bid.ToNearestAway:
 		up = half >= 0
 	case bid.TowardZero:
+	case bid.AwayFromZero:
+		up = true
 	case bid.TowardPositive:
 		up = !neg
 	case bid.TowardNegative:

@@ -20,7 +20,7 @@ func TestDivPowersOfTen(t *testing.T) {
 		t.Run(f.name, func(t *testing.T) {
 			check := func(x, y bits) {
 				t.Helper()
-				for m := bid.Mode(0); m < 6; m++ {
+				for m := bid.Mode(0); m < 7; m++ {
 					got, want := (kernel{}).div(f, x, y, m), f.div(x, y, m)
 					if got != want {
 						t.Fatalf("power division %s(%x, %x, %s): got %x, want %x", f.name, x, y, modeName(m), got, want)

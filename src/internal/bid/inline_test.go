@@ -35,7 +35,7 @@ func enc128(neg bool, hi, lo uint64, biased uint64) bid.Uint128 {
 	return x
 }
 
-var inlineModes = []bid.Mode{bid.ToNearestEven, bid.ToNearestAway, bid.TowardZero, bid.TowardPositive, bid.TowardNegative}
+var inlineModes = []bid.Mode{bid.ToNearestEven, bid.ToNearestAway, bid.TowardZero, bid.AwayFromZero, bid.TowardPositive, bid.TowardNegative}
 
 func inlinePool64() []uint64 {
 	coeffs := []uint64{0, 1, 2, 9, 1 << 26, 1<<27 - 1, 1 << 27, 1 << 52, 1<<53 - 2, 1<<53 - 1}

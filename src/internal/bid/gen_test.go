@@ -38,13 +38,13 @@ type gen struct {
 	regime regime
 }
 
-// mode returns one of the five modes, and rarely a value outside them,
+// mode returns one of the six modes, and rarely a value outside them,
 // which must behave as ToNearestEven.
 func (g *gen) mode() bid.Mode {
 	if g.r.IntN(50) == 0 {
-		return bid.Mode(5 + g.r.IntN(250))
+		return bid.Mode(6 + g.r.IntN(250))
 	}
-	return bid.Mode(g.r.IntN(5))
+	return bid.Mode(g.r.IntN(6))
 }
 
 // randDigits returns a random coefficient of exactly n digits, n >= 1.

@@ -133,11 +133,12 @@ var modes = map[string]bid.Mode{
 	"ToNearestEven":  bid.ToNearestEven,
 	"ToNearestAway":  bid.ToNearestAway,
 	"TowardZero":     bid.TowardZero,
+	"AwayFromZero":   bid.AwayFromZero,
 	"TowardPositive": bid.TowardPositive,
 	"TowardNegative": bid.TowardNegative,
 }
 
-var modeNames = []string{"ToNearestEven", "ToNearestAway", "TowardZero", "TowardPositive", "TowardNegative"}
+var modeNames = []string{"ToNearestEven", "ToNearestAway", "TowardZero", "AwayFromZero", "TowardNegative", "TowardPositive"}
 
 func modeName(m bid.Mode) string {
 	if int(m) < len(modeNames) {
@@ -363,6 +364,18 @@ func checkExample(im impl, ex example) error {
 			return err
 		}
 		got = display(f, im.fma(f, x, y, z, m))
+	case "QuoQuantize":
+		if x, err = dec(0); err == nil {
+			if y, err = dec(1); err == nil {
+				if z, err = dec(2); err == nil {
+					m, err = mode(3)
+				}
+			}
+		}
+		if err != nil {
+			return err
+		}
+		got = display(f, im.quoQuantize(f, x, y, z, m))
 	case "Rem", "Mod", "Min", "Max", "CopySign":
 		if x, err = dec(0); err == nil {
 			y, err = dec(1)

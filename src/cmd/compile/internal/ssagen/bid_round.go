@@ -154,6 +154,7 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 	nonzero := s.newValue2(ssaop.OpNeq64, boolT, r, zero)
 	selectMode(bid.ToNearestAway, s.newValue2(ssaop.OpOrB, boolT, above, tie))
 	selectMode(bid.TowardZero, s.constBool(false))
+	selectMode(bid.AwayFromZero, nonzero)
 	selectMode(bid.TowardPositive, s.newValue2(ssaop.OpAndB, boolT, nonzero, s.newValue1(ssaop.OpNot, boolT, negative)))
 	selectMode(bid.TowardNegative, s.newValue2(ssaop.OpAndB, boolT, nonzero, negative))
 	q = s.newValue2(ssaop.OpAdd64, u64, q, increment)

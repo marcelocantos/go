@@ -248,7 +248,7 @@ func roundFinite64(neg bool, c coef64, exp int, mode Mode, floor int) (coef64, d
 
 // round64 is the general rounding routine of the package. Together with
 // its bounded-coefficient helper roundFinite64, it is the only way an
-// operation produces a rounded result under each of the five modes, but
+// operation produces a rounded result under each of the six modes, but
 // for the face-value rounding of add64's swamped addend, roundFace64 in
 // add_tmpl.go (see "Face-value rounding" in the package documentation),
 // which takes the one step of this routine that such an input reaches.

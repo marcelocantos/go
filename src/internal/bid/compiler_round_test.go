@@ -45,6 +45,10 @@ func compiledAway128(x roundingNamed128) roundingNamed128 {
 	return dec.QuantizeMode(x, roundingNamed128(0.01), dec.ToNearestAway)
 }
 
+// integralModes are the modes of the five integral functions, in the order
+// compiledIntegral64 and compiledIntegral128 return them.
+var integralModes = [5]bid.Mode{bid.ToNearestEven, bid.ToNearestAway, bid.TowardZero, bid.TowardPositive, bid.TowardNegative}
+
 //go:noinline
 func compiledIntegral64(x decimal64) [5]decimal64 {
 	return [5]decimal64{dec.RoundToEven(x), dec.Round(x), dec.Trunc(x), dec.Ceil(x), dec.Floor(x)}
@@ -88,8 +92,8 @@ func TestCompiledRounding(t *testing.T) {
 					t.Fatalf("named away %x: got %x want %x", x, away, want)
 				}
 				for i, got := range integral {
-					if want := (reference{}).roundToIntegral(f, x, bid.Mode(i)); got != want {
-						t.Fatalf("integral %x mode %d: got %x want %x", x, i, got, want)
+					if want := (reference{}).roundToIntegral(f, x, integralModes[i]); got != want {
+						t.Fatalf("integral %x mode %d: got %x want %x", x, integralModes[i], got, want)
 					}
 				}
 			}
@@ -269,7 +273,10 @@ func TestCompiledRoundingCallForms(t *testing.T) {
 		if got, want := b128(decimal128(compiledFloorFunction(roundingNamed128(d128(y))))), (reference{}).roundToIntegral(dec128, y, bid.TowardNegative); got != want {
 			t.Fatalf("function value128 %s: got %x want %x", text, got, want)
 		}
-		for m := dec.ToNearestEven; m <= dec.ToNegativeInf; m++ {
+		for m := dec.ToNearestEven; m <= dec.ToPositiveInf; m++ {
+			if m == dec.AwayFromZero {
+				continue // no integral function rounds away from zero
+			}
 			if got, want := b128(compiledIntegralDispatch(d128(y), m)), (reference{}).roundToIntegral(dec128, y, bid.Mode(m)); got != want {
 				t.Fatalf("dispatch %s mode %d: got %x want %x", text, m, got, want)
 			}

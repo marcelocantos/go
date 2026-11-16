@@ -235,6 +235,50 @@ func (f *format) quantize(x, y bits, mode bid.Mode) bits {
 	return f.encode(value{kind: finite, neg: a.neg, coeff: c, exp: b.exp})
 }
 
+// quoQuantize is the model of division to a quantum: the exact quotient of
+// x by y, rounded once in mode to the exponent of q, or NaN when its
+// coefficient does not fit there. The special cases are those of dividing
+// and then quantizing; a NaN operand gives the NaN of the three operands,
+// as for fma.
+func (f *format) quoQuantize(x, y, q bits, mode bid.Mode) bits {
+	a, b, c := f.decode(x), f.decode(y), f.decode(q)
+	neg := a.neg != b.neg
+	switch {
+	case isNaN(a, b, c):
+		return f.encode(nanOf(a, b, c))
+	case a.kind == infinite && b.kind == infinite:
+		return f.encode(nan)
+	case a.kind == infinite: // the quotient is an infinity
+		if c.kind == infinite {
+			return f.encode(value{kind: infinite, neg: neg})
+		}
+		return f.encode(nan)
+	case b.kind == infinite: // the quotient is a zero
+		if c.kind == infinite {
+			return f.encode(nan)
+		}
+		return f.encode(value{kind: finite, neg: neg, coeff: new(big.Int), exp: c.exp})
+	case b.coeff.Sign() == 0: // 0 / 0 is invalid, x / 0 an infinity
+		if a.coeff.Sign() != 0 && c.kind == infinite {
+			return f.encode(value{kind: infinite, neg: neg})
+		}
+		return f.encode(nan)
+	case c.kind == infinite:
+		return f.encode(nan)
+	}
+	num, den := new(big.Int).Set(a.coeff), new(big.Int).Set(b.coeff)
+	if s := a.exp - b.exp - c.exp; s >= 0 {
+		num.Mul(num, pow10(s))
+	} else {
+		den.Mul(den, pow10(-s))
+	}
+	n, _ := roundQuo(num, den, neg, mode)
+	if n.Cmp(f.maxCoeff) > 0 {
+		return f.encode(nan)
+	}
+	return f.encode(value{kind: finite, neg: neg, coeff: n, exp: c.exp})
+}
+
 func (f *format) reduce(x bits) bits {
 	a := f.decode(x)
 	switch {

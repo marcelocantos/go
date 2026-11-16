@@ -167,6 +167,23 @@ func Quantize128(x, y Uint128, mode Mode) Uint128 {
 	return quantize128(x, y, mode)
 }
 
+// QuoQuantize64 returns x / y rounded once, in mode, to the exponent of q:
+// Quantize64 of the exact quotient, with no rounding to the precision first.
+// It is not an IEEE 754-2019 operation; it is the division to a fixed scale
+// of SQL's DECIMAL, Java's BigDecimal.divide(divisor, scale, mode) and the
+// General Decimal Arithmetic's divide-integer (q = 1, TowardZero), which a
+// division followed by Quantize64 can get wrong by rounding twice. When the
+// rounded coefficient does not fit at that exponent, the result is NaN, as
+// for Quantize64.
+func QuoQuantize64(x, y, q uint64, mode Mode) uint64 {
+	return quoQuantize64(x, y, q, mode)
+}
+
+// QuoQuantize128 is QuoQuantize64 for decimal128.
+func QuoQuantize128(x, y, q Uint128, mode Mode) Uint128 {
+	return quoQuantize128(x, y, q, mode)
+}
+
 // Reduce64 returns the member of x's cohort with the fewest coefficient
 // digits: trailing zeros are removed from the coefficient and the exponent
 // raised to match, as far as MaxExp64 allows (the reduce operation of the

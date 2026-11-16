@@ -27,6 +27,7 @@ type impl interface {
 	mod(f *format, x, y bits) bits
 	roundToIntegral(f *format, x bits, m bid.Mode) bits
 	quantize(f *format, x, y bits, m bid.Mode) bits
+	quoQuantize(f *format, x, y, q bits, m bid.Mode) bits
 	reduce(f *format, x bits) bits
 	sameQuantum(f *format, x, y bits) bool
 	quantum(f *format, x bits) bits
@@ -70,6 +71,7 @@ type impl interface {
 	appendTo(f *format, x bits) string // the to-scientific-string form
 	appendGo(f *format, x bits) string // Go's canonical form
 	round(f *format, neg bool, c bid.Uint128, exp int, sticky bool, m bid.Mode) (bits, bid.Status)
+	roundWide64(neg bool, c bid.Uint128, exp int, sticky bool, m bid.Mode) (bits, bid.Status)
 }
 
 // reference is the reference model as an impl.
@@ -86,10 +88,13 @@ func (reference) roundToIntegral(f *format, x bits, m bid.Mode) bits {
 	return f.roundToIntegral(x, m)
 }
 func (reference) quantize(f *format, x, y bits, m bid.Mode) bits { return f.quantize(x, y, m) }
-func (reference) reduce(f *format, x bits) bits                  { return f.reduce(x) }
-func (reference) sameQuantum(f *format, x, y bits) bool          { return f.sameQuantum(x, y) }
-func (reference) quantum(f *format, x bits) bits                 { return f.quantum(x) }
-func (reference) payload(f *format, x bits) bits                 { return f.payload(x) }
+func (reference) quoQuantize(f *format, x, y, q bits, m bid.Mode) bits {
+	return f.quoQuantize(x, y, q, m)
+}
+func (reference) reduce(f *format, x bits) bits         { return f.reduce(x) }
+func (reference) sameQuantum(f *format, x, y bits) bool { return f.sameQuantum(x, y) }
+func (reference) quantum(f *format, x bits) bits        { return f.quantum(x) }
+func (reference) payload(f *format, x bits) bits        { return f.payload(x) }
 func (reference) nanWithPayload(f *format, p bits, signaling bool) bits {
 	return f.nanWithPayload(p, signaling)
 }
@@ -161,6 +166,9 @@ func (reference) float32From(f *format, x bits, m bid.Mode) float32 {
 func (reference) parse(f *format, s string, m bid.Mode) (bits, bid.Status) { return f.parse(s, m) }
 func (reference) appendTo(f *format, x bits) string                        { return f.format(x) }
 func (reference) appendGo(f *format, x bits) string                        { return f.formatGo(x) }
+func (reference) roundWide64(neg bool, c bid.Uint128, exp int, sticky bool, m bid.Mode) (bits, bid.Status) {
+	return dec64.roundParts(neg, fromUint128(c), exp, sticky, m)
+}
 func (reference) round(f *format, neg bool, c bid.Uint128, exp int, sticky bool, m bid.Mode) (bits, bid.Status) {
 	if f.width == 64 && c.Hi != 0 {
 		panic("round: decimal64 coefficient wider than 64 bits")
@@ -228,6 +236,12 @@ func (kernel) quantize(f *format, x, y bits, m bid.Mode) bits {
 		return lo(bid.Quantize64(x.Lo, y.Lo, m))
 	}
 	return bid.Quantize128(x, y, m)
+}
+func (kernel) quoQuantize(f *format, x, y, q bits, m bid.Mode) bits {
+	if w64(f) {
+		return lo(bid.QuoQuantize64(x.Lo, y.Lo, q.Lo, m))
+	}
+	return bid.QuoQuantize128(x, y, q, m)
 }
 func (kernel) reduce(f *format, x bits) bits {
 	if w64(f) {
@@ -474,6 +488,10 @@ func (kernel) appendGo(f *format, x bits) string {
 		panic(fmt.Sprintf("Append128(%016x%016x) = %q without spare capacity, %q with it", x.Hi, x.Lo, general, roomy))
 	}
 	return string(general)
+}
+func (kernel) roundWide64(neg bool, c bid.Uint128, exp int, sticky bool, m bid.Mode) (bits, bid.Status) {
+	x, st := bid.RoundWide64(neg, c, exp, sticky, m)
+	return lo(x), st
 }
 func (kernel) round(f *format, neg bool, c bid.Uint128, exp int, sticky bool, m bid.Mode) (bits, bid.Status) {
 	if w64(f) {

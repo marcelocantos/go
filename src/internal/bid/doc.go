@@ -78,7 +78,7 @@
 //   - No panic on any input. Every bit pattern of a uint64 or a Uint128
 //     is a valid operand, including non-canonical encodings, signaling
 //     NaNs and NaNs with payloads, and every function returns a result for
-//     it. A [Mode] value outside the five defined modes behaves as
+//     it. A [Mode] value outside the six defined modes behaves as
 //     [ToNearestEven].
 //   - No mutable global state. The package has no variables that are
 //     written after initialization. Static tables are permitted.
@@ -128,16 +128,24 @@
 // # Rounding modes
 //
 // Every operation that can be inexact takes a [Mode] parameter, one of the
-// five rounding-direction attributes of IEEE 754-2019 clause 4.3:
+// five rounding-direction attributes of IEEE 754-2019 clause 4.3 or the
+// round-up direction of the General Decimal Arithmetic specification:
 //
 //	Mode            IEEE 754-2019 attribute   Clause   Rounds to
 //	ToNearestEven   roundTiesToEven           4.3.1    nearest; ties to the even coefficient
 //	ToNearestAway   roundTiesToAway           4.3.1    nearest; ties away from zero
 //	TowardZero      roundTowardZero           4.3.2    the representable value nearest to and no greater in magnitude
-//	TowardPositive  roundTowardPositive       4.3.2    the representable value nearest to and no less than the exact value
+//	AwayFromZero    (none; GDA round-up)      -        the representable value nearest to and no less in magnitude
 //	TowardNegative  roundTowardNegative       4.3.2    the representable value nearest to and no greater than the exact value
+//	TowardPositive  roundTowardPositive       4.3.2    the representable value nearest to and no less than the exact value
 //
-// A Mode outside these five behaves as ToNearestEven; it is not an error.
+// AwayFromZero is TowardZero's mirror: it rounds every inexact magnitude
+// up, which is how fees and taxes are often specified ("round up to the
+// next cent"). IEEE 754-2019 does not define it, but math/big's
+// RoundingMode, the General Decimal Arithmetic specification, Java, Python
+// and SQL do, and an overflow in it delivers the infinity, as in the
+// nearest modes. The values and their order are math/big's. A Mode outside
+// these six behaves as ToNearestEven; it is not an error.
 // The language operators round to nearest, ties to even, and nothing else
 // (language proposal design decision 4); the runtime passes the constant
 // [ToNearestEven]. The mode is a parameter rather than a global attribute
@@ -511,6 +519,31 @@
 // remainder for any quotient, as clause 5.3.1 requires. IBM vectors
 // that expect Division impossible are out of scope.
 //
+// # Division to a quantum
+//
+// QuoQuantize64(x, y, q, mode) is x / y rounded once, in mode, to the
+// exponent of q: Quantize64 of the exact quotient. It is not an IEEE
+// 754-2019 operation. It is the division of fixed-scale decimal arithmetic,
+// SQL's division to a column's scale and Java's
+// BigDecimal.divide(divisor, scale, mode), and with q = 1 and TowardZero
+// it is GDA's divide-integer. Div64 followed by Quantize64 computes the
+// same thing with two roundings, and the first can move a quotient onto
+// the tie the second decides: 2.009999999999999 / 2 is 1.0049999999999995,
+// which Div64 rounds to 1.005000000000000 and Quantize64 then rounds half
+// up to 1.01, where the quotient itself rounds to 1.00. QuoQuantize64
+// rounds the exact quotient and gives 1.00.
+//
+// The result has the exponent of q and the sign of x / y; the sign and
+// coefficient of q are ignored, as Quantize64 ignores y's. When the rounded
+// coefficient has more than Precision digits at that exponent, the result
+// is NaN, as for Quantize64; the exponent is never adjusted, so nothing
+// overflows or clamps. The special cases are those of dividing and then
+// quantizing: ∞ / ∞, 0 / 0 and a finite non-zero x / 0 with a finite q are
+// invalid, and give NaN; x / ∞ is a zero, which a finite q gives its
+// exponent; ±∞ / y and x / 0 with an infinite q are infinities; and a
+// finite quotient with an infinite q is invalid. A NaN operand gives the
+// result of "NaN results" for the three operands x, y and q, in that order.
+//
 // # Sign operations
 //
 // Neg64, Abs64 and CopySign64 are the negate, abs and copySign operations
@@ -692,7 +725,9 @@
 // # Rounding from exact parts
 //
 // Round64 and Round128 are the rounding routine every operation uses,
-// exposed for the compiler and the parser. The input is an exact value in
+// exposed for the compiler and the parser; RoundWide64 is Round64 with a
+// coefficient of up to 128 bits, which rounds the parts of a decimal128 or
+// of an arbitrary-precision value to decimal64 in one step. The input is an exact value in
 // parts, (-1)^neg × (coeff + f) × 10^exp with f = 0 when sticky is false
 // and 0 < f < 1 when it is true; the preferred exponent is exp. The result
 // is that value rounded to the format in the given mode under every rule
@@ -772,6 +807,18 @@
 //	Quantize64(217, 1, ToNearestEven) = 217
 //	Quantize64(2.17, 0.00, ToNearestEven) = 2.17
 //	Quantize64(1E+15, 1, ToNearestEven) = 1000000000000000
+//	QuoQuantize64(18375.0000000, 12, 0.01, ToNearestAway) = 1531.25
+//	QuoQuantize64(0.06, 12, 0.01, ToNearestAway) = 0.01
+//	QuoQuantize64(0.06, 12, 0.01, ToNearestEven) = 0.00
+//	QuoQuantize64(1, 3, 0.01, AwayFromZero) = 0.34
+//	QuoQuantize64(-1, 3, 0.01, AwayFromZero) = -0.34
+//	QuoQuantize64(2.009999999999999, 2, 0.01, ToNearestAway) = 1.00
+//	Div64(2.009999999999999, 2, ToNearestEven) = 1.005000000000000
+//	Quantize64(1.005000000000000, 0.01, ToNearestAway) = 1.01
+//	QuoQuantize64(17, 5, 1, TowardZero) = 3
+//	QuoQuantize64(1, 3, 1E-16, ToNearestEven) = 0.3333333333333333
+//	QuoQuantize64(1, 1, 1E-16, ToNearestEven) = NaN
+//	QuoQuantize128(1, 3, 1E-34, ToNearestEven) = 0.3333333333333333333333333333333333
 //	Reduce64(2.1) = 2.1
 //	Reduce64(-2.0) = -2
 //	Reduce64(1.200) = 1.2
@@ -820,7 +867,7 @@
 //	Round64(false, 100, -400, false, ToNearestEven) = 1E-398, Exact
 //
 // Exponent of an inexact result (least possible exponent, Precision
-// digits) and the five modes on a tie and on a direction:
+// digits) and the modes on a tie and on a direction:
 //
 //	Div64(1, 3, ToNearestEven) = 0.3333333333333333
 //	Div64(2, 3, ToNearestEven) = 0.6666666666666667
@@ -835,6 +882,8 @@
 //	Add64(1E+16, 15, ToNearestEven) = 1.000000000000002E+16
 //	Add64(1E+16, 5, ToNearestAway) = 1.000000000000001E+16
 //	Add64(1E+16, 5, TowardZero) = 1.000000000000000E+16
+//	Add64(1E+16, 1, AwayFromZero) = 1.000000000000001E+16
+//	Add64(-1E+16, -1, AwayFromZero) = -1.000000000000001E+16
 //	Add64(1E+16, 5, TowardPositive) = 1.000000000000001E+16
 //	Add64(1E+16, 5, TowardNegative) = 1.000000000000000E+16
 //	Add64(-1E+16, -5, ToNearestEven) = -1.000000000000000E+16
@@ -1606,7 +1655,7 @@
 // passed by pointer, so the dictionary carried only the methods), and a
 // single core over Uint128 coefficients and a 256-bit product with the
 // format parameters passed by pointer. All four agreed bit for bit with
-// each other in all five rounding modes, and with a math/big reference in
+// each other in all six rounding modes, and with a math/big reference in
 // ToNearestEven, on 4096 random operand pairs per width (70% with
 // exponents within 4 of each other, 20% spread over ±(Precision+10),
 // 10% equal) and on the special values. The strawman is the runtime of
@@ -1886,7 +1935,7 @@
 // and for a quotient, from the remainder against the divisor, a half as
 // well. On such an
 // input roundW pads nothing, discards no digit and keeps the exponent, so
-// its whole decision is one row of the five-mode table, roundInc(class,
+// its whole decision is one row of the six-mode table, roundInc(class,
 // mode, sign, odd(q)), and an increment of the largest coefficient carries
 // to 10^(PrecisionW-1) one place up, overflowing above MaxExpW. roundFaceW
 // is those steps and nothing else; it adds roundInc and calls packW and

@@ -29,13 +29,15 @@ type Decimal interface {
 // is rounded. The operators always round to nearest, ties to even.
 type RoundingMode byte
 
-// The rounding modes of IEEE 754-2019.
+// The rounding modes, with math/big's names and values, which the kernel's
+// Mode shares.
 const (
 	ToNearestEven RoundingMode = iota // to nearest, ties to even
 	ToNearestAway                     // to nearest, ties away from zero
 	ToZero                            // toward zero
-	ToPositiveInf                     // toward +Inf
+	AwayFromZero                      // away from zero
 	ToNegativeInf                     // toward -Inf
+	ToPositiveInf                     // toward +Inf
 )
 
 func (m RoundingMode) mode() bid.Mode {
@@ -44,6 +46,8 @@ func (m RoundingMode) mode() bid.Mode {
 		return bid.ToNearestAway
 	case ToZero:
 		return bid.TowardZero
+	case AwayFromZero:
+		return bid.AwayFromZero
 	case ToPositiveInf:
 		return bid.TowardPositive
 	case ToNegativeInf:
@@ -425,4 +429,62 @@ func quantize64(x, y decimal64, mode RoundingMode) decimal64 {
 }
 func quantize128(x, y decimal128, mode RoundingMode) decimal128 {
 	return d128(bid.Quantize128(b128(x), b128(y), mode.mode()))
+}
+
+// QuoQuantize returns x / y rounded once, in mode, to the quantum of q.
+func QuoQuantize[D Decimal](x, y, q D, mode RoundingMode) D {
+	if is64(x) {
+		return D(quoQuantize64(decimal64(x), decimal64(y), decimal64(q), mode))
+	}
+	return D(quoQuantize128(decimal128(x), decimal128(y), decimal128(q), mode))
+}
+
+func quoQuantize64(x, y, q decimal64, mode RoundingMode) decimal64 {
+	return BID64frombits(bid.QuoQuantize64(BID64bits(x), BID64bits(y), BID64bits(q), mode.mode()))
+}
+func quoQuantize128(x, y, q decimal128, mode RoundingMode) decimal128 {
+	return d128(bid.QuoQuantize128(b128(x), b128(y), b128(q), mode.mode()))
+}
+
+// Decompose returns the sign, coefficient and exponent of a finite x, with
+// ok true; for an infinity or a NaN it returns zeros and ok false.
+func Decompose[D Decimal](x D) (neg bool, hi, lo uint64, exp int, ok bool) {
+	if is64(x) {
+		return decompose64(decimal64(x))
+	}
+	return decompose128(decimal128(x))
+}
+
+func decompose64(x decimal64) (neg bool, hi, lo uint64, exp int, ok bool) {
+	kind, neg, c, exp := bid.Unpack64(BID64bits(x))
+	if kind != bid.KindFinite {
+		return false, 0, 0, 0, false
+	}
+	return neg, 0, c, exp, true
+}
+func decompose128(x decimal128) (neg bool, hi, lo uint64, exp int, ok bool) {
+	kind, neg, c, exp := bid.Unpack128(b128(x))
+	if kind != bid.KindFinite {
+		return false, 0, 0, 0, false
+	}
+	return neg, c.Hi, c.Lo, exp, true
+}
+
+// Compose returns (-1)^neg × (hi × 2^64 + lo) × 10^exp rounded to D, to
+// nearest with ties to even, as parsing rounds.
+func Compose[D Decimal](neg bool, hi, lo uint64, exp int) D {
+	var zero D
+	if is64(zero) {
+		return D(compose64(neg, hi, lo, exp))
+	}
+	return D(compose128(neg, hi, lo, exp))
+}
+
+func compose64(neg bool, hi, lo uint64, exp int) decimal64 {
+	b, _ := bid.RoundWide64(neg, bid.Uint128{Hi: hi, Lo: lo}, exp, false, bid.ToNearestEven)
+	return BID64frombits(b)
+}
+func compose128(neg bool, hi, lo uint64, exp int) decimal128 {
+	b, _ := bid.Round128(neg, bid.Uint128{Hi: hi, Lo: lo}, exp, false, bid.ToNearestEven)
+	return d128(b)
 }

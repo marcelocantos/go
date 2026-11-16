@@ -15,7 +15,7 @@ import (
 	"testing"
 )
 
-var convertModes = []bid.Mode{bid.ToNearestEven, bid.ToNearestAway, bid.TowardZero, bid.TowardPositive, bid.TowardNegative}
+var convertModes = []bid.Mode{bid.ToNearestEven, bid.ToNearestAway, bid.TowardZero, bid.AwayFromZero, bid.TowardPositive, bid.TowardNegative}
 
 // TestNarrowAudit is the case found by audit: the 31-digit coefficient
 // 1769609755703054503235303742165 at exponent 167 keeps its first 16 digits,

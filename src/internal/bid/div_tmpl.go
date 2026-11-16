@@ -157,7 +157,7 @@ func divLongW(x, y coefW, mode Mode) coefW {
 		exp := xe - ye - k
 		face := MinExpW < exp && exp <= MaxExpW && exp+PrecisionW-1 >= EminW
 		var rem coefW
-		if face && mode != TowardZero && mode != TowardPositive && mode != TowardNegative {
+		if face && (mode <= ToNearestAway || mode > TowardPositive) {
 			// To nearest, inside the exponent range of roundFaceW's proof:
 			// the dividend is biased by half the divisor, and the quotient
 			// of n + ⌊yc/2⌋ by yc is the quotient of n by yc rounded to

@@ -10,7 +10,7 @@ package bid_test
 // TestAllocs holds one entry per exported function, keyed by its name. Each
 // entry is a closure that calls the function over a set of operands chosen
 // to reach the slow paths as well as the common ones, in every rounding
-// mode (and in a mode outside the five, which behaves as ToNearestEven).
+// mode (and in a mode outside the six, which behaves as ToNearestEven).
 // The operand sets are in allocOperands and the notes there say which slow
 // path each member is for.
 //
@@ -63,7 +63,7 @@ var (
 	asBuf  []byte
 )
 
-// allocModes are the five rounding modes and one outside them.
+// allocModes are the six rounding modes and one outside them.
 var allocModes = append([]bid.Mode{7}, allModes...)
 
 // exportedAPI returns the sorted names of the exported functions and the
@@ -428,6 +428,8 @@ func allocCases() map[string]func() {
 		"RoundToIntegral128": eachMode(all128, func(x bid.Uint128, m bid.Mode) { asU128 = bid.RoundToIntegral128(x, m) }),
 		"Quantize64":         pairsMode(all64, func(x, y uint64, m bid.Mode) { asU64 ^= bid.Quantize64(x, y, m) }),
 		"Quantize128":        pairsMode(all128, func(x, y bid.Uint128, m bid.Mode) { asU128 = bid.Quantize128(x, y, m) }),
+		"QuoQuantize64":      triplesMode(core64, func(x, y, q uint64, m bid.Mode) { asU64 ^= bid.QuoQuantize64(x, y, q, m) }),
+		"QuoQuantize128":     triplesMode(core128, func(x, y, q bid.Uint128, m bid.Mode) { asU128 = bid.QuoQuantize128(x, y, q, m) }),
 		"Reduce64":           each(all64, func(x uint64) { asU64 ^= bid.Reduce64(x) }),
 		"Reduce128":          each(all128, func(x bid.Uint128) { asU128 = bid.Reduce128(x) }),
 		"SameQuantum64":      pairs(all64, func(x, y uint64) { asBool = bid.SameQuantum64(x, y) }),
@@ -448,6 +450,18 @@ func allocCases() map[string]func() {
 							x, st := bid.Round64(c&1 != 0, c, e, sticky, m)
 							asU64, asSt = x, asSt|st
 							x, st = bid.Round64(c&1 == 0, c, e, sticky, m)
+							asU64, asSt = x, asSt|st
+						}
+					}
+				}
+			}
+		},
+		"RoundWide64": func() {
+			for _, c := range roundCoeffs128 {
+				for _, e := range roundExps {
+					for _, sticky := range []bool{false, true} {
+						for _, m := range allocModes {
+							x, st := bid.RoundWide64(c.Lo&1 != 0, c, e, sticky, m)
 							asU64, asSt = x, asSt|st
 						}
 					}

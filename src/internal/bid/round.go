@@ -4,18 +4,24 @@
 
 package bid
 
-// Mode is a rounding-direction attribute (IEEE 754-2019 clause 4.3). The
-// five values are the five attributes of the standard; a Mode outside them
-// behaves as ToNearestEven. The language operators use ToNearestEven only.
-// See "Rounding modes" in the package documentation.
+// Mode is a rounding direction. Five of the six values are the
+// rounding-direction attributes of IEEE 754-2019 (clause 4.3); AwayFromZero
+// is the round-up direction of the General Decimal Arithmetic
+// specification, which rounds every inexact magnitude up. A Mode outside the
+// six behaves as ToNearestEven. The values and their order are those of
+// math/big's RoundingMode, and math/decimal's RoundingMode shares them,
+// which the compiler relies on when it passes a mode through unchanged. The
+// language operators use ToNearestEven only. See "Rounding modes" in the
+// package documentation.
 type Mode uint8
 
 const (
 	ToNearestEven  Mode = iota // roundTiesToEven (clause 4.3.1)
 	ToNearestAway              // roundTiesToAway (clause 4.3.1)
 	TowardZero                 // roundTowardZero (clause 4.3.2)
-	TowardPositive             // roundTowardPositive (clause 4.3.2)
+	AwayFromZero               // round-up of the General Decimal Arithmetic
 	TowardNegative             // roundTowardNegative (clause 4.3.2)
+	TowardPositive             // roundTowardPositive (clause 4.3.2)
 )
 
 // Status reports the conditions met by a conversion: from a character
@@ -87,6 +93,13 @@ func Round64(neg bool, coeff uint64, exp int, sticky bool, mode Mode) (uint64, S
 	return roundParts64(neg, wide64{Lo: coeff}, exp, sticky, mode)
 }
 
+// RoundWide64 is Round64 for a coefficient of up to 128 bits, which may hold
+// more digits than a uint64: the parts of a decimal128 or of an
+// arbitrary-precision value rounded to decimal64 in one step.
+func RoundWide64(neg bool, coeff Uint128, exp int, sticky bool, mode Mode) (uint64, Status) {
+	return roundParts64(neg, coeff, exp, sticky, mode)
+}
+
 // Round128 is Round64 for decimal128. The coefficient may be any Uint128.
 func Round128(neg bool, coeff Uint128, exp int, sticky bool, mode Mode) (Uint128, Status) {
 	return roundParts128(neg, wide128{Lo: coeff}, exp, sticky, mode)
@@ -102,7 +115,7 @@ func Round128(neg bool, coeff Uint128, exp int, sticky bool, mode Mode) (Uint128
 // rounded up by one unit in its last place and 0 if not: class is the
 // class of the discarded part (never classZero; an exact value is not
 // rounded), odd the parity of the truncated coefficient and neg the sign of
-// the value (IEEE 754-2019 clause 4.3). A Mode outside the five behaves as
+// the value (IEEE 754-2019 clause 4.3). A Mode outside the six behaves as
 // ToNearestEven, as the contract says, which is why that mode is the
 // default case and not a named one.
 //
@@ -119,6 +132,8 @@ func roundInc(class digitClass, mode Mode, neg, odd bool) uint64 {
 		return uint64(class >> 1)
 	case TowardZero:
 		return 0
+	case AwayFromZero:
+		return 1
 	case TowardPositive:
 		return b2u(!neg)
 	case TowardNegative:

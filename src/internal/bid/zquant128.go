@@ -137,6 +137,101 @@ func quantizeLong128(x, y coef128, mode Mode) coef128 {
 	return r
 }
 
+// quoQuantize128 returns x / y rounded once, in mode, to the exponent of q: the
+// exact quotient quantized, with no rounding to the precision first. The
+// result has the exponent of q, as Quantize's does, or is the canonical NaN
+// when the rounded coefficient at that exponent has more than Precision128
+// digits. The special cases are those of dividing and then quantizing:
+// Inf / Inf, 0 / 0 and a finite non-zero x / 0 quantized to a finite q are
+// invalid; x / Inf is a zero, which a finite q gives its exponent; and a
+// finite quotient quantized to an infinite q is invalid. A NaN operand
+// gives the NaN result of nan128(x, y, q), as for FMA.
+//
+// The finite case divides once. With s = Q(x) - Q(y) - Q(q), the
+// coefficient at the exponent of q is xc × 10^s / yc. For s >= 0 the
+// dividend is scaled up by s places: if xc × 10^s / yc is at least
+// 10^Precision128, which the digit counts decide before any multiply
+// (xc × 10^s >= 10^(dx-1+s) and yc < 10^dy), the result does not fit;
+// otherwise s <= Precision128 + dy - dx, the scaled dividend has at most
+// 2×Precision128 digits and the quotient at most Precision128+1, the bounds of
+// cMulPow10Full128 and cDivFull128. For s < 0 the divisor is scaled up by
+// t = -s places instead: if t > dx - dy + 1 the quotient is below a tenth,
+// a zero with a fraction below one half; otherwise yc × 10^t has at most
+// dx + 1 <= Precision128+1 digits and fits a coefficient. Either way the
+// remainder is exact and so is the class of the discarded fraction, rem
+// against the divisor less rem, which round128 takes at face value at the
+// fixed exponent, its floor, as Quantize's rounding does. A quotient that
+// rounds to 10^Precision128, or that had Precision128+1 digits, comes back one
+// place up, which is the NaN of a coefficient that does not fit; at the
+// largest exponent it overflows instead, and in a directed mode round128 then
+// delivers the largest finite value, at that very exponent, so the
+// overflow is tested as well as the exponent.
+func quoQuantize128(x, y, q coef128, mode Mode) coef128 {
+	xneg, xc, xe, xok := unpackFirst128(x)
+	xk := KindFinite
+	if !xok {
+		xk, xneg, xc, xe = unpackRest128(x)
+	}
+	yneg, yc, ye, yok := unpackFirst128(y)
+	yk := KindFinite
+	if !yok {
+		yk, yneg, yc, ye = unpackRest128(y)
+	}
+	qk, e := kindExp128(q)
+	neg := xneg != yneg
+	switch {
+	case xk == KindNaN || yk == KindNaN || qk == KindNaN:
+		return nan128(x, y, q)
+	case xk == KindInf && yk == KindInf:
+		return cNaN128()
+	case xk == KindInf:
+		if qk == KindInf {
+			return cInf128(neg)
+		}
+		return cNaN128()
+	case yk == KindInf:
+		if qk == KindInf {
+			return cNaN128()
+		}
+		r, _ := round128(neg, wide128{}, e, classZero, mode, e)
+		return r
+	case cIsZero128(yc):
+		if !cIsZero128(xc) && qk == KindInf {
+			return cInf128(neg)
+		}
+		return cNaN128()
+	case qk == KindInf:
+		return cNaN128()
+	case cIsZero128(xc):
+		r, _ := round128(neg, wide128{}, e, classZero, mode, e)
+		return r
+	}
+	dx, dy := cDigits128(xc), cDigits128(yc)
+	var c, rem, d coef128
+	class := classZero
+	if s := xe - ye - e; s >= 0 {
+		if dx-1+s-dy >= Precision128 {
+			return cNaN128()
+		}
+		c, rem = cDivFull128(cMulPow10Full128(xc, s), yc)
+		d = yc
+	} else if t := -s; t > dx-dy+1 {
+		class = classBelowHalf
+	} else {
+		d = cMulPow10128(yc, t)
+		c, rem = cDivFull128(wide128{Lo: xc}, d)
+	}
+	if !cIsZero128(rem) {
+		other, _ := cSub128(d, rem)
+		class = cClass128(rem, other)
+	}
+	r, st := round128(neg, wide128{Lo: c}, e, class, mode, e)
+	if rk, re := kindExp128(r); st&Overflow != 0 || rk != KindFinite || re != e {
+		return cNaN128()
+	}
+	return r
+}
+
 // reduce128 returns the member of the cohort of x with the fewest coefficient
 // digits: the trailing zeros of the coefficient are removed and the exponent
 // raised to match, as far as MaxExp128 allows. A zero becomes a zero of its

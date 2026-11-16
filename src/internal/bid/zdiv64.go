@@ -148,7 +148,7 @@ func divLong64(x, y coef64, mode Mode) coef64 {
 		exp := xe - ye - k
 		face := MinExp64 < exp && exp <= MaxExp64 && exp+Precision64-1 >= Emin64
 		var rem coef64
-		if face && mode != TowardZero && mode != TowardPositive && mode != TowardNegative {
+		if face && (mode <= ToNearestAway || mode > TowardPositive) {
 			// To nearest, inside the exponent range of roundFace64's proof:
 			// the dividend is biased by half the divisor, and the quotient
 			// of n + ⌊yc/2⌋ by yc is the quotient of n by yc rounded to

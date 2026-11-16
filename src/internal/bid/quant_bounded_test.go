@@ -38,14 +38,14 @@ func TestQuantizeBoundaries(t *testing.T) {
 								continue
 							}
 							y := f.encode(value{kind: finite, coeff: big.NewInt(1), exp: target})
-							for m := bid.Mode(0); m <= 5; m++ {
+							for m := bid.Mode(0); m <= 6; m++ {
 								got, want := (kernel{}).quantize(f, x, y, m), (reference{}).quantize(f, x, y, m)
 								if got != want {
 									t.Fatalf("quantize %x to %x mode %d: got %x, want %x", x, y, m, got, want)
 								}
 							}
 						}
-						for m := bid.Mode(0); m <= 5; m++ {
+						for m := bid.Mode(0); m <= 6; m++ {
 							got, want := (kernel{}).roundToIntegral(f, x, m), (reference{}).roundToIntegral(f, x, m)
 							if got != want {
 								t.Fatalf("integral %x mode %d: got %x, want %x", x, m, got, want)

@@ -19,7 +19,7 @@ import (
 // conversions") and is checked, in addition, against the reference model
 // in every mode. The differential test TestKernel covers the bulk.
 
-var allModes = []bid.Mode{bid.ToNearestEven, bid.ToNearestAway, bid.TowardZero, bid.TowardPositive, bid.TowardNegative}
+var allModes = []bid.Mode{bid.ToNearestEven, bid.ToNearestAway, bid.TowardZero, bid.AwayFromZero, bid.TowardPositive, bid.TowardNegative}
 
 // decimalOf returns the encoding of (-1)^neg × coeff × 10^exp in f.
 func decimalOf(f *format, neg bool, coeff string, exp int) bits {

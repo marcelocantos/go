@@ -11,6 +11,11 @@
 // explicit mode, the quantum of a value, and reading and writing the payload
 // of a NaN.
 //
+// For fixed-scale arithmetic, such as money in cents, it adds what IEEE 754
+// leaves out: the AwayFromZero rounding mode, division rounded once to a
+// quantum ([QuoQuantize]), and taking a value apart into its coefficient and
+// exponent and putting it back together ([Decompose] and [Compose]).
+//
 // It also provides the square root, the powers, the exponential and the
 // logarithms. Those are correctly rounded: each returns the value of its
 // type nearest to the exact result, with ties to even. They are slower
@@ -44,17 +49,48 @@ const (
 )
 
 // A RoundingMode determines how a result that is not exactly representable
-// is rounded. The operators always round to nearest, ties to even.
+// is rounded. The operators always round to nearest, ties to even. The
+// modes, their names and their values are those of math/big's
+// RoundingMode.
 type RoundingMode byte
 
-// The rounding modes of IEEE 754-2019.
+// The rounding modes: the five of IEEE 754-2019, and AwayFromZero, which
+// rounds every inexact magnitude up ("round up to the next cent").
 const (
 	ToNearestEven RoundingMode = iota // to nearest, ties to even
 	ToNearestAway                     // to nearest, ties away from zero
 	ToZero                            // toward zero
-	ToPositiveInf                     // toward +Inf
+	AwayFromZero                      // away from zero
 	ToNegativeInf                     // toward -Inf
+	ToPositiveInf                     // toward +Inf
 )
+
+// String returns the name of the mode, as math/big's RoundingMode does.
+func (m RoundingMode) String() string {
+	switch m {
+	case ToNearestEven:
+		return "ToNearestEven"
+	case ToNearestAway:
+		return "ToNearestAway"
+	case ToZero:
+		return "ToZero"
+	case AwayFromZero:
+		return "AwayFromZero"
+	case ToNegativeInf:
+		return "ToNegativeInf"
+	case ToPositiveInf:
+		return "ToPositiveInf"
+	}
+	return "RoundingMode(" + itoa(int(m)) + ")"
+}
+
+// itoa formats a small non-negative integer; the package does not import strconv.
+func itoa(n int) string {
+	if n < 10 {
+		return string(rune('0' + n))
+	}
+	return itoa(n/10) + string(rune('0'+n%10))
+}
 
 // NaN returns an IEEE 754 "not-a-number" value of type D.
 func NaN[D Decimal]() D { return impl.NaN[D]() }
@@ -181,6 +217,58 @@ func Quantize[D Decimal](x, y D) D { return impl.Quantize[D](x, y) }
 // QuantizeMode(x, 0.01, ToNearestAway) rounds half a cent up in magnitude.
 func QuantizeMode[D Decimal](x, y D, mode RoundingMode) D {
 	return impl.QuantizeMode[D](x, y, impl.RoundingMode(mode))
+}
+
+// QuoQuantize returns x / y rounded once, in the given mode, to the quantum
+// of q: the result has the exponent of q and the value closest to the exact
+// quotient with that exponent, in that mode. QuoQuantize(x, 12, 0.01,
+// ToNearestAway) divides by twelve and rounds half a cent up in magnitude.
+//
+// It differs from QuantizeMode(x/y, q, mode) by rounding once. The operator
+// rounds the quotient to the precision of D first, and that rounding can
+// move it onto the half the second rounding decides: in decimal64,
+// 2.009999999999999 / 2 is 1.0049999999999995, which the operator rounds to
+// 1.005000000000000 and QuantizeMode then rounds half up to 1.01, while
+// QuoQuantize rounds the exact quotient to 1.00. With q = 1 and mode ToZero
+// it is integer division: QuoQuantize(17, 5, 1, ToZero) is 3.
+//
+// The sign and coefficient of q are ignored. Special cases are those of
+// dividing and then quantizing:
+//
+//	QuoQuantize(x, y, q, mode) = NaN, if the result does not fit the format
+//	QuoQuantize(±Inf, ±Inf, q, mode) = NaN
+//	QuoQuantize(0, 0, q, mode) = NaN
+//	QuoQuantize(x, 0, q, mode) = NaN, for finite x != 0 and finite q
+//	QuoQuantize(x, 0, ±Inf, mode) = ±Inf, for finite x != 0
+//	QuoQuantize(±Inf, y, ±Inf, mode) = ±Inf, for finite y
+//	QuoQuantize(±Inf, y, q, mode) = NaN, for finite y and finite q
+//	QuoQuantize(x, ±Inf, q, mode) = ±0 with the exponent of q, for finite x and finite q
+//	QuoQuantize(x, y, ±Inf, mode) = NaN, for a finite quotient
+//	QuoQuantize(x, y, q, mode) = NaN, if x, y or q is a NaN
+func QuoQuantize[D Decimal](x, y, q D, mode RoundingMode) D {
+	return impl.QuoQuantize[D](x, y, q, impl.RoundingMode(mode))
+}
+
+// Decompose returns the sign, coefficient and exponent of a finite x, so
+// that x = (-1)^neg × (hi × 2^64 + lo) × 10^exp, and ok true. The
+// coefficient has at most 16 digits for a decimal64, whose hi is always
+// zero, and at most 34 for a decimal128. The exponent is that of x's last
+// digit, so Decompose(1.50) is 150 and -2, the parts of a SQL NUMERIC, an
+// Arrow or BSON decimal, or a coefficient and scale in another library. A
+// zero keeps its sign and exponent. For an infinity or a NaN, Decompose
+// returns zeros and ok false.
+func Decompose[D Decimal](x D) (neg bool, hi, lo uint64, exp int, ok bool) {
+	return impl.Decompose[D](x)
+}
+
+// Compose returns the value of type D nearest to (-1)^neg × (hi × 2^64 + lo)
+// × 10^exp, with ties to even, as parsing the same digits does: a
+// coefficient with more digits than D holds is rounded once, a value too
+// large is an infinity and one too small rounds to a subnormal or zero. An
+// exact value keeps exp as its exponent, so Compose of the parts that
+// Decompose returns gives back every finite canonical x of type D.
+func Compose[D Decimal](neg bool, hi, lo uint64, exp int) D {
+	return impl.Compose[D](neg, hi, lo, exp)
 }
 
 // SameQuantum reports whether x and y have the same quantum, the exponent of

@@ -232,7 +232,7 @@ func addLongW(x, y coefW, mode Mode) coefW {
 				// To nearest there is nothing to decide: X + f rounds
 				// down to X and (X - 1) + (1 - f) up to X, whatever the
 				// parity, and 10^PrecisionW is roundFaceW's carry.
-				if mode != TowardZero && mode != TowardPositive && mode != TowardNegative {
+				if mode <= ToNearestAway || mode > TowardPositive {
 					return roundFaceW(xneg, near, xe-m, classZero, mode)
 				}
 				return roundFaceW(xneg, p, xe-m, class, mode)
@@ -324,7 +324,7 @@ func addLongW(x, y coefW, mode Mode) coefW {
 // q has PrecisionW digits, so roundW's place of the result is exp itself:
 // it pads nothing, discards no digit of q, and its class is the caller's.
 // Its decision is then roundInc(class, mode, neg, odd(q)), the one row of
-// the five-mode table this function takes, ties included: a swamped
+// the six-mode table this function takes, ties included: a swamped
 // addend's class is never classHalf, the others' may be, and roundInc
 // decides a tie as roundW would. The class is never classZero: roundInc
 // takes an inexact value, and an exact one goes to roundW. An increment of

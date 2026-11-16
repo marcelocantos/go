@@ -723,6 +723,8 @@ func vecMode(name string) (bid.Mode, bool) {
 		return bid.ToNearestAway, true
 	case "down":
 		return bid.TowardZero, true
+	case "up":
+		return bid.AwayFromZero, true
 	case "ceiling":
 		return bid.TowardPositive, true
 	case "floor":
@@ -3080,6 +3082,8 @@ rounding: ceiling
 t010 divide 1 3 -> 0.3333333333333334 Inexact Rounded
 rounding: up
 t011 divide 1 3 -> 0.3333333333333334 Inexact Rounded
+rounding: 05up
+t016 divide 1 3 -> 0.3333333333333333 Inexact Rounded
 rounding: half_even
 t013 add 1 2 -> 4
 t014 comparetotal -NaN NaN -> -1
@@ -3091,8 +3095,8 @@ t012 add 1 2 -> 3
 	if err := parseDecTest(strings.NewReader(src), "self.decTest", func(v *decVector) { got = append(got, v) }); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 15 {
-		t.Fatalf("parsed %d vectors, want 15", len(got))
+	if len(got) != 16 {
+		t.Fatalf("parsed %d vectors, want 16", len(got))
 	}
 	if v := got[1]; v.id != "t002" || v.op != "add" || len(v.args) != 2 || v.args[0] != "1.50" || v.args[1] != "2.5" || v.result != "4.00" {
 		t.Errorf("t002 parsed as %+v", v)
@@ -3117,7 +3121,8 @@ t012 add 1 2 -> 3
 		"t008": "op: non-IEEE operation",
 		"t009": "operand: outside the contract's numeral grammar",
 		"t010": "pass",
-		"t011": "context: rounding mode outside the contract",
+		"t011": "pass", // decTest's up is AwayFromZero
+		"t016": "context: rounding mode outside the contract",
 		"t012": "context: precision not 16 or 34",
 		"t013": "fail", // a wrong expectation must fail, not skip
 		"t014": "pass", "t015": "pass",

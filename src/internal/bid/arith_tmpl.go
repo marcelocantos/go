@@ -257,7 +257,7 @@ func roundFiniteW(neg bool, c coefW, exp int, mode Mode, floor int) (coefW, digi
 
 // roundW is the general rounding routine of the package. Together with
 // its bounded-coefficient helper roundFiniteW, it is the only way an
-// operation produces a rounded result under each of the five modes, but
+// operation produces a rounded result under each of the six modes, but
 // for the face-value rounding of addW's swamped addend, roundFaceW in
 // add_tmpl.go (see "Face-value rounding" in the package documentation),
 // which takes the one step of this routine that such an input reaches.

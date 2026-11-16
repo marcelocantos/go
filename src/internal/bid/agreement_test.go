@@ -44,14 +44,20 @@ func opsFromImpl(im impl) conformanceOps {
 		RoundToIntegral128: func(x bid.Uint128, m bid.Mode) bid.Uint128 { return im.roundToIntegral(d128, x, m) },
 		Quantize64:         func(x, y uint64, m bid.Mode) uint64 { return im.quantize(d64, lo(x), lo(y), m).Lo },
 		Quantize128:        func(x, y bid.Uint128, m bid.Mode) bid.Uint128 { return im.quantize(d128, x, y, m) },
-		Reduce64:           func(x uint64) uint64 { return im.reduce(d64, lo(x)).Lo },
-		Reduce128:          func(x bid.Uint128) bid.Uint128 { return im.reduce(d128, x) },
-		SameQuantum64:      func(x, y uint64) bool { return im.sameQuantum(d64, lo(x), lo(y)) },
-		SameQuantum128:     func(x, y bid.Uint128) bool { return im.sameQuantum(d128, x, y) },
-		Min64:              func(x, y uint64) uint64 { return im.min(d64, lo(x), lo(y)).Lo },
-		Max64:              func(x, y uint64) uint64 { return im.max(d64, lo(x), lo(y)).Lo },
-		Min128:             func(x, y bid.Uint128) bid.Uint128 { return im.min(d128, x, y) },
-		Max128:             func(x, y bid.Uint128) bid.Uint128 { return im.max(d128, x, y) },
+		QuoQuantize64: func(x, y, q uint64, m bid.Mode) uint64 {
+			return im.quoQuantize(d64, lo(x), lo(y), lo(q), m).Lo
+		},
+		QuoQuantize128: func(x, y, q bid.Uint128, m bid.Mode) bid.Uint128 {
+			return im.quoQuantize(d128, x, y, q, m)
+		},
+		Reduce64:       func(x uint64) uint64 { return im.reduce(d64, lo(x)).Lo },
+		Reduce128:      func(x bid.Uint128) bid.Uint128 { return im.reduce(d128, x) },
+		SameQuantum64:  func(x, y uint64) bool { return im.sameQuantum(d64, lo(x), lo(y)) },
+		SameQuantum128: func(x, y bid.Uint128) bool { return im.sameQuantum(d128, x, y) },
+		Min64:          func(x, y uint64) uint64 { return im.min(d64, lo(x), lo(y)).Lo },
+		Max64:          func(x, y uint64) uint64 { return im.max(d64, lo(x), lo(y)).Lo },
+		Min128:         func(x, y bid.Uint128) bid.Uint128 { return im.min(d128, x, y) },
+		Max128:         func(x, y bid.Uint128) bid.Uint128 { return im.max(d128, x, y) },
 
 		Round64: func(neg bool, c uint64, exp int, sticky bool, m bid.Mode) (uint64, bid.Status) {
 			x, st := im.round(d64, neg, bid.Uint128{Lo: c}, exp, sticky, m)
@@ -59,6 +65,10 @@ func opsFromImpl(im impl) conformanceOps {
 		},
 		Round128: func(neg bool, c bid.Uint128, exp int, sticky bool, m bid.Mode) (bid.Uint128, bid.Status) {
 			return im.round(d128, neg, c, exp, sticky, m)
+		},
+		RoundWide64: func(neg bool, c bid.Uint128, exp int, sticky bool, m bid.Mode) (uint64, bid.Status) {
+			x, st := im.roundWide64(neg, c, exp, sticky, m)
+			return x.Lo, st
 		},
 
 		Equal64:       func(x, y uint64) bool { return im.equal(d64, lo(x), lo(y)) },

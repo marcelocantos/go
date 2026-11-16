@@ -337,6 +337,10 @@ func quantizeLong64(x, y coef64, mode Mode) coef64 {
 	return *new(coef64)
 }
 
+func quoQuantize64(x, y, q coef64, mode Mode) coef64 {
+	return *new(coef64)
+}
+
 func reduce64(x coef64) coef64 {
 	return *new(coef64)
 }
@@ -358,6 +362,10 @@ func quantize128(x, y coef128, mode Mode) coef128 {
 }
 
 func quantizeLong128(x, y coef128, mode Mode) coef128 {
+	return *new(coef128)
+}
+
+func quoQuantize128(x, y, q coef128, mode Mode) coef128 {
 	return *new(coef128)
 }
 

@@ -287,7 +287,7 @@ func TestDivExactQuotients(t *testing.T) {
 			}
 			xb := f.encode(value{kind: finite, neg: g.r.IntN(2) == 0, coeff: x, exp: xe})
 			yb := f.encode(value{kind: finite, neg: g.r.IntN(2) == 0, coeff: y, exp: ye})
-			for m := bid.Mode(0); m < 5; m++ {
+			for m := bid.Mode(0); m < 6; m++ {
 				got := kernel{}.div(f, xb, yb, m)
 				if want := (reference{}).div(f, xb, yb, m); got != want {
 					t.Errorf("Div%d(%s, %s, %s) = %s, reference %s", f.width, display(f, xb), display(f, yb), modeName(m), display(f, got), display(f, want))
@@ -352,7 +352,7 @@ func FuzzDiv64(f *testing.F) {
 	seed("Infinity", "1")
 	f.Add(uint64(0x6c77ffffffffffff), uint64(0x6c7386f26fc10000))
 	f.Fuzz(func(t *testing.T, x, y uint64) {
-		for m := bid.Mode(0); m < 6; m++ {
+		for m := bid.Mode(0); m < 7; m++ {
 			got := bid.Div64(x, y, m)
 			want := reference{}.div(dec64, lo(x), lo(y), m)
 			if got != want.Lo {
@@ -379,7 +379,7 @@ func FuzzDiv128(f *testing.F) {
 	f.Add(uint64(0x3041ed09bead87c0), uint64(0x378d8e6400000000), uint64(0x3041ffffffffffff), uint64(0xffffffffffffffff))
 	f.Fuzz(func(t *testing.T, xh, xl, yh, yl uint64) {
 		x, y := bid.Uint128{Hi: xh, Lo: xl}, bid.Uint128{Hi: yh, Lo: yl}
-		for m := bid.Mode(0); m < 6; m++ {
+		for m := bid.Mode(0); m < 7; m++ {
 			got := bid.Div128(x, y, m)
 			want := reference{}.div(dec128, x, y, m)
 			if got != want {

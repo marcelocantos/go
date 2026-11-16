@@ -522,6 +522,13 @@ func benchRowList() benchRows {
 		func(x, y uint64) uint64 { return bid.Quantize64(x, y, rne) },
 		func(x, y bits) bits { return bid.Quantize128(x, y, rne) },
 		(func(x, y float64) float64)(nil))
+	// Division to a quantum: a month's interest, balance × rate / 12 to
+	// the cent, half up.
+	reg3(&rs, "QuoQuantize", "money", fixedOpnds(
+		[3]string{"18375.0000000", "18375.0000000"}, [3]string{"12", "12"}, [3]string{"0.01", "0.01"}, 18375, 12, 0.01),
+		func(x, y, q uint64) uint64 { return bid.QuoQuantize64(x, y, q, bid.ToNearestAway) },
+		func(x, y, q bits) bits { return bid.QuoQuantize128(x, y, q, bid.ToNearestAway) },
+		(func(x, y, z float64) float64)(nil))
 	reg1(&rs, "Reduce", "mixed", mixed, bid.Reduce64, bid.Reduce128, (func(float64) float64)(nil))
 	reg2(&rs, "SameQuantum", "mixed", mixed, bid.SameQuantum64, bid.SameQuantum128, (func(x, y float64) bool)(nil))
 	reg1(&rs, "Quantum", "mixed", mixed, bid.Quantum64, bid.Quantum128, (func(float64) float64)(nil))
@@ -621,14 +628,21 @@ func benchRowList() benchRows {
 		rs.add("Round", "64", c.class, "Round64", func(b *testing.B) {
 			var s uint64
 			for i := 0; i < b.N; i++ {
-				s, _ = bid.Round64(i&1 != 0, c.c64, c.e64, c.sticky, bid.Mode(i%5))
+				s, _ = bid.Round64(i&1 != 0, c.c64, c.e64, c.sticky, bid.Mode(i%6))
 			}
 			benchSink = s
 		})
 		rs.add("Round", "128", c.class, "Round128", func(b *testing.B) {
 			var s bits
 			for i := 0; i < b.N; i++ {
-				s, _ = bid.Round128(i&1 != 0, coeff, c.e128, c.sticky, bid.Mode(i%5))
+				s, _ = bid.Round128(i&1 != 0, coeff, c.e128, c.sticky, bid.Mode(i%6))
+			}
+			benchSink = s
+		})
+		rs.add("RoundWide", "64", c.class, "RoundWide64", func(b *testing.B) {
+			var s uint64
+			for i := 0; i < b.N; i++ {
+				s, _ = bid.RoundWide64(i&1 != 0, coeff, c.e64, c.sticky, bid.Mode(i%6))
 			}
 			benchSink = s
 		})

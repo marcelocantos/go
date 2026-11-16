@@ -295,10 +295,10 @@ func (f *format) largest(neg bool) value {
 	return value{kind: finite, neg: neg, coeff: new(big.Int).Set(f.maxCoeff), exp: f.maxExp}
 }
 
-// normMode maps a Mode outside the five to ToNearestEven, as the contract
+// normMode maps a Mode outside the six to ToNearestEven, as the contract
 // requires.
 func normMode(m bid.Mode) bid.Mode {
-	if m > bid.TowardNegative {
+	if m > bid.TowardPositive {
 		return bid.ToNearestEven
 	}
 	return m
@@ -320,6 +320,8 @@ func roundQuo(num, den *big.Int, neg bool, mode bid.Mode) (*big.Int, bool) {
 	case bid.ToNearestAway:
 		up = new(big.Int).Lsh(r, 1).Cmp(den) >= 0
 	case bid.TowardZero:
+	case bid.AwayFromZero:
+		up = true
 	case bid.TowardPositive:
 		up = !neg
 	case bid.TowardNegative:

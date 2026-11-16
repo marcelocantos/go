@@ -226,6 +226,37 @@ var ops = []opSpec{
 			eval: func(im impl) outcome { return decOut(f, im.quantize(f, x, y, m)) },
 		}
 	}},
+	{name: "QuoQuantize", widths: both, draw: func(g *gen) testCase {
+		f := g.f
+		x, y, q := g.dec(), g.dec(), g.dec()
+		a, b := f.decode(x), f.decode(y)
+		switch {
+		case g.r.IntN(3) == 0:
+			// An exact tie: x / y = (n + 1/2) × 10^e, with y of a few
+			// digits so that x = y × (2n+1) × 5 × 10^(e-1) fits.
+			bc := g.randDigits(1 + g.r.IntN(3))
+			n := g.randDigits(1 + g.r.IntN(f.prec-6))
+			xc := new(big.Int).Mul(bc, new(big.Int).Add(new(big.Int).Lsh(n, 1), bigOne))
+			xc.Mul(xc, big.NewInt(5))
+			e := clamp(g.r.IntN(41)-20, f.minExp+30, f.maxExp-30)
+			be := g.r.IntN(11) - 5
+			x = f.encode(value{kind: finite, neg: g.r.IntN(2) == 0, coeff: xc, exp: be + e - 1})
+			y = f.encode(value{kind: finite, neg: g.r.IntN(2) == 0, coeff: bc, exp: be})
+			q = f.encode(value{kind: finite, coeff: bigOne, exp: e})
+		case a.kind == finite && b.kind == finite && b.coeff.Sign() != 0 && g.r.IntN(4) != 0:
+			// An exponent near the quotient's, where the result fits or
+			// only just fails to: the quotient's leading digit is near
+			// 10^lead, so its coefficient at e has about lead - e digits.
+			lead := a.exp - b.exp + digits(a.coeff) - digits(b.coeff)
+			e := clamp(lead-g.r.IntN(f.prec+3)+1, f.minExp, f.maxExp)
+			q = f.encode(value{kind: finite, neg: g.r.IntN(2) == 0, coeff: g.randDigits(1 + g.r.IntN(3)), exp: e})
+		}
+		m := g.mode()
+		return testCase{
+			args: fmt.Sprintf("%s, %s, %s, %s", display(f, x), display(f, y), display(f, q), modeName(m)),
+			eval: func(im impl) outcome { return decOut(f, im.quoQuantize(f, x, y, q, m)) },
+		}
+	}},
 	unaryDec("Reduce", func(im impl, f *format, x bits) outcome { return decOut(f, im.reduce(f, x)) }),
 	predicate("SameQuantum", impl.sameQuantum),
 	unaryDec("Quantum", func(im impl, f *format, x bits) outcome { return decOut(f, im.quantum(f, x)) }),
@@ -437,6 +468,23 @@ var ops = []opSpec{
 			eval: func(im impl) outcome {
 				x, st := im.round(f, neg, c, exp, sticky, m)
 				return decStOut(f, x, st)
+			},
+		}
+	}},
+	{name: "RoundWide", widths: []*format{dec64}, draw: func(g *gen) testCase {
+		// Round's parts with a coefficient of up to 128 bits, which is
+		// what RoundWide64 adds to Round64: up to 39 digits rounded to
+		// decimal64's 16 in one step.
+		neg, c, exp, sticky := g.parts()
+		if g.r.IntN(2) == 0 {
+			c.Hi = g.r.Uint64() >> g.r.IntN(64)
+		}
+		m := g.mode()
+		return testCase{
+			args: fmt.Sprintf("%t, %s, %d, %t, %s", neg, fromUint128(c), exp, sticky, modeName(m)),
+			eval: func(im impl) outcome {
+				x, st := im.roundWide64(neg, c, exp, sticky, m)
+				return decStOut(dec64, x, st)
 			},
 		}
 	}},

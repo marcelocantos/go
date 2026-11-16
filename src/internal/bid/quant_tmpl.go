@@ -6,7 +6,7 @@
 
 // This file is the template for zquant64.go and zquant128.go: the
 // operations that fix or inspect the exponent of a result rather than
-// compute a new value, namely RoundToIntegral, Quantize, Reduce,
+// compute a new value, namely RoundToIntegral, Quantize, QuoQuantize, Reduce,
 // SameQuantum and Quantum. It is written in the vocabulary of "Width parameterisation"
 // in the package documentation (see arith_tmpl.go for the rules). Nothing
 // here rounds by itself: the first two hand their bounded coefficient to roundFiniteW,
@@ -140,6 +140,101 @@ func quantizeLongW(x, y coefW, mode Mode) coefW {
 		xe = ye
 	}
 	r, _ := roundFiniteW(xneg, xc, xe, mode, ye)
+	return r
+}
+
+// quoQuantizeW returns x / y rounded once, in mode, to the exponent of q: the
+// exact quotient quantized, with no rounding to the precision first. The
+// result has the exponent of q, as Quantize's does, or is the canonical NaN
+// when the rounded coefficient at that exponent has more than PrecisionW
+// digits. The special cases are those of dividing and then quantizing:
+// Inf / Inf, 0 / 0 and a finite non-zero x / 0 quantized to a finite q are
+// invalid; x / Inf is a zero, which a finite q gives its exponent; and a
+// finite quotient quantized to an infinite q is invalid. A NaN operand
+// gives the NaN result of nanW(x, y, q), as for FMA.
+//
+// The finite case divides once. With s = Q(x) - Q(y) - Q(q), the
+// coefficient at the exponent of q is xc × 10^s / yc. For s >= 0 the
+// dividend is scaled up by s places: if xc × 10^s / yc is at least
+// 10^PrecisionW, which the digit counts decide before any multiply
+// (xc × 10^s >= 10^(dx-1+s) and yc < 10^dy), the result does not fit;
+// otherwise s <= PrecisionW + dy - dx, the scaled dividend has at most
+// 2×PrecisionW digits and the quotient at most PrecisionW+1, the bounds of
+// cMulPow10FullW and cDivFullW. For s < 0 the divisor is scaled up by
+// t = -s places instead: if t > dx - dy + 1 the quotient is below a tenth,
+// a zero with a fraction below one half; otherwise yc × 10^t has at most
+// dx + 1 <= PrecisionW+1 digits and fits a coefficient. Either way the
+// remainder is exact and so is the class of the discarded fraction, rem
+// against the divisor less rem, which roundW takes at face value at the
+// fixed exponent, its floor, as Quantize's rounding does. A quotient that
+// rounds to 10^PrecisionW, or that had PrecisionW+1 digits, comes back one
+// place up, which is the NaN of a coefficient that does not fit; at the
+// largest exponent it overflows instead, and in a directed mode roundW then
+// delivers the largest finite value, at that very exponent, so the
+// overflow is tested as well as the exponent.
+func quoQuantizeW(x, y, q coefW, mode Mode) coefW {
+	xneg, xc, xe, xok := unpackFirstW(x)
+	xk := KindFinite
+	if !xok {
+		xk, xneg, xc, xe = unpackRestW(x)
+	}
+	yneg, yc, ye, yok := unpackFirstW(y)
+	yk := KindFinite
+	if !yok {
+		yk, yneg, yc, ye = unpackRestW(y)
+	}
+	qk, e := kindExpW(q)
+	neg := xneg != yneg
+	switch {
+	case xk == KindNaN || yk == KindNaN || qk == KindNaN:
+		return nanW(x, y, q)
+	case xk == KindInf && yk == KindInf:
+		return cNaNW()
+	case xk == KindInf:
+		if qk == KindInf {
+			return cInfW(neg)
+		}
+		return cNaNW()
+	case yk == KindInf:
+		if qk == KindInf {
+			return cNaNW()
+		}
+		r, _ := roundW(neg, wideW{}, e, classZero, mode, e)
+		return r
+	case cIsZeroW(yc):
+		if !cIsZeroW(xc) && qk == KindInf {
+			return cInfW(neg)
+		}
+		return cNaNW()
+	case qk == KindInf:
+		return cNaNW()
+	case cIsZeroW(xc):
+		r, _ := roundW(neg, wideW{}, e, classZero, mode, e)
+		return r
+	}
+	dx, dy := cDigitsW(xc), cDigitsW(yc)
+	var c, rem, d coefW
+	class := classZero
+	if s := xe - ye - e; s >= 0 {
+		if dx-1+s-dy >= PrecisionW {
+			return cNaNW()
+		}
+		c, rem = cDivFullW(cMulPow10FullW(xc, s), yc)
+		d = yc
+	} else if t := -s; t > dx-dy+1 {
+		class = classBelowHalf
+	} else {
+		d = cMulPow10W(yc, t)
+		c, rem = cDivFullW(wideW{Lo: xc}, d)
+	}
+	if !cIsZeroW(rem) {
+		other, _ := cSubW(d, rem)
+		class = cClassW(rem, other)
+	}
+	r, st := roundW(neg, wideW{Lo: c}, e, class, mode, e)
+	if rk, re := kindExpW(r); st&Overflow != 0 || rk != KindFinite || re != e {
+		return cNaNW()
+	}
 	return r
 }
 
