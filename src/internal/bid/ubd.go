@@ -114,10 +114,54 @@ const (
 	MaxPayload128Lo uint64 = 0x38C15B09FFFFFFFF
 )
 
-// The kernel's entries that the compiler calls directly on a target whose
-// decimal128 memory form is UBD: each converts its operands to BID, calls
-// the BID entry and converts the result back, so that the code at each call
-// site passes and receives the stored words unchanged.
+// # The UBD kernel contract
+//
+// On a target whose decimal128 memory form is UBD, the compiler's decimal128
+// operators call the entries below, and no other entry of this package that
+// takes an encoded decimal128, for every operand pair their inline fast
+// paths do not decide (cmd/compile/internal/ssagen, initBIDKernelSyms). They
+// receive and return the stored words unchanged, a decimal128 as its two
+// words, high first. Their names and signatures are a contract with the
+// compiler and stay fixed; what lies behind them may change. Today each
+// converts its operands to BID, calls the BID entry of the same name without
+// the ubd prefix and converts the result back. A kernel that works on UBD
+// itself replaces those bodies and nothing else.
+//
+// Each entry meets these rules, which TestUBDKernel checks:
+//
+//   - Operands. Every 128-bit pattern is accepted and read as BIDFromUBD128
+//     reads it: a coefficient above MaxCoeff128 is a zero, a NaN payload of
+//     10^33 or more is a zero payload, and a pattern with neither the
+//     special tag nor a qExp in [MinExp128, MaxExp128] is a positive quiet
+//     NaN with a zero payload. No operation produces those patterns, but
+//     the inline paths pass whatever is in memory through unchanged.
+//   - Modes. Every Mode is accepted; one outside the six behaves as
+//     ToNearestEven.
+//   - Values. The result is that of the exported BID function on the
+//     operands' BID encodings, converted to UBD:
+//
+//     ubdAddSlow128, ubdAddLong128            Add128
+//     ubdMulSlow128, ubdMulLong128            Mul128
+//     ubdDiv128                               Div128
+//     ubdQuantizeSlow128, ubdQuantizeLong128  Quantize128
+//     ubdRoundToIntegral128                   RoundToIntegral128
+//     ubdQuietCmpSlow128                      Compare128 (c and ok as they are)
+//
+//     The compiler calls the Long entry of a pair when both coefficients fit
+//     one word, but it accepts every operand and gives the Slow entry's
+//     result.
+//   - Results. Every decimal128 result is canonical UBD: a fixed point of
+//     UBDFromBID128(BIDFromUBD128(r)). A finite result has qExp in range and
+//     a coefficient at most MaxCoeff128, an infinity has no bits but its
+//     tag and sign, and a NaN's payload is below 10^33.
+//   - Subtraction. There is no subtraction entry. The compiler calls an add
+//     entry with the sign of y, bit 113, flipped unless y has the NaN tag
+//     (hi>>59 == UBDNaNTag), so that x - y is Sub128's result and a NaN y
+//     keeps its sign.
+//
+// cCmpFinite128, which the compiler also calls, takes operands it has
+// already decoded, so it does not depend on the encoding and is outside this
+// contract.
 
 func ubdAddSlow128(x, y Uint128, mode Mode) Uint128 {
 	return UBDFromBID128(addSlow128(BIDFromUBD128(x), BIDFromUBD128(y), mode))

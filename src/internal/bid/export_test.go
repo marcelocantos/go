@@ -149,6 +149,19 @@ var (
 	SubSlow64          = subSlow64
 )
 
+// The UBD kernel entries the compiler calls (ubd.go).
+var (
+	UBDAddLong128         = ubdAddLong128
+	UBDAddSlow128         = ubdAddSlow128
+	UBDDiv128             = ubdDiv128
+	UBDMulLong128         = ubdMulLong128
+	UBDMulSlow128         = ubdMulSlow128
+	UBDQuantizeLong128    = ubdQuantizeLong128
+	UBDQuantizeSlow128    = ubdQuantizeSlow128
+	UBDQuietCmpSlow128    = ubdQuietCmpSlow128
+	UBDRoundToIntegral128 = ubdRoundToIntegral128
+)
+
 // Recip10tab64 and Recip10tab128 return entry k of the reciprocal tables.
 func Recip10tab64(k int) (m uint64, s uint) {
 	return recip10tab64[k].m, uint(recip10tab64[k].s)

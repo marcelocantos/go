@@ -25,7 +25,7 @@ const NativeDPD = NativeEncoding == EncodingDPD
 // decimal128 is stored in the UBD layout (ubd.go), whose all-bits-clear
 // pattern is already +0E+0, so its mask is zero.
 const (
-	NativeZero64    = Zero64
+	NativeZero64           = Zero64
 	NativeZero128Hi uint64 = 0
 )
 
