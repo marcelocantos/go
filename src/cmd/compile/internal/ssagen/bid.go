@@ -260,9 +260,14 @@ func (s *state) ubdAddFast(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value
 	coeffs := s.newValue2(ssaop.OpAdd64, u64, s.newValue2(ssaop.OpSub64, u64, xh, yh), s.newValue2(ssaop.OpAdd64, u64, ych, ych))
 	fits := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpRsh64Ux64, u64, coeffs, s.constInt64(u64, 48)), zero)
 
+	// Which levels this call site gets: level 2 the first, level 3 both,
+	// level 4 the first for x + y and the second for x - y, the effective
+	// operation of the common case, values of one sign.
+	level := base.Debug.UBDCallOnly
+	first := level == 2 || level == 3 || level == 4 && op == ir.OADD
+	second := level == 3 || level == 4 && op == ir.OSUB
 	bSlow := s.f.NewBlock(block.BlockPlain)
 	bAfter := s.f.NewBlock(block.BlockPlain)
-	second := base.Debug.UBDCallOnly >= 3
 	bOpposite := bSlow
 	if second {
 		bOpposite = s.f.NewBlock(block.BlockPlain)
@@ -276,19 +281,24 @@ func (s *state) ubdAddFast(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value
 		b.AddEdgeTo(fail)
 		s.startBlock(next)
 	}
-	guard(same, bOpposite)
-	guard(fits, bSlow)
-	sum := s.newValue3(ssaop.OpAdd64carry, types.NewTuple(u64, u64), xl, yl, zero)
-	lo, carry := s.newValue1(ssaop.OpSelect0, u64, sum), s.newValue1(ssaop.OpSelect1, u64, sum)
-	hi := s.newValue1(ssaop.OpSelect0, u64, s.newValue3(ssaop.OpAdd64carry, types.NewTuple(u64, u64), xh, ych, carry))
-	s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, hi)
-	s.endBlock().AddEdgeTo(bAfter)
+	var lo, hi *ssa.Value
+	if first {
+		guard(same, bOpposite)
+		guard(fits, bSlow)
+		sum := s.newValue3(ssaop.OpAdd64carry, types.NewTuple(u64, u64), xl, yl, zero)
+		lo2, carry := s.newValue1(ssaop.OpSelect0, u64, sum), s.newValue1(ssaop.OpSelect1, u64, sum)
+		hi2 := s.newValue1(ssaop.OpSelect0, u64, s.newValue3(ssaop.OpAdd64carry, types.NewTuple(u64, u64), xh, ych, carry))
+		s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, lo2, hi2)
+		s.endBlock().AddEdgeTo(bAfter)
+	} else {
+		s.endBlock().AddEdgeTo(bOpposite)
+	}
 
 	if second {
 		s.startBlock(bOpposite)
-		// Equal qExp (the top 14 bits); the signs differ, or the test above
-		// would have passed.
-		guard(s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpRsh64Ux64, u64, differ, s.constInt64(u64, bid.UBDExpShift)), zero), bSlow)
+		// Equal qExp and opposite signs: the top 15 bits differ in the
+		// sign bit alone.
+		guard(s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpRsh64Ux64, u64, differ, s.constInt64(u64, bid.UBDExpShift-1)), s.constInt64(u64, 1)), bSlow)
 		top := s.constInt64(u64, 1<<48)
 		guard(s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpOr64, u64, xh, yh), top), zero), bSlow)
 		d := s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), xl, yl, zero)
