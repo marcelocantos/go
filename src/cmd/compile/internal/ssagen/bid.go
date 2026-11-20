@@ -215,6 +215,58 @@ func bidCallOnly(x *ssa.Value) bool {
 	return base.Debug.UBDCallOnly != 0 && x.Type.Kind() == types.TDECIMAL128 && bidKernelDirect()
 }
 
+// ubdAddFirstLevel lowers x + y or x - y on decimal128 to the first-level
+// fast path of decimal128-go's add (d128_add_rnd_ctxnull) in front of the
+// kernel call (-d=ubdcallonly=2): equal qExp and sign, the top 15 bits of
+// the high words (y's sign flipped for a difference), and the high 49
+// coefficient bits of the operands summing below 2^48. Then y's coefficient
+// is added straight onto x's whole stored value, so that x's qExp and sign
+// ride along. The bound makes both coefficients below 2^112, so neither
+// operand is special (a special's coefficient sets bit 48) and the sum is
+// below 10^34: exact, with no rounding. Every other pair, the kernel call,
+// with the original y.
+func (s *state) ubdAddFirstLevel(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value {
+	result := ssaMarker("ubdadd1") // one per lowering; see bidAddSub128
+	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
+	zero := s.constInt64(u64, 0)
+	xh, yh := s.newValue1(ssaop.OpDecimal128Hi, u64, x), s.newValue1(ssaop.OpDecimal128Hi, u64, y)
+	xl, yl := s.newValue1(ssaop.OpDecimal128Lo, u64, x), s.newValue1(ssaop.OpDecimal128Lo, u64, y)
+	if op == ir.OSUB {
+		yh = s.newValue2(ssaop.OpXor64, u64, yh, s.constInt64(u64, bid.UBDSignHi))
+	}
+	coeffMask := s.constInt64(u64, int64(bid.UBDCoeffMaskHi))
+	differ := s.newValue2(ssaop.OpXor64, u64, xh, yh)
+	same := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpRsh64Ux64, u64, differ, s.constInt64(u64, bid.UBDExpShift-1)), zero)
+	ych := s.newValue2(ssaop.OpAnd64, u64, yh, coeffMask)
+	coeffs := s.newValue2(ssaop.OpAdd64, u64, s.newValue2(ssaop.OpAnd64, u64, xh, coeffMask), ych)
+	fits := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpRsh64Ux64, u64, coeffs, s.constInt64(u64, 48)), zero)
+
+	bSlow := s.f.NewBlock(block.BlockPlain)
+	bAfter := s.f.NewBlock(block.BlockPlain)
+	for _, guard := range []*ssa.Value{same, fits} {
+		b := s.endBlock()
+		b.Kind = block.BlockIf
+		b.SetControl(guard)
+		next := s.f.NewBlock(block.BlockPlain)
+		b.AddEdgeTo(next)
+		b.AddEdgeTo(bSlow)
+		s.startBlock(next)
+	}
+	sum := s.newValue3(ssaop.OpAdd64carry, types.NewTuple(u64, u64), xl, yl, zero)
+	lo, carry := s.newValue1(ssaop.OpSelect0, u64, sum), s.newValue1(ssaop.OpSelect1, u64, sum)
+	hi := s.newValue1(ssaop.OpSelect0, u64, s.newValue3(ssaop.OpAdd64carry, types.NewTuple(u64, u64), xh, ych, carry))
+	s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, hi)
+	s.endBlock().AddEdgeTo(bAfter)
+
+	s.startBlock(bSlow)
+	s.vars[result] = s.softDecimalOp(op, rt, x, y)
+	s.endBlock().AddEdgeTo(bAfter)
+	s.startBlock(bAfter)
+	r := s.variable(result, rt)
+	delete(s.vars, result)
+	return r
+}
+
 // bidKernelDirect reports whether the target takes the decimal128
 // operators' general cases straight to internal/bid: the BID targets with
 // the integer fast paths, where the native encoding is the kernel's.
