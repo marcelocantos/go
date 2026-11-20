@@ -78,9 +78,13 @@ func ubdPool128(t *testing.T) []bid.Uint128 {
 
 	type c struct{ hi, lo uint64 }
 	coeffs := []c{{0, 0}, {0, 1}, {0, 1<<64 - 1}, {1, 0},
-		{1<<47 - 1, 1<<64 - 1},                     // two of these sum, with the carry, to 2^112 - 1: the add fast path's bound
-		{1 << 47, 0},                               // two of these sum to 2^112, just past it
-		{bid.MaxCoeff128Hi, bid.MaxCoeff128Lo},     // the largest coefficient
+		{1<<47 - 1, 1<<64 - 1},                 // two of these sum, with the carry, to 2^112 - 1: the add fast path's bound
+		{1 << 47, 0},                           // two of these sum to 2^112, just past it
+		{1 << 48, 0},                           // 2^112: the top coefficient bit alone
+		{0, 1 << 56},                           // squared, 2^112: just past the multiply fast path's bound
+		{0, 1<<56 - 1},                         // squared, or times 1<<56, just below it
+		{0, 1<<50 - 1},                         // times 1<<63, about 1.04e34: past 10^34 and below 2^113
+		{bid.MaxCoeff128Hi, bid.MaxCoeff128Lo}, // the largest coefficient
 		{bid.MaxCoeff128Hi, bid.MaxCoeff128Lo + 1}, // 10^34, which reads as zero
 		{bid.UBDCoeffMaskHi, 1<<64 - 1}}            // the largest the field holds
 	// qExp: the ends of the format and their neighbours inside it, and

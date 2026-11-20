@@ -216,6 +216,7 @@ func initBIDKernelSyms() {
 //	2  and decimal128-go's first-level add path, for x + y and x - y
 //	3  and its second-level add path, for both
 //	4  the first level for x + y and the second for x - y (the default)
+//	5  and decimal128-go's first-level multiply path, for x * y
 //
 // Level -1 is the inline paths derived from the BID lowering instead,
 // which handle more operand pairs inline at much greater size.
@@ -281,8 +282,8 @@ func (s *state) ubdAddFast(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value
 	// level 4 the first for x + y and the second for x - y, the effective
 	// operation of the common case, values of one sign.
 	level := ubdLevel()
-	first := level == 2 || level == 3 || level == 4 && op == ir.OADD
-	second := level == 3 || level == 4 && op == ir.OSUB
+	first := level == 2 || level == 3 || level >= 4 && op == ir.OADD
+	second := level == 3 || level >= 4 && op == ir.OSUB
 	bSlow := s.f.NewBlock(block.BlockPlain)
 	bAfter := s.f.NewBlock(block.BlockPlain)
 	bOpposite := bSlow
@@ -341,6 +342,58 @@ func (s *state) ubdAddFast(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value
 
 	s.startBlock(bSlow)
 	s.vars[result] = s.softDecimalOp(op, rt, x, y)
+	s.endBlock().AddEdgeTo(bAfter)
+	s.startBlock(bAfter)
+	r := s.variable(result, rt)
+	delete(s.vars, result)
+	return r
+}
+
+// ubdMulFast lowers x * y on decimal128 to decimal128-go's first-level
+// multiply path (d128_multiply_rnd_ctxnull's fast entry) in front of the
+// kernel call (ubdLevel 5): both coefficients of one word, which shifting
+// the high words left past qExp and sign tests with no mask and which rules
+// out the special values (a special's coefficient begins 0x1F); the sum of
+// the exponents in the format; and the 128-bit product of the words below
+// 2^112, so below 10^34. The product is then the exact result at the sum of
+// the exponents, the preferred one, with the sign the XOR of the operands'
+// (a zero's included). Every other pair, the kernel call.
+func (s *state) ubdMulFast(rt *types.Type, x, y *ssa.Value) *ssa.Value {
+	result := ssaMarker("ubdmul1") // one per lowering; see bidAddSub128
+	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
+	zero := s.constInt64(u64, 0)
+	xh, yh := s.newValue1(ssaop.OpDecimal128Hi, u64, x), s.newValue1(ssaop.OpDecimal128Hi, u64, y)
+	xl, yl := s.newValue1(ssaop.OpDecimal128Lo, u64, x), s.newValue1(ssaop.OpDecimal128Lo, u64, y)
+	words := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpLsh64x64, u64, s.newValue2(ssaop.OpOr64, u64, xh, yh), s.constInt64(u64, 64-bid.UBDExpShift+1)), zero)
+	shift := s.constInt64(u64, bid.UBDExpShift)
+	exp := s.newValue2(ssaop.OpAdd64, u64, s.newValue2(ssaop.OpRsh64x64, u64, xh, shift), s.newValue2(ssaop.OpRsh64x64, u64, yh, shift))
+	// One unsigned comparison of the biased sum rejects both underflow and
+	// overflow.
+	inRange := s.newValue2(ssaop.OpLeq64U, boolT, s.newValue2(ssaop.OpAdd64, u64, exp, s.constInt64(u64, -bid.MinExp128)), s.constInt64(u64, bid.MaxExp128-bid.MinExp128))
+
+	bSlow := s.f.NewBlock(block.BlockPlain)
+	bAfter := s.f.NewBlock(block.BlockPlain)
+	guard := func(v *ssa.Value) {
+		b := s.endBlock()
+		b.Kind = block.BlockIf
+		b.SetControl(v)
+		next := s.f.NewBlock(block.BlockPlain)
+		b.AddEdgeTo(next)
+		b.AddEdgeTo(bSlow)
+		s.startBlock(next)
+	}
+	guard(words)
+	guard(inRange)
+	product := s.newValue2(ssaop.OpMul64uhilo, types.NewTuple(u64, u64), xl, yl)
+	phi, plo := s.newValue1(ssaop.OpSelect0, u64, product), s.newValue1(ssaop.OpSelect1, u64, product)
+	guard(s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpRsh64Ux64, u64, phi, s.constInt64(u64, 48)), zero))
+	sign := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpXor64, u64, xh, yh), s.constInt64(u64, bid.UBDSignHi))
+	header := s.newValue2(ssaop.OpOr64, u64, sign, s.newValue2(ssaop.OpLsh64x64, u64, exp, shift))
+	s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, plo, s.newValue2(ssaop.OpOr64, u64, header, phi))
+	s.endBlock().AddEdgeTo(bAfter)
+
+	s.startBlock(bSlow)
+	s.vars[result] = s.softDecimalOp(ir.OMUL, rt, x, y)
 	s.endBlock().AddEdgeTo(bAfter)
 	s.startBlock(bAfter)
 	r := s.variable(result, rt)
