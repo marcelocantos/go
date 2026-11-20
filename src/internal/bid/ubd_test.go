@@ -84,6 +84,7 @@ func ubdPool128(t *testing.T) []bid.Uint128 {
 		{0, 1 << 56},                           // squared, 2^112: just past the multiply fast path's bound
 		{0, 1<<56 - 1},                         // squared, or times 1<<56, just below it
 		{0, 1<<50 - 1},                         // times 1<<63, about 1.04e34: past 10^34 and below 2^113
+		{0, 1<<57 - 1},                         // squared, about 2^114: past 10^34 for a multiply bound one bit too wide
 		{bid.MaxCoeff128Hi, bid.MaxCoeff128Lo}, // the largest coefficient
 		{bid.MaxCoeff128Hi, bid.MaxCoeff128Lo + 1}, // 10^34, which reads as zero
 		{bid.UBDCoeffMaskHi, 1<<64 - 1}}            // the largest the field holds
