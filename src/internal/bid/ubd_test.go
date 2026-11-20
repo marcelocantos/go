@@ -5,6 +5,7 @@
 package bid_test
 
 import (
+	"fmt"
 	"internal/bid"
 	"math/rand/v2"
 	"testing"
@@ -42,11 +43,34 @@ func ubdCanonical128(x bid.Uint128) bool {
 	return bid.UBDFromBID128(bid.BIDFromUBD128(x)) == x
 }
 
+// ubdWellFormed128 is the test's own statement of a well-formed UBD pattern
+// (bid.UBDWellFormed128), from the layout: a qExp in the format, or the
+// special tag (qExp 7168 and up) with 0x1F in the top five coefficient bits.
+func ubdWellFormed128(x bid.Uint128) bool {
+	qExp := int(int64(x.Hi) >> 50)
+	if qExp >= 7168 {
+		return x.Hi>>44&0x1F == 0x1F
+	}
+	return -6176 <= qExp && qExp <= 6111
+}
+
+// mustWellFormed128 fails the test at once on a malformed UBD pattern, which
+// can only come from a bug: no input of these tests is malformed, so no
+// result of the code under test may be.
+func mustWellFormed128(t *testing.T, what string, x bid.Uint128) {
+	t.Helper()
+	if !ubdWellFormed128(x) {
+		t.Fatalf("%s: malformed UBD pattern %#x", what, x)
+	}
+}
+
 // ubdPool128 returns the UBD operands of TestUBDKernel: the conversions of
 // inlinePool128, which straddles the BID kernel's bounds; finite patterns at
-// the ends of UBD's exponent and coefficient fields, inside and outside the
-// format; specials canonical and not; and random values.
-func ubdPool128() []bid.Uint128 {
+// the ends of the format's exponents and of the coefficient field; specials
+// canonical and not; and random values. All are well-formed: a malformed
+// pattern can only come from a bug, and the contract leaves its results
+// unspecified (see "The UBD kernel contract" in ubd.go).
+func ubdPool128(t *testing.T) []bid.Uint128 {
 	var pool []bid.Uint128
 	for _, x := range inlinePool128() {
 		pool = append(pool, bid.UBDFromBID128(x))
@@ -57,10 +81,9 @@ func ubdPool128() []bid.Uint128 {
 		{bid.MaxCoeff128Hi, bid.MaxCoeff128Lo},     // the largest coefficient
 		{bid.MaxCoeff128Hi, bid.MaxCoeff128Lo + 1}, // 10^34, which reads as zero
 		{bid.UBDCoeffMaskHi, 1<<64 - 1}}            // the largest the field holds
-	// qExp: the ends of the format and one past each, zero and its
-	// neighbours, the least value the field holds, and the last below the
-	// special tag (both outside the format, so they read as NaN).
-	exps := []int{bid.MinExp128 - 1, bid.MinExp128, -1, 0, 1, bid.MaxExp128, bid.MaxExp128 + 1, -8192, 7167}
+	// qExp: the ends of the format and their neighbours inside it, and
+	// zero and its neighbours.
+	exps := []int{bid.MinExp128, bid.MinExp128 + 1, -1, 0, 1, bid.MaxExp128 - 1, bid.MaxExp128}
 	for _, neg := range []bool{false, true} {
 		for _, e := range exps {
 			for _, c := range coeffs {
@@ -74,7 +97,7 @@ func ubdPool128() []bid.Uint128 {
 		bid.Uint128{Hi: bid.UBDInfHi},
 		bid.Uint128{Hi: bid.UBDInfHi | bid.UBDSignHi},
 		bid.Uint128{Hi: bid.UBDInfHi | 1, Lo: 5}, // an infinity with coefficient bits
-		bid.Uint128{Hi: bid.UBDSpecialTag << 60}, // the tag without the coefficient prefix
+		bid.Uint128{Hi: bid.UBDInfHi | 0x3F<<52}, // an infinity with the unused qExp bits set
 		bid.Uint128{Hi: bid.UBDNaNHi},
 		bid.Uint128{Hi: bid.UBDNaNHi | bid.UBDSignHi, Lo: 7},
 		bid.Uint128{Hi: bid.UBDSNaNHi, Lo: 42},
@@ -105,9 +128,34 @@ func ubdPool128() []bid.Uint128 {
 		pool = append(pool, ubd128(r.IntN(2) == 0, e, hi, lo))
 	}
 	for range 8 {
-		pool = append(pool, bid.Uint128{Hi: r.Uint64(), Lo: r.Uint64()})
+		// Random coefficient bits, often above MaxCoeff128, at a random
+		// exponent of the format.
+		e := bid.MinExp128 + r.IntN(bid.MaxExp128-bid.MinExp128+1)
+		pool = append(pool, ubd128(r.IntN(2) == 0, e, r.Uint64(), r.Uint64()))
+	}
+	for _, x := range pool {
+		mustWellFormed128(t, "ubdPool128", x)
 	}
 	return pool
+}
+
+// TestUBDWellFormed checks bid.UBDWellFormed128 against the test's own
+// statement at every boundary of the qExp field and of the special prefix.
+func TestUBDWellFormed(t *testing.T) {
+	var exps []int
+	for _, e := range []int{-8192, -6177, -6176, 6111, 6112, 7167, 7168, 7679, 7680, 8191} {
+		exps = append(exps, e-1, e, e+1)
+	}
+	for _, e := range exps {
+		for _, c := range []uint64{0, 1, 0x1E << 44, 0x1F << 44, 0x1F<<44 - 1, bid.UBDCoeffMaskHi} {
+			for _, neg := range []bool{false, true} {
+				x := ubd128(neg, e, c, 7)
+				if got, want := bid.UBDWellFormed128(x), ubdWellFormed128(x); got != want {
+					t.Errorf("UBDWellFormed128(%#x) (qExp %d) = %v, want %v", x, e, got, want)
+				}
+			}
+		}
+	}
 }
 
 func TestUBDConversion(t *testing.T) {
@@ -117,6 +165,7 @@ func TestUBDConversion(t *testing.T) {
 	}
 	for _, x := range inlinePool128() {
 		u := bid.UBDFromBID128(x)
+		mustWellFormed128(t, fmt.Sprintf("UBDFromBID128(%#x)", x), u)
 		if !ubdCanonical128(u) {
 			t.Errorf("UBDFromBID128(%#x) = %#x, not canonical", x, u)
 		}
@@ -140,7 +189,7 @@ func TestUBDConversion(t *testing.T) {
 }
 
 func TestUBDKernel(t *testing.T) {
-	pool := ubdPool128()
+	pool := ubdPool128(t)
 	// The six modes and two outside them, which behave as ToNearestEven.
 	modes := append(append([]bid.Mode{}, inlineModes...), 6, 255)
 	if testing.Short() {
@@ -171,6 +220,7 @@ func TestUBDKernel(t *testing.T) {
 	}
 	check := func(name string, x, y bid.Uint128, mode bid.Mode, got, want bid.Uint128) {
 		t.Helper()
+		mustWellFormed128(t, name, got)
 		if got != want {
 			fail("%s(%#x, %#x, %d) = %#x, want %#x", name, x, y, mode, got, want)
 		} else if !ubdCanonical128(got) {

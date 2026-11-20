@@ -7,6 +7,7 @@
 package decimal_test
 
 import (
+	"internal/bid"
 	"math/decimal"
 	"math/rand/v2"
 	"testing"
@@ -37,12 +38,17 @@ func TestNativeBits(t *testing.T) {
 		}
 		lo := r.Uint64()
 		q := decimal.Native128frombits(b, lo)
-		words := *(*[2]uint64)(unsafe.Pointer(&q))
-		if words != [2]uint64{lo, b} {
-			t.Fatalf("decimal128 memory %#x, want [lo=%#x hi=%#x]", words, lo, b)
+		// A pattern that is not well-formed UBD is stored as a quiet NaN.
+		wantHi, wantLo := b, lo
+		if bid.NativeUBD128 && !bid.UBDWellFormed128(bid.Uint128{Hi: b, Lo: lo}) {
+			wantHi, wantLo = bid.UBDNaNHi, 0
 		}
-		if hi2, lo2 := decimal.Native128bits(q); hi2 != b || lo2 != lo {
-			t.Fatalf("decimal128 bits round trip (%#x,%#x), want (%#x,%#x)", hi2, lo2, b, lo)
+		words := *(*[2]uint64)(unsafe.Pointer(&q))
+		if words != [2]uint64{wantLo, wantHi} {
+			t.Fatalf("decimal128 memory %#x, want [lo=%#x hi=%#x]", words, wantLo, wantHi)
+		}
+		if hi2, lo2 := decimal.Native128bits(q); hi2 != wantHi || lo2 != wantLo {
+			t.Fatalf("decimal128 bits round trip (%#x,%#x), want (%#x,%#x)", hi2, lo2, wantHi, wantLo)
 		}
 	}
 }
