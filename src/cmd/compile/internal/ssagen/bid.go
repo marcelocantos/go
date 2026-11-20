@@ -207,16 +207,33 @@ func initBIDKernelSyms() {
 	bidKernelIntegralTTE = base.PkgLinksym("internal/bid", "ubdRoundToIntegralTTE128", obj.ABIInternal)
 }
 
-// bidCallOnly reports whether the decimal128 operation on x is to be the
-// kernel call alone, with no inline fast path (-d=ubdcallonly=1): the
-// smallest code at each call site, from which fast paths are added back
-// one at a time and measured.
+// ubdLevel is the -d=ubdlevel setting, which chooses the fast paths of
+// decimal128 operations on a UBD target. Every operation is its kernel
+// call, and the levels add paths in front of it, one at a time, so that
+// each can be measured:
+//
+//	1  the kernel call alone, the smallest code at each call site
+//	2  and decimal128-go's first-level add path, for x + y and x - y
+//	3  and its second-level add path, for both
+//	4  the first level for x + y and the second for x - y (the default)
+//
+// Level -1 is the inline paths derived from the BID lowering instead,
+// which handle more operand pairs inline at much greater size.
+func ubdLevel() int {
+	if base.Debug.UBDLevel == 0 {
+		return 4
+	}
+	return base.Debug.UBDLevel
+}
+
+// bidCallOnly reports whether the decimal128 operation on x is lowered by
+// ubdLevel's levels: its kernel call, with the level's fast paths if any.
 func bidCallOnly(x *ssa.Value) bool {
-	return base.Debug.UBDCallOnly != 0 && x.Type.Kind() == types.TDECIMAL128 && bidKernelDirect()
+	return ubdLevel() > 0 && x.Type.Kind() == types.TDECIMAL128 && bidKernelDirect()
 }
 
 // ubdAddFast lowers x + y or x - y on decimal128 to decimal128-go's add
-// fast paths in front of the kernel call (-d=ubdcallonly=2 and up). For a
+// fast paths in front of the kernel call (ubdLevel 2 and up). For a
 // difference y's sign is flipped first, so both paths see the effective
 // signs; the kernel call receives the original y.
 //
@@ -263,7 +280,7 @@ func (s *state) ubdAddFast(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value
 	// Which levels this call site gets: level 2 the first, level 3 both,
 	// level 4 the first for x + y and the second for x - y, the effective
 	// operation of the common case, values of one sign.
-	level := base.Debug.UBDCallOnly
+	level := ubdLevel()
 	first := level == 2 || level == 3 || level == 4 && op == ir.OADD
 	second := level == 3 || level == 4 && op == ir.OSUB
 	bSlow := s.f.NewBlock(block.BlockPlain)

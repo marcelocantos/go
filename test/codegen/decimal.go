@@ -55,36 +55,35 @@ func Less64(x, y decimal64) bool {
 }
 
 func Add128(x, y decimal128) decimal128 {
-	// Operands of opposite signs at one quantum take the difference of
-	// Sub128.
 	// ppc64le:"DADDQ" -"CALL"
-	// What the inline paths do not decide goes straight to the kernel's
-	// UBD entry, one call for every operand.
-	// amd64:"CALL internal/bid.ubdAddTTE128" "NEGQ" "CMOVQCS" -"CALL runtime.dadd128"
-	// arm64:"CALL internal/bid.ubdAddTTE128" "ADDS" "ADC" "CSNEG" -"CALL runtime.dadd128"
+	// UBD (ubdLevel 4): decimal128-go's first-level add path, operands of
+	// one sign and one quantum, in front of the kernel's ties-to-even entry;
+	// operands of opposite signs go to the kernel.
+	// amd64:"ADCQ" "CALL internal/bid.ubdAddTTE128" -"NEGQ" -"CALL runtime.dadd128"
+	// arm64:"ADC" "CALL internal/bid.ubdAddTTE128" -"CSNEG" -"CALL runtime.dadd128"
 	return x + y
 }
 
 func Sub128(x, y decimal128) decimal128 {
-	// The difference of word coefficients at one quantum is negated, not
-	// realigned, when it borrows.
 	// ppc64le:"DSUBQ" -"CALL"
-	// arm64:"CALL internal/bid.ubdSubTTE128" "SUBS" "CSNEG" -"CALL runtime.dsub128"
-	// amd64:"CALL internal/bid.ubdSubTTE128" "NEGQ" "CMOVQCS" -"CALL runtime.dsub128"
+	// UBD (ubdLevel 4): decimal128-go's second-level add path, operands of
+	// one sign and one quantum, in front of the kernel's ties-to-even entry.
+	// arm64:"SBCS" "CALL internal/bid.ubdSubTTE128" -"CALL runtime.dsub128"
+	// amd64:"SBBQ" "CALL internal/bid.ubdSubTTE128" -"ADCQ" -"CALL runtime.dsub128"
 	return x - y
 }
 
 func Mul128(x, y decimal128) decimal128 {
 	// ppc64le:"DMULQ" -"CALL"
-	// arm64:"CALL internal/bid.ubdMulTTE128" "MUL" "UMULH" -"CALL runtime.dmul128"
-	// amd64:"CALL internal/bid.ubdMulTTE128" -"CALL runtime.dmul128"
+	// arm64:"CALL internal/bid.ubdMulTTE128" -"UMULH" -"CALL runtime.dmul128"
+	// amd64:"CALL internal/bid.ubdMulTTE128" -"MULQ" -"CALL runtime.dmul128"
 	return x * y
 }
 
 func Eq128(x, y decimal128) bool {
 	// ppc64le:"DCMPUQ" -"CALL"
-	// arm64:"UMULH" "CALL internal/bid.ubdCompare128" -"CALL runtime.deq128"
-	// amd64:"MULX?Q" "CALL internal/bid.ubdCompare128" -"CALL runtime.deq128"
+	// arm64:"CALL internal/bid.ubdCompare128" -"UMULH" -"CALL runtime.deq128"
+	// amd64:"CALL internal/bid.ubdCompare128" -"MULX?Q" -"CALL runtime.deq128"
 	return x == y
 }
 
@@ -101,14 +100,14 @@ func Nonzero64(x decimal64) bool {
 }
 
 func Zero128(x decimal128) bool {
-	// arm64:-"CALL"
-	// amd64:-"CALL"
+	// arm64:"CALL internal/bid.ubdCompare128"
+	// amd64:"CALL internal/bid.ubdCompare128"
 	return 0 == x
 }
 
 func Nonzero128(x decimal128) bool {
-	// arm64:-"CALL"
-	// amd64:-"CALL"
+	// arm64:"CALL internal/bid.ubdCompare128"
+	// amd64:"CALL internal/bid.ubdCompare128"
 	return x != 0.00
 }
 
@@ -137,26 +136,26 @@ func GreaterEqualZero64(x decimal64) bool {
 }
 
 func LessZero128(x decimal128) bool {
-	// arm64:-"CALL"
-	// amd64:-"CALL"
+	// arm64:"CALL internal/bid.ubdCompare128"
+	// amd64:"CALL internal/bid.ubdCompare128"
 	return 0.00 > x
 }
 
 func LessEqualZero128(x decimal128) bool {
-	// arm64:-"CALL"
-	// amd64:-"CALL"
+	// arm64:"CALL internal/bid.ubdCompare128"
+	// amd64:"CALL internal/bid.ubdCompare128"
 	return 0.00 >= x
 }
 
 func GreaterZero128(x decimal128) bool {
-	// arm64:-"CALL"
-	// amd64:-"CALL"
+	// arm64:"CALL internal/bid.ubdCompare128"
+	// amd64:"CALL internal/bid.ubdCompare128"
 	return x > 0
 }
 
 func GreaterEqualZero128(x decimal128) bool {
-	// arm64:-"CALL"
-	// amd64:-"CALL"
+	// arm64:"CALL internal/bid.ubdCompare128"
+	// amd64:"CALL internal/bid.ubdCompare128"
 	return x >= 0
 }
 
@@ -169,8 +168,8 @@ func LocalZero64(x decimal64) bool {
 
 func LocalZero128(x decimal128) bool {
 	zero := decimal128(0.00)
-	// arm64:-"CALL"
-	// amd64:-"CALL"
+	// arm64:"CALL internal/bid.ubdCompare128"
+	// amd64:"CALL internal/bid.ubdCompare128"
 	return zero <= x
 }
 
@@ -218,13 +217,13 @@ func QuantizeCent64(x decimal64) decimal64 {
 	return decimal.Quantize(x, decimal64(0.01))
 }
 func QuantizeCent128(x decimal128) decimal128 {
-	// arm64:"UDIV" "CALL internal/bid.ubdQuantize(TTE|Rnd)128" -"CALL .*[.]Quantize"
-	// amd64:"DIVQ" "CALL internal/bid.ubdQuantize(TTE|Rnd)128" -"CALL .*[.]Quantize"
+	// arm64:"CALL internal/bid.ubdQuantizeTTE128" -"UDIV" -"CALL .*[.]Quantize"
+	// amd64:"CALL internal/bid.ubdQuantizeTTE128" -"DIVQ" -"CALL .*[.]Quantize"
 	return decimal.Quantize(x, decimal128(0.01))
 }
 func IntegralEven128(x decimal128) decimal128 {
-	// arm64:"UDIV" "CALL internal/bid.ubdRoundToIntegral(TTE|Rnd)128" -"CALL .*RoundToEven"
-	// amd64:"DIVQ" "CALL internal/bid.ubdRoundToIntegral(TTE|Rnd)128" -"CALL .*RoundToEven"
+	// arm64:"CALL internal/bid.ubdRoundToIntegralTTE128" -"UDIV" -"CALL .*RoundToEven"
+	// amd64:"CALL internal/bid.ubdRoundToIntegralTTE128" -"DIVQ" -"CALL .*RoundToEven"
 	return decimal.RoundToEven(x)
 }
 func IntegralTrunc64(x decimal64) decimal64 {
@@ -251,7 +250,7 @@ func integralDispatch128(x decimal128, mode decimal.RoundingMode) decimal128 {
 }
 
 func TruncThroughDispatch128(x decimal128) decimal128 {
-	// arm64:"UDIV" "CALL internal/bid.ubdRoundToIntegral(TTE|Rnd)128" -"CALL .*integralDispatch128"
-	// amd64:"DIVQ" "CALL internal/bid.ubdRoundToIntegral(TTE|Rnd)128" -"CALL .*integralDispatch128"
+	// arm64:"CALL internal/bid.ubdRoundToIntegralRnd128" -"UDIV" -"CALL .*integralDispatch128"
+	// amd64:"CALL internal/bid.ubdRoundToIntegralRnd128" -"DIVQ" -"CALL .*integralDispatch128"
 	return integralDispatch128(x, decimal.ToZero)
 }

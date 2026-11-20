@@ -5,7 +5,6 @@
 package ssagen
 
 import (
-	"cmd/compile/internal/base"
 	"internal/bid"
 
 	"cmd/compile/internal/ir"
@@ -132,7 +131,7 @@ var dpdArith = map[opAndType]ssaop.Op{
 // integer fast paths with runtime calls for the general case.
 func (s *state) decimalOp(op ir.Op, rt *types.Type, args ...*ssa.Value) *ssa.Value {
 	if bidCallOnly(args[0]) {
-		if base.Debug.UBDCallOnly >= 2 && (op == ir.OADD || op == ir.OSUB) {
+		if ubdLevel() >= 2 && (op == ir.OADD || op == ir.OSUB) {
 			return s.ubdAddFast(op, rt, args[0], args[1])
 		}
 		return s.softDecimalOp(op, rt, args...)
