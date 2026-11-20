@@ -5,6 +5,9 @@
 package ssacompile
 
 import (
+	"internal/bid"
+
+	"cmd/compile/internal/ir"
 	"cmd/compile/internal/ssa"
 	"cmd/compile/internal/ssa/rewrite/dec64"
 	"cmd/compile/internal/ssa/ssaop"
@@ -57,6 +60,9 @@ func softdecimal(f *ssa.Func) {
 						hi := v.Block.NewValue1(v.Pos, ssaop.OpDecimal128Hi, f.Config.Types.UInt64, arg0)
 						mask := v.Block.NewValue0(v.Pos, ssaop.OpConst64, f.Config.Types.UInt64)
 						mask.AuxInt = -0x8000000000000000
+						if ir.DecimalUBD128() {
+							mask.AuxInt = bid.UBDSignHi
+						}
 						newHi := v.Block.NewValue2(v.Pos, ssaop.OpXor64, f.Config.Types.UInt64, hi, mask)
 						v.Reset(ssaop.OpDecimal128Make)
 						v.AddArg(lo)

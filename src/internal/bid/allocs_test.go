@@ -78,7 +78,9 @@ func exportedAPI(t testing.TB) []string {
 	var names []string
 	fset := token.NewFileSet()
 	for _, name := range files {
-		if strings.HasSuffix(name, "_test.go") {
+		// ubd.go is the experimental UBD memory form's conversions,
+		// not part of the decimal API these tables cover.
+		if strings.HasSuffix(name, "_test.go") || name == "ubd.go" {
 			continue
 		}
 		src, err := os.ReadFile(name)

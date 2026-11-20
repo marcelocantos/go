@@ -54,7 +54,10 @@ func (s *state) bidCompare(op ir.Op, x, y *ssa.Value) *ssa.Value {
 		bSecond, bFinite = s.f.NewBlock(block.BlockPlain), s.f.NewBlock(block.BlockPlain)
 	}
 	bAfter := s.f.NewBlock(block.BlockPlain)
-	bSpecial := s.f.NewBlock(block.BlockPlain)
+	var bSpecial *ssa.Block
+	if !wide {
+		bSpecial = s.f.NewBlock(block.BlockPlain)
+	}
 	guard := func(v *ssa.Value, fail *ssa.Block) {
 		b := s.endBlock()
 		b.Kind = block.BlockIf
@@ -65,15 +68,28 @@ func (s *state) bidCompare(op ir.Op, x, y *ssa.Value) *ssa.Value {
 		s.startBlock(next)
 	}
 	if wide {
-		coeffs := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpOr64, u64, xh, yh), s.constInt64(u64, int64(bid.CoeffMask128Hi)))
+		// UBD: word coefficients rule out the special values, whose
+		// coefficients begin 0x1F, and there is no second form.
+		coeffs := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpOr64, u64, xh, yh), s.constInt64(u64, int64(bid.UBDCoeffMaskHi)))
 		guard(s.newValue2(ssaop.OpEq64, boolT, coeffs, zero), bSlow)
+	} else {
+		for _, h := range []*ssa.Value{xh, yh} {
+			mask := s.constInt64(u64, int64(formMask))
+			second := s.constInt64(u64, int64(formMask^(storageZero&formMask)))
+			guard(s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, h, mask), second), bSpecial)
+		}
 	}
-	for _, h := range []*ssa.Value{xh, yh} {
-		mask := s.constInt64(u64, int64(formMask))
-		second := s.constInt64(u64, int64(formMask^(storageZero&formMask)))
-		guard(s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, h, mask), second), bSpecial)
+	// negativeOf reports the sign of a stored high word.
+	negativeOf := func(h *ssa.Value) *ssa.Value {
+		if wide {
+			return s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, h, s.constInt64(u64, bid.UBDSignHi)), zero)
+		}
+		return s.newValue2(ssaop.OpLess64, boolT, h, zero)
 	}
 	exponent := func(h *ssa.Value) *ssa.Value {
+		if wide {
+			return s.newValue2(ssaop.OpRsh64x64, u64, h, s.constInt64(u64, bid.UBDExpShift))
+		}
 		native := s.newValue2(ssaop.OpXor64, u64, h, s.constInt64(u64, int64(storageZero)))
 		return s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpRsh64Ux64, u64, native, s.constInt64(u64, int64(shift))), s.constInt64(u64, int64(expMask)))
 	}
@@ -151,6 +167,10 @@ func (s *state) bidCompare(op ir.Op, x, y *ssa.Value) *ssa.Value {
 	}
 	i64 := types.Types[types.TINT64]
 	key := func(h, c *ssa.Value) *ssa.Value {
+		if wide {
+			// Bring UBD's sign, bit 49, to the top.
+			h = s.newValue2(ssaop.OpLsh64x64, i64, h, s.constInt64(u64, 14))
+		}
 		m := s.newValue2(ssaop.OpRsh64x64, i64, h, s.constInt64(u64, 63))
 		return s.newValue2(ssaop.OpSub64, i64, s.newValue2(ssaop.OpXor64, i64, c, m), m)
 	}
@@ -175,10 +195,15 @@ func (s *state) bidCompare(op ir.Op, x, y *ssa.Value) *ssa.Value {
 	// boolean arithmetic; it is not taken as a branch, because the sign of
 	// a value is as unpredictable as its digits, and a branch on it
 	// mispredicts every other time on values of mixed sign.
-	xneg = s.newValue2(ssaop.OpLess64, boolT, xh, zero)
-	differentSigns = s.newValue2(ssaop.OpNeqB, boolT, xneg, s.newValue2(ssaop.OpLess64, boolT, yh, zero))
+	xneg = negativeOf(xh)
+	differentSigns = s.newValue2(ssaop.OpNeqB, boolT, xneg, negativeOf(yh))
 	sameSigns = s.newValue1(ssaop.OpNot, boolT, differentSigns)
-	swap := s.newValue2(ssaop.OpLess64U, boolT, xe, ye)
+	var swap *ssa.Value
+	if wide {
+		swap = s.newValue2(ssaop.OpLess64, boolT, xe, ye) // UBD exponents are signed
+	} else {
+		swap = s.newValue2(ssaop.OpLess64U, boolT, xe, ye)
+	}
 	gap := s.newValue3(ssaop.OpCondSelect, u64, s.newValue2(ssaop.OpSub64, u64, ye, xe), s.newValue2(ssaop.OpSub64, u64, xe, ye), swap)
 	const maxGap = bidMaxWordPower // 10^19 is the largest power of ten fitting uint64.
 	near := s.newValue2(ssaop.OpLeq64U, boolT, gap, s.constInt64(u64, maxGap))
@@ -207,39 +232,41 @@ func (s *state) bidCompare(op ir.Op, x, y *ssa.Value) *ssa.Value {
 	equal := s.newValue2(ssaop.OpAndB, boolT, fits, s.newValue2(ssaop.OpEq64, boolT, lo, lower))
 	less := s.newValue2(ssaop.OpAndB, boolT, fits, s.newValue2(ssaop.OpLess64U, boolT, lo, lower))
 	finish(less, equal, s.newValue2(ssaop.OpNeqB, boolT, swap, xneg))
-	s.startBlock(bSpecial)
-	// A failed first-form guard may be a NaN, infinity or second finite
-	// form. NaNs are unordered; infinities depend only on kind and sign.
-	// A finite second form needs its separate coefficient decoder.
-	class := func(h *ssa.Value, mask uint64) *ssa.Value {
-		m := s.constInt64(u64, int64(mask))
-		native := s.newValue2(ssaop.OpXor64, u64, h, s.constInt64(u64, int64(storageZero)))
-		return s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpAnd64, u64, native, m), m)
-	}
-	nan := s.newValue2(ssaop.OpOrB, boolT, class(xh, bid.NaN64), class(yh, bid.NaN64))
-	bNaN, bInf := s.f.NewBlock(block.BlockPlain), s.f.NewBlock(block.BlockPlain)
-	b = s.endBlock()
-	b.Kind = block.BlockIf
-	b.SetControl(nan)
-	b.AddEdgeTo(bNaN)
-	b.AddEdgeTo(bInf)
-	s.startBlock(bNaN)
-	s.vars[bidCompareVar] = s.constBool(op == ir.ONE)
-	s.endBlock().AddEdgeTo(bAfter)
-	s.startBlock(bInf)
-	xinf, yinf := class(xh, bid.SpecialMask64), class(yh, bid.SpecialMask64)
-	finiteSecond := bSlow
 	if !wide {
-		finiteSecond = bSecond
+		s.startBlock(bSpecial)
+		// A failed first-form guard may be a NaN, infinity or second finite
+		// form. NaNs are unordered; infinities depend only on kind and sign.
+		// A finite second form needs its separate coefficient decoder.
+		class := func(h *ssa.Value, mask uint64) *ssa.Value {
+			m := s.constInt64(u64, int64(mask))
+			native := s.newValue2(ssaop.OpXor64, u64, h, s.constInt64(u64, int64(storageZero)))
+			return s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpAnd64, u64, native, m), m)
+		}
+		nan := s.newValue2(ssaop.OpOrB, boolT, class(xh, bid.NaN64), class(yh, bid.NaN64))
+		bNaN, bInf := s.f.NewBlock(block.BlockPlain), s.f.NewBlock(block.BlockPlain)
+		b = s.endBlock()
+		b.Kind = block.BlockIf
+		b.SetControl(nan)
+		b.AddEdgeTo(bNaN)
+		b.AddEdgeTo(bInf)
+		s.startBlock(bNaN)
+		s.vars[bidCompareVar] = s.constBool(op == ir.ONE)
+		s.endBlock().AddEdgeTo(bAfter)
+		s.startBlock(bInf)
+		xinf, yinf := class(xh, bid.SpecialMask64), class(yh, bid.SpecialMask64)
+		finiteSecond := bSlow
+		if !wide {
+			finiteSecond = bSecond
+		}
+		guard(s.newValue2(ssaop.OpOrB, boolT, xinf, yinf), finiteSecond)
+		xn, yn := s.newValue2(ssaop.OpLess64, boolT, xh, zero), s.newValue2(ssaop.OpLess64, boolT, yh, zero)
+		equal = s.newValue2(ssaop.OpAndB, boolT, s.newValue2(ssaop.OpAndB, boolT, xinf, yinf), s.newValue2(ssaop.OpEqB, boolT, xn, yn))
+		less = s.newValue2(ssaop.OpOrB, boolT,
+			s.newValue2(ssaop.OpAndB, boolT, s.newValue2(ssaop.OpAndB, boolT, xinf, xn), s.newValue1(ssaop.OpNot, boolT, equal)),
+			s.newValue2(ssaop.OpAndB, boolT, s.newValue2(ssaop.OpAndB, boolT, yinf, s.newValue1(ssaop.OpNot, boolT, yn)), s.newValue1(ssaop.OpNot, boolT, xinf)))
+		s.vars[bidCompareVar] = order(less, equal, s.constBool(false))
+		s.endBlock().AddEdgeTo(bAfter)
 	}
-	guard(s.newValue2(ssaop.OpOrB, boolT, xinf, yinf), finiteSecond)
-	xn, yn := s.newValue2(ssaop.OpLess64, boolT, xh, zero), s.newValue2(ssaop.OpLess64, boolT, yh, zero)
-	equal = s.newValue2(ssaop.OpAndB, boolT, s.newValue2(ssaop.OpAndB, boolT, xinf, yinf), s.newValue2(ssaop.OpEqB, boolT, xn, yn))
-	less = s.newValue2(ssaop.OpOrB, boolT,
-		s.newValue2(ssaop.OpAndB, boolT, s.newValue2(ssaop.OpAndB, boolT, xinf, xn), s.newValue1(ssaop.OpNot, boolT, equal)),
-		s.newValue2(ssaop.OpAndB, boolT, s.newValue2(ssaop.OpAndB, boolT, yinf, s.newValue1(ssaop.OpNot, boolT, yn)), s.newValue1(ssaop.OpNot, boolT, xinf)))
-	s.vars[bidCompareVar] = order(less, equal, s.constBool(false))
-	s.endBlock().AddEdgeTo(bAfter)
 	if wide {
 		// Operands the word paths refuse. Two finite values in the first
 		// form with canonical coefficients, which is every such pair but
@@ -253,17 +280,16 @@ func (s *state) bidCompare(op ir.Op, x, y *ssa.Value) *ssa.Value {
 		// general comparison.
 		s.startBlock(bSlow)
 		bGeneral := s.f.NewBlock(block.BlockPlain)
-		coeffMask := s.constInt64(u64, int64(bid.CoeffMask128Hi))
+		coeffMask := s.constInt64(u64, int64(bid.UBDCoeffMaskHi))
 		xch, ych := s.newValue2(ssaop.OpAnd64, u64, xh, coeffMask), s.newValue2(ssaop.OpAnd64, u64, yh, coeffMask)
 		for i, h := range []*ssa.Value{xh, yh} {
-			mask := s.constInt64(u64, int64(formMask))
-			second := s.constInt64(u64, int64(formMask^(storageZero&formMask)))
-			guard(s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, h, mask), second), bGeneral)
+			tag := s.newValue2(ssaop.OpRsh64Ux64, u64, h, s.constInt64(u64, 60))
+			guard(s.newValue2(ssaop.OpNeq64, boolT, tag, s.constInt64(u64, bid.UBDSpecialTag)), bGeneral)
 			guard(s.newValue2(ssaop.OpLess64U, boolT, []*ssa.Value{xch, ych}[i], s.constInt64(u64, int64(bid.MaxCoeff128Hi))), bGeneral)
 		}
 		res := s.rtcall(bidKernelCmpFinite, true, []*types.Type{types.Types[types.TINT64]},
-			s.newValue2(ssaop.OpLess64, boolT, xh, zero), xch, xc, exponent(xh),
-			s.newValue2(ssaop.OpLess64, boolT, yh, zero), ych, yc, exponent(yh))
+			negativeOf(xh), xch, xc, exponent(xh),
+			negativeOf(yh), ych, yc, exponent(yh))
 		izero := s.constInt64(types.Types[types.TINT64], 0)
 		switch op {
 		case ir.OEQ:

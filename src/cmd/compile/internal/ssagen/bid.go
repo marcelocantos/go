@@ -58,7 +58,7 @@ func bidConstZero(x *ssa.Value) bool {
 	} else if kind == types.TDECIMAL128 && x.Op == ssaop.OpDecimal128Make {
 		lo, hi := x.Args[0], x.Args[1]
 		if lo.Op == ssaop.OpConst64 && hi.Op == ssaop.OpConst64 {
-			return bid.IsZero128(bid.Uint128{Hi: uint64(hi.AuxInt) ^ bid.Zero128Hi, Lo: uint64(lo.AuxInt)})
+			return bid.IsZero128(bid.BIDFromUBD128(bid.Uint128{Hi: uint64(hi.AuxInt), Lo: uint64(lo.AuxInt)}))
 		}
 	}
 	return false
@@ -74,6 +74,7 @@ func (s *state) bidIsZero(x *ssa.Value) *ssa.Value {
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
 	zero := s.constInt64(u64, 0)
 	var hi, lo, coeff, noncanonical, form2 *ssa.Value
+	_ = lo
 	if x.Type.Kind() == types.TDECIMAL64 {
 		hi = s.newValue2(ssaop.OpXor64, u64, s.newValue1(ssaop.OpCopy, u64, x), s.constInt64(u64, int64(bid.Zero64)))
 		mask := s.constInt64(u64, int64(bid.Form2Mask64))
@@ -86,17 +87,19 @@ func (s *state) bidIsZero(x *ssa.Value) *ssa.Value {
 		coeff = s.newValue2(ssaop.OpEq64, boolT, coeff, zero)
 		coeff = s.newValue2(ssaop.OpAndB, boolT, s.newValue1(ssaop.OpNot, boolT, form2), coeff)
 	} else {
-		hi = s.newValue2(ssaop.OpXor64, u64, s.newValue1(ssaop.OpDecimal128Hi, u64, x), s.constInt64(u64, int64(bid.Zero128Hi)))
+		// UBD: no storage mask and no second form. A special value is
+		// tagged in the top four bits.
+		hi = s.newValue1(ssaop.OpDecimal128Hi, u64, x)
 		lo = s.newValue1(ssaop.OpDecimal128Lo, u64, x)
-		mask := s.constInt64(u64, int64(bid.Form2Mask128Hi))
-		form2 = s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpAnd64, u64, hi, mask), mask)
-		coeff = s.newValue2(ssaop.OpAnd64, u64, hi, s.constInt64(u64, int64(bid.CoeffMask128Hi)))
+		coeff = s.newValue2(ssaop.OpAnd64, u64, hi, s.constInt64(u64, int64(bid.UBDCoeffMaskHi)))
 		maxHi, maxLo := s.constInt64(u64, int64(bid.MaxCoeff128Hi)), s.constInt64(u64, int64(bid.MaxCoeff128Lo))
 		noncanonical = s.newValue2(ssaop.OpOrB, boolT,
 			s.newValue2(ssaop.OpLess64U, boolT, maxHi, coeff),
 			s.newValue2(ssaop.OpAndB, boolT, s.newValue2(ssaop.OpEq64, boolT, coeff, maxHi), s.newValue2(ssaop.OpLess64U, boolT, maxLo, lo)))
-		noncanonical = s.newValue2(ssaop.OpOrB, boolT, form2, noncanonical)
 		coeff = s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpOr64, u64, coeff, lo), zero)
+		tag := s.newValue2(ssaop.OpRsh64Ux64, u64, hi, s.constInt64(u64, 60))
+		finite := s.newValue2(ssaop.OpNeq64, boolT, tag, s.constInt64(u64, bid.UBDSpecialTag))
+		return s.newValue2(ssaop.OpAndB, boolT, finite, s.newValue2(ssaop.OpOrB, boolT, coeff, noncanonical))
 	}
 	// SpecialMask64 is the same field in decimal128's high word.
 	special := s.constInt64(u64, int64(bid.SpecialMask64))
@@ -129,16 +132,19 @@ func (s *state) bidCompareZero(op ir.Op, x *ssa.Value, zeroOnLeft bool) *ssa.Val
 			op = ir.OLE
 		}
 	}
-	var hi *ssa.Value
+	var ordered, negative *ssa.Value
 	if x.Type.Kind() == types.TDECIMAL64 {
-		hi = s.newValue2(ssaop.OpXor64, u64, s.newValue1(ssaop.OpCopy, u64, x), s.constInt64(u64, int64(bid.Zero64)))
+		hi := s.newValue2(ssaop.OpXor64, u64, s.newValue1(ssaop.OpCopy, u64, x), s.constInt64(u64, int64(bid.Zero64)))
+		mask := s.constInt64(u64, int64(bid.SpecialMask64|bid.NaNBit64))
+		ordered = s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, hi, mask), mask)
+		negative = s.newValue2(ssaop.OpLess64, boolT, hi, s.constInt64(u64, 0))
 	} else {
-		hi = s.newValue2(ssaop.OpXor64, u64, s.newValue1(ssaop.OpDecimal128Hi, u64, x), s.constInt64(u64, int64(bid.Zero128Hi)))
+		// UBD: a NaN's top five bits are its tag; the sign is bit 49.
+		hi := s.newValue1(ssaop.OpDecimal128Hi, u64, x)
+		tag := s.newValue2(ssaop.OpRsh64Ux64, u64, hi, s.constInt64(u64, 59))
+		ordered = s.newValue2(ssaop.OpNeq64, boolT, tag, s.constInt64(u64, bid.UBDNaNTag))
+		negative = s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, hi, s.constInt64(u64, bid.UBDSignHi)), s.constInt64(u64, 0))
 	}
-	// These fields occupy the same high-word bits in both BID widths.
-	mask := s.constInt64(u64, int64(bid.SpecialMask64|bid.NaNBit64))
-	ordered := s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, hi, mask), mask)
-	negative := s.newValue2(ssaop.OpLess64, boolT, hi, s.constInt64(u64, 0))
 	var result *ssa.Value
 	switch op {
 	case ir.OLT:
@@ -185,16 +191,16 @@ func initBIDKernelSyms() {
 		return
 	}
 	initBIDKernelSyms64()
-	bidKernelAdd = base.PkgLinksym("internal/bid", "addSlow128", obj.ABIInternal)
-	bidKernelMul = base.PkgLinksym("internal/bid", "mulSlow128", obj.ABIInternal)
-	bidKernelAddLong = base.PkgLinksym("internal/bid", "addLong128", obj.ABIInternal)
-	bidKernelMulLong = base.PkgLinksym("internal/bid", "mulLong128", obj.ABIInternal)
-	bidKernelDiv = base.PkgLinksym("internal/bid", "div128", obj.ABIInternal)
-	bidKernelCmp = base.PkgLinksym("internal/bid", "quietCmpSlow128", obj.ABIInternal)
+	bidKernelAdd = base.PkgLinksym("internal/bid", "ubdAddSlow128", obj.ABIInternal)
+	bidKernelMul = base.PkgLinksym("internal/bid", "ubdMulSlow128", obj.ABIInternal)
+	bidKernelAddLong = base.PkgLinksym("internal/bid", "ubdAddLong128", obj.ABIInternal)
+	bidKernelMulLong = base.PkgLinksym("internal/bid", "ubdMulLong128", obj.ABIInternal)
+	bidKernelDiv = base.PkgLinksym("internal/bid", "ubdDiv128", obj.ABIInternal)
+	bidKernelCmp = base.PkgLinksym("internal/bid", "ubdQuietCmpSlow128", obj.ABIInternal)
 	bidKernelCmpFinite = base.PkgLinksym("internal/bid", "cCmpFinite128", obj.ABIInternal)
-	bidKernelQuantize = base.PkgLinksym("internal/bid", "quantizeSlow128", obj.ABIInternal)
-	bidKernelQuantizeLong = base.PkgLinksym("internal/bid", "quantizeLong128", obj.ABIInternal)
-	bidKernelIntegral = base.PkgLinksym("internal/bid", "roundToIntegral128", obj.ABIInternal)
+	bidKernelQuantize = base.PkgLinksym("internal/bid", "ubdQuantizeSlow128", obj.ABIInternal)
+	bidKernelQuantizeLong = base.PkgLinksym("internal/bid", "ubdQuantizeLong128", obj.ABIInternal)
+	bidKernelIntegral = base.PkgLinksym("internal/bid", "ubdRoundToIntegral128", obj.ABIInternal)
 }
 
 // bidKernelDirect reports whether the target takes the decimal128
@@ -210,11 +216,9 @@ func bidKernelDirect() bool {
 // to even.
 func (s *state) bidKernelOp(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value {
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
-	// A decimal value in SSA is its encoding XORed with that of 0E+0: see
-	// softDecimalCall.
-	zeroHi := s.constInt64(u64, int64(ir.DecimalZero128Hi()))
-	xhi := s.newValue2(ssaop.OpXor64, u64, s.newValue1(ssaop.OpDecimal128Hi, u64, x), zeroHi)
-	yhi := s.newValue2(ssaop.OpXor64, u64, s.newValue1(ssaop.OpDecimal128Hi, u64, y), zeroHi)
+	// UBD: the kernel's UBD entries take the stored words as they are.
+	xhi := s.newValue1(ssaop.OpDecimal128Hi, u64, x)
+	yhi := s.newValue1(ssaop.OpDecimal128Hi, u64, y)
 	xlo, ylo := s.newValue1(ssaop.OpDecimal128Lo, u64, x), s.newValue1(ssaop.OpDecimal128Lo, u64, y)
 	var fn, long *obj.LSym
 	switch op {
@@ -242,10 +246,8 @@ func (s *state) bidKernelOp(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Valu
 		// x - y is x + (-y), except that a NaN y keeps its sign, so
 		// that the result for it is y made quiet with its own sign.
 		fn, long = bidKernelAdd, bidKernelAddLong
-		nanMask := s.constInt64(u64, int64(bid.NaN64))
-		nan := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpAnd64, u64, yhi, nanMask), nanMask)
-		signMask := bid.SignMask128Hi
-		negated := s.newValue2(ssaop.OpXor64, u64, yhi, s.constInt64(u64, int64(signMask)))
+		nan := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpRsh64Ux64, u64, yhi, s.constInt64(u64, 59)), s.constInt64(u64, bid.UBDNaNTag))
+		negated := s.newValue2(ssaop.OpXor64, u64, yhi, s.constInt64(u64, bid.UBDSignHi))
 		yhi = s.newValue3(ssaop.OpCondSelect, u64, yhi, negated, nan)
 	case ir.OMUL:
 		fn, long = bidKernelMul, bidKernelMulLong
@@ -257,7 +259,7 @@ func (s *state) bidKernelOp(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Valu
 	mode := s.constInt8(types.Types[types.TUINT8], int8(bid.ToNearestEven))
 	call := func(fn *obj.LSym) *ssa.Value {
 		res := s.rtcall(fn, true, []*types.Type{u64, u64}, xhi, xlo, yhi, ylo, mode)
-		return s.newValue2(ssaop.OpDecimal128Make, rt, res[1], s.newValue2(ssaop.OpXor64, u64, res[0], zeroHi))
+		return s.newValue2(ssaop.OpDecimal128Make, rt, res[1], res[0])
 	}
 	if long == nil {
 		return call(fn)
@@ -270,7 +272,7 @@ func (s *state) bidKernelOp(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Valu
 	// inline path) a refusal and a second call. How many words the
 	// coefficients have goes with the program's data, so it is a branch.
 	result := ssaMarker("bidkernel") // one per call; see bidAddSub128
-	coeffs := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpOr64, u64, xhi, yhi), s.constInt64(u64, int64(bid.CoeffMask128Hi)))
+	coeffs := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpOr64, u64, xhi, yhi), s.constInt64(u64, int64(bid.UBDCoeffMaskHi)))
 	words := s.newValue2(ssaop.OpEq64, boolT, coeffs, s.constInt64(u64, 0))
 	bWords := s.f.NewBlock(block.BlockPlain)
 	bWide := s.f.NewBlock(block.BlockPlain)
@@ -328,7 +330,11 @@ func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	zero := s.constInt64(u64, 0)
 	xh := s.newValue1(ssaop.OpDecimal128Hi, u64, x)
 	yh := s.newValue1(ssaop.OpDecimal128Hi, u64, y)
-	signMask := bid.SignMask128Hi
+	// UBD: the sign is bit 49, the exponent a signed shift away, and no
+	// second form or storage mask exists. A word coefficient (the high
+	// coefficient bits clear) also rules out every special value, whose
+	// coefficient begins 0x1F, so no separate finiteness guard is needed.
+	signMask := uint64(bid.UBDSignHi)
 	signBit := s.constInt64(u64, int64(signMask))
 	if op == ir.OSUB {
 		yh = s.newValue2(ssaop.OpXor64, u64, yh, signBit)
@@ -336,13 +342,8 @@ func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	xl := s.newValue1(ssaop.OpDecimal128Lo, u64, x)
 	yl := s.newValue1(ssaop.OpDecimal128Lo, u64, y)
 	same := s.newValue2(ssaop.OpEq64, boolT, xh, yh)
-	coeff := s.newValue2(ssaop.OpAnd64, u64, xh, s.constInt64(u64, int64(bid.CoeffMask128Hi)))
+	coeff := s.newValue2(ssaop.OpAnd64, u64, xh, s.constInt64(u64, int64(bid.UBDCoeffMaskHi)))
 	word := s.newValue2(ssaop.OpEq64, boolT, coeff, zero)
-	mask := s.constInt64(u64, int64(bid.Form2Mask128Hi))
-	// Compare in stored form: apply the storage XOR to the constant instead
-	// of decoding the operand before deciding whether to take the slow path.
-	second := s.constInt64(u64, int64(bid.Form2Mask128Hi^(bid.Zero128Hi&bid.Form2Mask128Hi)))
-	finite := s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, xh, mask), second)
 
 	bSlow := s.f.NewBlock(block.BlockPlain)
 	bAfter := s.f.NewBlock(block.BlockPlain)
@@ -351,7 +352,7 @@ func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	// Short-circuit the guards, particularly the common mismatch in quantum
 	// or sign. Branches also let the backend use condition codes directly
 	// instead of materializing and combining three boolean values.
-	for i, guard := range []*ssa.Value{same, word, finite} {
+	for i, guard := range []*ssa.Value{same, word} {
 		b := s.endBlock()
 		b.Kind = block.BlockIf
 		b.SetControl(guard)
@@ -375,7 +376,7 @@ func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 
 	s.startBlock(bOpposite)
 	opposite := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpXor64, u64, xh, yh), signBit)
-	for i, guard := range []*ssa.Value{opposite, word, finite} {
+	for i, guard := range []*ssa.Value{opposite, word} {
 		b := s.endBlock()
 		b.Kind = block.BlockIf
 		b.SetControl(guard)
@@ -393,7 +394,7 @@ func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	borrow := s.newValue1(ssaop.OpSelect1, u64, diff)
 	borrowed := s.newValue2(ssaop.OpNeq64, boolT, borrow, zero)
 	lo = s.newValue3(ssaop.OpCondSelect, u64, s.newValue1(ssaop.OpNeg64, u64, lo), lo, borrowed)
-	hi = s.newValue2(ssaop.OpXor64, u64, xh, s.newValue2(ssaop.OpLsh64x64, u64, borrow, s.constInt64(u64, 63)))
+	hi = s.newValue2(ssaop.OpXor64, u64, xh, s.newValue2(ssaop.OpLsh64x64, u64, borrow, s.constInt64(u64, 49)))
 	cancelled := s.newValue2(ssaop.OpEq64, boolT, lo, zero)
 	hi = s.newValue3(ssaop.OpCondSelect, u64, s.newValue2(ssaop.OpAnd64, u64, hi, s.constInt64(u64, int64(^signMask))), hi, cancelled)
 	s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, hi)
@@ -404,10 +405,9 @@ func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	// aligned sum is (2^64-1)*(10^14+1) < 10^34. A difference is no larger.
 	// Both are exact at the smaller input exponent, including subnormals.
 	const maxGap = bidAddMaxGap
-	coeffs := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpOr64, u64, xh, yh), s.constInt64(u64, int64(bid.CoeffMask128Hi)))
+	coeffs := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpOr64, u64, xh, yh), s.constInt64(u64, int64(bid.UBDCoeffMaskHi)))
 	words := s.newValue2(ssaop.OpEq64, boolT, coeffs, zero)
-	yfinite := s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, yh, mask), second)
-	for _, guard := range []*ssa.Value{words, finite, yfinite} {
+	for _, guard := range []*ssa.Value{words} {
 		b := s.endBlock()
 		b.Kind = block.BlockIf
 		b.SetControl(guard)
@@ -416,13 +416,10 @@ func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 		b.AddEdgeTo(bSlow)
 		s.startBlock(next)
 	}
-	xnative := s.newValue2(ssaop.OpXor64, u64, xh, s.constInt64(u64, int64(bid.Zero128Hi)))
-	ynative := s.newValue2(ssaop.OpXor64, u64, yh, s.constInt64(u64, int64(bid.Zero128Hi)))
-	shift := s.constInt64(u64, bid.ExpShift128)
-	expMask := s.constInt64(u64, int64(bid.ExpMask128))
-	xe := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpRsh64Ux64, u64, xnative, shift), expMask)
-	ye := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpRsh64Ux64, u64, ynative, shift), expMask)
-	swap := s.newValue2(ssaop.OpLess64U, boolT, xe, ye)
+	shift := s.constInt64(u64, bid.UBDExpShift)
+	xe := s.newValue2(ssaop.OpRsh64x64, u64, xh, shift)
+	ye := s.newValue2(ssaop.OpRsh64x64, u64, yh, shift)
+	swap := s.newValue2(ssaop.OpLess64, boolT, xe, ye)
 	gap := s.newValue3(ssaop.OpCondSelect, u64,
 		s.newValue2(ssaop.OpSub64, u64, ye, xe), s.newValue2(ssaop.OpSub64, u64, xe, ye), swap)
 	bounded := s.newValue2(ssaop.OpLeq64U, boolT, gap, s.constInt64(u64, maxGap))
@@ -513,15 +510,13 @@ func (s *state) bidMul128(rt *types.Type, x, y *ssa.Value) *ssa.Value {
 	yh := s.newValue1(ssaop.OpDecimal128Hi, u64, y)
 	xl := s.newValue1(ssaop.OpDecimal128Lo, u64, x)
 	yl := s.newValue1(ssaop.OpDecimal128Lo, u64, y)
-	coeff := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpOr64, u64, xh, yh), s.constInt64(u64, int64(bid.CoeffMask128Hi)))
+	// UBD: word coefficients rule out the special values (see
+	// bidAddSub128), so no finiteness guards.
+	coeff := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpOr64, u64, xh, yh), s.constInt64(u64, int64(bid.UBDCoeffMaskHi)))
 	words := s.newValue2(ssaop.OpEq64, boolT, coeff, zero)
-	mask := s.constInt64(u64, int64(bid.Form2Mask128Hi))
-	second := s.constInt64(u64, int64(bid.Form2Mask128Hi^(bid.Zero128Hi&bid.Form2Mask128Hi)))
-	xfinite := s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, xh, mask), second)
-	yfinite := s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, yh, mask), second)
 	bSlow := s.f.NewBlock(block.BlockPlain)
 	bAfter := s.f.NewBlock(block.BlockPlain)
-	for _, guard := range []*ssa.Value{words, xfinite, yfinite} {
+	for _, guard := range []*ssa.Value{words} {
 		b := s.endBlock()
 		b.Kind = block.BlockIf
 		b.SetControl(guard)
@@ -531,14 +526,12 @@ func (s *state) bidMul128(rt *types.Type, x, y *ssa.Value) *ssa.Value {
 		s.startBlock(next)
 	}
 
-	xnative := s.newValue2(ssaop.OpXor64, u64, xh, s.constInt64(u64, int64(bid.Zero128Hi)))
-	ynative := s.newValue2(ssaop.OpXor64, u64, yh, s.constInt64(u64, int64(bid.Zero128Hi)))
-	shift := s.constInt64(u64, bid.ExpShift128)
-	expMask := s.constInt64(u64, int64(bid.ExpMask128))
-	xe := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpRsh64Ux64, u64, xnative, shift), expMask)
-	ye := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpRsh64Ux64, u64, ynative, shift), expMask)
-	exp := s.newValue2(ssaop.OpSub64, u64, s.newValue2(ssaop.OpAdd64, u64, xe, ye), s.constInt64(u64, bid.Bias128))
-	expOK := s.newValue2(ssaop.OpLeq64U, boolT, exp, s.constInt64(u64, bid.MaxExp128+bid.Bias128))
+	shift := s.constInt64(u64, bid.UBDExpShift)
+	xe := s.newValue2(ssaop.OpRsh64x64, u64, xh, shift)
+	ye := s.newValue2(ssaop.OpRsh64x64, u64, yh, shift)
+	exp := s.newValue2(ssaop.OpAdd64, u64, xe, ye)
+	biased := s.newValue2(ssaop.OpAdd64, u64, exp, s.constInt64(u64, bid.Bias128))
+	expOK := s.newValue2(ssaop.OpLeq64U, boolT, biased, s.constInt64(u64, bid.MaxExp128+bid.Bias128))
 	b := s.endBlock()
 	b.Kind = block.BlockIf
 	b.SetControl(expOK)
@@ -570,10 +563,8 @@ func (s *state) bidMul128(rt *types.Type, x, y *ssa.Value) *ssa.Value {
 	b.AddEdgeTo(bSlow)
 	s.startBlock(bExact)
 
-	signMask := bid.SignMask128Hi
-	sign := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpXor64, u64, xh, yh), s.constInt64(u64, int64(signMask)))
+	sign := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpXor64, u64, xh, yh), s.constInt64(u64, bid.UBDSignHi))
 	header := s.newValue2(ssaop.OpOr64, u64, sign, s.newValue2(ssaop.OpLsh64x64, u64, exp, shift))
-	header = s.newValue2(ssaop.OpXor64, u64, header, s.constInt64(u64, int64(bid.Zero128Hi)))
 	s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, s.newValue2(ssaop.OpOr64, u64, header, hi))
 	s.endBlock().AddEdgeTo(bAfter)
 

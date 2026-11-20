@@ -21,6 +21,11 @@ import (
 // which describe the target internal/bid itself was compiled for.
 func DecimalDPD() bool { return buildcfg.GOARCH == "ppc64le" }
 
+// DecimalUBD128 reports whether the target stores decimal128 in the UBD
+// layout (internal/bid's ubd.go): every target whose decimal128 is not DPD.
+// UBD's all-bits-clear pattern is +0E+0, so its zero mask is zero.
+func DecimalUBD128() bool { return !DecimalDPD() }
+
 // DecimalZero64 and DecimalZero128Hi return the target's native encodings
 // of 0E+0, the masks between a value's native encoding and its memory form.
 func DecimalZero64() uint64 {
@@ -33,6 +38,9 @@ func DecimalZero64() uint64 {
 func DecimalZero128Hi() uint64 {
 	if DecimalDPD() {
 		return bid.DPDZero128Hi
+	}
+	if DecimalUBD128() {
+		return 0
 	}
 	return bid.Zero128Hi
 }
@@ -53,6 +61,8 @@ func DecimalConst(t *types.Type, c Node) (lo, hi uint64) {
 		bits, _ := constdecimal.Encode(c.Val(), constdecimal.Decimal128)
 		if DecimalDPD() {
 			bits = bid.DPDFromBID128(bits)
+		} else if DecimalUBD128() {
+			bits = bid.UBDFromBID128(bits)
 		}
 		return bits.Lo, bits.Hi ^ DecimalZero128Hi()
 	}

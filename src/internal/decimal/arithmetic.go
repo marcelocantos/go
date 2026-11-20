@@ -115,7 +115,8 @@ const (
 
 var (
 	_ [0 - int((bid.NativeZero64|bid.NativeZero128Hi)>>63)]struct{}
-	_ [0 - int((bid.NativeZero64^bid.NativeZero128Hi)&classMask>>58)]struct{}
+	// With UBD decimal128 (bid.NativeUBD128) the decimal128 word has its
+	// own layout, and the functions below read it separately.
 )
 
 // NaN returns an IEEE 754 "not-a-number" value of type D.
@@ -157,6 +158,9 @@ func inf128(sign int) decimal128 {
 
 // IsNaN reports whether x is an IEEE 754 "not-a-number" value.
 func IsNaN[D Decimal](x D) bool {
+	if bid.NativeUBD128 && !is64(x) {
+		return *signWord(&x)>>59 == bid.UBDNaNTag
+	}
 	return (*signWord(&x)^classZero)&classMask == classMask
 }
 
@@ -166,6 +170,9 @@ func IsNaN[D Decimal](x D) bool {
 // If sign == 0, IsInf reports whether x is either infinity.
 func IsInf[D Decimal](x D, sign int) bool {
 	t := *signWord(&x)
+	if bid.NativeUBD128 && !is64(x) {
+		return t>>59 == bid.UBDInfTag && (sign == 0 || (sign > 0) != (t&bid.UBDSignHi != 0))
+	}
 	return (t^classZero)&classMask == bid.SpecialMask64 && (sign == 0 || (sign > 0) != (t&bid.SignMask64 != 0))
 }
 
@@ -225,7 +232,15 @@ func signalingNaNWithPayload128(x decimal128) decimal128 {
 }
 
 // Signbit reports whether x is negative or negative zero.
-func Signbit[D Decimal](x D) bool { return *signWord(&x)&bid.SignMask64 != 0 }
+func Signbit[D Decimal](x D) bool { return *signWord(&x)&signMask(x) != 0 }
+
+// signMask returns the sign bit of D's stored sign word.
+func signMask[D Decimal](x D) uint64 {
+	if bid.NativeUBD128 && !is64(x) {
+		return bid.UBDSignHi
+	}
+	return bid.SignMask64
+}
 
 // Abs returns the absolute value of x, keeping its quantum.
 //
@@ -234,15 +249,15 @@ func Signbit[D Decimal](x D) bool { return *signWord(&x)&bid.SignMask64 != 0 }
 //	Abs(±Inf) = +Inf
 //	Abs(NaN) = NaN
 func Abs[D Decimal](x D) D {
-	*signWord(&x) &^= bid.SignMask64
+	*signWord(&x) &^= signMask(x)
 	return x
 }
 
 // Copysign returns a value with the magnitude and quantum of f and the sign
 // of sign.
 func Copysign[D Decimal](f, sign D) D {
-	p := signWord(&f)
-	*p = *p&^bid.SignMask64 | *signWord(&sign)&bid.SignMask64
+	p, m := signWord(&f), signMask(f)
+	*p = *p&^m | *signWord(&sign)&m
 	return f
 }
 
