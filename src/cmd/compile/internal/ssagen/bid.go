@@ -215,24 +215,38 @@ func bidCallOnly(x *ssa.Value) bool {
 	return base.Debug.UBDCallOnly != 0 && x.Type.Kind() == types.TDECIMAL128 && bidKernelDirect()
 }
 
-// ubdAddFirstLevel lowers x + y or x - y on decimal128 to the first-level
-// fast path of decimal128-go's add (d128_add_rnd_ctxnull) in front of the
-// kernel call (-d=ubdcallonly=2): equal qExp and sign, the top 15 bits of
-// the high words (y's sign flipped for a difference), and the high 49
-// coefficient bits of the operands summing below 2^48. Then y's coefficient
-// is added straight onto x's whole stored value, so that x's qExp and sign
-// ride along. The bound makes both coefficients below 2^112, so neither
-// operand is special (a special's coefficient sets bit 48) and the sum is
-// below 10^34: exact, with no rounding. Every other pair, the kernel call,
-// with the original y.
-func (s *state) ubdAddFirstLevel(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value {
+// ubdAddFast lowers x + y or x - y on decimal128 to decimal128-go's add
+// fast paths in front of the kernel call (-d=ubdcallonly=2 and up). For a
+// difference y's sign is flipped first, so both paths see the effective
+// signs; the kernel call receives the original y.
+//
+// First level (d128_add_rnd_ctxnull's fast entry): equal qExp and sign, the
+// top 15 bits of the high words, and the high 49 coefficient bits of the
+// operands summing below 2^48. Then y's coefficient is added straight onto
+// x's whole stored value, so that x's qExp and sign ride along. The bound
+// makes both coefficients below 2^112, so neither operand is special (a
+// special's coefficient sets bit 48) and the sum is below 10^34: exact, with
+// no rounding.
+//
+// Second level (level 3; the first test of d128_add_slow_rnd_ctxnull):
+// equal qExp and opposite signs, the high words differing in the sign bit
+// and the coefficient bits alone, and bit 48 clear in both. Each coefficient
+// is then below 2^112, so neither operand is special, and the difference of
+// the magnitudes, smaller than either, is exact at the common exponent.
+// With x's sign flipped its top 15 bits are y's, so (xh ^ sign) - yh is the
+// high word of xc - yc with no masking. A negative difference is negated
+// and takes y's sign. An exact zero is +0: under IEEE 754-2019 clause 6.3 a
+// cancellation is -0 only when rounding toward negative, and the operators
+// round ties to even.
+func (s *state) ubdAddFast(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value {
 	result := ssaMarker("ubdadd1") // one per lowering; see bidAddSub128
-	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
+	u64, i64, boolT := types.Types[types.TUINT64], types.Types[types.TINT64], types.Types[types.TBOOL]
 	zero := s.constInt64(u64, 0)
+	signBit := s.constInt64(u64, bid.UBDSignHi)
 	xh, yh := s.newValue1(ssaop.OpDecimal128Hi, u64, x), s.newValue1(ssaop.OpDecimal128Hi, u64, y)
 	xl, yl := s.newValue1(ssaop.OpDecimal128Lo, u64, x), s.newValue1(ssaop.OpDecimal128Lo, u64, y)
 	if op == ir.OSUB {
-		yh = s.newValue2(ssaop.OpXor64, u64, yh, s.constInt64(u64, bid.UBDSignHi))
+		yh = s.newValue2(ssaop.OpXor64, u64, yh, signBit)
 	}
 	coeffMask := s.constInt64(u64, int64(bid.UBDCoeffMaskHi))
 	differ := s.newValue2(ssaop.OpXor64, u64, xh, yh)
@@ -248,20 +262,55 @@ func (s *state) ubdAddFirstLevel(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa
 
 	bSlow := s.f.NewBlock(block.BlockPlain)
 	bAfter := s.f.NewBlock(block.BlockPlain)
-	for _, guard := range []*ssa.Value{same, fits} {
+	second := base.Debug.UBDCallOnly >= 3
+	bOpposite := bSlow
+	if second {
+		bOpposite = s.f.NewBlock(block.BlockPlain)
+	}
+	guard := func(v *ssa.Value, fail *ssa.Block) {
 		b := s.endBlock()
 		b.Kind = block.BlockIf
-		b.SetControl(guard)
+		b.SetControl(v)
 		next := s.f.NewBlock(block.BlockPlain)
 		b.AddEdgeTo(next)
-		b.AddEdgeTo(bSlow)
+		b.AddEdgeTo(fail)
 		s.startBlock(next)
 	}
+	guard(same, bOpposite)
+	guard(fits, bSlow)
 	sum := s.newValue3(ssaop.OpAdd64carry, types.NewTuple(u64, u64), xl, yl, zero)
 	lo, carry := s.newValue1(ssaop.OpSelect0, u64, sum), s.newValue1(ssaop.OpSelect1, u64, sum)
 	hi := s.newValue1(ssaop.OpSelect0, u64, s.newValue3(ssaop.OpAdd64carry, types.NewTuple(u64, u64), xh, ych, carry))
 	s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, hi)
 	s.endBlock().AddEdgeTo(bAfter)
+
+	if second {
+		s.startBlock(bOpposite)
+		// Equal qExp (the top 14 bits); the signs differ, or the test above
+		// would have passed.
+		guard(s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpRsh64Ux64, u64, differ, s.constInt64(u64, bid.UBDExpShift)), zero), bSlow)
+		top := s.constInt64(u64, 1<<48)
+		guard(s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpOr64, u64, xh, yh), top), zero), bSlow)
+		d := s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), xl, yl, zero)
+		dlo := s.newValue1(ssaop.OpSelect0, u64, d)
+		dhi := s.newValue1(ssaop.OpSelect0, u64, s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64),
+			s.newValue2(ssaop.OpXor64, u64, xh, signBit), yh, s.newValue1(ssaop.OpSelect1, u64, d)))
+		// |xc - yc| < 2^112, so the high word's sign is the difference's.
+		swap := s.newValue2(ssaop.OpLess64, boolT, s.newValue1(ssaop.OpCopy, i64, dhi), s.constInt64(i64, 0))
+		n := s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), zero, dlo, zero)
+		nlo := s.newValue1(ssaop.OpSelect0, u64, n)
+		nhi := s.newValue1(ssaop.OpSelect0, u64, s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), zero, dhi, s.newValue1(ssaop.OpSelect1, u64, n)))
+		lo = s.newValue3(ssaop.OpCondSelect, u64, nlo, dlo, swap)
+		hi = s.newValue3(ssaop.OpCondSelect, u64, nhi, dhi, swap)
+		// The header of the larger magnitude, its top 15 bits by two shifts
+		// rather than a second 10-byte mask; +0 for an exact zero.
+		hsel := s.newValue3(ssaop.OpCondSelect, u64, yh, xh, swap)
+		header := s.newValue2(ssaop.OpLsh64x64, u64, s.newValue2(ssaop.OpRsh64Ux64, u64, hsel, s.constInt64(u64, bid.UBDExpShift-1)), s.constInt64(u64, bid.UBDExpShift-1))
+		cancelled := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpOr64, u64, lo, hi), zero)
+		header = s.newValue3(ssaop.OpCondSelect, u64, s.newValue2(ssaop.OpAnd64, u64, header, s.constInt64(u64, ^int64(bid.UBDSignHi))), header, cancelled)
+		s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, s.newValue2(ssaop.OpOr64, u64, header, hi))
+		s.endBlock().AddEdgeTo(bAfter)
+	}
 
 	s.startBlock(bSlow)
 	s.vars[result] = s.softDecimalOp(op, rt, x, y)
