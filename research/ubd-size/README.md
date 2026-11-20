@@ -107,5 +107,10 @@ non-canonical BID patterns to survive a round trip now expect UBD /
 canonical values, as they already do for DPD on ppc64le. `ubd.go` is
 excluded from `internal/bid`'s API-coverage and layout lint tests.
 
-Not done: arm64 was compiled but not run (no emulator); the GDB printer
-does not know UBD (`TestGdbDecimal` fails).
+On darwin/arm64 (Apple Silicon, bootstrap Go 1.26.4), the UBD build passes
+`internal/bid` (including `TestOperators`), `internal/decimal`,
+`math/decimal`, `strconv` (all `-short`) and
+`go test cmd/internal/testdir -run Test/decimal`. The measurement run there
+(`GOOS=linux ./measure.sh ...`) reproduces the tables above exactly.
+
+Not done: the GDB printer does not know UBD (`TestGdbDecimal` fails).
