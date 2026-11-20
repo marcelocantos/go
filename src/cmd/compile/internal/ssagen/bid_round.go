@@ -34,6 +34,29 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 	zero, one := s.constInt64(u64, 0), s.constInt64(u64, 1)
 	x, mode := args[0], args[len(args)-1]
 	is64 := x.Type.Kind() == types.TDECIMAL64
+	// kernelCall calls the kernel's UBD entry for this rounding with the
+	// operand words kargs, low first: the ties-to-even entry, with no mode,
+	// when the mode is that constant, and otherwise the entry that takes it.
+	kernelCall := func(kargs []*ssa.Value) *ssa.Value {
+		fn, tte := bidKernelQuantize, bidKernelQuantizeTTE
+		if integral {
+			fn, tte = bidKernelIntegral, bidKernelIntegralTTE
+		}
+		if mode.Op == ssaop.OpConst8 && mode.AuxInt == int64(bid.ToNearestEven) {
+			fn = tte
+		} else {
+			kargs = append(kargs, mode)
+		}
+		res := s.rtcall(fn, true, []*types.Type{u64, u64}, kargs...)
+		return s.newValue2(ssaop.OpDecimal128Make, n.Type(), res[0], res[1])
+	}
+	if bidCallOnly(x) {
+		kargs := []*ssa.Value{s.newValue1(ssaop.OpDecimal128Lo, u64, x), s.newValue1(ssaop.OpDecimal128Hi, u64, x)}
+		if !integral {
+			kargs = append(kargs, s.newValue1(ssaop.OpDecimal128Lo, u64, args[1]), s.newValue1(ssaop.OpDecimal128Hi, u64, args[1]))
+		}
+		return kernelCall(kargs)
+	}
 	shift, bias := bid.ExpShift128, bid.Bias128
 	zeroEncoding := uint64(bid.Zero128Hi)
 	expMask, coeffMask, formMask := uint64(bid.ExpMask128), uint64(bid.CoeffMask128Hi), uint64(bid.Form2Mask128Hi)
@@ -206,18 +229,12 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 		// UBD: the kernel's UBD entries take the stored words as they are,
 		// low first (internal/bid.UBD128).
 		kargs := []*ssa.Value{s.newValue1(ssaop.OpDecimal128Lo, u64, x), xh}
-		call := func(fn *obj.LSym) {
-			res := s.rtcall(fn, true, []*types.Type{u64, u64}, append(kargs, mode)...)
-			s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, n.Type(), res[0], res[1])
-		}
-		if integral {
-			call(bidKernelIntegral)
-		} else {
+		if !integral {
 			kargs = append(kargs, s.newValue1(ssaop.OpDecimal128Lo, u64, args[1]), high(args[1]))
-			// One call for every operand, as in bidKernelOp: the kernel's
-			// entry sends a word coefficient to its word path itself.
-			call(bidKernelQuantize)
 		}
+		// One call for every operand, as in bidKernelOp: the kernel's
+		// entry sends a word coefficient to its word path itself.
+		s.vars[result] = kernelCall(kargs)
 	} else {
 		s.vars[result] = s.rtcall(fallback, true, []*types.Type{n.Type()}, args...)[0]
 	}

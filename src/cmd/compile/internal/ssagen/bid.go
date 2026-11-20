@@ -176,13 +176,18 @@ func (s *state) bidCompareZero(op ir.Op, x *ssa.Value, zeroOnLeft bool) *ssa.Val
 // second call on every operand pair the fast paths refuse. The UBD
 // entries take each decimal128 as internal/bid.UBD128, its two words low
 // first, the order in which it is passed in registers, so the operands go
-// to the kernel where they already are, with the mode as a fifth
-// argument, and the result comes back where it is returned; the comparison
+// to the kernel where they already are, and the result comes back where
+// it is returned. The operator entries take no rounding mode (the
+// operators round ties to even); quantize and integral rounding pass the
+// caller's as a fifth argument. The comparison
 // returns its ordering and whether the operands are ordered, and the
 // operator is decided here from the two.
 var (
 	bidKernelAdd, bidKernelSub, bidKernelMul, bidKernelDiv, bidKernelCmp *obj.LSym
-	bidKernelQuantize, bidKernelIntegral                                 *obj.LSym
+	// Quantize and integral rounding: the entries that take the caller's
+	// mode, and those that round ties to even and take none.
+	bidKernelQuantize, bidKernelIntegral       *obj.LSym
+	bidKernelQuantizeTTE, bidKernelIntegralTTE *obj.LSym
 )
 
 func initBIDKernelSyms() {
@@ -190,13 +195,24 @@ func initBIDKernelSyms() {
 		return
 	}
 	initBIDKernelSyms64()
-	bidKernelAdd = base.PkgLinksym("internal/bid", "ubdAddSlow128", obj.ABIInternal)
-	bidKernelSub = base.PkgLinksym("internal/bid", "ubdSubSlow128", obj.ABIInternal)
-	bidKernelMul = base.PkgLinksym("internal/bid", "ubdMulSlow128", obj.ABIInternal)
-	bidKernelDiv = base.PkgLinksym("internal/bid", "ubdDiv128", obj.ABIInternal)
-	bidKernelCmp = base.PkgLinksym("internal/bid", "ubdQuietCmpSlow128", obj.ABIInternal)
-	bidKernelQuantize = base.PkgLinksym("internal/bid", "ubdQuantizeSlow128", obj.ABIInternal)
-	bidKernelIntegral = base.PkgLinksym("internal/bid", "ubdRoundToIntegral128", obj.ABIInternal)
+	// The operators round ties to even: their entries take no mode.
+	bidKernelAdd = base.PkgLinksym("internal/bid", "ubdAddTTE128", obj.ABIInternal)
+	bidKernelSub = base.PkgLinksym("internal/bid", "ubdSubTTE128", obj.ABIInternal)
+	bidKernelMul = base.PkgLinksym("internal/bid", "ubdMulTTE128", obj.ABIInternal)
+	bidKernelDiv = base.PkgLinksym("internal/bid", "ubdDivTTE128", obj.ABIInternal)
+	bidKernelCmp = base.PkgLinksym("internal/bid", "ubdCompare128", obj.ABIInternal)
+	bidKernelQuantize = base.PkgLinksym("internal/bid", "ubdQuantizeRnd128", obj.ABIInternal)
+	bidKernelIntegral = base.PkgLinksym("internal/bid", "ubdRoundToIntegralRnd128", obj.ABIInternal)
+	bidKernelQuantizeTTE = base.PkgLinksym("internal/bid", "ubdQuantizeTTE128", obj.ABIInternal)
+	bidKernelIntegralTTE = base.PkgLinksym("internal/bid", "ubdRoundToIntegralTTE128", obj.ABIInternal)
+}
+
+// bidCallOnly reports whether the decimal128 operation on x is to be the
+// kernel call alone, with no inline fast path (-d=ubdcallonly=1): the
+// smallest code at each call site, from which fast paths are added back
+// one at a time and measured.
+func bidCallOnly(x *ssa.Value) bool {
+	return base.Debug.UBDCallOnly != 0 && x.Type.Kind() == types.TDECIMAL128 && bidKernelDirect()
 }
 
 // bidKernelDirect reports whether the target takes the decimal128
@@ -251,9 +267,9 @@ func (s *state) bidKernelOp(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Valu
 	}
 	// One call for every operand: the kernel's entry tests for word
 	// coefficients itself, first, as cheaply as a test here, which would
-	// cost every call site a second call sequence.
-	mode := s.constInt8(types.Types[types.TUINT8], int8(bid.ToNearestEven))
-	res := s.rtcall(fn, true, []*types.Type{u64, u64}, xlo, xhi, ylo, yhi, mode)
+	// cost every call site a second call sequence. The operator entries
+	// take no rounding mode: the operators round to nearest, ties to even.
+	res := s.rtcall(fn, true, []*types.Type{u64, u64}, xlo, xhi, ylo, yhi)
 	return s.newValue2(ssaop.OpDecimal128Make, rt, res[0], res[1])
 }
 

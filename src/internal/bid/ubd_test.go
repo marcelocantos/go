@@ -198,17 +198,20 @@ func TestUBDKernel(t *testing.T) {
 		modes = []bid.Mode{bid.ToNearestEven, bid.TowardNegative, 6}
 	}
 
-	type binary = func(x, y bid.Uint128, mode bid.Mode) bid.Uint128
+	// Each rounding operation has a TTE entry, checked at ToNearestEven,
+	// and an Rnd entry, checked in every mode.
+	type tte = func(x, y bid.Uint128) bid.Uint128
+	type rnd = func(x, y bid.Uint128, mode bid.Mode) bid.Uint128
 	ops := []struct {
-		name string
-		f    binary
-		ref  binary // on BID encodings
+		name     string
+		tte      tte
+		rnd, ref rnd // ref on BID encodings
 	}{
-		{"ubdAddSlow128", bid.UBDAddSlow128, bid.Add128},
-		{"ubdSubSlow128", bid.UBDSubSlow128, bid.Sub128},
-		{"ubdMulSlow128", bid.UBDMulSlow128, bid.Mul128},
-		{"ubdDiv128", bid.UBDDiv128, bid.Div128},
-		{"ubdQuantizeSlow128", bid.UBDQuantizeSlow128, bid.Quantize128},
+		{"Add", bid.UBDAddTTE128, bid.UBDAddRnd128, bid.Add128},
+		{"Sub", bid.UBDSubTTE128, bid.UBDSubRnd128, bid.Sub128},
+		{"Mul", bid.UBDMulTTE128, bid.UBDMulRnd128, bid.Mul128},
+		{"Div", bid.UBDDivTTE128, bid.UBDDivRnd128, bid.Div128},
+		{"Quantize", bid.UBDQuantizeTTE128, bid.UBDQuantizeRnd128, bid.Quantize128},
 	}
 
 	errs := 0
@@ -232,19 +235,22 @@ func TestUBDKernel(t *testing.T) {
 
 	for _, x := range pool {
 		bx := bid.BIDFromUBD128(x)
+		check("ubdRoundToIntegralTTE128", x, bid.Uint128{}, bid.ToNearestEven,
+			bid.UBDRoundToIntegralTTE128(x), bid.UBDFromBID128(bid.RoundToIntegral128(bx, bid.ToNearestEven)))
 		for _, mode := range modes {
-			check("ubdRoundToIntegral128", x, bid.Uint128{}, mode,
-				bid.UBDRoundToIntegral128(x, mode), bid.UBDFromBID128(bid.RoundToIntegral128(bx, mode)))
+			check("ubdRoundToIntegralRnd128", x, bid.Uint128{}, mode,
+				bid.UBDRoundToIntegralRnd128(x, mode), bid.UBDFromBID128(bid.RoundToIntegral128(bx, mode)))
 		}
 		for _, y := range pool {
 			by := bid.BIDFromUBD128(y)
-			c, ok := bid.UBDQuietCmpSlow128(x, y)
+			c, ok := bid.UBDCompare128(x, y)
 			if wc, wok := bid.Compare128(bx, by); c != wc || ok != wok {
-				fail("ubdQuietCmpSlow128(%#x, %#x) = %d, %v; want %d, %v", x, y, c, ok, wc, wok)
+				fail("ubdCompare128(%#x, %#x) = %d, %v; want %d, %v", x, y, c, ok, wc, wok)
 			}
-			for _, mode := range modes {
-				for _, op := range ops {
-					check(op.name, x, y, mode, op.f(x, y, mode), bid.UBDFromBID128(op.ref(bx, by, mode)))
+			for _, op := range ops {
+				check("ubd"+op.name+"TTE128", x, y, bid.ToNearestEven, op.tte(x, y), bid.UBDFromBID128(op.ref(bx, by, bid.ToNearestEven)))
+				for _, mode := range modes {
+					check("ubd"+op.name+"Rnd128", x, y, mode, op.rnd(x, y, mode), bid.UBDFromBID128(op.ref(bx, by, mode)))
 				}
 			}
 		}

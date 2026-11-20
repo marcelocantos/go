@@ -151,27 +151,30 @@ var (
 
 // The UBD kernel entries the compiler calls (ubd.go), with the operands and
 // results as Uint128, as the conversions take and give them.
-func ubdCall(f func(x, y UBD128, mode Mode) UBD128, x, y Uint128, mode Mode) Uint128 {
-	r := f(UBD128{Lo: x.Lo, Hi: x.Hi}, UBD128{Lo: y.Lo, Hi: y.Hi}, mode)
-	return Uint128{Hi: r.Hi, Lo: r.Lo}
+func ubdIn(x Uint128) UBD128  { return UBD128{Lo: x.Lo, Hi: x.Hi} }
+func ubdOut(r UBD128) Uint128 { return Uint128{Hi: r.Hi, Lo: r.Lo} }
+
+func UBDAddTTE128(x, y Uint128) Uint128 { return ubdOut(ubdAddTTE128(ubdIn(x), ubdIn(y))) }
+func UBDSubTTE128(x, y Uint128) Uint128 { return ubdOut(ubdSubTTE128(ubdIn(x), ubdIn(y))) }
+func UBDMulTTE128(x, y Uint128) Uint128 { return ubdOut(ubdMulTTE128(ubdIn(x), ubdIn(y))) }
+func UBDDivTTE128(x, y Uint128) Uint128 { return ubdOut(ubdDivTTE128(ubdIn(x), ubdIn(y))) }
+func UBDQuantizeTTE128(x, y Uint128) Uint128 {
+	return ubdOut(ubdQuantizeTTE128(ubdIn(x), ubdIn(y)))
+}
+func UBDRoundToIntegralTTE128(x Uint128) Uint128 { return ubdOut(ubdRoundToIntegralTTE128(ubdIn(x))) }
+
+func UBDAddRnd128(x, y Uint128, m Mode) Uint128 { return ubdOut(ubdAddRnd128(ubdIn(x), ubdIn(y), m)) }
+func UBDSubRnd128(x, y Uint128, m Mode) Uint128 { return ubdOut(ubdSubRnd128(ubdIn(x), ubdIn(y), m)) }
+func UBDMulRnd128(x, y Uint128, m Mode) Uint128 { return ubdOut(ubdMulRnd128(ubdIn(x), ubdIn(y), m)) }
+func UBDDivRnd128(x, y Uint128, m Mode) Uint128 { return ubdOut(ubdDivRnd128(ubdIn(x), ubdIn(y), m)) }
+func UBDQuantizeRnd128(x, y Uint128, m Mode) Uint128 {
+	return ubdOut(ubdQuantizeRnd128(ubdIn(x), ubdIn(y), m))
+}
+func UBDRoundToIntegralRnd128(x Uint128, m Mode) Uint128 {
+	return ubdOut(ubdRoundToIntegralRnd128(ubdIn(x), m))
 }
 
-func UBDAddSlow128(x, y Uint128, mode Mode) Uint128 { return ubdCall(ubdAddSlow128, x, y, mode) }
-func UBDSubSlow128(x, y Uint128, mode Mode) Uint128 { return ubdCall(ubdSubSlow128, x, y, mode) }
-func UBDDiv128(x, y Uint128, mode Mode) Uint128     { return ubdCall(ubdDiv128, x, y, mode) }
-func UBDMulSlow128(x, y Uint128, mode Mode) Uint128 { return ubdCall(ubdMulSlow128, x, y, mode) }
-func UBDQuantizeSlow128(x, y Uint128, mode Mode) Uint128 {
-	return ubdCall(ubdQuantizeSlow128, x, y, mode)
-}
-
-func UBDQuietCmpSlow128(x, y Uint128) (c int, ok bool) {
-	return ubdQuietCmpSlow128(UBD128{Lo: x.Lo, Hi: x.Hi}, UBD128{Lo: y.Lo, Hi: y.Hi})
-}
-
-func UBDRoundToIntegral128(x Uint128, mode Mode) Uint128 {
-	r := ubdRoundToIntegral128(UBD128{Lo: x.Lo, Hi: x.Hi}, mode)
-	return Uint128{Hi: r.Hi, Lo: r.Lo}
-}
+func UBDCompare128(x, y Uint128) (c int, ok bool) { return ubdCompare128(ubdIn(x), ubdIn(y)) }
 
 // Recip10tab64 and Recip10tab128 return entry k of the reciprocal tables.
 func Recip10tab64(k int) (m uint64, s uint) {

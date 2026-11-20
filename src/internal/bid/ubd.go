@@ -158,22 +158,25 @@ const (
 //     payload. A malformed pattern can only come from a bug or from unsafe
 //     code; the result of any operation on one is unspecified, and the
 //     inline paths and the kernel may give different results for it.
-//   - Modes. Every Mode is accepted; one outside the six behaves as
-//     ToNearestEven.
+//   - Modes. Each rounding operation has two entries: TTE rounds to
+//     nearest, ties to even, and takes no mode; Rnd takes the caller's.
+//     The language's operators and the functions whose rounding is fixed
+//     at ties to even call TTE. Rnd accepts every Mode; one outside the six
+//     behaves as ToNearestEven.
 //   - Values. The result is that of the exported BID function on the
 //     operands' BID encodings, converted to UBD:
 //
-//     ubdAddSlow128          Add128
-//     ubdSubSlow128          Sub128
-//     ubdMulSlow128          Mul128
-//     ubdDiv128              Div128
-//     ubdQuantizeSlow128     Quantize128
-//     ubdRoundToIntegral128  RoundToIntegral128
-//     ubdQuietCmpSlow128     Compare128 (c and ok as they are)
+//     ubdAddTTE128, ubdAddRnd128                          Add128
+//     ubdSubTTE128, ubdSubRnd128                          Sub128
+//     ubdMulTTE128, ubdMulRnd128                          Mul128
+//     ubdDivTTE128, ubdDivRnd128                          Div128
+//     ubdQuantizeTTE128, ubdQuantizeRnd128                Quantize128
+//     ubdRoundToIntegralTTE128, ubdRoundToIntegralRnd128  RoundToIntegral128
+//     ubdCompare128                                       Compare128 (c and ok as they are)
 //
-//     The compiler makes one call for every operand pair its inline paths
-//     do not decide, words or not, so an entry tests for the operands its
-//     own fast paths take.
+//     with mode ToNearestEven for a TTE entry. The compiler makes one call
+//     for every operand pair its inline paths do not decide, so an entry
+//     tests for the operands its own fast paths take.
 //   - Results. Every decimal128 result is canonical UBD: a fixed point of
 //     UBDFromBID128(BIDFromUBD128(r)). A finite result has qExp in range and
 //     a coefficient at most MaxCoeff128, an infinity has no bits but its
@@ -190,30 +193,46 @@ func ubdFromBID(x Uint128) UBD128 {
 	return UBD128{Lo: u.Lo, Hi: u.Hi}
 }
 
-func ubdAddSlow128(x, y UBD128, mode Mode) UBD128 {
+// The entries come in pairs: TTE rounds to nearest, ties to even, as the
+// language's operators and the functions without a mode do, and takes no
+// mode; Rnd takes the caller's.
+
+func ubdAddTTE128(x, y UBD128) UBD128 { return ubdAddRnd128(x, y, ToNearestEven) }
+
+func ubdAddRnd128(x, y UBD128, mode Mode) UBD128 {
 	return ubdFromBID(addSlow128(x.bid(), y.bid(), mode))
 }
 
-func ubdSubSlow128(x, y UBD128, mode Mode) UBD128 {
+func ubdSubTTE128(x, y UBD128) UBD128 { return ubdSubRnd128(x, y, ToNearestEven) }
+
+func ubdSubRnd128(x, y UBD128, mode Mode) UBD128 {
 	return ubdFromBID(subSlow128(x.bid(), y.bid(), mode))
 }
 
-func ubdMulSlow128(x, y UBD128, mode Mode) UBD128 {
+func ubdMulTTE128(x, y UBD128) UBD128 { return ubdMulRnd128(x, y, ToNearestEven) }
+
+func ubdMulRnd128(x, y UBD128, mode Mode) UBD128 {
 	return ubdFromBID(mulSlow128(x.bid(), y.bid(), mode))
 }
 
-func ubdDiv128(x, y UBD128, mode Mode) UBD128 {
+func ubdDivTTE128(x, y UBD128) UBD128 { return ubdDivRnd128(x, y, ToNearestEven) }
+
+func ubdDivRnd128(x, y UBD128, mode Mode) UBD128 {
 	return ubdFromBID(div128(x.bid(), y.bid(), mode))
 }
 
-func ubdQuietCmpSlow128(x, y UBD128) (c int, ok bool) {
-	return quietCmpSlow128(x.bid(), y.bid())
-}
+func ubdQuantizeTTE128(x, y UBD128) UBD128 { return ubdQuantizeRnd128(x, y, ToNearestEven) }
 
-func ubdQuantizeSlow128(x, y UBD128, mode Mode) UBD128 {
+func ubdQuantizeRnd128(x, y UBD128, mode Mode) UBD128 {
 	return ubdFromBID(quantizeSlow128(x.bid(), y.bid(), mode))
 }
 
-func ubdRoundToIntegral128(x UBD128, mode Mode) UBD128 {
+func ubdRoundToIntegralTTE128(x UBD128) UBD128 { return ubdRoundToIntegralRnd128(x, ToNearestEven) }
+
+func ubdRoundToIntegralRnd128(x UBD128, mode Mode) UBD128 {
 	return ubdFromBID(roundToIntegral128(x.bid(), mode))
+}
+
+func ubdCompare128(x, y UBD128) (c int, ok bool) {
+	return quietCmpSlow128(x.bid(), y.bid())
 }

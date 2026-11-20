@@ -3386,7 +3386,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			}
 		}
 
-		if n.X.Type().IsDecimal() && !ir.DecimalDPD() {
+		if n.X.Type().IsDecimal() && !ir.DecimalDPD() && !bidCallOnly(a) {
 			// Inspect already evaluated SSA values, before OGT/OGE are
 			// reversed. This also recognizes simple locals initialized to
 			// zero, at any quantum, without assuming anything about loads.

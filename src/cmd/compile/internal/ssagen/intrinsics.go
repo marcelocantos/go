@@ -174,6 +174,17 @@ func initIntrinsics(cfg *intrinsicBuildConfig) {
 				}, sys.ARM64, sys.AMD64)
 		}
 	}
+	// Quantize, which rounds ties to even, likewise: the constant mode lets
+	// a UBD target call the kernel's ties-to-even entry, which takes no mode.
+	for _, width := range []string{"64", "128"} {
+		addF("math/decimal", "Quantize[go.shape.decimal"+width+"]",
+			func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
+				// The dictionary, then x and y, all evaluated.
+				mode := s.constInt8(types.Types[types.TUINT8], int8(bid.ToNearestEven))
+				fallback := base.PkgLinksym("internal/decimal", "quantize"+width, s.f.ABIDefault.Which())
+				return s.bidRounding(n, []*ssa.Value{args[1], args[2], mode}, false, fallback)
+			}, sys.ARM64, sys.AMD64)
+	}
 
 	/******** runtime ********/
 	if !cfg.instrumenting {

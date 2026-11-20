@@ -130,6 +130,9 @@ var dpdArith = map[opAndType]ssaop.Op{
 // result type rt: on a DPD target the hardware's instructions, elsewhere
 // integer fast paths with runtime calls for the general case.
 func (s *state) decimalOp(op ir.Op, rt *types.Type, args ...*ssa.Value) *ssa.Value {
+	if bidCallOnly(args[0]) {
+		return s.softDecimalOp(op, rt, args...)
+	}
 	if !ir.DecimalDPD() {
 		if rt.IsBoolean() && (Arch.LinkArch.Family == sys.ARM64 || Arch.LinkArch.Family == sys.AMD64) {
 			return s.bidCompare(op, args[0], args[1])

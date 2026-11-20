@@ -77,6 +77,7 @@ type DebugFlags struct {
 	SyncFrames            int    `help:"how many writer stack frames to include at sync points in unified export data" concurrent:"ok"`
 	TailCall              int    `help:"print information about tail calls"`
 	TypeAssert            int    `help:"print information about type assertion inlining"`
+	UBDCallOnly           int    `help:"decimal128 operators on UBD targets make only the kernel call, with no inline fast paths" concurrent:"ok"`
 	WB                    int    `help:"print information about write barriers"`
 	ABIWrap               int    `help:"print information about ABI wrapper generation"`
 	MayMoreStack          string `help:"call named function before all stack growth checks" concurrent:"ok"`
