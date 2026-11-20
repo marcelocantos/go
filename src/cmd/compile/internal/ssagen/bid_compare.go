@@ -268,41 +268,11 @@ func (s *state) bidCompare(op ir.Op, x, y *ssa.Value) *ssa.Value {
 		s.endBlock().AddEdgeTo(bAfter)
 	}
 	if wide {
-		// Operands the word paths refuse. Two finite values in the first
-		// form with canonical coefficients, which is every such pair but
-		// the special values and the encodings that read as zero, are
-		// decoded here and compared by the kernel's routine for the
-		// parts, which makes no call and has no branch
-		// (internal/bid.cCmpFinite128). It takes the exponents as they
-		// are stored, since only their difference counts. The bound on
-		// the coefficient is unpackFirst128's: the high word below that
-		// of the largest coefficient. Everything else is the kernel's
-		// general comparison.
+		// Operands the word paths refuse go to the kernel's compare entry,
+		// one call for all of them: it decodes two finite operands of
+		// wider coefficients itself, as cheaply as a decode here, which
+		// would cost every call site its size.
 		s.startBlock(bSlow)
-		bGeneral := s.f.NewBlock(block.BlockPlain)
-		coeffMask := s.constInt64(u64, int64(bid.UBDCoeffMaskHi))
-		xch, ych := s.newValue2(ssaop.OpAnd64, u64, xh, coeffMask), s.newValue2(ssaop.OpAnd64, u64, yh, coeffMask)
-		for i, h := range []*ssa.Value{xh, yh} {
-			tag := s.newValue2(ssaop.OpRsh64Ux64, u64, h, s.constInt64(u64, 60))
-			guard(s.newValue2(ssaop.OpNeq64, boolT, tag, s.constInt64(u64, bid.UBDSpecialTag)), bGeneral)
-			guard(s.newValue2(ssaop.OpLess64U, boolT, []*ssa.Value{xch, ych}[i], s.constInt64(u64, int64(bid.MaxCoeff128Hi))), bGeneral)
-		}
-		res := s.rtcall(bidKernelCmpFinite, true, []*types.Type{types.Types[types.TINT64]},
-			negativeOf(xh), xch, xc, exponent(xh),
-			negativeOf(yh), ych, yc, exponent(yh))
-		izero := s.constInt64(types.Types[types.TINT64], 0)
-		switch op {
-		case ir.OEQ:
-			s.vars[bidCompareVar] = s.newValue2(ssaop.OpEq64, boolT, res[0], izero)
-		case ir.ONE:
-			s.vars[bidCompareVar] = s.newValue2(ssaop.OpNeq64, boolT, res[0], izero)
-		case ir.OLT:
-			s.vars[bidCompareVar] = s.newValue2(ssaop.OpLess64, boolT, res[0], izero)
-		case ir.OLE:
-			s.vars[bidCompareVar] = s.newValue2(ssaop.OpLeq64, boolT, res[0], izero)
-		}
-		s.endBlock().AddEdgeTo(bAfter)
-		s.startBlock(bGeneral)
 		s.vars[bidCompareVar] = s.softDecimalOp(op, boolT, x, y)
 		s.endBlock().AddEdgeTo(bAfter)
 	} else {

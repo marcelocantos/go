@@ -158,10 +158,6 @@ const (
 //     UBDFromBID128(BIDFromUBD128(r)). A finite result has qExp in range and
 //     a coefficient at most MaxCoeff128, an infinity has no bits but its
 //     tag and sign, and a NaN's payload is below 10^33.
-//
-// cCmpFinite128, which the compiler also calls, takes operands it has
-// already decoded, so it does not depend on the encoding and is outside this
-// contract.
 
 // UBD128 is a UBD decimal128 as the kernel entries below take and return
 // it: its two words, low first, as decimal128 is laid out.

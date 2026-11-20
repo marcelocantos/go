@@ -174,8 +174,8 @@ func (s *state) bidCompareZero(op ir.Op, x *ssa.Value, zeroOnLeft bool) *ssa.Val
 // returns its ordering and whether the operands are ordered, and the
 // operator is decided here from the two.
 var (
-	bidKernelAdd, bidKernelSub, bidKernelMul, bidKernelDiv, bidKernelCmp, bidKernelCmpFinite *obj.LSym
-	bidKernelQuantize, bidKernelIntegral                                                     *obj.LSym
+	bidKernelAdd, bidKernelSub, bidKernelMul, bidKernelDiv, bidKernelCmp *obj.LSym
+	bidKernelQuantize, bidKernelIntegral                                 *obj.LSym
 )
 
 func initBIDKernelSyms() {
@@ -188,7 +188,6 @@ func initBIDKernelSyms() {
 	bidKernelMul = base.PkgLinksym("internal/bid", "ubdMulSlow128", obj.ABIInternal)
 	bidKernelDiv = base.PkgLinksym("internal/bid", "ubdDiv128", obj.ABIInternal)
 	bidKernelCmp = base.PkgLinksym("internal/bid", "ubdQuietCmpSlow128", obj.ABIInternal)
-	bidKernelCmpFinite = base.PkgLinksym("internal/bid", "cCmpFinite128", obj.ABIInternal)
 	bidKernelQuantize = base.PkgLinksym("internal/bid", "ubdQuantizeSlow128", obj.ABIInternal)
 	bidKernelIntegral = base.PkgLinksym("internal/bid", "ubdRoundToIntegral128", obj.ABIInternal)
 }
