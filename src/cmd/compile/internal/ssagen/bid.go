@@ -257,15 +257,21 @@ func (s *state) bidKernelOp(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Valu
 	return s.newValue2(ssaop.OpDecimal128Make, rt, res[0], res[1])
 }
 
-// bidAddSub128 adds or subtracts word-sized coefficients directly.
-// First handle effective same-sign, same-quantum addition:
-// The equal stored high words establish both sign and quantum equality. A
-// zero high coefficient and first-form encoding establish canonical finite
-// operands. The coefficient sum is at most 2^65-2, below 10^34, at an already
-// representable exponent. For subtraction, flip y's sign only in the fast
-// path; the fallback receives the original y, including its NaN sign.
-// This is an exact packing exception: neither rounding
-// nor exponent clamping is needed, and even negative zero keeps its sign.
+// bidAddSub128 adds or subtracts coefficients directly where the result is
+// exact.
+//
+// First, effective same-sign addition at one quantum, the first-level fast
+// path of decimal128-go (d128_add_rnd_ctxnull): equal qExp and sign (the
+// high words' top 15 bits), and the high 49 coefficient bits of the two
+// operands summing below 2^48. That bound makes both coefficients below
+// 2^112, so neither operand is special (a special's coefficient begins 0x1F,
+// which sets bit 48 of the high word) and the sum, below 2^113 - 2^64 + 2,
+// is below 10^34: exact at the common exponent, with no rounding and no
+// clamping. y's coefficient is added straight onto x's whole stored value,
+// so x's qExp and sign ride along and nothing is unpacked or repacked; the
+// bound keeps the carry out of the sign. A negative zero keeps its sign. For
+// subtraction, y's sign is flipped only in the fast paths; the fallback
+// receives the original y, including its NaN sign.
 //
 // Next, effective subtraction at one quantum: stored high words that differ
 // in the sign bit alone (x - y of one sign, or x + y of opposite signs). The
@@ -304,8 +310,15 @@ func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	}
 	xl := s.newValue1(ssaop.OpDecimal128Lo, u64, x)
 	yl := s.newValue1(ssaop.OpDecimal128Lo, u64, y)
-	same := s.newValue2(ssaop.OpEq64, boolT, xh, yh)
-	coeff := s.newValue2(ssaop.OpAnd64, u64, xh, s.constInt64(u64, int64(bid.UBDCoeffMaskHi)))
+	coeffMask := s.constInt64(u64, int64(bid.UBDCoeffMaskHi))
+	// Equal qExp and sign: the high words agree in their top 15 bits. The
+	// opposite-sign path below tests the same difference.
+	differ := s.newValue2(ssaop.OpXor64, u64, xh, yh)
+	same := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpRsh64Ux64, u64, differ, s.constInt64(u64, bid.UBDExpShift-1)), zero)
+	ych := s.newValue2(ssaop.OpAnd64, u64, yh, coeffMask)
+	coeffs := s.newValue2(ssaop.OpAdd64, u64, s.newValue2(ssaop.OpAnd64, u64, xh, coeffMask), ych)
+	fits := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpRsh64Ux64, u64, coeffs, s.constInt64(u64, 48)), zero)
+	coeff := s.newValue2(ssaop.OpAnd64, u64, xh, coeffMask)
 	word := s.newValue2(ssaop.OpEq64, boolT, coeff, zero)
 
 	bSlow := s.f.NewBlock(block.BlockPlain)
@@ -315,7 +328,7 @@ func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	// Short-circuit the guards, particularly the common mismatch in quantum
 	// or sign. Branches also let the backend use condition codes directly
 	// instead of materializing and combining three boolean values.
-	for i, guard := range []*ssa.Value{same, word} {
+	for i, guard := range []*ssa.Value{same, fits} {
 		b := s.endBlock()
 		b.Kind = block.BlockIf
 		b.SetControl(guard)
@@ -333,12 +346,13 @@ func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	sum := s.newValue3(ssaop.OpAdd64carry, types.NewTuple(u64, u64), xl, yl, zero)
 	lo := s.newValue1(ssaop.OpSelect0, u64, sum)
 	carry := s.newValue1(ssaop.OpSelect1, u64, sum)
-	hi := s.newValue2(ssaop.OpOr64, u64, xh, carry)
+	hi := s.newValue3(ssaop.OpAdd64carry, types.NewTuple(u64, u64), xh, ych, carry)
+	hi = s.newValue1(ssaop.OpSelect0, u64, hi)
 	s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, hi)
 	s.endBlock().AddEdgeTo(bAfter)
 
 	s.startBlock(bOpposite)
-	opposite := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpXor64, u64, xh, yh), signBit)
+	opposite := s.newValue2(ssaop.OpEq64, boolT, differ, signBit)
 	for i, guard := range []*ssa.Value{opposite, word} {
 		b := s.endBlock()
 		b.Kind = block.BlockIf
@@ -368,8 +382,8 @@ func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	// aligned sum is (2^64-1)*(10^14+1) < 10^34. A difference is no larger.
 	// Both are exact at the smaller input exponent, including subnormals.
 	const maxGap = bidAddMaxGap
-	coeffs := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpOr64, u64, xh, yh), s.constInt64(u64, int64(bid.UBDCoeffMaskHi)))
-	words := s.newValue2(ssaop.OpEq64, boolT, coeffs, zero)
+	highs := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpOr64, u64, xh, yh), coeffMask)
+	words := s.newValue2(ssaop.OpEq64, boolT, highs, zero)
 	for _, guard := range []*ssa.Value{words} {
 		b := s.endBlock()
 		b.Kind = block.BlockIf
