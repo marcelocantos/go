@@ -91,15 +91,22 @@ func (s *state) bidIsZero(x *ssa.Value) *ssa.Value {
 		// tagged in the top four bits.
 		hi = s.newValue1(ssaop.OpDecimal128Hi, u64, x)
 		lo = s.newValue1(ssaop.OpDecimal128Lo, u64, x)
+		// A finite value is zero when its coefficient c is 0 or above
+		// MaxCoeff128, which reads as zero: exactly when c - 1, in 128-bit
+		// wrapping arithmetic, is not below MaxCoeff128. That is one
+		// subtraction with borrow and one comparison by borrow, not three
+		// comparisons.
 		coeff = s.newValue2(ssaop.OpAnd64, u64, hi, s.constInt64(u64, int64(bid.UBDCoeffMaskHi)))
-		maxHi, maxLo := s.constInt64(u64, int64(bid.MaxCoeff128Hi)), s.constInt64(u64, int64(bid.MaxCoeff128Lo))
-		noncanonical = s.newValue2(ssaop.OpOrB, boolT,
-			s.newValue2(ssaop.OpLess64U, boolT, maxHi, coeff),
-			s.newValue2(ssaop.OpAndB, boolT, s.newValue2(ssaop.OpEq64, boolT, coeff, maxHi), s.newValue2(ssaop.OpLess64U, boolT, maxLo, lo)))
-		coeff = s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpOr64, u64, coeff, lo), zero)
+		one := s.constInt64(u64, 1)
+		dec := s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), lo, one, zero)
+		dlo, b := s.newValue1(ssaop.OpSelect0, u64, dec), s.newValue1(ssaop.OpSelect1, u64, dec)
+		dhi := s.newValue2(ssaop.OpSub64, u64, coeff, b)
+		cmp := s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), dlo, s.constInt64(u64, int64(bid.MaxCoeff128Lo)), zero)
+		cmp = s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), dhi, s.constInt64(u64, int64(bid.MaxCoeff128Hi)), s.newValue1(ssaop.OpSelect1, u64, cmp))
+		zeroValue := s.newValue2(ssaop.OpEq64, boolT, s.newValue1(ssaop.OpSelect1, u64, cmp), zero)
 		tag := s.newValue2(ssaop.OpRsh64Ux64, u64, hi, s.constInt64(u64, 60))
 		finite := s.newValue2(ssaop.OpNeq64, boolT, tag, s.constInt64(u64, bid.UBDSpecialTag))
-		return s.newValue2(ssaop.OpAndB, boolT, finite, s.newValue2(ssaop.OpOrB, boolT, coeff, noncanonical))
+		return s.newValue2(ssaop.OpAndB, boolT, finite, zeroValue)
 	}
 	// SpecialMask64 is the same field in decimal128's high word.
 	special := s.constInt64(u64, int64(bid.SpecialMask64))
