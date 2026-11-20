@@ -237,8 +237,13 @@ func (s *state) ubdAddFirstLevel(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa
 	coeffMask := s.constInt64(u64, int64(bid.UBDCoeffMaskHi))
 	differ := s.newValue2(ssaop.OpXor64, u64, xh, yh)
 	same := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpRsh64Ux64, u64, differ, s.constInt64(u64, bid.UBDExpShift-1)), zero)
+	// The sum of the high coefficient bits without masking x: once the top
+	// 15 bits are equal, xh = H + xc and yh = H + yc, so xc + yc is
+	// (xh - yh) + 2*yc. Only the guard after the equality test reads it.
+	// The register allocator issues a constant again at each use (a
+	// 10-byte load on amd64), so masking x too would load the mask twice.
 	ych := s.newValue2(ssaop.OpAnd64, u64, yh, coeffMask)
-	coeffs := s.newValue2(ssaop.OpAdd64, u64, s.newValue2(ssaop.OpAnd64, u64, xh, coeffMask), ych)
+	coeffs := s.newValue2(ssaop.OpAdd64, u64, s.newValue2(ssaop.OpSub64, u64, xh, yh), s.newValue2(ssaop.OpAdd64, u64, ych, ych))
 	fits := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpRsh64Ux64, u64, coeffs, s.constInt64(u64, 48)), zero)
 
 	bSlow := s.f.NewBlock(block.BlockPlain)
