@@ -148,32 +148,16 @@ func TestUBDKernel(t *testing.T) {
 	}
 
 	type binary = func(x, y bid.Uint128, mode bid.Mode) bid.Uint128
-	sub := func(x, y bid.Uint128, mode bid.Mode) bid.Uint128 {
-		return bid.Sub128(x, y, mode)
-	}
-	// negate is the compiler's subtraction: y with its sign flipped, unless
-	// it has the NaN tag.
-	negate := func(y bid.Uint128) bid.Uint128 {
-		if y.Hi>>59 != bid.UBDNaNTag {
-			y.Hi ^= bid.UBDSignHi
-		}
-		return y
-	}
 	ops := []struct {
 		name string
 		f    binary
 		ref  binary // on BID encodings
-		neg  bool   // y goes through negate
 	}{
-		{"ubdAddSlow128", bid.UBDAddSlow128, bid.Add128, false},
-		{"ubdAddLong128", bid.UBDAddLong128, bid.Add128, false},
-		{"ubdAddSlow128 (sub)", bid.UBDAddSlow128, sub, true},
-		{"ubdAddLong128 (sub)", bid.UBDAddLong128, sub, true},
-		{"ubdMulSlow128", bid.UBDMulSlow128, bid.Mul128, false},
-		{"ubdMulLong128", bid.UBDMulLong128, bid.Mul128, false},
-		{"ubdDiv128", bid.UBDDiv128, bid.Div128, false},
-		{"ubdQuantizeSlow128", bid.UBDQuantizeSlow128, bid.Quantize128, false},
-		{"ubdQuantizeLong128", bid.UBDQuantizeLong128, bid.Quantize128, false},
+		{"ubdAddSlow128", bid.UBDAddSlow128, bid.Add128},
+		{"ubdSubSlow128", bid.UBDSubSlow128, bid.Sub128},
+		{"ubdMulSlow128", bid.UBDMulSlow128, bid.Mul128},
+		{"ubdDiv128", bid.UBDDiv128, bid.Div128},
+		{"ubdQuantizeSlow128", bid.UBDQuantizeSlow128, bid.Quantize128},
 	}
 
 	errs := 0
@@ -208,11 +192,7 @@ func TestUBDKernel(t *testing.T) {
 			}
 			for _, mode := range modes {
 				for _, op := range ops {
-					yy := y
-					if op.neg {
-						yy = negate(y)
-					}
-					check(op.name, x, y, mode, op.f(x, yy, mode), bid.UBDFromBID128(op.ref(bx, by, mode)))
+					check(op.name, x, y, mode, op.f(x, y, mode), bid.UBDFromBID128(op.ref(bx, by, mode)))
 				}
 			}
 		}

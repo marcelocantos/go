@@ -120,8 +120,11 @@ const (
 // operators call the entries below, and no other entry of this package that
 // takes an encoded decimal128, for every operand pair their inline fast
 // paths do not decide (cmd/compile/internal/ssagen, initBIDKernelSyms). They
-// receive and return the stored words unchanged, a decimal128 as its two
-// words, high first. Their names and signatures are a contract with the
+// receive and return the stored words unchanged, each decimal128 as a
+// UBD128, low word first: the order in which a decimal128 is laid out in
+// memory and passed in registers, so that a call site moves nothing into
+// place and the result needs no reordering where it joins the inline
+// paths. Their names and signatures are a contract with the
 // compiler and stay fixed; what lies behind them may change. Today each
 // converts its operands to BID, calls the BID entry of the same name without
 // the ubd prefix and converts the result back. A kernel that works on UBD
@@ -140,61 +143,61 @@ const (
 //   - Values. The result is that of the exported BID function on the
 //     operands' BID encodings, converted to UBD:
 //
-//     ubdAddSlow128, ubdAddLong128            Add128
-//     ubdMulSlow128, ubdMulLong128            Mul128
-//     ubdDiv128                               Div128
-//     ubdQuantizeSlow128, ubdQuantizeLong128  Quantize128
-//     ubdRoundToIntegral128                   RoundToIntegral128
-//     ubdQuietCmpSlow128                      Compare128 (c and ok as they are)
+//     ubdAddSlow128          Add128
+//     ubdSubSlow128          Sub128
+//     ubdMulSlow128          Mul128
+//     ubdDiv128              Div128
+//     ubdQuantizeSlow128     Quantize128
+//     ubdRoundToIntegral128  RoundToIntegral128
+//     ubdQuietCmpSlow128     Compare128 (c and ok as they are)
 //
-//     The compiler calls the Long entry of a pair when both coefficients fit
-//     one word, but it accepts every operand and gives the Slow entry's
-//     result.
+//     The compiler makes one call for every operand pair its inline paths
+//     do not decide, words or not, so an entry tests for the operands its
+//     own fast paths take.
 //   - Results. Every decimal128 result is canonical UBD: a fixed point of
 //     UBDFromBID128(BIDFromUBD128(r)). A finite result has qExp in range and
 //     a coefficient at most MaxCoeff128, an infinity has no bits but its
 //     tag and sign, and a NaN's payload is below 10^33.
-//   - Subtraction. There is no subtraction entry. The compiler calls an add
-//     entry with the sign of y, bit 113, flipped unless y has the NaN tag
-//     (hi>>59 == UBDNaNTag), so that x - y is Sub128's result and a NaN y
-//     keeps its sign.
 //
 // cCmpFinite128, which the compiler also calls, takes operands it has
 // already decoded, so it does not depend on the encoding and is outside this
 // contract.
 
-func ubdAddSlow128(x, y Uint128, mode Mode) Uint128 {
-	return UBDFromBID128(addSlow128(BIDFromUBD128(x), BIDFromUBD128(y), mode))
+// UBD128 is a UBD decimal128 as the kernel entries below take and return
+// it: its two words, low first, as decimal128 is laid out.
+type UBD128 struct{ Lo, Hi uint64 }
+
+func (x UBD128) bid() Uint128 { return BIDFromUBD128(Uint128{Hi: x.Hi, Lo: x.Lo}) }
+
+func ubdFromBID(x Uint128) UBD128 {
+	u := UBDFromBID128(x)
+	return UBD128{Lo: u.Lo, Hi: u.Hi}
 }
 
-func ubdAddLong128(x, y Uint128, mode Mode) Uint128 {
-	return UBDFromBID128(addLong128(BIDFromUBD128(x), BIDFromUBD128(y), mode))
+func ubdAddSlow128(x, y UBD128, mode Mode) UBD128 {
+	return ubdFromBID(addSlow128(x.bid(), y.bid(), mode))
 }
 
-func ubdMulSlow128(x, y Uint128, mode Mode) Uint128 {
-	return UBDFromBID128(mulSlow128(BIDFromUBD128(x), BIDFromUBD128(y), mode))
+func ubdSubSlow128(x, y UBD128, mode Mode) UBD128 {
+	return ubdFromBID(subSlow128(x.bid(), y.bid(), mode))
 }
 
-func ubdMulLong128(x, y Uint128, mode Mode) Uint128 {
-	return UBDFromBID128(mulLong128(BIDFromUBD128(x), BIDFromUBD128(y), mode))
+func ubdMulSlow128(x, y UBD128, mode Mode) UBD128 {
+	return ubdFromBID(mulSlow128(x.bid(), y.bid(), mode))
 }
 
-func ubdDiv128(x, y Uint128, mode Mode) Uint128 {
-	return UBDFromBID128(div128(BIDFromUBD128(x), BIDFromUBD128(y), mode))
+func ubdDiv128(x, y UBD128, mode Mode) UBD128 {
+	return ubdFromBID(div128(x.bid(), y.bid(), mode))
 }
 
-func ubdQuietCmpSlow128(x, y Uint128) (c int, ok bool) {
-	return quietCmpSlow128(BIDFromUBD128(x), BIDFromUBD128(y))
+func ubdQuietCmpSlow128(x, y UBD128) (c int, ok bool) {
+	return quietCmpSlow128(x.bid(), y.bid())
 }
 
-func ubdQuantizeSlow128(x, y Uint128, mode Mode) Uint128 {
-	return UBDFromBID128(quantizeSlow128(BIDFromUBD128(x), BIDFromUBD128(y), mode))
+func ubdQuantizeSlow128(x, y UBD128, mode Mode) UBD128 {
+	return ubdFromBID(quantizeSlow128(x.bid(), y.bid(), mode))
 }
 
-func ubdQuantizeLong128(x, y Uint128, mode Mode) Uint128 {
-	return UBDFromBID128(quantizeLong128(BIDFromUBD128(x), BIDFromUBD128(y), mode))
-}
-
-func ubdRoundToIntegral128(x Uint128, mode Mode) Uint128 {
-	return UBDFromBID128(roundToIntegral128(BIDFromUBD128(x), mode))
+func ubdRoundToIntegral128(x UBD128, mode Mode) UBD128 {
+	return ubdFromBID(roundToIntegral128(x.bid(), mode))
 }

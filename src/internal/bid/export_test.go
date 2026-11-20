@@ -149,18 +149,29 @@ var (
 	SubSlow64          = subSlow64
 )
 
-// The UBD kernel entries the compiler calls (ubd.go).
-var (
-	UBDAddLong128         = ubdAddLong128
-	UBDAddSlow128         = ubdAddSlow128
-	UBDDiv128             = ubdDiv128
-	UBDMulLong128         = ubdMulLong128
-	UBDMulSlow128         = ubdMulSlow128
-	UBDQuantizeLong128    = ubdQuantizeLong128
-	UBDQuantizeSlow128    = ubdQuantizeSlow128
-	UBDQuietCmpSlow128    = ubdQuietCmpSlow128
-	UBDRoundToIntegral128 = ubdRoundToIntegral128
-)
+// The UBD kernel entries the compiler calls (ubd.go), with the operands and
+// results as Uint128, as the conversions take and give them.
+func ubdCall(f func(x, y UBD128, mode Mode) UBD128, x, y Uint128, mode Mode) Uint128 {
+	r := f(UBD128{Lo: x.Lo, Hi: x.Hi}, UBD128{Lo: y.Lo, Hi: y.Hi}, mode)
+	return Uint128{Hi: r.Hi, Lo: r.Lo}
+}
+
+func UBDAddSlow128(x, y Uint128, mode Mode) Uint128 { return ubdCall(ubdAddSlow128, x, y, mode) }
+func UBDSubSlow128(x, y Uint128, mode Mode) Uint128 { return ubdCall(ubdSubSlow128, x, y, mode) }
+func UBDDiv128(x, y Uint128, mode Mode) Uint128     { return ubdCall(ubdDiv128, x, y, mode) }
+func UBDMulSlow128(x, y Uint128, mode Mode) Uint128 { return ubdCall(ubdMulSlow128, x, y, mode) }
+func UBDQuantizeSlow128(x, y Uint128, mode Mode) Uint128 {
+	return ubdCall(ubdQuantizeSlow128, x, y, mode)
+}
+
+func UBDQuietCmpSlow128(x, y Uint128) (c int, ok bool) {
+	return ubdQuietCmpSlow128(UBD128{Lo: x.Lo, Hi: x.Hi}, UBD128{Lo: y.Lo, Hi: y.Hi})
+}
+
+func UBDRoundToIntegral128(x Uint128, mode Mode) Uint128 {
+	r := ubdRoundToIntegral128(UBD128{Lo: x.Lo, Hi: x.Hi}, mode)
+	return Uint128{Hi: r.Hi, Lo: r.Lo}
+}
 
 // Recip10tab64 and Recip10tab128 return entry k of the reciprocal tables.
 func Recip10tab64(k int) (m uint64, s uint) {

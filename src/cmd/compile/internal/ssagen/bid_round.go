@@ -203,37 +203,20 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 		// are (bidKernelOp): the typed helper would only convert the
 		// operands and the mode, whose values the public and the kernel
 		// modes share, and call it.
-		// UBD: the kernel's UBD entries take the stored words as they are.
-		kargs := []*ssa.Value{xh, s.newValue1(ssaop.OpDecimal128Lo, u64, x)}
+		// UBD: the kernel's UBD entries take the stored words as they are,
+		// low first (internal/bid.UBD128).
+		kargs := []*ssa.Value{s.newValue1(ssaop.OpDecimal128Lo, u64, x), xh}
 		call := func(fn *obj.LSym) {
 			res := s.rtcall(fn, true, []*types.Type{u64, u64}, append(kargs, mode)...)
-			s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, n.Type(), res[1], res[0])
+			s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, n.Type(), res[0], res[1])
 		}
 		if integral {
 			call(bidKernelIntegral)
 		} else {
-			kargs = append(kargs, high(args[1]), s.newValue1(ssaop.OpDecimal128Lo, u64, args[1]))
-			// The kernel's own path for a quantize is for a coefficient
-			// of two words; a word that the code above did not decide
-			// (the quantum too far, or the value too large for it) goes
-			// to the routine for every operand, where its word path is
-			// the first thing tried, as in bidKernelOp.
-			words := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpAnd64, u64, kargs[0], s.constInt64(u64, int64(bid.UBDCoeffMaskHi))), zero)
-			bWords := s.f.NewBlock(block.BlockPlain)
-			bWide := s.f.NewBlock(block.BlockPlain)
-			bDone := s.f.NewBlock(block.BlockPlain)
-			b := s.endBlock()
-			b.Kind = block.BlockIf
-			b.SetControl(words)
-			b.AddEdgeTo(bWords)
-			b.AddEdgeTo(bWide)
-			s.startBlock(bWords)
-			call(bidKernelQuantizeLong)
-			s.endBlock().AddEdgeTo(bDone)
-			s.startBlock(bWide)
+			kargs = append(kargs, s.newValue1(ssaop.OpDecimal128Lo, u64, args[1]), high(args[1]))
+			// One call for every operand, as in bidKernelOp: the kernel's
+			// entry sends a word coefficient to its word path itself.
 			call(bidKernelQuantize)
-			s.endBlock().AddEdgeTo(bDone)
-			s.startBlock(bDone)
 		}
 	} else {
 		s.vars[result] = s.rtcall(fallback, true, []*types.Type{n.Type()}, args...)[0]
