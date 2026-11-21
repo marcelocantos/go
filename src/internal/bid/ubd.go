@@ -416,8 +416,8 @@ func ubdQuantizeRnd128(x, y UBD128, mode Mode) UBD128 { // ubdQuantize128, writt
 
 // ubdQuantizeWord quantizes x to y's exponent on UBD itself when x is
 // finite with a coefficient of one word and y is finite, which covers
-// money values, and reports false for every other pair, which goes
-// through BID. A finer quantum multiplies by 10^gap (gap up to 19) unless
+// money values, and reports false for every other pair, which goes to
+// ubdQuantizeSlow128 (also on UBD itself). A finer quantum multiplies by 10^gap (gap up to 19) unless
 // the product would exceed MaxCoeff128, which is invalid; a coarser one
 // divides by 10^d (d up to 19) and rounds by the mode. The result keeps
 // x's sign, also when it is zero. A mode outside the six rounds to

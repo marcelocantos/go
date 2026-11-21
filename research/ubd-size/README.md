@@ -123,11 +123,13 @@ The compiler calls only these entries of `internal/bid` for decimal128
   is the constant ToNearestEven (`decimal.Quantize`, `decimal.RoundToEven`)
   and Rnd otherwise. The Rnd entries of add, subtract, multiply and divide have
   no caller yet.
-- The result of each entry is the exported BID function's on the operands'
-  BID encodings, converted to UBD, and it is canonical UBD.
-- Today each entry converts its operands to BID, calls the unchanged BID
-  kernel and converts back. A kernel that works on UBD itself replaces those
-  bodies and nothing else.
+- The result of each entry equals what the exported BID function returns
+  for the operands' BID encodings, read as UBD, and it is canonical UBD.
+- The entries work on UBD itself: `ubd_add.go`, `ubd_mul.go`, `ubd_div.go`,
+  `ubd_quant.go` and `ubd_cmp.go` are the BID kernel's general paths with
+  UBD's decoding and packing, and nothing converts. BID conversions remain
+  only at the interchange boundary (`internal/decimal/encoding.go`) and in
+  the compiler's constant zero test.
 
 ### Well-formed UBD
 
@@ -295,12 +297,14 @@ again at each use (`ssacompile/regalloc.go`), a 10-byte load on amd64.
   `Eq`, the kernel call also forces a stack frame (about 12 instructions
   on amd64) that inline code did not need. The tables exclude it; in a
   function that already calls something it costs nothing more.
-- **Kernel entries.** The UBD entries and the two conversions are about
-  2.1 KB on amd64 (2.0 KB on arm64) in a program that uses every operation,
-  once per program. Each TTE entry (70 bytes on amd64) calls its Rnd entry.
-- **Speed.** Not measured. Every operation without a fast path now pays for a
-  call, and until the kernel works on UBD itself each call also converts
-  UBD ↔ BID.
+- **Kernel entries.** When the entries still converted through BID, they
+  and the two conversions were about 2.1 KB on amd64 (2.0 KB on arm64) in a
+  program that used every operation, once per program. The native kernel
+  has not been sized here.
+- **Speed.** Not measured here. Every operation without a fast path pays
+  for a call into the kernel, which works on UBD itself. Whole-application
+  timings against XOR-BID are in `go-app-benchmark`
+  (`results/RESULTS.md`).
 
 ### History
 
@@ -353,9 +357,6 @@ excluded from `internal/bid`'s API-coverage and layout lint tests.
 
 ## Not done
 
-- **A kernel that works on UBD** (replacing the bodies of the contract's
-  entries, which now convert to and from BID).
-- **Benchmarks** of the default against level −1 and the baseline.
 - The GDB printer does not know UBD (`TestGdbDecimal` fails).
 - `internal/bid/doc.go`'s "Inline fast paths" section still describes the
   BID kernel's contract with the compiler (`addSlow128`, `cCmpFinite128`, …),
