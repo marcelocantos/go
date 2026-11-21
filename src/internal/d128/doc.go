@@ -20,7 +20,10 @@
 // tried and measured slower than internal/bid's on money-sized operands
 // (about 20 ns against 12 ns a call, conversions included): its coarser
 // case divides a word-sized coefficient by 10^k with the general 128-bit
-// reciprocal and a digit count; see internal/bid/ubd.go.
+// reciprocal and a digit count; see internal/bid/ubd.go. Compare
+// (comparePartialQuiet754) was tried too: 8.5 ns a call against 7.2 ns for
+// internal/bid's through BID and 3.3 ns for a word path on UBD, on operands
+// of different exponents or signs.
 //
 // This package is imported by internal/bid, which the runtime imports, so it
 // may import only math/bits and unsafe, and must not allocate.
