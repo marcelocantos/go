@@ -136,3 +136,18 @@ func ubdQuantizeLong128(x, y UBD128, mode Mode) UBD128 {
 	r, _ := ubdRoundFinite128(xneg, xc, xe, mode, ye)
 	return r
 }
+
+// ubdRoundToIntegral128 is roundToIntegral128 on UBD: a NaN quieted (in UBD,
+// qExp's signaling bit 58 cleared), an infinity as it is, and a finite x
+// rounded to exponent zero by ubdRoundFinite128; an x at exponent zero or
+// above is an integer already and comes back as it is.
+func ubdRoundToIntegral128(x UBD128, mode Mode) UBD128 {
+	if x.Hi>>60 == UBDSpecialTag {
+		if x.Hi>>59 == UBDNaNTag {
+			return UBD128{Lo: x.Lo, Hi: x.Hi &^ (1 << 58)}
+		}
+		return ubdInf(x.Hi&UBDSignHi != 0)
+	}
+	r, _ := ubdRoundFinite128(x.Hi&UBDSignHi != 0, coef128{Hi: x.Hi & UBDCoeffMaskHi, Lo: x.Lo}, int(int64(x.Hi)>>UBDExpShift), mode, 0)
+	return r
+}

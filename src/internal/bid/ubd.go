@@ -192,10 +192,10 @@ const (
 // memory and passed in registers, so that a call site moves nothing into
 // place and the result needs no reordering where it joins the inline
 // paths. Their names and signatures are a contract with the
-// compiler and stay fixed; what lies behind them may change. Today each
-// converts its operands to BID, calls the BID entry of the same name without
-// the ubd prefix and converts the result back. A kernel that works on UBD
-// itself replaces those bodies and nothing else.
+// compiler and stay fixed; what lies behind them may change. Each works on
+// UBD itself: it is this package's BID algorithm of the same name without the
+// ubd prefix, with the BID decoding and packing replaced by UBD's (ubd_add.go,
+// ubd_mul.go, ubd_div.go, ubd_quant.go, ubd_cmp.go). None converts to BID.
 //
 // Each entry meets these rules, which TestUBDKernel checks:
 //
@@ -234,13 +234,6 @@ const (
 // it: its two words, low first, as decimal128 is laid out.
 type UBD128 struct{ Lo, Hi uint64 }
 
-func (x UBD128) bid() Uint128 { return BIDFromUBD128(Uint128{Hi: x.Hi, Lo: x.Lo}) }
-
-func ubdFromBID(x Uint128) UBD128 {
-	u := UBDFromBID128(x)
-	return UBD128{Lo: u.Lo, Hi: u.Hi}
-}
-
 // The entries come in pairs: TTE rounds to nearest, ties to even, as the
 // language's operators and the functions without a mode do, and takes no
 // mode; Rnd takes the caller's.
@@ -248,10 +241,9 @@ func ubdFromBID(x Uint128) UBD128 {
 // Add, subtract, multiply, divide and quantize are this package's
 // arithmetic on UBD itself (ubd_add.go, ubd_mul.go, ubd_div.go,
 // ubd_quant.go): its general paths with UBD's decoding and packing, nothing
-// converted; quantize has the word path ubdQuantizeWord in front. Compare
-// and round-to-integral handle word-sized coefficients on UBD
-// (ubdCompareWord, ubdRoundToIntegralWord) and send every other operand
-// through BID to this package's general paths.
+// converted. Quantize and round-to-integral have word paths in front
+// (ubdQuantizeWord, ubdRoundToIntegralWord). Compare is this package's on UBD
+// itself (ubd_cmp.go).
 //
 // decimal128-go (github.com/migueldecimal128/decimal128-go), whose
 // arithmetic works on UBD itself, was tried behind these entries and
@@ -370,17 +362,21 @@ func ubdQuantizeWord(x, y UBD128, mode Mode) (UBD128, bool) {
 }
 
 func ubdRoundToIntegralTTE128(x UBD128) UBD128 {
-	if r, ok := ubdRoundToIntegralWord(x, ToNearestEven); ok {
-		return r
+	if x.Hi&UBDCoeffMaskHi == 0 {
+		if r, ok := ubdRoundToIntegralWord(x, ToNearestEven); ok {
+			return r
+		}
 	}
-	return ubdFromBID(roundToIntegral128(x.bid(), ToNearestEven))
+	return ubdRoundToIntegral128(x, ToNearestEven)
 }
 
 func ubdRoundToIntegralRnd128(x UBD128, mode Mode) UBD128 {
-	if r, ok := ubdRoundToIntegralWord(x, mode); ok {
-		return r
+	if x.Hi&UBDCoeffMaskHi == 0 {
+		if r, ok := ubdRoundToIntegralWord(x, mode); ok {
+			return r
+		}
 	}
-	return ubdFromBID(roundToIntegral128(x.bid(), mode))
+	return ubdRoundToIntegral128(x, mode)
 }
 
 // ubdRoundToIntegralWord rounds x to an integer on UBD itself when x is
@@ -399,87 +395,11 @@ func ubdRoundToIntegralWord(x UBD128, mode Mode) (UBD128, bool) {
 	return ubdQuantizeWord(x, UBD128{Lo: 1}, mode)
 }
 
-// ubdCompare128 orders x and y. Operands whose coefficients are one word
-// each, which covers money values, are ordered on UBD itself
-// (ubdCompareWord); every other pair goes through BID to quietCmpSlow128.
-// decimal128-go's compare was measured slower than both: 8.5 ns a compare
-// against 7.2 through BID and 3.3 on UBD.
+// ubdCompare128 orders x and y: this package's compare on UBD itself
+// (ubdQuietCmp128, ubd_cmp.go). decimal128-go's compare was measured slower:
+// 8.5 ns a compare against 3.3 on UBD.
 func ubdCompare128(x, y UBD128) (c int, ok bool) {
-	if c, ok := ubdCompareWord(x, y); ok {
-		return c, true
-	}
-	return quietCmpSlow128(x.bid(), y.bid())
-}
-
-// ubdCompareWord orders x and y when both are finite with a coefficient of
-// one word, and reports false otherwise. Zeros, of either sign and any
-// exponent, are equal and order against the other operand's sign, and
-// operands of different signs order by sign. Otherwise the magnitudes
-// compare with the larger exponent's coefficient scaled to the smaller
-// exponent: one 64x64 product for a gap up to 19, and for a larger gap that
-// side is the larger, since a nonzero coefficient times 10^20 exceeds any
-// word.
-func ubdCompareWord(x, y UBD128) (c int, ok bool) {
-	// A special has the 0x1F prefix in its coefficient's high word, so the
-	// one-word test excludes it.
-	if x.Hi&UBDCoeffMaskHi != 0 || y.Hi&UBDCoeffMaskHi != 0 {
-		return 0, false
-	}
-	xneg, yneg := x.Hi&UBDSignHi != 0, y.Hi&UBDSignHi != 0
-	cx, cy := x.Lo, y.Lo
-	switch {
-	case cx == 0 && cy == 0:
-		return 0, true
-	case cx == 0:
-		return signOrder(!yneg), true
-	case cy == 0, xneg != yneg:
-		return signOrder(xneg), true
-	}
-	ex, ey := int64(x.Hi)>>UBDExpShift, int64(y.Hi)>>UBDExpShift
-	var m int
-	switch {
-	case ex == ey:
-		m = wordOrder(0, cx, 0, cy)
-	case ex-ey >= int64(len(pow10tab64)):
-		m = 1
-	case ey-ex >= int64(len(pow10tab64)):
-		m = -1
-	case ex > ey:
-		hi, lo := bits.Mul64(cx, pow10tab64[ex-ey])
-		m = wordOrder(hi, lo, 0, cy)
-	default:
-		hi, lo := bits.Mul64(cy, pow10tab64[ey-ex])
-		m = wordOrder(0, cx, hi, lo)
-	}
-	if xneg {
-		m = -m
-	}
-	return m, true
-}
-
-// signOrder is -1 for a negative operand against a zero or a positive one,
-// +1 otherwise: the order of x when only its sign decides.
-func signOrder(neg bool) int {
-	if neg {
-		return -1
-	}
-	return 1
-}
-
-// wordOrder orders the 128-bit (ah, al) and (bh, bl).
-func wordOrder(ah, al, bh, bl uint64) int {
-	switch {
-	case ah != bh:
-		if ah < bh {
-			return -1
-		}
-		return 1
-	case al < bl:
-		return -1
-	case al > bl:
-		return 1
-	}
-	return 0
+	return ubdQuietCmp128(x, y)
 }
 
 // The predicate entries: each returns the operator's result itself, so
