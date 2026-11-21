@@ -236,6 +236,10 @@ func ubdWords(x decimal128) bid.UBD128 {
 	return bid.UBD128{Lo: lo, Hi: hi}
 }
 
+// fromUBD returns the decimal128 whose stored words are r, where decimal128
+// is UBD.
+func fromUBD(r bid.UBD128) decimal128 { return FromBits128(r.Hi, r.Lo) }
+
 func isNaN128(x decimal128) bool {
 	if bid.NativeUBD128 {
 		return ubdWords(x).Hi>>59 == bid.UBDNaNTag

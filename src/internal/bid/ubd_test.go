@@ -324,3 +324,77 @@ func TestUBDKernel(t *testing.T) {
 
 // first is the first of two results.
 func first[A, B any](a A, _ B) A { return a }
+
+// TestUBDMathDecimal checks math/decimal's remaining operations on UBD
+// (ubd_misc.go) against this package's BID functions on the same values,
+// as TestUBDKernel checks the kernel entries: every operand of the pool,
+// every pair, and for the three-operand ones a third from a short list of
+// quanta, addends and specials.
+func TestUBDMathDecimal(t *testing.T) {
+	pool := ubdPool128(t)
+	u := func(x bid.Uint128) bid.UBD128 { return bid.UBD128{Lo: x.Lo, Hi: x.Hi} }
+	w := func(r bid.UBD128) bid.Uint128 { return bid.Uint128{Hi: r.Hi, Lo: r.Lo} }
+	modes := append(append([]bid.Mode{}, inlineModes...), 6)
+	if testing.Short() {
+		modes = []bid.Mode{bid.ToNearestEven, bid.TowardZero}
+	}
+	errs := 0
+	check := func(name string, args []bid.Uint128, got bid.UBD128, want bid.Uint128) {
+		t.Helper()
+		mustWellFormed128(t, name, w(got))
+		if w(got) != bid.UBDFromBID128(want) {
+			if errs++; errs <= 20 {
+				t.Errorf("%s%#x = %#x, want %#x", name, args, w(got), bid.UBDFromBID128(want))
+			}
+		}
+	}
+	var thirds []bid.Uint128
+	for _, s := range []string{"0.01", "1", "1E+3", "1E-20", "0", "-7.5", "123456789012345678901234567890.1234", "Inf", "NaN"} {
+		x, _ := bid.Parse128(s, bid.ToNearestEven)
+		thirds = append(thirds, bid.UBDFromBID128(x))
+	}
+	// Parse reads "sNaN" as a quiet NaN: a signaling one is built.
+	thirds = append(thirds, bid.Uint128{Hi: bid.UBDSNaNHi | bid.UBDSignHi, Lo: 5})
+	// For the one-operand functions, coefficients with trailing zeros at
+	// the top of the exponent range, where Reduce must stop.
+	unary := append([]bid.Uint128{}, pool...)
+	for _, e := range []int{bid.MaxExp128 - 20, bid.MaxExp128 - 3, bid.MaxExp128 - 1, bid.MaxExp128} {
+		for _, c := range []uint64{10, 1000, 1e20 / 1e1, 1e19} {
+			unary = append(unary, ubd128(false, e, 0, c), ubd128(true, e, 0, c))
+		}
+	}
+	for _, x := range unary {
+		bx := bid.BIDFromUBD128(x)
+		args := []bid.Uint128{x}
+		check("UBDPayload128", args, bid.UBDPayload128(u(x)), bid.Payload128(bx))
+		check("UBDNaNWithPayload128", args, bid.UBDNaNWithPayload128(u(x), false), bid.NaNWithPayload128(bx))
+		check("UBDSignalingNaNWithPayload128", args, bid.UBDNaNWithPayload128(u(x), true), bid.SignalingNaNWithPayload128(bx))
+		check("UBDQuantum128", args, bid.UBDQuantum128(u(x)), bid.Quantum128(bx))
+		check("UBDReduce128", args, bid.UBDReduce128(u(x)), bid.Reduce128(bx))
+		for _, m := range modes {
+			check("UBDRoundToIntegral128", args, bid.UBDRoundToIntegral128(u(x), m), bid.RoundToIntegral128(bx, m))
+		}
+		for _, y := range pool {
+			by := bid.BIDFromUBD128(y)
+			args := []bid.Uint128{x, y}
+			if got, want := bid.UBDSameQuantum128(u(x), u(y)), bid.SameQuantum128(bx, by); got != want {
+				if errs++; errs <= 20 {
+					t.Errorf("UBDSameQuantum128(%#x, %#x) = %v, want %v", x, y, got, want)
+				}
+			}
+			check("UBDRem128", args, bid.UBDRem128(u(x), u(y)), bid.Rem128(bx, by))
+			check("UBDMod128", args, bid.UBDMod128(u(x), u(y)), bid.Mod128(bx, by))
+			for _, z := range thirds {
+				bz := bid.BIDFromUBD128(z)
+				args := []bid.Uint128{x, y, z}
+				for _, m := range modes {
+					check("UBDFMA128", args, bid.UBDFMA128(u(x), u(y), u(z), m), bid.FMA128(bx, by, bz, m))
+					check("UBDQuoQuantize128", args, bid.UBDQuoQuantize128(u(x), u(y), u(z), m), bid.QuoQuantize128(bx, by, bz, m))
+				}
+			}
+		}
+	}
+	if errs == 0 {
+		t.Logf("%d operands, %d pairs, %d thirds, %d modes", len(pool), len(pool)*len(pool), len(thirds), len(modes))
+	}
+}

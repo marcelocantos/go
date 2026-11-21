@@ -239,22 +239,28 @@ func ubdRoundFinite128(neg bool, c coef128, exp int, mode Mode, floor int) (UBD1
 // arithmetic entry reports. It inlines, so each caller still makes one
 // call.
 func ubdRound128(neg bool, p wide128, exp int, class digitClass, mode Mode) UBD128 {
-	r, _ := ubdRoundStatus128(neg, p, exp, class, mode)
+	r, _ := ubdRoundFloor128(neg, p, exp, class, mode, MinExp128)
 	return r
 }
 
-// ubdRoundStatus128 is round128 with floor MinExp128, on UBD: the same
-// rounding and status, the result packed by ubdPack128 and an overflow by
-// ubdOverflow128. UBDParse128 reports the status.
+// ubdRoundStatus128 is ubdRoundFloor128 with floor MinExp128, the rounding
+// of arithmetic, with its status, which UBDParse128 reports.
 func ubdRoundStatus128(neg bool, p wide128, exp int, class digitClass, mode Mode) (UBD128, Status) {
-	const floor = MinExp128
+	return ubdRoundFloor128(neg, p, exp, class, mode, MinExp128)
+}
+
+// ubdRoundFloor128 is round128 on UBD with its floor, the least exponent of
+// the result: MinExp128 for arithmetic, a quantum's exponent for
+// QuoQuantize. The result is packed by ubdPack128 and an overflow by
+// ubdOverflow128.
+func ubdRoundFloor128(neg bool, p wide128, exp int, class digitClass, mode Mode, floor int) (UBD128, Status) {
 	if class == classZero {
 		var zero coef128
 		if p.Hi == zero {
 			if cIsZero128(p.Lo) {
 				return ubdPack128(neg, zero, min(max(exp, floor), MaxExp128)), Exact
 			}
-			if exp <= MaxExp128 && !cGtMax128(p.Lo) {
+			if exp <= MaxExp128 && floor <= MaxExp128 && !cGtMax128(p.Lo) {
 				if exp >= floor {
 					return ubdPack128(neg, p.Lo, exp), Exact
 				}
