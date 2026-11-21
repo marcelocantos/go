@@ -229,7 +229,7 @@ darwin/arm64 with `GOOS=linux`.
 | `x * y` | 84 → 28 (−67%) | 369 → 103 (−72%) | 65 → 20 (−69%) | 260 → 80 (−69%) |
 | `x / y` | 17 → 2 (−88%) | 64 → 6 (−91%) | 15 → 3 (−80%) | 60 → 12 (−80%) |
 | `x == y` | 169 → 18 (−89%) | 708 → 57 (−92%) | 131 → 12 (−91%) | 524 → 48 (−91%) |
-| `x < y` | 201 → 21 (−90%) | 795 → 67 (−92%) | 152 → 18 (−88%) | 608 → 72 (−88%) |
+| `x < y` | 201 → 21 (−90%) | 795 → 67 (−92%) | 152 → 16 (−89%) | 608 → 64 (−89%) |
 | `x == 0` | 30 → 5 (−83%) | 135 → 14 (−90%) | 31 → 4 (−87%) | 124 → 16 (−87%) |
 | `x > 0` | 41 → 13 (−68%) | 186 → 39 (−79%) | 40 → 10 (−75%) | 160 → 40 (−75%) |
 | `Quantize` | 119 → 2 (−98%) | 491 → 6 (−99%) | 81 → 3 (−96%) | 324 → 12 (−96%) |
@@ -271,6 +271,17 @@ again at each use (`ssacompile/regalloc.go`), a 10-byte load on amd64.
 
 ### Notes
 
+- **arm64 rule.** The ordered comparisons' borrow chain ends in a borrow
+  tested as a bool. arm64 lowered that to `NGC; CMN; CSET NE`, the borrow
+  made an integer and compared again. Two rules in `ARM64.rules`
+  (`(NotEqual (CMNconst [0] (NGCzerocarry f))) => (LessThanU f)` and its
+  `Equal`/`GreaterEqualU` twin) read the flags instead: `CSET LO`, 2
+  instructions fewer per ordered comparison. They apply to all arm64 code;
+  `math/big`, `math/bits`, bigmod, the SSA tests and `test/codegen` pass.
+- **`if` form.** Where a comparison with a fast path controls a branch, the
+  fast path's bool and the call's merge and are tested again (`MOVL; TESTL;
+  JE` on amd64). Removing that is a control-flow change (jump threading
+  through the merge), not a rule; not done.
 - **Frames.** In a function that makes no other call, such as the probe's
   `Eq`, the kernel call also forces a stack frame (about 12 instructions
   on amd64) that inline code did not need. The tables exclude it; in a
@@ -302,7 +313,8 @@ The UBD build reached the default in steps, each measured with this harness
 | Canonical coefficients only; `x == 0` inline; level 6 default (`02d989ec`) | 17 | 41 | 28 | 5 | 5 | 5 | 2 |
 | Ordered comparisons with zero inline (`x > 0`: 9 → 13, no call); level 7 default (`51b3168b`) | 17 | 41 | 28 | 5 | 5 | 5 | 2 |
 | Predicate entries (level 8, not a default) | 17 | 41 | 28 | 2 | 2 | 5 | 2 |
-| Comparisons inline for one qExp and one sign; level 9 default | 17 | 41 | 28 | 18 | 21 | 5 | 2 |
+| Comparisons inline for one qExp and one sign; level 9 default (`32e19bc3`) | 17 | 41 | 28 | 18 | 21 | 5 | 2 |
+| arm64 rule: a borrow read from the flags (arm64 `<`: 18 → 16) | 17 | 41 | 28 | 18 | 21 | 5 | 2 |
 
 The step before level 4 is level −1.
 

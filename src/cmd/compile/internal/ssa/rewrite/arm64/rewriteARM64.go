@@ -6224,6 +6224,7 @@ func rewriteValue_OpARM64EONshiftRO(v *ssa.Value) bool {
 func rewriteValue_OpARM64Equal(v *ssa.Value) bool {
 	v_0 := v.Args[0]
 	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (Equal (CMPconst [0] z:(AND x y)))
 	// cond: z.Uses == 1
 	// result: (Equal (TST x y))
@@ -6548,6 +6549,21 @@ func rewriteValue_OpARM64Equal(v *ssa.Value) bool {
 		v1.AddArg2(x, y)
 		v0.AddArg2(a, v1)
 		v.AddArg(v0)
+		return true
+	}
+	// match: (Equal (CMNconst [0] (NGCzerocarry <typ.UInt64> f)))
+	// result: (GreaterEqualU f)
+	for {
+		if v_0.Op != ssaop.OpARM64CMNconst || ssa.AuxIntToInt64(v_0.AuxInt) != 0 {
+			break
+		}
+		v_0_0 := v_0.Args[0]
+		if v_0_0.Op != ssaop.OpARM64NGCzerocarry || v_0_0.Type != typ.UInt64 {
+			break
+		}
+		f := v_0_0.Args[0]
+		v.Reset(ssaop.OpARM64GreaterEqualU)
+		v.AddArg(f)
 		return true
 	}
 	// match: (Equal (FlagConstant [fc]))
@@ -15389,6 +15405,7 @@ func rewriteValue_OpARM64NEGshiftRL(v *ssa.Value) bool {
 func rewriteValue_OpARM64NotEqual(v *ssa.Value) bool {
 	v_0 := v.Args[0]
 	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (NotEqual (CMPconst [0] z:(AND x y)))
 	// cond: z.Uses == 1
 	// result: (NotEqual (TST x y))
@@ -15713,6 +15730,21 @@ func rewriteValue_OpARM64NotEqual(v *ssa.Value) bool {
 		v1.AddArg2(x, y)
 		v0.AddArg2(a, v1)
 		v.AddArg(v0)
+		return true
+	}
+	// match: (NotEqual (CMNconst [0] (NGCzerocarry <typ.UInt64> f)))
+	// result: (LessThanU f)
+	for {
+		if v_0.Op != ssaop.OpARM64CMNconst || ssa.AuxIntToInt64(v_0.AuxInt) != 0 {
+			break
+		}
+		v_0_0 := v_0.Args[0]
+		if v_0_0.Op != ssaop.OpARM64NGCzerocarry || v_0_0.Type != typ.UInt64 {
+			break
+		}
+		f := v_0_0.Args[0]
+		v.Reset(ssaop.OpARM64LessThanU)
+		v.AddArg(f)
 		return true
 	}
 	// match: (NotEqual (FlagConstant [fc]))

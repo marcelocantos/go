@@ -95,7 +95,9 @@ func Eq128(x, y decimal128) bool {
 func Less128(x, y decimal128) bool {
 	// UBD (the default, ubdLevel 9): one borrow chain on the words XORed
 	// with the sign mask, in front of the kernel's predicate entry.
-	// arm64:"SBCS" "CALL internal/bid.ubdLess128" -"ubdCompare128"
+	// The borrow is read from the flags (CSET LO), not made an integer
+	// and compared again (NGC; CMN): an ARM64.rules rule.
+	// arm64:"SBCS" "CSET" -"NGC" "CALL internal/bid.ubdLess128" -"ubdCompare128"
 	// amd64:"SBBQ" "CALL internal/bid.ubdLess128" -"ubdCompare128"
 	return x < y
 }
