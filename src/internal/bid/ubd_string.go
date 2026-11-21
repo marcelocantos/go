@@ -148,3 +148,43 @@ func UBDParse128(s string, mode Mode) (UBD128, Status) {
 	}
 	return ubdRoundStatus128(n.neg, cWide128(n.mant), n.exp, class, mode)
 }
+
+// UBDAppend128 is Append128 on UBD: the character form of x appended to
+// dst, the short and long layouts on the parts of x (PutShort128,
+// PutLong128), and every other value written out from its digits as
+// append128 writes it. It needs MaxLen128 bytes of spare capacity to avoid
+// allocating. The runtime prints decimal128 with it, where decimal128 is
+// stored as UBD.
+func UBDAppend128(dst []byte, x UBD128) []byte {
+	sign := uint(x.Hi >> UBDSignShift & 1)
+	if i := len(dst); UBDIsShort128(x) && cap(dst)-i >= ShortLen128 {
+		return dst[:i+PutShort128((*[ShortLen128]byte)(dst[i:i+ShortLen128]), sign, uint(-(int64(x.Hi)>>UBDExpShift)), x.Lo)]
+	}
+	if UBDIsLong128(x) {
+		exp, c := int(int64(x.Hi)>>UBDExpShift), Uint128{Hi: x.Hi & UBDCoeffMaskHi, Lo: x.Lo}
+		if i := len(dst); cap(dst)-i >= LongLen128 {
+			return dst[:i+PutLong128((*[LongLen128]byte)(dst[i:i+LongLen128]), sign, exp, c)]
+		}
+		var buf [LongLen128]byte
+		return append(dst, buf[:PutLong128(&buf, sign, exp, c)]...)
+	}
+	kind, neg, c, exp := UBDUnpack128(x)
+	switch kind {
+	case KindNaN:
+		return append(dst, "NaN"...)
+	case KindInf:
+		if neg {
+			return append(dst, "-Inf"...)
+		}
+		return append(dst, "+Inf"...)
+	}
+	var digs [digitBufLen]byte
+	hi, lo := cSplit128(c)
+	var n int
+	if hi == 0 {
+		n = writeWordDigits(digs[:], lo)
+	} else {
+		n = writeDigits(digs[:], hi, lo)
+	}
+	return appendDecimal(dst, neg, digs[len(digs)-n:], exp)
+}

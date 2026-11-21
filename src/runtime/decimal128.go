@@ -64,5 +64,9 @@ func to128(x bid.Uint128) (hi, lo uint64) {
 // write, which keeps the quantum. A float64 prints its %v form too.
 func printdecimal128(x decimal128) {
 	var buf [bid.MaxLen128]byte
+	if bid.NativeUBD128 {
+		gwrite(bid.UBDAppend128(buf[:0], d128words(unsafe.Pointer(&x))))
+		return
+	}
 	gwrite(bid.Append128(buf[:0], d128load(unsafe.Pointer(&x))))
 }

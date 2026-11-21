@@ -483,3 +483,36 @@ func TestUBDFloat(t *testing.T) {
 		t.Logf("%d floats, %d decimals, %d modes", len(f64s), len(decs), len(modes))
 	}
 }
+
+// TestUBDAppend checks UBDAppend128 against Append128 on the same values:
+// the UBD pool and random values of every layout, into a buffer with the
+// spare capacity the contract asks and into one without.
+func TestUBDAppend(t *testing.T) {
+	xs := ubdPool128(t)
+	r := rand.New(rand.NewPCG(131, 132))
+	for range 200_000 {
+		switch r.IntN(3) {
+		case 0:
+			xs = append(xs, ubd128(r.IntN(2) == 0, r.IntN(9)-6, 0, r.Uint64N(1e9)))
+		case 1:
+			xs = append(xs, ubd128(r.IntN(2) == 0, r.IntN(81)-60, r.Uint64N(bid.MaxCoeff128Hi), r.Uint64()))
+		default:
+			xs = append(xs, ubd128(r.IntN(2) == 0, bid.MinExp128+r.IntN(bid.MaxExp128-bid.MinExp128+1), 0, r.Uint64N(1e19)))
+		}
+	}
+	errs := 0
+	for _, x := range xs {
+		want := string(bid.Append128(nil, bid.BIDFromUBD128(x)))
+		u := bid.UBD128{Lo: x.Lo, Hi: x.Hi}
+		roomy := string(bid.UBDAppend128(make([]byte, 0, bid.MaxLen128), u))
+		tight := string(bid.UBDAppend128(nil, u))
+		if roomy != want || tight != want {
+			if errs++; errs <= 20 {
+				t.Errorf("UBDAppend128(%#x) = %q (%q without room), want %q", x, roomy, tight, want)
+			}
+		}
+	}
+	if errs == 0 {
+		t.Logf("%d values", len(xs))
+	}
+}
