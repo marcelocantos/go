@@ -844,7 +844,7 @@ func benchRowList() benchRows {
 	var short [bid.ShortLen128]byte
 	rs.add("IsShort", "128", "mixed", "IsShort128", func(b *testing.B) { loop1(b, mixed.x128, bid.IsShort128) })
 	rs.add("PutShort", "128", "short", "PutShort128", func(b *testing.B) {
-		loop1(b, shorts, func(x bits) int { return bid.PutShort128(&short, x) })
+		loop1(b, shorts, func(x bits) int { sign, frac := bid.ShortParts128(x); return bid.PutShort128(&short, sign, frac, x.Lo) })
 	})
 	rs.add("Append", "128", "short", "Append128", func(b *testing.B) {
 		loop1(b, shorts, func(x bits) int { return len(bid.Append128(buf[:0], x)) })
@@ -861,7 +861,7 @@ func benchRowList() benchRows {
 	lbuf := make([]byte, 0, bid.LongLen128)
 	rs.add("IsLong", "128", "mixed", "IsLong128", func(b *testing.B) { loop1(b, mixed.x128, bid.IsLong128) })
 	rs.add("PutLong", "128", "long", "PutLong128", func(b *testing.B) {
-		loop1(b, longs, func(x bits) int { return bid.PutLong128(&long, x) })
+		loop1(b, longs, func(x bits) int { sign, exp, c := bid.LongParts128(x); return bid.PutLong128(&long, sign, exp, c) })
 	})
 	rs.add("Append", "128", "long", "Append128", func(b *testing.B) {
 		loop1(b, longs, func(x bits) int { return len(bid.Append128(lbuf[:0], x)) })

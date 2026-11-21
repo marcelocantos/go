@@ -78,9 +78,10 @@ func exportedAPI(t testing.TB) []string {
 	var names []string
 	fset := token.NewFileSet()
 	for _, name := range files {
-		// ubd.go is the experimental UBD memory form's conversions,
-		// not part of the decimal API these tables cover.
-		if strings.HasSuffix(name, "_test.go") || name == "ubd.go" {
+		// ubd.go and ubd_string.go are the experimental UBD memory
+		// form's conversions and character form, not part of the
+		// decimal API these tables cover.
+		if strings.HasSuffix(name, "_test.go") || name == "ubd.go" || name == "ubd_string.go" {
 			continue
 		}
 		src, err := os.ReadFile(name)
@@ -628,9 +629,15 @@ func allocCases() map[string]func() {
 		"AppendSci64":  each(all64, func(x uint64) { asBuf = bid.AppendSci64(buf[:0], x) }),
 		"AppendSci128": each(all128, func(x bid.Uint128) { asBuf = bid.AppendSci128(buf[:0], x) }),
 		"IsShort128":   each(all128, func(x bid.Uint128) { asBool = bid.IsShort128(x) }),
-		"PutShort128":  each(shorts, func(x bid.Uint128) { asInt = bid.PutShort128(&short128, x) }),
-		"IsLong128":    each(all128, func(x bid.Uint128) { asBool = bid.IsLong128(x) }),
-		"PutLong128":   each(longs, func(x bid.Uint128) { asInt = bid.PutLong128(&long128, x) }),
+		"PutShort128": each(shorts, func(x bid.Uint128) {
+			sign, frac := bid.ShortParts128(x)
+			asInt = bid.PutShort128(&short128, sign, frac, x.Lo)
+		}),
+		"IsLong128": each(all128, func(x bid.Uint128) { asBool = bid.IsLong128(x) }),
+		"PutLong128": each(longs, func(x bid.Uint128) {
+			sign, exp, c := bid.LongParts128(x)
+			asInt = bid.PutLong128(&long128, sign, exp, c)
+		}),
 		"UnpackDigits64": each(all64, func(x uint64) {
 			asKind, asBool, asInt, _ = bid.UnpackDigits64(&digs64, x)
 		}),

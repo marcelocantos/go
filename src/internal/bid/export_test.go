@@ -282,3 +282,11 @@ func Div64ScaleEntry(n int) (p uint64, s int) {
 	e := div64Scale[n]
 	return e.p, e.s
 }
+
+// The parts PutShort128 and PutLong128 take, decoded from BID.
+func ShortParts128(x Uint128) (sign, frac uint) { return shortParts128(x) }
+func LongParts128(x Uint128) (sign uint, exp int, c Uint128) {
+	c, _ = longCoeff128(x)
+	sign, exp = longParts128(x)
+	return sign, exp, c
+}

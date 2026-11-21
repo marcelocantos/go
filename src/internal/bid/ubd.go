@@ -26,7 +26,8 @@ import "math/bits"
 // See https://migueldecimal128.github.io/decimal128-www/whitepapers/ubd.html.
 const (
 	UBDExpShift    = 50
-	UBDSignHi      = 1 << 49
+	UBDSignShift   = 49
+	UBDSignHi      = 1 << UBDSignShift
 	UBDCoeffMaskHi = 1<<49 - 1
 	// UBDSpecialCoeffHi is the 0x1F prefix of every special value's
 	// coefficient, in the high word.

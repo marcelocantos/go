@@ -70,7 +70,8 @@ func TestLong128(t *testing.T) {
 		for i := range buf {
 			buf[i] = '#'
 		}
-		n := bid.PutLong128(&buf, x)
+		sign, exp, c := bid.LongParts128(x)
+		n := bid.PutLong128(&buf, sign, exp, c)
 		if n < 0 || n > len(buf) || string(buf[:n]) != ref {
 			t.Fatalf("PutLong128(%s) = %q (n = %d), want %q", hex128(x), buf[:max(0, min(n, len(buf)))], n, ref)
 		}

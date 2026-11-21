@@ -55,11 +55,13 @@ func Append64(dst []byte, x uint64) []byte {
 	// width has no short form of its own.
 	if _, c, _, ok := unpackWordCanon64(x); ok && c >= shortCoeff {
 		w := Widen(x)
+		c, _ := longCoeff128(w)
+		sign, exp := longParts128(w)
 		if i := len(dst); cap(dst)-i >= LongLen128 {
-			return dst[:i+PutLong128((*[LongLen128]byte)(dst[i:i+LongLen128]), w)]
+			return dst[:i+PutLong128((*[LongLen128]byte)(dst[i:i+LongLen128]), sign, exp, c)]
 		}
 		var buf [LongLen128]byte
-		return append(dst, buf[:PutLong128(&buf, w)]...)
+		return append(dst, buf[:PutLong128(&buf, sign, exp, c)]...)
 	}
 	return append64(dst, x, false)
 }
@@ -68,14 +70,17 @@ func Append64(dst []byte, x uint64) []byte {
 // capacity to avoid allocating.
 func Append128(dst []byte, x Uint128) []byte {
 	if i := len(dst); IsShort128(x) && cap(dst)-i >= ShortLen128 {
-		return dst[:i+PutShort128((*[ShortLen128]byte)(dst[i:i+ShortLen128]), x)]
+		sign, frac := shortParts128(x)
+		return dst[:i+PutShort128((*[ShortLen128]byte)(dst[i:i+ShortLen128]), sign, frac, x.Lo)]
 	}
 	if IsLong128(x) {
+		c, _ := longCoeff128(x)
+		sign, exp := longParts128(x)
 		if i := len(dst); cap(dst)-i >= LongLen128 {
-			return dst[:i+PutLong128((*[LongLen128]byte)(dst[i:i+LongLen128]), x)]
+			return dst[:i+PutLong128((*[LongLen128]byte)(dst[i:i+LongLen128]), sign, exp, c)]
 		}
 		var buf [LongLen128]byte
-		return append(dst, buf[:PutLong128(&buf, x)]...)
+		return append(dst, buf[:PutLong128(&buf, sign, exp, c)]...)
 	}
 	return append128(dst, x, false)
 }
@@ -91,7 +96,8 @@ func AppendSci64(dst []byte, x uint64) []byte {
 // same plain notation in both forms.
 func AppendSci128(dst []byte, x Uint128) []byte {
 	if i := len(dst); IsShort128(x) && cap(dst)-i >= ShortLen128 {
-		return dst[:i+PutShort128((*[ShortLen128]byte)(dst[i:i+ShortLen128]), x)]
+		sign, frac := shortParts128(x)
+		return dst[:i+PutShort128((*[ShortLen128]byte)(dst[i:i+ShortLen128]), sign, frac, x.Lo)]
 	}
 	return append128(dst, x, true)
 }
@@ -131,8 +137,12 @@ func IsShort128(x Uint128) bool {
 var shortLimit = [1 - shortMinExp]uint64{shortCoeff, shortCoeff, shortCoeff, 10_000_000, 1_000_000}
 
 // PutShort128 writes the character form of x, as Append128 gives it, to
-// the start of buf and returns its length, for an x that IsShort128
-// accepts; for any other x what it writes is unspecified. It writes
+// the start of buf and returns its length, for an x that IsShort128 (or
+// UBDIsShort128 on UBD) accepts, given as its parts: the sign, 0 or 1; the
+// places after the point, minus the exponent, 0 to 4; and the coefficient.
+// The caller decodes them from its own encoding (shortParts128 for BID),
+// so both encodings share this layout without a call between. For parts
+// of any other x what it writes is unspecified. It writes
 // exactly the bytes of the result, none after them, so buf may be the
 // spare capacity of a buffer whose later bytes are in use.
 //
@@ -155,15 +165,14 @@ var shortLimit = [1 - shortMinExp]uint64{shortCoeff, shortCoeff, shortCoeff, 10_
 // instead, by a selected address. The masks on the offsets change no
 // value; they bound each store for the compiler, which then needs no
 // check. See "Digit conversion" in the package documentation.
-func PutShort128(buf *[ShortLen128]byte, x Uint128) int {
-	sign, frac := shortParts128(x)
-	w := eightQuads(x.Lo)
+func PutShort128(buf *[ShortLen128]byte, sign, frac uint, c uint64) int {
+	w := eightQuads(c)
 	// Significant digits, one for a zero coefficient: c|1 has the digit
 	// count of c, because an even c is not one below a power of ten. The
 	// count comes from the coefficient, not from the zero bytes of w,
 	// which would cost nothing more to read: every store address below
 	// depends on it, and the addresses must not wait for the digits.
-	n := uint(cDigits64(x.Lo | 1))
+	n := uint(cDigits64(c | 1))
 	// Digits shown: the significant ones, and zeros up to the units place
 	// when the point is to the left of them (0.05, 0.00).
 	shown := max(n, frac+1)

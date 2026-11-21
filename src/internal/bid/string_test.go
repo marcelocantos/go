@@ -221,7 +221,8 @@ func TestShort128(t *testing.T) {
 		for i := range buf {
 			buf[i] = '#'
 		}
-		n := bid.PutShort128(&buf, x)
+		sign, frac := bid.ShortParts128(x)
+		n := bid.PutShort128(&buf, sign, frac, x.Lo)
 		if n < 0 || n > len(buf) || string(buf[:n]) != general {
 			t.Fatalf("PutShort128(%s) = %q (n = %d), want %q", hex128(x), buf[:max(0, min(n, len(buf)))], n, general)
 		}

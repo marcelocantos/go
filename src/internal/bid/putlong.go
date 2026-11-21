@@ -37,8 +37,12 @@ func IsLong128(x Uint128) bool {
 }
 
 // PutLong128 writes the character form of x, as Append128 gives it, to the
-// start of buf and returns its length, for an x that IsLong128 accepts; for
-// any other x what it writes is unspecified. It writes exactly the bytes of
+// start of buf and returns its length, for an x that IsLong128 (or
+// UBDIsLong128 on UBD) accepts, given as its parts: the sign, 0 or 1; the
+// exponent; and the coefficient. The caller decodes them from its own
+// encoding (longParts128 and longCoeff128 for BID), so both encodings share
+// this layout without a call between. For parts of any other x what it
+// writes is unspecified. It writes exactly the bytes of
 // the result, none after them, so buf may be the spare capacity of a buffer
 // whose later bytes are in use.
 //
@@ -73,12 +77,11 @@ func IsLong128(x Uint128) bool {
 // end of each part that reaches it: the last lane's characters after the
 // point, and the same lane a byte further on before it. The point is
 // stored after the words it overlaps.
-func PutLong128(buf *[LongLen128]byte, x Uint128) int {
+func PutLong128(buf *[LongLen128]byte, sign uint, exp int, c Uint128) int {
 	const (
 		e8  = 100_000_000
 		e16 = e8 * e8
 	)
-	c, _ := longCoeff128(x)
 	var d [longDigits]byte
 	var l uint64
 	var n int
@@ -129,7 +132,6 @@ func PutLong128(buf *[LongLen128]byte, x Uint128) int {
 	last := eightQuads(l - l1*e8)
 	putLane(&d, 32, last)
 
-	sign, exp := longParts128(x)
 	z := uint(40 - n) // where the digits start in d
 	e := exp + n - 1  // the exponent of the leading digit
 	// Everything after the sign is laid out from the start of b, in which
