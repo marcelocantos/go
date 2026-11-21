@@ -1,0 +1,135 @@
+// Copyright 2026 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package bid
+
+// Kernel entries for the language's min and max and for its conversions
+// between decimal128 and the 64-bit integers, and the rounding behind
+// math/decimal's Compose, on UBD. Each is this package's BID function of
+// the same name without the ubd prefix, with UBD's decoding; none converts
+// to BID. A conversion from an integer needs no entry: the integer is the
+// coefficient at exponent 0, which the compiler builds inline.
+
+// ubdMin128 is min128 on UBD: the IEEE 754-2019 minimum, which is Go's min.
+// A NaN operand gives a NaN, made quiet, as ubdNaN2 chooses it; otherwise
+// the lesser operand, -0 below +0, and of two members of one cohort the one
+// totalOrder puts first. A well-formed operand is canonical, so the result
+// is the operand itself, where min128 repacks it.
+func ubdMin128(x, y UBD128) UBD128 {
+	c, ok := ubdCompare128(x, y)
+	if !ok {
+		return ubdNaN2(x, y)
+	}
+	xs, ys := x.Hi&UBDSignHi != 0, y.Hi&UBDSignHi != 0
+	// Equal values of unlike sign can only be zeros, and -0 is the lesser.
+	takeY := b2u(c > 0) | b2u(c == 0)&b2u(ys)&^b2u(xs)
+	if c == 0 && x != y && xs == ys && ubdTotalBefore128(y, x) {
+		takeY = 1
+	}
+	return ubdSel128(-takeY, x, y)
+}
+
+// ubdMax128 is max128 on UBD: ubdMin128 with the order reversed.
+func ubdMax128(x, y UBD128) UBD128 {
+	c, ok := ubdCompare128(x, y)
+	if !ok {
+		return ubdNaN2(x, y)
+	}
+	xs, ys := x.Hi&UBDSignHi != 0, y.Hi&UBDSignHi != 0
+	takeY := b2u(c < 0) | b2u(c == 0)&b2u(xs)&^b2u(ys)
+	if c == 0 && x != y && xs == ys && ubdTotalBefore128(x, y) {
+		takeY = 1
+	}
+	return ubdSel128(-takeY, x, y)
+}
+
+// ubdTotalBefore128 is totalBefore128 on UBD, for two equal values of one
+// sign that are not the same pattern: members of one cohort, which are
+// finite (equal infinities of one sign are one pattern). totalOrder puts
+// the smaller exponent first for a positive value, the larger for a
+// negative one.
+func ubdTotalBefore128(a, b UBD128) bool {
+	ea, eb := int64(a.Hi)>>UBDExpShift, int64(b.Hi)>>UBDExpShift
+	if a.Hi&UBDSignHi != 0 {
+		return ea > eb
+	}
+	return ea < eb
+}
+
+// ubdSel128 is cSel128 on UBD: b where the mask m is all ones, else a.
+func ubdSel128(m uint64, a, b UBD128) UBD128 {
+	return UBD128{Lo: a.Lo ^ (a.Lo^b.Lo)&m, Hi: a.Hi ^ (a.Hi^b.Hi)&m}
+}
+
+// ubdIntParts128 is intParts128 on UBD with TowardZero, the language's
+// rounding for a conversion to an integer, which never increments: x
+// truncated to an integer, as a class, a sign and a magnitude, with big for
+// a magnitude beyond a uint64 and inexact for a truncated one.
+func ubdIntParts128(x UBD128) (kind Kind, neg bool, m uint64, big, inexact bool) {
+	neg = x.Hi&UBDSignHi != 0
+	if x.Hi>>60 == UBDSpecialTag {
+		if x.Hi>>59 == UBDNaNTag {
+			return KindNaN, neg, 0, false, false
+		}
+		return KindInf, neg, 0, false, false
+	}
+	kind = KindFinite
+	c, exp := coef128{Hi: x.Hi & UBDCoeffMaskHi, Lo: x.Lo}, int(int64(x.Hi)>>UBDExpShift)
+	if exp >= 0 {
+		scaled, over := cScale128(c, exp)
+		m, fits := cToU64128(scaled)
+		if over || !fits {
+			return kind, neg, 0, true, false
+		}
+		return kind, neg, m, false, false
+	}
+	q, class := cShift128(c, -exp)
+	inexact = class != classZero
+	m, fits := cToU64128(q)
+	if !fits {
+		return kind, neg, 0, true, inexact
+	}
+	return kind, neg, m, false, inexact
+}
+
+// ubdInt64From128 is the language's conversion of a decimal128 to int64:
+// Int64From128 with TowardZero, without the status. A NaN gives 0, an
+// infinity and an overflow the int64 of its sign's end. An integer
+// coefficient at exponent 0 is the common operand (a value rounded to an
+// integer, a count) and returns at once.
+func ubdInt64From128(x UBD128) int64 {
+	if x.Hi&^UBDSignHi == 0 && x.Lo <= maxInt64 {
+		if x.Hi != 0 {
+			return -int64(x.Lo)
+		}
+		return int64(x.Lo)
+	}
+	r, _ := int64Result(ubdIntParts128(x))
+	return r
+}
+
+// ubdUint64From128 is ubdInt64From128 for uint64: Uint64From128 with
+// TowardZero, without the status.
+func ubdUint64From128(x UBD128) uint64 {
+	if x.Hi == 0 {
+		return x.Lo
+	}
+	r, _ := uint64Result(ubdIntParts128(x))
+	return r
+}
+
+// UBDRound128 is Round128 on UBD: (-1)^neg × coeff × 10^exp, with sticky
+// for a non-zero remainder below coeff's last digit, rounded once in mode,
+// and the status. coeff may be any Uint128. math/decimal's Compose rounds
+// with it.
+func UBDRound128(neg bool, coeff Uint128, exp int, sticky bool, mode Mode) (UBD128, Status) {
+	class := classZero
+	if sticky {
+		class = classBelowHalf
+		if coeff == (Uint128{}) {
+			exp = min(exp, MinExp128)
+		}
+	}
+	return ubdRoundStatus128(neg, wide128{Lo: coeff}, exp, class, mode)
+}

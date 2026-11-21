@@ -3028,6 +3028,14 @@ func (s *state) conv(n ir.Node, v *ssa.Value, ft, tt *types.Type) *ssa.Value {
 				return r
 			}
 		}
+		if bidKernelDirect() {
+			if r := s.ubdIntConv(v, fk, tk, rt); r != nil {
+				if tt.IsInteger() && tt.Size() < 8 {
+					r = s.newValue1(decTrunc[tt.Size()], tt, r)
+				}
+				return r
+			}
+		}
 		fn, ok := softDecimalConvs[twoTypes{fk, tk}]
 		if !ok {
 			s.Fatalf("unhandled decimal conversion %v -> %v", ft, tt)

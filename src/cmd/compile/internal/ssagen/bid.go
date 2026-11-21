@@ -239,6 +239,9 @@ var (
 	// mode, and those that round ties to even and take none.
 	bidKernelQuantize, bidKernelIntegral       *obj.LSym
 	bidKernelQuantizeTTE, bidKernelIntegralTTE *obj.LSym
+	// The language's min and max, and its conversions to int64 and uint64.
+	bidKernelMin, bidKernelMax          *obj.LSym
+	bidKernelToInt64, bidKernelToUint64 *obj.LSym
 )
 
 func initBIDKernelSyms() {
@@ -263,6 +266,10 @@ func initBIDKernelSyms() {
 	bidKernelIntegral = base.PkgLinksym("internal/bid", "ubdRoundToIntegralRnd128", obj.ABIInternal)
 	bidKernelQuantizeTTE = base.PkgLinksym("internal/bid", "ubdQuantizeTTE128", obj.ABIInternal)
 	bidKernelIntegralTTE = base.PkgLinksym("internal/bid", "ubdRoundToIntegralTTE128", obj.ABIInternal)
+	bidKernelMin = base.PkgLinksym("internal/bid", "ubdMin128", obj.ABIInternal)
+	bidKernelMax = base.PkgLinksym("internal/bid", "ubdMax128", obj.ABIInternal)
+	bidKernelToInt64 = base.PkgLinksym("internal/bid", "ubdInt64From128", obj.ABIInternal)
+	bidKernelToUint64 = base.PkgLinksym("internal/bid", "ubdUint64From128", obj.ABIInternal)
 }
 
 // ubdLevel is the -d=ubdlevel setting, which chooses the fast paths of
@@ -598,9 +605,8 @@ func bidKernelDirect() bool {
 }
 
 // bidKernelOp calls the kernel's general path for the decimal128 operator
-// op, or returns nil for an operator it does not take (minimum and
-// maximum, which stay with the runtime). Operators round to nearest, ties
-// to even.
+// op, the language's min and max among them, or returns nil for an
+// operator it does not take. Operators round to nearest, ties to even.
 func (s *state) bidKernelOp(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value {
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
 	// UBD: the kernel's UBD entries take the stored words as they are, low
@@ -637,6 +643,10 @@ func (s *state) bidKernelOp(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Valu
 		fn = bidKernelMul
 	case ir.ODIV:
 		fn = bidKernelDiv
+	case ir.OMIN:
+		fn = bidKernelMin
+	case ir.OMAX:
+		fn = bidKernelMax
 	default:
 		return nil
 	}
@@ -943,4 +953,33 @@ func (s *state) bidMul128(rt *types.Type, x, y *ssa.Value) *ssa.Value {
 	r := s.variable(result, rt)
 	delete(s.vars, result)
 	return r
+}
+
+// ubdIntConv lowers a conversion between decimal128 and int64 or uint64
+// (fk and tk, after the caller has widened a narrower integer), or returns
+// nil for any other. From an integer it is inline: the integer is the
+// coefficient at exponent 0, so the magnitude is the low word and the high
+// word holds only the sign, every integer exact. To an integer it is one
+// call of the kernel's entry, which truncates toward zero.
+func (s *state) ubdIntConv(v *ssa.Value, fk, tk types.Kind, rt *types.Type) *ssa.Value {
+	u64 := types.Types[types.TUINT64]
+	switch {
+	case tk == types.TDECIMAL128 && fk == types.TUINT64:
+		return s.newValue2(ssaop.OpDecimal128Make, rt, v, s.constInt64(u64, 0))
+	case tk == types.TDECIMAL128 && fk == types.TINT64:
+		// neg is all ones for a negative v: |v| is (v ^ neg) - neg, which
+		// is right for the most negative v too, as a uint64.
+		neg := s.newValue2(ssaop.OpRsh64x64, u64, v, s.constInt64(u64, 63))
+		lo := s.newValue2(ssaop.OpSub64, u64, s.newValue2(ssaop.OpXor64, u64, v, neg), neg)
+		hi := s.newValue2(ssaop.OpAnd64, u64, neg, s.constInt64(u64, bid.UBDSignHi))
+		return s.newValue2(ssaop.OpDecimal128Make, rt, lo, hi)
+	case fk == types.TDECIMAL128 && (tk == types.TINT64 || tk == types.TUINT64):
+		fn := bidKernelToInt64
+		if tk == types.TUINT64 {
+			fn = bidKernelToUint64
+		}
+		lo, hi := s.newValue1(ssaop.OpDecimal128Lo, u64, v), s.newValue1(ssaop.OpDecimal128Hi, u64, v)
+		return s.rtcall(fn, true, []*types.Type{rt}, lo, hi)[0]
+	}
+	return nil
 }

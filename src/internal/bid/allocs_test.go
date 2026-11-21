@@ -78,10 +78,10 @@ func exportedAPI(t testing.TB) []string {
 	var names []string
 	fset := token.NewFileSet()
 	for _, name := range files {
-		// ubd.go and ubd_string.go are the experimental UBD memory
-		// form's conversions and character form, not part of the
-		// decimal API these tables cover.
-		if strings.HasSuffix(name, "_test.go") || name == "ubd.go" || name == "ubd_string.go" {
+		// The ubd files are the experimental UBD memory form's kernel,
+		// conversions and character form, not part of the decimal API
+		// these tables cover.
+		if strings.HasSuffix(name, "_test.go") || strings.HasPrefix(name, "ubd") {
 			continue
 		}
 		src, err := os.ReadFile(name)

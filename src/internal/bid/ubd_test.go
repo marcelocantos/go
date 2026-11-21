@@ -288,6 +288,12 @@ func TestUBDKernel(t *testing.T) {
 			check("ubdRoundToIntegralRnd128", x, bid.Uint128{}, mode,
 				bid.UBDRoundToIntegralRnd128(x, mode), bid.UBDFromBID128(bid.RoundToIntegral128(bx, mode)))
 		}
+		if got, want := bid.UBDInt64From128(x), first(bid.Int64From128(bx, bid.TowardZero)); got != want {
+			fail("ubdInt64From128(%#x) = %d, want %d", x, got, want)
+		}
+		if got, want := bid.UBDUint64From128(x), first(bid.Uint64From128(bx, bid.TowardZero)); got != want {
+			fail("ubdUint64From128(%#x) = %d, want %d", x, got, want)
+		}
 		for _, y := range pool {
 			by := bid.BIDFromUBD128(y)
 			c, ok := bid.UBDCompare128(x, y)
@@ -298,6 +304,8 @@ func TestUBDKernel(t *testing.T) {
 			if got, want := bid.UBDPredicates128(x, y), [5]bool{wok && wc == 0, wok && wc < 0, wok && wc <= 0, wok && wc > 0, wok && wc >= 0}; got != want {
 				fail("predicate entries (==, <, <=, >, >=) on %#x, %#x = %v, want %v", x, y, got, want)
 			}
+			check("ubdMin128", x, y, bid.ToNearestEven, bid.UBDMin128(x, y), bid.UBDFromBID128(bid.Min128(bx, by)))
+			check("ubdMax128", x, y, bid.ToNearestEven, bid.UBDMax128(x, y), bid.UBDFromBID128(bid.Max128(bx, by)))
 			for _, op := range ops {
 				check("ubd"+op.name+"TTE128", x, y, bid.ToNearestEven, op.tte(x, y), bid.UBDFromBID128(op.ref(bx, by, bid.ToNearestEven)))
 				for _, mode := range modes {
@@ -310,3 +318,6 @@ func TestUBDKernel(t *testing.T) {
 		t.Logf("%d operands, %d pairs, %d modes", len(pool), len(pool)*len(pool), len(modes))
 	}
 }
+
+// first is the first of two results.
+func first[A, B any](a A, _ B) A { return a }

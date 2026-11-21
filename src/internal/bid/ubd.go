@@ -196,7 +196,9 @@ const (
 // compiler and stay fixed; what lies behind them may change. Each works on
 // UBD itself: it is this package's BID algorithm of the same name without the
 // ubd prefix, with the BID decoding and packing replaced by UBD's (ubd_add.go,
-// ubd_mul.go, ubd_div.go, ubd_quant.go, ubd_cmp.go). None converts to BID.
+// ubd_mul.go, ubd_div.go, ubd_quant.go, ubd_cmp.go, ubd_conv.go). None
+// converts to BID. A conversion from int64 or uint64 has no entry: the
+// compiler builds the coefficient at exponent 0 inline.
 //
 // Each entry meets these rules, which TestUBDKernel checks:
 //
@@ -224,6 +226,9 @@ const (
 //     ubdCompare128                                       Compare128 (c and ok as they are)
 //     ubdEqual128, ubdLess128, ubdLessEqual128,           Compare128: ok and c == 0, c < 0,
 //     ubdGreater128, ubdGreaterEqual128                   c <= 0, c > 0, c >= 0
+//     ubdMin128, ubdMax128                                Min128, Max128
+//     ubdInt64From128, ubdUint64From128                   Int64From128, Uint64From128
+//                                                         with TowardZero, the result alone
 //
 //     with mode ToNearestEven for a TTE entry. The compiler makes one call
 //     for every operand pair its inline paths do not decide, so an entry

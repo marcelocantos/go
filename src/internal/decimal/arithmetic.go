@@ -478,6 +478,16 @@ func decompose64(x decimal64) (neg bool, hi, lo uint64, exp int, ok bool) {
 	return neg, 0, c, exp, true
 }
 func decompose128(x decimal128) (neg bool, hi, lo uint64, exp int, ok bool) {
+	if bid.NativeUBD128 {
+		// UBD: the fields of the stored words, with no conversion. Every
+		// special has the special tag; a well-formed finite value is
+		// canonical.
+		h, l := Bits128(x)
+		if h>>60 == bid.UBDSpecialTag {
+			return false, 0, 0, 0, false
+		}
+		return h&bid.UBDSignHi != 0, h & bid.UBDCoeffMaskHi, l, int(int64(h) >> bid.UBDExpShift), true
+	}
 	kind, neg, c, exp := bid.Unpack128(b128(x))
 	if kind != bid.KindFinite {
 		return false, 0, 0, 0, false
@@ -500,6 +510,11 @@ func compose64(neg bool, hi, lo uint64, exp int) decimal64 {
 	return BID64frombits(b)
 }
 func compose128(neg bool, hi, lo uint64, exp int) decimal128 {
+	if bid.NativeUBD128 {
+		// UBD: rounded straight into the stored words.
+		r, _ := bid.UBDRound128(neg, bid.Uint128{Hi: hi, Lo: lo}, exp, false, bid.ToNearestEven)
+		return FromBits128(r.Hi, r.Lo)
+	}
 	b, _ := bid.Round128(neg, bid.Uint128{Hi: hi, Lo: lo}, exp, false, bid.ToNearestEven)
 	return d128(b)
 }
