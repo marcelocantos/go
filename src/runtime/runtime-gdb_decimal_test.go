@@ -419,7 +419,9 @@ func TestGdbDecimalDecoder(t *testing.T) {
 
 // TestGdbDecimalZeroConsts checks that the DWARF of a linux binary records
 // the encodings of 0E+0 that runtime-gdb.py reads, and that they are the
-// DPD ones on ppc64le and the BID ones elsewhere.
+// ones the memory forms are XORed with: DPD's on ppc64le; elsewhere BID's
+// for decimal64 and, for decimal128, which is stored as UBD there, UBD's,
+// which is all bits clear (bid.NativeZero128Hi).
 func TestGdbDecimalZeroConsts(t *testing.T) {
 	testenv.MustHaveGoBuild(t)
 	if testing.Short() {
@@ -435,8 +437,8 @@ func TestGdbDecimalZeroConsts(t *testing.T) {
 		goarch         string
 		zero64, zeroHi uint64
 	}{
-		{"amd64", bid.Zero64, bid.Zero128Hi},
-		{"arm64", bid.Zero64, bid.Zero128Hi},
+		{"amd64", bid.Zero64, 0},
+		{"arm64", bid.Zero64, 0},
 		{"ppc64le", bid.DPDZero64, bid.DPDZero128Hi},
 	} {
 		t.Run(tc.goarch, func(t *testing.T) {
