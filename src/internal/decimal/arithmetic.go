@@ -128,8 +128,13 @@ func NaN[D Decimal]() D {
 	return D(nan128())
 }
 
-func nan64() decimal64   { return BID64frombits(bid.NaN64) }
-func nan128() decimal128 { return BID128frombits(bid.NaN128Hi, 0) }
+func nan64() decimal64 { return BID64frombits(bid.NaN64) }
+func nan128() decimal128 {
+	if bid.NativeUBD128 {
+		return FromBits128(bid.UBDNaNHi, 0) // UBD's canonical quiet NaN
+	}
+	return BID128frombits(bid.NaN128Hi, 0)
+}
 
 // Inf returns positive infinity if sign >= 0, negative infinity if sign < 0.
 func Inf[D Decimal](sign int) D {
@@ -149,6 +154,13 @@ func inf64(sign int) decimal64 {
 }
 
 func inf128(sign int) decimal128 {
+	if bid.NativeUBD128 {
+		hi := bid.UBDInfHi
+		if sign < 0 {
+			hi |= bid.UBDSignHi
+		}
+		return FromBits128(hi, 0)
+	}
 	inf := bid.Uint128{Hi: bid.Inf128Hi}
 	if sign < 0 {
 		inf = bid.Neg128(inf)
