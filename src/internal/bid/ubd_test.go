@@ -7,6 +7,7 @@ package bid_test
 import (
 	"fmt"
 	"internal/bid"
+	"math"
 	"math/big"
 	"math/rand/v2"
 	"testing"
@@ -396,5 +397,70 @@ func TestUBDMathDecimal(t *testing.T) {
 	}
 	if errs == 0 {
 		t.Logf("%d operands, %d pairs, %d thirds, %d modes", len(pool), len(pool)*len(pool), len(thirds), len(modes))
+	}
+}
+
+// TestUBDFloat checks the conversions between decimal128 and the binary
+// formats on UBD (ubd_float.go) against the BID ones: floats of every kind
+// (random bit patterns, which include subnormals and NaN payloads, the
+// specials and exact integers and fractions) to decimal128 in every mode,
+// and the UBD operand pool and random decimals to both binary formats.
+func TestUBDFloat(t *testing.T) {
+	modes := append(append([]bid.Mode{}, inlineModes...), 6)
+	n := 200_000
+	if testing.Short() {
+		n = 20_000
+	}
+	r := rand.New(rand.NewPCG(101, 102))
+	errs := 0
+	fail := func(format string, args ...any) {
+		t.Helper()
+		if errs++; errs <= 20 {
+			t.Errorf(format, args...)
+		}
+	}
+	u := func(x bid.UBD128) bid.Uint128 { return bid.Uint128{Hi: x.Hi, Lo: x.Lo} }
+	f64s := []float64{0, math.Copysign(0, -1), 1, -1, 0.1, 0.5, 2, 1e20, 1e23, 1 << 53, math.MaxFloat64, math.SmallestNonzeroFloat64,
+		math.Inf(1), math.Inf(-1), math.NaN(), math.Float64frombits(0xfff8000000000123)}
+	for i := 0; i < n; i++ {
+		f64s = append(f64s, math.Float64frombits(r.Uint64()))
+	}
+	for _, f := range f64s {
+		for _, m := range modes {
+			if got, want := u(bid.UBDFloat64To128(f, m)), bid.UBDFromBID128(bid.Float64To128(f, m)); got != want {
+				fail("UBDFloat64To128(%#x, %d) = %#x, want %#x", math.Float64bits(f), m, got, want)
+			}
+			f32 := math.Float32frombits(uint32(math.Float64bits(f)))
+			if got, want := u(bid.UBDFloat32To128(f32, m)), bid.UBDFromBID128(bid.Float32To128(f32, m)); got != want {
+				fail("UBDFloat32To128(%#x, %d) = %#x, want %#x", math.Float32bits(f32), m, got, want)
+			}
+		}
+	}
+	decs := ubdPool128(t)
+	for i := 0; i < n; i++ {
+		var x bid.Uint128
+		switch r.IntN(3) {
+		case 0:
+			x = ubd128(r.IntN(2) == 0, r.IntN(801)-400, 0, r.Uint64())
+		case 1:
+			x = ubd128(r.IntN(2) == 0, r.IntN(81)-60, r.Uint64N(bid.MaxCoeff128Hi), r.Uint64())
+		default:
+			x = ubd128(r.IntN(2) == 0, bid.MinExp128+r.IntN(bid.MaxExp128-bid.MinExp128+1), 0, r.Uint64N(1e12))
+		}
+		decs = append(decs, x)
+	}
+	for _, x := range decs {
+		ux, bx := bid.UBD128{Lo: x.Lo, Hi: x.Hi}, bid.BIDFromUBD128(x)
+		for _, m := range modes {
+			if got, want := math.Float64bits(bid.UBDFloat64From128(ux, m)), math.Float64bits(bid.Float64From128(bx, m)); got != want {
+				fail("UBDFloat64From128(%#x, %d) = %#x, want %#x", x, m, got, want)
+			}
+			if got, want := math.Float32bits(bid.UBDFloat32From128(ux, m)), math.Float32bits(bid.Float32From128(bx, m)); got != want {
+				fail("UBDFloat32From128(%#x, %d) = %#x, want %#x", x, m, got, want)
+			}
+		}
+	}
+	if errs == 0 {
+		t.Logf("%d floats, %d decimals, %d modes", len(f64s), len(decs), len(modes))
 	}
 }
