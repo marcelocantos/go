@@ -95,6 +95,18 @@ func UBDWellFormed128(x Uint128) bool {
 // denotes: a non-canonical coefficient becomes zero and a non-canonical NaN
 // payload zero, as IEEE 754-2019 reads them.
 func UBDFromBID128(x Uint128) Uint128 {
+	// A finite value of the first form with a coefficient below
+	// MaxCoeff128Hi × 2^64 moves its exponent and sign and keeps its
+	// coefficient: no unpacking. Every other encoding takes ubdFromBIDAny.
+	if t := x.Hi; t&Form2Mask128Hi != Form2Mask128Hi && t&CoeffMask128Hi < MaxCoeff128Hi {
+		e := int64(t>>ExpShift128&ExpMask128) - Bias128
+		return Uint128{Hi: uint64(e)<<UBDExpShift | t>>63<<49 | t&CoeffMask128Hi, Lo: x.Lo}
+	}
+	return ubdFromBIDAny(x)
+}
+
+// ubdFromBIDAny is UBDFromBID128 for every encoding.
+func ubdFromBIDAny(x Uint128) Uint128 {
 	kind, neg, coeff, exp := Unpack128(x)
 	var sign uint64
 	if neg {
@@ -124,6 +136,17 @@ func UBDFromBID128(x Uint128) Uint128 {
 // coefficient above MaxCoeff128 reads as zero, a NaN payload of 10^33 or
 // more as payload 0, and an exponent out of range as a quiet NaN.
 func BIDFromUBD128(x Uint128) Uint128 {
+	// A finite value with its exponent in range and a coefficient below
+	// MaxCoeff128Hi × 2^64 moves its exponent and sign and keeps its
+	// coefficient. Every other pattern takes bidFromUBDAny.
+	if e := int64(x.Hi) >> UBDExpShift; uint64(e-MinExp128) <= MaxExp128-MinExp128 && x.Hi&UBDCoeffMaskHi < MaxCoeff128Hi {
+		return Uint128{Hi: x.Hi>>49&1<<63 | uint64(e+Bias128)<<ExpShift128 | x.Hi&UBDCoeffMaskHi, Lo: x.Lo}
+	}
+	return bidFromUBDAny(x)
+}
+
+// bidFromUBDAny is BIDFromUBD128 for every pattern.
+func bidFromUBDAny(x Uint128) Uint128 {
 	hi := x.Hi
 	var sign uint64
 	if hi&UBDSignHi != 0 {
