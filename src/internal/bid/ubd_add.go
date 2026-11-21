@@ -20,9 +20,6 @@ func ubdSubSlow128(x, y UBD128, mode Mode) UBD128 {
 	return ubdAddSlow128(x, y, mode)
 }
 
-// ubdAddLong is where addSlow128 calls addLong128.
-func ubdAddLong(x, y UBD128, mode Mode) UBD128 { return ubdAddLong128(x, y, mode) }
-
 // ubdAddLong128 is addLong128 on UBD operands: the operands are decoded on
 // UBD (exponents unbiased, so the word path's subtractions of Bias128 go),
 // specials are decided on UBD, an exact result that fits packs into UBD, and
@@ -341,52 +338,19 @@ func ubdPackWord(neg bool, hi, lo uint64, exp int) (UBD128, bool) {
 	return UBD128{Lo: lo, Hi: h}, true
 }
 
-// ubdAddWord is addLong128's word path for coefficients of one word each:
-// an exponent gap of at most maxWordGap is added exactly at the smaller
-// exponent; false for every other pair of words.
-func ubdAddWord(x, y UBD128, mode Mode) (UBD128, bool) {
-	xneg, yneg := x.Hi&UBDSignHi != 0, y.Hi&UBDSignHi != 0
-	xw, yw := x.Lo, y.Lo
-	xe, ye := int(int64(x.Hi)>>UBDExpShift), int(int64(y.Hi)>>UBDExpShift)
-	if xe < ye {
-		xneg, xw, xe, yneg, yw, ye = yneg, yw, ye, xneg, xw, xe
-	}
-	gap := uint(xe - ye)
-	if gap > maxWordGap {
-		return UBD128{}, false
-	}
-	hi, lo := bits.Mul64(xw, pow10tab64[gap])
-	neg := xneg
-	if xneg == yneg {
-		var carry uint64
-		lo, carry = bits.Add64(lo, yw, 0)
-		hi += carry
-	} else if hi == 0 && lo < yw {
-		neg, lo = yneg, yw-lo
-	} else {
-		var borrow uint64
-		lo, borrow = bits.Sub64(lo, yw, 0)
-		hi -= borrow
-		if hi|lo == 0 {
-			neg = mode == TowardNegative
-		}
-	}
-	return ubdPackWord(neg, hi, lo, ye)
-}
-
 // ubdAddSlow128 is addSlow128 on UBD: the operands' signs are bit 49 and
 // their exponents unbiased, and the result packs into UBD. A special has
 // the 0x1F prefix in its coefficient's high word, so it is never a word
-// pair; addPair128's test for one becomes the tag test.
+// pair; addPair128's test for one becomes the tag test. Where addSlow128
+// calls addLong128 it calls ubdAddLong128.
 func ubdAddSlow128(x, y UBD128, mode Mode) UBD128 {
+	// Coefficients of one word each go on at once, before anything is
+	// decoded, as in addSlow128: ubdAddLong128's word path decides them.
 	if (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {
-		if r, ok := ubdAddWord(x, y, mode); ok {
-			return r
-		}
-		return ubdAddLong(x, y, mode)
+		return ubdAddLong128(x, y, mode)
 	}
 	if x.Hi>>60 == UBDSpecialTag || y.Hi>>60 == UBDSpecialTag || mode > ToNearestAway {
-		return ubdAddLong(x, y, mode)
+		return ubdAddLong128(x, y, mode)
 	}
 	xhi, yhi := x.Hi&UBDCoeffMaskHi, y.Hi&UBDCoeffMaskHi
 	xe, ye := int(int64(x.Hi)>>UBDExpShift), int(int64(y.Hi)>>UBDExpShift)
@@ -401,7 +365,7 @@ func ubdAddSlow128(x, y UBD128, mode Mode) UBD128 {
 	neg := (x.Hi^(x.Hi^y.Hi)&sw)>>49&1 != 0
 	da := cDigits128(a)
 	if uint(da-1) >= Precision128 || u128GtMaxCoeff(b) {
-		return ubdAddLong(x, y, mode)
+		return ubdAddLong128(x, y, mode)
 	}
 	m := Precision128 - da
 	d := gap - m
@@ -479,7 +443,7 @@ func ubdAddSlow128(x, y UBD128, mode Mode) UBD128 {
 			if !u128Lt(pow10tab128[Precision128-1], s) {
 				const spare = len(pow10tab128) - 1 - Precision128
 				if d > spare {
-					return ubdAddLong(x, y, mode)
+					return ubdAddLong128(x, y, mode)
 				}
 				s, _ = u128Sub(u128MulLow(a, pow10tab128[gap]), b)
 				exp -= d
@@ -498,5 +462,5 @@ func ubdAddSlow128(x, y UBD128, mode Mode) UBD128 {
 	if r, ok := ubdPackWord(neg, s.Hi, s.Lo, exp); ok {
 		return r
 	}
-	return ubdAddLong(x, y, mode)
+	return ubdAddLong128(x, y, mode)
 }
