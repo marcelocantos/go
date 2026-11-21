@@ -72,8 +72,7 @@ var depsRules = `
 	internal/goarch < internal/abi;
 	internal/byteorder, internal/cpu, internal/goarch < internal/chacha8rand;
 	internal/goarch, math/bits < internal/strconv;
-	math/bits < internal/d128;
-	math/bits, internal/strconv, internal/d128 < internal/bid;
+	math/bits, internal/strconv < internal/bid;
 
 	internal/strconv < simd/internal/simdfmt;
 	internal/cpu, simd/internal/simdfmt < simd/archsimd;
@@ -81,7 +80,6 @@ var depsRules = `
 	# RUNTIME is the core runtime group of packages, all of them very light-weight.
 	internal/abi,
 	internal/bid,
-	internal/d128,
 	internal/chacha8rand,
 	internal/coverage/rtcov,
 	internal/cpu,

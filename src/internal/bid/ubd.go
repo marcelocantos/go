@@ -245,14 +245,22 @@ func ubdFromBID(x Uint128) UBD128 {
 // language's operators and the functions without a mode do, and takes no
 // mode; Rnd takes the caller's.
 
-// Add, subtract and multiply are this package's arithmetic on UBD itself
-// (ubd_add.go, ubd_mul.go): addSlow128, addLong128, mulSlow128, mulLong128
-// and their rounding with UBD's decoding and packing, nothing converted.
-// Quantize, compare and round-to-integral handle word-sized coefficients on
-// UBD (ubdQuantizeWord, ubdCompareWord, ubdRoundToIntegralWord) and send
-// every other operand through BID to this package's general paths. Divide
-// is this package's divide on UBD itself (ubd_div.go). decimal128-go's add, multiply, quantize and
-// compare were measured slower than this package's (see internal/d128).
+// Add, subtract, multiply, divide and quantize are this package's
+// arithmetic on UBD itself (ubd_add.go, ubd_mul.go, ubd_div.go,
+// ubd_quant.go): its general paths with UBD's decoding and packing, nothing
+// converted; quantize has the word path ubdQuantizeWord in front. Compare
+// and round-to-integral handle word-sized coefficients on UBD
+// (ubdCompareWord, ubdRoundToIntegralWord) and send every other operand
+// through BID to this package's general paths.
+//
+// decimal128-go (github.com/migueldecimal128/decimal128-go), whose
+// arithmetic works on UBD itself, was tried behind these entries and
+// measured slower than this package's on money and wide operands alike
+// (2026-11-21, Apple M3): an add of 34-digit operands 22.5 ns against 7.5,
+// a multiply 29.1 against 10.6, a divide 23.6 against 11.7, a quantize to
+// cents about 20 against 4.9, a compare 8.5 against 3.3. Its general paths
+// take 128- and 256-bit routes and a final rounding step for word-sized
+// operands too.
 
 func ubdAddTTE128(x, y UBD128) UBD128 { return ubdAddSlow128(x, y, ToNearestEven) }
 
@@ -394,8 +402,8 @@ func ubdRoundToIntegralWord(x UBD128, mode Mode) (UBD128, bool) {
 // ubdCompare128 orders x and y. Operands whose coefficients are one word
 // each, which covers money values, are ordered on UBD itself
 // (ubdCompareWord); every other pair goes through BID to quietCmpSlow128.
-// decimal128-go's compare was measured slower than both (see
-// internal/d128).
+// decimal128-go's compare was measured slower than both: 8.5 ns a compare
+// against 7.2 through BID and 3.3 on UBD.
 func ubdCompare128(x, y UBD128) (c int, ok bool) {
 	if c, ok := ubdCompareWord(x, y); ok {
 		return c, true

@@ -367,13 +367,10 @@ func bidFileFindings(fset *token.FileSet, f *ast.File, name string) []ratchetFin
 }
 
 // bidSkipDir reports whether the walk skips the directory rel (a slash path
-// relative to GOROOT). internal/d128, decimal128-go's arithmetic on UBD
-// behind internal/bid's UBD kernel entries, is part of the kernel as
-// internal/bid is: its UBD layout constants coincide numerically with BID
-// masks (the 49-bit coefficient mask, 10^34 - 1, the exponent bias).
+// relative to GOROOT).
 func bidSkipDir(rel string) bool {
 	base := rel[strings.LastIndex(rel, "/")+1:]
-	return rel == "src/internal/bid" || rel == "src/internal/d128" || base == "testdata" || base == "vendor" || base == ".git"
+	return rel == "src/internal/bid" || base == "testdata" || base == "vendor" || base == ".git"
 }
 
 // scanBIDTree parses every non-test Go file of root/src and root/test and
