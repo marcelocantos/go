@@ -129,6 +129,9 @@ func (s *state) bidCompareZero(op ir.Op, x *ssa.Value, zeroOnLeft bool) *ssa.Val
 			op = ir.OLE
 		}
 	}
+	if bidCallOnly(x) {
+		return s.ubdCompareZeroOrdered(op, x)
+	}
 	var ordered, negative *ssa.Value
 	if x.Type.Kind() == types.TDECIMAL64 {
 		hi := s.newValue2(ssaop.OpXor64, u64, s.newValue1(ssaop.OpCopy, u64, x), s.constInt64(u64, int64(bid.Zero64)))
@@ -156,6 +159,62 @@ func (s *state) bidCompareZero(op ir.Op, x *ssa.Value, zeroOnLeft bool) *ssa.Val
 		s.Fatalf("unexpected decimal zero comparison %v", op)
 	}
 	return s.newValue2(ssaop.OpAndB, boolT, ordered, result)
+}
+
+// ubdCompareZeroOrdered implements x < 0, x <= 0, x > 0 and x >= 0 for a
+// well-formed (canonical) UBD x, at ubdLevel 7. v is the high word shifted
+// past qExp, so that the sign is its top bit above the top 49 coefficient
+// bits, with lo != 0 in the bits the shift cleared: v is negative exactly
+// when x's sign is set, and 0 exactly when x is +0 (a canonical special has
+// a nonzero coefficient, so it falls out by its sign). -0 makes v the least
+// int64, which negation leaves alone. With NaN excluded by its tag:
+//
+//	x > 0   int64(v) > 0      x <= 0  int64(v) <= 0
+//	x < 0   int64(-v) > 0     x >= 0  int64(-v) <= 0
+//
+// There is no slow path, so no call: the site needs no frame and spills
+// nothing. Controlling a branch, x > 0 is 11 instructions on amd64 and 8 on
+// arm64, against 10 and 9 for the call to ubdCompare128 it replaces.
+func (s *state) ubdCompareZeroOrdered(op ir.Op, x *ssa.Value) *ssa.Value {
+	boolT, u64, u8 := types.Types[types.TBOOL], types.Types[types.TUINT64], types.Types[types.TUINT8]
+	hi := s.newValue1(ssaop.OpDecimal128Hi, u64, x)
+	lo := s.newValue1(ssaop.OpDecimal128Lo, u64, x)
+	zero := s.constInt64(u64, 0)
+	nz := s.newValue1(ssaop.OpZeroExt8to64, u64, s.newValue1(ssaop.OpCvtBoolToUint8, u8, s.newValue2(ssaop.OpNeq64, boolT, lo, zero)))
+	v := s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpLsh64x64, u64, hi, s.constInt64(u64, 64-bid.UBDExpShift)), nz)
+	if op == ir.OLT || op == ir.OGE {
+		v = s.newValue1(ssaop.OpNeg64, u64, v)
+	}
+	var result *ssa.Value
+	if op == ir.OGT || op == ir.OLT {
+		result = s.newValue2(ssaop.OpLess64, boolT, zero, v)
+	} else {
+		result = s.newValue2(ssaop.OpLeq64, boolT, v, zero)
+	}
+	tag := s.newValue2(ssaop.OpRsh64Ux64, u64, hi, s.constInt64(u64, 59))
+	ordered := s.newValue2(ssaop.OpNeq64, boolT, tag, s.constInt64(u64, bid.UBDNaNTag))
+	// A NaN branches to false rather than being ANDed in, so that where
+	// the comparison controls a branch, the two tests are two branches.
+	res := ssaMarker("ubdcmpzero")
+	bNaN := s.f.NewBlock(block.BlockPlain)
+	bAfter := s.f.NewBlock(block.BlockPlain)
+	b := s.endBlock()
+	b.Kind = block.BlockIf
+	b.SetControl(ordered)
+	b.Likely = ssa.BranchLikely
+	bOrdered := s.f.NewBlock(block.BlockPlain)
+	b.AddEdgeTo(bOrdered)
+	b.AddEdgeTo(bNaN)
+	s.startBlock(bOrdered)
+	s.vars[res] = result
+	s.endBlock().AddEdgeTo(bAfter)
+	s.startBlock(bNaN)
+	s.vars[res] = s.constBool(false)
+	s.endBlock().AddEdgeTo(bAfter)
+	s.startBlock(bAfter)
+	r := s.variable(res, boolT)
+	delete(s.vars, res)
+	return r
 }
 
 // The kernel's general paths, which the compiler calls directly on the
@@ -207,13 +266,14 @@ func initBIDKernelSyms() {
 //	3  and its second-level add path, for both
 //	4  the first level for x + y and the second for x - y
 //	5  and decimal128-go's first-level multiply path, for x * y
-//	6  and x == 0 and x != 0 inline, with no call (the default)
+//	6  and x == 0 and x != 0 inline, with no call
+//	7  and x < 0, x <= 0, x > 0 and x >= 0 inline, with no call (the default)
 //
 // Level -1 is the inline paths derived from the BID lowering instead,
 // which handle more operand pairs inline at much greater size.
 func ubdLevel() int {
 	if base.Debug.UBDLevel == 0 {
-		return 6
+		return 7
 	}
 	return base.Debug.UBDLevel
 }

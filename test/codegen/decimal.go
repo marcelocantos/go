@@ -103,7 +103,7 @@ func Nonzero64(x decimal64) bool {
 }
 
 func Zero128(x decimal128) bool {
-	// UBD (the default, ubdLevel 6): the coefficient bits, (hi<<15)|lo,
+	// UBD (the default, ubdLevel 7): the coefficient bits, (hi<<15)|lo,
 	// tested inline; a special's coefficient prefix makes it nonzero.
 	// arm64:"ORR" -"CALL"
 	// amd64:"SHLQ" -"CALL"
@@ -111,7 +111,7 @@ func Zero128(x decimal128) bool {
 }
 
 func Nonzero128(x decimal128) bool {
-	// UBD (the default, ubdLevel 6): the coefficient bits, (hi<<15)|lo,
+	// UBD (the default, ubdLevel 7): the coefficient bits, (hi<<15)|lo,
 	// tested inline; a special's coefficient prefix makes it nonzero.
 	// arm64:"ORR" -"CALL"
 	// amd64:"SHLQ" -"CALL"
@@ -143,26 +143,30 @@ func GreaterEqualZero64(x decimal64) bool {
 }
 
 func LessZero128(x decimal128) bool {
-	// arm64:"CALL internal/bid.ubdCompare128"
-	// amd64:"CALL internal/bid.ubdCompare128"
+	// UBD (the default, ubdLevel 7): inline, with no call.
+	// arm64:"ORR" -"CALL"
+	// amd64:"SHLQ" -"CALL"
 	return 0.00 > x
 }
 
 func LessEqualZero128(x decimal128) bool {
-	// arm64:"CALL internal/bid.ubdCompare128"
-	// amd64:"CALL internal/bid.ubdCompare128"
+	// UBD (the default, ubdLevel 7): inline, with no call.
+	// arm64:"ORR" -"CALL"
+	// amd64:"SHLQ" -"CALL"
 	return 0.00 >= x
 }
 
 func GreaterZero128(x decimal128) bool {
-	// arm64:"CALL internal/bid.ubdCompare128"
-	// amd64:"CALL internal/bid.ubdCompare128"
+	// UBD (the default, ubdLevel 7): inline, with no call.
+	// arm64:"ORR" -"CALL"
+	// amd64:"SHLQ" -"CALL"
 	return x > 0
 }
 
 func GreaterEqualZero128(x decimal128) bool {
-	// arm64:"CALL internal/bid.ubdCompare128"
-	// amd64:"CALL internal/bid.ubdCompare128"
+	// UBD (the default, ubdLevel 7): inline, with no call.
+	// arm64:"ORR" -"CALL"
+	// amd64:"SHLQ" -"CALL"
 	return x >= 0
 }
 
@@ -175,8 +179,8 @@ func LocalZero64(x decimal64) bool {
 
 func LocalZero128(x decimal128) bool {
 	zero := decimal128(0.00)
-	// arm64:"CALL internal/bid.ubdCompare128"
-	// amd64:"CALL internal/bid.ubdCompare128"
+	// arm64:"ORR" -"CALL"
+	// amd64:"SHLQ" -"CALL"
 	return zero <= x
 }
 

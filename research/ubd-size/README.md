@@ -51,7 +51,15 @@ fast path in front of `*`:
   113 coefficient bits are clear, and every special has the `0x1F` prefix in
   its coefficient bits, so none passes. amd64 is `SHLQ; ORQ; TESTQ`, arm64
   `ORR R1<<15; CMP`.
-- **Everything else** (`/`, comparisons, the ordered comparisons with zero,
+- **`x < 0`, `x <= 0`, `x > 0`, `x >= 0`** (against a constant zero):
+  inline, with no call. `v = (hi<<14) | (lo != 0)` puts the sign in the top
+  bit over the coefficient, so v is negative exactly when the sign is set
+  and 0 exactly at +0 (a canonical infinity has a nonzero coefficient, its
+  prefix). Then `x > 0` is `int64(v) > 0`, `x <= 0` is `int64(v) <= 0`, and
+  `x < 0` and `x >= 0` are the same tests on `-v` (−0 gives the least int64,
+  which negation keeps). A NaN, found by its tag `hi>>59 == 15`, branches to
+  false.
+- **Everything else** (`/`, comparisons of two variables,
   `decimal.Quantize`, `decimal.Round` and the other integral roundings) is
   the kernel call alone.
 
@@ -65,7 +73,8 @@ measured against the call alone:
 | 3 | first- and second-level add paths, at both `+` and `-` |
 | 4 | first level at `+`, second level at `-` |
 | 5 | level 4, and the first-level multiply path at `*` |
-| **6** (default, `0`) | level 5, and `x == 0`, `x != 0` inline |
+| 6 | level 5, and `x == 0`, `x != 0` inline |
+| **7** (default, `0`) | level 6, and `x < 0`, `x <= 0`, `x > 0`, `x >= 0` inline |
 | −1 | the inline paths derived from the BID lowering (see History) |
 
 From level 4, `5.00 + 3.00` and `5.00 - 3.00` are inline; `5.00 + -3.00` and
@@ -129,9 +138,18 @@ results are, the add fast path's sum is below 2^112, the multiply path's
 product below 2^112, and the subtract path's difference no larger than an
 operand, all below 10^34.
 
-Ordered comparisons with zero (`x > 0` and the rest) stay calls: inline,
-they add a NaN-tag test and a sign test to the zero test, 14 instructions on
-amd64 and 11 on arm64 against the call's 9 and 8.
+The ordered comparisons with zero are complete inline: no operand needs
+the kernel, so the call is gone, not merely put behind a fast path. That
+saves more than the instruction counts show: Go's internal ABI has no
+callee-saved registers, so a call spills every value live across it, and in
+a function that makes no other call it forces a frame. At the call site
+they are about the size of the call they replace: controlling a branch,
+`if x > 0` is 11 instructions on amd64 and 8 on arm64, against 10 and 9 for
+the call to `ubdCompare128`; as a bool value, as the table below counts it, 13 and 10 against 9 and 8.
+Two smaller forms were tried and dropped: `lo != 0` as the borrow of
+`0 - lo` (one more instruction on amd64, two on arm64), and the NaN test
+ANDed in instead of branched (three more where the comparison controls a
+branch).
 
 ## What changed in `ubd128`
 
@@ -188,7 +206,7 @@ darwin/arm64 with `GOOS=linux`.
 
 ## Results (2026-11-20)
 
-### Inline code per call site, default (level 6)
+### Inline code per call site, default (level 7)
 
 | Op | amd64 instr | amd64 bytes | arm64 instr | arm64 bytes |
 |---|---|---|---|---|
@@ -199,7 +217,7 @@ darwin/arm64 with `GOOS=linux`.
 | `x == y` | 169 → 5 (−97%) | 708 → 14 (−98%) | 131 → 6 (−95%) | 524 → 24 (−95%) |
 | `x < y` | 201 → 5 (−98%) | 795 → 14 (−98%) | 152 → 4 (−97%) | 608 → 16 (−97%) |
 | `x == 0` | 30 → 5 (−83%) | 135 → 14 (−90%) | 31 → 4 (−87%) | 124 → 16 (−87%) |
-| `x > 0` | 41 → 9 (−78%) | 186 → 24 (−87%) | 40 → 8 (−80%) | 160 → 32 (−80%) |
+| `x > 0` | 41 → 13 (−68%) | 186 → 39 (−79%) | 40 → 10 (−75%) | 160 → 40 (−75%) |
 | `Quantize` | 119 → 2 (−98%) | 491 → 6 (−99%) | 81 → 3 (−96%) | 324 → 12 (−96%) |
 | `Round` | 58 → 3 (−95%) | 248 → 11 (−96%) | 42 → 4 (−90%) | 168 → 16 (−90%) |
 
@@ -240,7 +258,7 @@ again at each use (`ssacompile/regalloc.go`), a 10-byte load on amd64.
 ### Notes
 
 - **Frames.** In a function that makes no other call, such as the probe's
-  `Pos`, the kernel call also forces a stack frame (about 12 instructions
+  `Eq`, the kernel call also forces a stack frame (about 12 instructions
   on amd64) that inline code did not need. The tables exclude it; in a
   function that already calls something it costs nothing more.
 - **Kernel entries.** The UBD entries and the two conversions are about
@@ -267,7 +285,8 @@ The UBD build reached the default in steps, each measured with this harness
 | Level 4 default (`c87f1672`) | 17 | 41 | 2 | 5 | 5 | 7 | 2 |
 | First-level multiply, full 64-bit coefficients (`efdd84e4`, level 5) | 17 | 41 | 30 | 5 | 5 | 7 | 2 |
 | Multiply narrowed to 2^56 (`b5c2edb4`); level 5 default (`fbb5804e`) | 17 | 41 | 28 | 5 | 5 | 7 | 2 |
-| Canonical coefficients only; `x == 0` inline; level 6 default | 17 | 41 | 28 | 5 | 5 | 5 | 2 |
+| Canonical coefficients only; `x == 0` inline; level 6 default (`02d989ec`) | 17 | 41 | 28 | 5 | 5 | 5 | 2 |
+| Ordered comparisons with zero inline (`x > 0`: 9 → 13, no call); level 7 default | 17 | 41 | 28 | 5 | 5 | 5 | 2 |
 
 The step before level 4 is level −1.
 

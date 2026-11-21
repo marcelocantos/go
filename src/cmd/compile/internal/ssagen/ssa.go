@@ -3386,11 +3386,10 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			}
 		}
 
-		// At ubdLevel 6 and up, x == 0 and x != 0 are inline (a shift, an OR
-		// and a test) and the ordered comparisons with zero stay kernel
-		// calls: inline, x > 0 adds a NaN test and a sign test, 14
-		// instructions on amd64 and 11 on arm64 against the call's 9 and 8.
-		if n.X.Type().IsDecimal() && !ir.DecimalDPD() && (!bidCallOnly(a) || ubdLevel() >= 6 && (n.Op() == ir.OEQ || n.Op() == ir.ONE)) {
+		// On a UBD target, x == 0 and x != 0 are inline from ubdLevel 6 and
+		// the ordered comparisons with zero from ubdLevel 7, with no call
+		// (bidIsZero, ubdCompareZeroOrdered).
+		if n.X.Type().IsDecimal() && !ir.DecimalDPD() && (!bidCallOnly(a) || ubdLevel() >= 7 || ubdLevel() >= 6 && (n.Op() == ir.OEQ || n.Op() == ir.ONE)) {
 			// Inspect already evaluated SSA values, before OGT/OGE are
 			// reversed. This also recognizes simple locals initialized to
 			// zero, at any quantum, without assuming anything about loads.
