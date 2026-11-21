@@ -47,12 +47,30 @@ func BID64frombits(b uint64) decimal64 {
 // independently of the target's byte order.
 func BID128bits(d decimal128) (hi, lo uint64) {
 	hi, lo = Bits128(d)
+	if bid.NativeUBD128 {
+		// UBD XORs nothing, and the stored words are well-formed: a finite
+		// value goes to BID's first form here, as in bid.BIDFromUBD128,
+		// with no call, and only a special takes the call.
+		if hi>>60 != bid.UBDSpecialTag {
+			return hi>>bid.UBDSignShift&1<<63 | uint64(int64(hi)>>bid.UBDExpShift+bid.Bias128)<<bid.ExpShift128 | hi&bid.UBDCoeffMaskHi, lo
+		}
+		x := bid.BIDFromUBD128(bid.Uint128{Hi: hi, Lo: lo})
+		return x.Hi, x.Lo
+	}
 	x := bid.FromNative128(bid.Uint128{Hi: hi ^ bid.NativeZero128Hi, Lo: lo})
 	return x.Hi, x.Lo
 }
 
 // BID128frombits is BID64frombits for decimal128, with the high word first.
+// Where decimal128 is stored as UBD (every target but ppc64le), a
+// non-canonical encoding is stored as the value IEEE 754-2019 clause 3.5.2
+// item c.2 gives it, a significand above 10^34 - 1 (10^33 - 1 as a NaN's
+// payload) being zero, so BID128bits then returns the canonical encoding.
 func BID128frombits(hi, lo uint64) decimal128 {
+	if bid.NativeUBD128 {
+		x := bid.UBDFromBID128(bid.Uint128{Hi: hi, Lo: lo})
+		return FromBits128(x.Hi, x.Lo)
+	}
 	x := bid.ToNative128(bid.Uint128{Hi: hi, Lo: lo})
 	return FromBits128(x.Hi^bid.NativeZero128Hi, x.Lo)
 }

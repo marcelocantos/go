@@ -60,10 +60,12 @@ func UBDIsSpecial128(x Uint128) bool { return x.Hi>>60 == UBDSpecialTag }
 // Every other pattern is malformed. The 14-bit qExp field holds -8192 to
 // 8191, of which decimal128 uses -6176 to 6111 and the special tag 7168 to
 // 8191; the 3072 values between have no meaning. BID and DPD have
-// non-canonical encodings (a coefficient above MaxCoeff128, which denotes
-// zero; a NaN payload of 10^33 or more, which denotes payload 0; unused bits
-// in an infinity), but the conversion to UBD applies IEEE 754's reading of
-// them, so UBD has none. Values reach
+// non-canonical encodings, and IEEE 754-2019 clause 3.5.2 gives each its
+// value: a significand above its format's maximum, 10^34 - 1 (10^33 - 1 as
+// a NaN's payload), is non-canonical and its value is zero (item c.2 for
+// the binary encoding of the significand), and the reserved bits of an
+// infinity or a NaN are ignored. The conversion to UBD stores that value,
+// so UBD has no non-canonical patterns. Values reach
 // UBD only through this package's conversions and operations, which produce
 // well-formed patterns, so a malformed one is a bug (or unsafe code). The
 // inline paths and the kernel need not agree on one (see "The UBD kernel
@@ -90,13 +92,20 @@ func UBDWellFormed128(x Uint128) bool {
 }
 
 // UBDFromBID128 returns the UBD encoding of the value the BID encoding x
-// denotes: a non-canonical coefficient becomes zero and a non-canonical NaN
-// payload zero, as IEEE 754-2019 reads them.
+// denotes. x is any 128 bits, off the wire or from a caller, and a
+// non-canonical significand has the value IEEE 754-2019 clause 3.5.2 item
+// c.2 gives it: one above 10^34 - 1, or above 10^33 - 1 as a NaN's payload,
+// is zero. Every second-form significand, at 2^113 or more, is such a one.
 func UBDFromBID128(x Uint128) Uint128 {
-	// A finite value of the first form with a coefficient below
-	// MaxCoeff128Hi × 2^64 moves its exponent and sign and keeps its
-	// coefficient: no unpacking. Every other encoding takes ubdFromBIDAny.
-	if t := x.Hi; t&Form2Mask128Hi != Form2Mask128Hi && t&CoeffMask128Hi < MaxCoeff128Hi {
+	// A first-form encoding whose coefficient's bit 112 is clear is
+	// canonical with no comparison, its coefficient below 2^112 < 10^34,
+	// and its exponent in range, as every first-form exponent is: it moves
+	// its exponent and sign and keeps its coefficient. The form test also
+	// sends the specials and the non-canonical second-form encodings,
+	// whose significand is zero by clause 3.5.2 c.2, to ubdFromBIDAny,
+	// with the coefficients from 2^112 up, which it compares with
+	// 10^34 - 1.
+	if t := x.Hi; t&Form2Mask128Hi != Form2Mask128Hi && t&(1<<(ExpShift128-1)) == 0 {
 		e := int64(t>>ExpShift128&ExpMask128) - Bias128
 		return Uint128{Hi: uint64(e)<<UBDExpShift | t>>63<<49 | t&CoeffMask128Hi, Lo: x.Lo}
 	}
@@ -129,22 +138,29 @@ func ubdFromBIDAny(x Uint128) Uint128 {
 	return Uint128{Hi: uint64(exp)<<UBDExpShift | sign | coeff.Hi, Lo: coeff.Lo}
 }
 
-// BIDFromUBD128 returns the BID encoding of the value the UBD encoding x
-// denotes. No operation produces a malformed pattern; of them, a
-// coefficient above MaxCoeff128 reads as zero, a NaN payload of 10^33 or
-// more as payload 0, and an exponent out of range as a quiet NaN.
+// BIDFromUBD128 returns the BID encoding of the well-formed UBD x
+// (UBDWellFormed128), as every stored decimal128 is. A finite one is
+// canonical: its exponent is in range and its coefficient below 10^34, so
+// it has BID's first form, whose 113 coefficient bits hold every such
+// coefficient (a second-form coefficient begins 100, at 2^113, above every
+// canonical decimal128). Its sign and exponent move and its coefficient
+// stays; the one test is for a special, which BIDFromUBDAny128 converts.
+// A malformed pattern is a bug, and what this returns for one is
+// unspecified; BIDFromUBDAny128 reads every pattern.
 func BIDFromUBD128(x Uint128) Uint128 {
-	// A finite value with its exponent in range and a coefficient below
-	// MaxCoeff128Hi × 2^64 moves its exponent and sign and keeps its
-	// coefficient. Every other pattern takes bidFromUBDAny.
-	if e := int64(x.Hi) >> UBDExpShift; uint64(e-MinExp128) <= MaxExp128-MinExp128 && x.Hi&UBDCoeffMaskHi < MaxCoeff128Hi {
-		return Uint128{Hi: x.Hi>>49&1<<63 | uint64(e+Bias128)<<ExpShift128 | x.Hi&UBDCoeffMaskHi, Lo: x.Lo}
+	if x.Hi>>60 != UBDSpecialTag {
+		return Uint128{Hi: x.Hi>>UBDSignShift&1<<63 | uint64(int64(x.Hi)>>UBDExpShift+Bias128)<<ExpShift128 | x.Hi&UBDCoeffMaskHi, Lo: x.Lo}
 	}
-	return bidFromUBDAny(x)
+	return BIDFromUBDAny128(x)
 }
 
-// bidFromUBDAny is BIDFromUBD128 for every pattern.
-func bidFromUBDAny(x Uint128) Uint128 {
+// BIDFromUBDAny128 is BIDFromUBD128 for every pattern, malformed ones
+// included, which a debugger may be shown. IEEE 754 does not define UBD, so
+// the reading of a malformed pattern is this package's, modelled on clause
+// 3.5.2 c.2's for BID: a coefficient above MaxCoeff128 reads as zero and a
+// NaN payload of 10^33 or more as payload 0; an exponent out of range, which
+// BID cannot encode, reads as a quiet NaN.
+func BIDFromUBDAny128(x Uint128) Uint128 {
 	hi := x.Hi
 	var sign uint64
 	if hi&UBDSignHi != 0 {

@@ -213,7 +213,26 @@ func TestUBDConversion(t *testing.T) {
 	if got, want := bid.BIDFromUBD128(bid.Uint128{}), (bid.Uint128{Hi: bid.Zero128Hi}); got != want {
 		t.Errorf("BIDFromUBD128(0) = %#x, want +0E+0 %#x", got, want)
 	}
-	for _, x := range inlinePool128() {
+	// The pool, and random encodings of the kinds UBDFromBID128's fast
+	// path must tell apart: any bits; first-form coefficients with bit 112
+	// set, below and above 10^34 - 1; and second-form encodings, the
+	// specials among them and the rest non-canonical.
+	xs := inlinePool128()
+	r := rand.New(rand.NewPCG(121, 122))
+	for range 300_000 {
+		x := bid.Uint128{Hi: r.Uint64(), Lo: r.Uint64()}
+		switch r.IntN(3) {
+		case 0: // first form, coefficient bit 112 set
+			x.Hi = x.Hi&^bid.Form2Mask128Hi | 1<<48
+			if r.IntN(2) == 0 {
+				x.Hi = x.Hi&^(1<<48-1) | r.Uint64N(bid.MaxCoeff128Hi&(1<<48-1)+2)
+			}
+		case 1: // second form
+			x.Hi |= bid.Form2Mask128Hi
+		}
+		xs = append(xs, x)
+	}
+	for _, x := range xs {
 		u := bid.UBDFromBID128(x)
 		mustWellFormed128(t, fmt.Sprintf("UBDFromBID128(%#x)", x), u)
 		if !ubdCanonical128(u) {

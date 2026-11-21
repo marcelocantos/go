@@ -250,11 +250,13 @@ func encComplex(i *encInstr, state *encoderState, v reflect.Value) {
 // is omitted when it equals zero, and that loses -0; a decimal zero with
 // another quantum, 0.00, compares equal to zero too, and omitting it would
 // lose the quantum, so the test is of the representation, which keeps -0
-// as well.
+// as well. The zero value is stored as all bits clear on every target, so
+// the test reads the stored words, and only a field that is sent is
+// converted to the interchange encoding.
 func encDecimal(i *encInstr, state *encoderState, v reflect.Value) {
-	hi, lo := decimal.BID128bits(decimalreflect.Decimal(v))
-	zeroHi, zeroLo := decimal.BID128bits(0)
-	if hi != zeroHi || lo != zeroLo || state.sendZero {
+	d := decimalreflect.Decimal(v)
+	if nhi, nlo := decimal.Bits128(d); nhi|nlo != 0 || state.sendZero {
+		hi, lo := decimal.BID128bits(d)
 		state.update(i)
 		state.encodeUint(bits.ReverseBytes64(hi))
 		state.encodeUint(lo)

@@ -47,6 +47,10 @@ func BID64frombits(b uint64) decimal64 { return impl.BID64frombits(b) }
 func BID128bits(d decimal128) (hi, lo uint64) { return impl.BID128bits(d) }
 
 // BID128frombits is BID64frombits for decimal128, with the high word first.
+// Where decimal128 is stored as UBD (every target but ppc64le), a
+// non-canonical encoding is stored as the value IEEE 754-2019 clause 3.5.2
+// item c.2 gives it, a significand above 10^34 - 1 (10^33 - 1 as a NaN's
+// payload) being zero, so BID128bits then returns the canonical encoding.
 func BID128frombits(hi, lo uint64) decimal128 { return impl.BID128frombits(hi, lo) }
 
 // DPD64bits returns the IEEE 754 DPD encoding of d, without the zero-value XOR.

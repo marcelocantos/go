@@ -396,12 +396,12 @@ func TestGdbDecimalDecoder(t *testing.T) {
 
 	// decimal128 stored as UBD, which the zero encodings say by an
 	// all-clear decimal128 0E+0 beside BID's decimal64 one: every pattern
-	// reads as BIDFromUBD128 reads it, and decimal64 is still BID.
+	// reads as BIDFromUBDAny128 reads it, and decimal64 is still BID.
 	addUBD := func(name string, x bid.Uint128) {
 		vectors = append(vectors, vector{
 			name:  fmt.Sprintf("%s decimal128 ubd %#016x%016x", name, x.Hi, x.Lo),
 			input: fmt.Sprintf("%x %x %x %x", bid.Zero64, 0, x.Lo, x.Hi),
-			want:  string(bid.AppendSci128(nil, bid.BIDFromUBD128(x))),
+			want:  string(bid.AppendSci128(nil, bid.BIDFromUBDAny128(x))),
 		})
 	}
 	for _, b := range bid128s {

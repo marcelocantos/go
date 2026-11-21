@@ -561,7 +561,7 @@ def decimal_string(x, width, encoding):
 			biased = x >> cbits & ((1 << ebits) - 1)
 			coeff = x & ((1 << cbits) - 1)
 		if coeff > maxcoeff:
-			coeff = 0  # non-canonical: reads as zero
+			coeff = 0  # non-canonical: zero, IEEE 754-2019 clause 3.5.2 c.2
 	else:
 		# The combination field holds the two leading exponent bits and the
 		# leading digit; the exponent continuation field the rest of the
@@ -592,7 +592,7 @@ UBD_MIN_EXP, UBD_MAX_EXP = -6176, 6111  # decimal128's exponent range
 def ubd_string(lo, hi):
 	"""Return the character form of the UBD decimal128 with words lo and hi.
 
-	Every pattern reads as internal/bid.BIDFromUBD128 reads it: one with the
+	Every pattern reads as internal/bid.BIDFromUBDAny128 reads it: one with the
 	special tag is an infinity or a NaN by the next bit; a finite exponent
 	outside the format makes a NaN, and a coefficient above 10^34 - 1 is
 	zero. A program only ever stores well-formed patterns."""
