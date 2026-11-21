@@ -198,6 +198,92 @@ const (
 	MaxPayload128Lo uint64 = 0x38C15B09FFFFFFFF
 )
 
+// Widening and narrowing between decimal64, stored as BID64, and
+// decimal128 stored as UBD: conversions straight between the two
+// encodings, with no BID128 between them.
+
+// ubdWiden128 is Widen with a UBD result, the conversion of a decimal64,
+// stored as BID64, to decimal128 stored as UBD: the same value and
+// exponent, exact. A first-form encoding needs no test beyond its form:
+// its coefficient is below 2^53 < 10^16, so canonical, and its biased
+// exponent at most 767, so in range; the sign and the exponent move and
+// the coefficient stays. The second form, a non-canonical coefficient (by
+// IEEE 754-2019 clause 3.5.2, zero) and the specials take ubdWidenRest128.
+func ubdWiden128(x uint64) UBD128 {
+	if x&Form2Mask64 != Form2Mask64 {
+		return UBD128{Lo: x & (1<<CoeffBits64 - 1), Hi: uint64(int64(x>>ExpShift64&ExpMask64)-Bias64)<<UBDExpShift | x>>63<<UBDSignShift}
+	}
+	return ubdWidenRest128(x)
+}
+
+// ubdWidenRest128 is ubdWiden128 for the second form and the specials, as
+// Widen converts them: a NaN made quiet with its payload, which a
+// decimal128 NaN holds, and an infinity with its sign.
+//
+//go:noinline
+func ubdWidenRest128(x uint64) UBD128 {
+	kind, neg, coeff, exp := Unpack64(x)
+	switch kind {
+	case KindNaN:
+		hi := UBDNaNHi
+		if x&SignMask64 != 0 {
+			hi |= UBDSignHi
+		}
+		return UBD128{Lo: cQuiet64(x) & nanPayloadMask64, Hi: hi}
+	case KindInf:
+		return ubdInf(neg)
+	}
+	return ubdFinite(neg, coef128{Lo: coeff}, exp)
+}
+
+// ubdNarrow128 is Narrow on a UBD operand, the conversion of a decimal128
+// stored as UBD to decimal64 stored as BID64, rounded in mode with
+// preferred exponent Q(x). A value that decimal64 holds as it is, a
+// one-word coefficient below 2^53 at an exponent in its range, packs
+// BID64's first form directly; every other goes to ubdNarrowRest128.
+func ubdNarrow128(x UBD128, mode Mode) uint64 {
+	if q := int64(x.Hi) >> UBDExpShift; x.Hi&UBDCoeffMaskHi == 0 && x.Lo < 1<<CoeffBits64 && uint64(q-MinExp64) <= MaxExp64-MinExp64 {
+		return x.Hi>>UBDSignShift&1<<63 | uint64(q+Bias64)<<ExpShift64 | x.Lo
+	}
+	return ubdNarrowRest128(x, mode)
+}
+
+// ubdNarrowRest128 is Narrow on UBD for every other operand: a NaN made
+// quiet, its payload kept when decimal64 holds it canonically and zero
+// otherwise; an infinity with its sign; and a finite value rounded by
+// round64 from its whole coefficient.
+//
+//go:noinline
+func ubdNarrowRest128(x UBD128, mode Mode) uint64 {
+	kind, neg, coeff, exp := UBDUnpack128(x)
+	switch kind {
+	case KindNaN:
+		var sign uint64
+		if neg {
+			sign = SignMask64
+		}
+		ph := x.Hi&(1<<44-1) | x.Hi>>UBDExpShift&3<<44
+		if ph != 0 || x.Lo >= maxNaNPayload64 {
+			return sign | NaN64
+		}
+		return sign | NaN64 | x.Lo
+	case KindInf:
+		return cInf64(neg)
+	}
+	z, _ := round64(neg, coeff, exp, classZero, mode, MinExp64)
+	return z
+}
+
+// ubdNarrowTTE128 is ubdNarrow128 rounding to nearest, ties to even: the
+// language's conversion of a decimal128 to decimal64, a kernel entry.
+func ubdNarrowTTE128(x UBD128) uint64 { return ubdNarrow128(x, ToNearestEven) }
+
+// UBDWiden128 and UBDNarrow128 are ubdWiden128 and ubdNarrow128 for the
+// runtime and strconv, which convert between decimal64 and decimal128 with
+// them where decimal128 is stored as UBD.
+func UBDWiden128(x uint64) UBD128             { return ubdWiden128(x) }
+func UBDNarrow128(x UBD128, mode Mode) uint64 { return ubdNarrow128(x, mode) }
+
 // # The UBD kernel contract
 //
 // On a target whose decimal128 memory form is UBD, the compiler's decimal128
@@ -245,6 +331,8 @@ const (
 //     ubdMin128, ubdMax128                                Min128, Max128
 //     ubdInt64From128, ubdUint64From128                   Int64From128, Uint64From128
 //                                                         with TowardZero, the result alone
+//     ubdWiden128 (a BID64 operand)                       Widen
+//     ubdNarrowTTE128 (a BID64 result)                    Narrow with ToNearestEven
 //
 //     with mode ToNearestEven for a TTE entry. The compiler makes one call
 //     for every operand pair its inline paths do not decide, so an entry

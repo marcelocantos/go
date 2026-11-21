@@ -242,6 +242,8 @@ var (
 	// The language's min and max, and its conversions to int64 and uint64.
 	bidKernelMin, bidKernelMax          *obj.LSym
 	bidKernelToInt64, bidKernelToUint64 *obj.LSym
+	// The conversions between decimal64 (BID64) and decimal128.
+	bidKernelWiden, bidKernelNarrow *obj.LSym
 )
 
 func initBIDKernelSyms() {
@@ -270,6 +272,8 @@ func initBIDKernelSyms() {
 	bidKernelMax = base.PkgLinksym("internal/bid", "ubdMax128", obj.ABIInternal)
 	bidKernelToInt64 = base.PkgLinksym("internal/bid", "ubdInt64From128", obj.ABIInternal)
 	bidKernelToUint64 = base.PkgLinksym("internal/bid", "ubdUint64From128", obj.ABIInternal)
+	bidKernelWiden = base.PkgLinksym("internal/bid", "ubdWiden128", obj.ABIInternal)
+	bidKernelNarrow = base.PkgLinksym("internal/bid", "ubdNarrowTTE128", obj.ABIInternal)
 }
 
 // ubdLevel is the -d=ubdlevel setting, which chooses the fast paths of
@@ -1000,6 +1004,26 @@ func (s *state) ubdIntConv(v *ssa.Value, fk, tk types.Kind, rt *types.Type) *ssa
 		}
 		lo, hi := s.newValue1(ssaop.OpDecimal128Lo, u64, v), s.newValue1(ssaop.OpDecimal128Hi, u64, v)
 		return s.rtcall(fn, true, []*types.Type{rt}, lo, hi)[0]
+	}
+	return nil
+}
+
+// ubdWidthConv lowers a conversion between decimal64 and decimal128, or
+// returns nil for any other: one call of the kernel's entry, which takes or
+// gives decimal64's BID64 encoding, so the decimal64 side has its storage
+// XOR removed or applied here, and decimal128's UBD words as they are.
+func (s *state) ubdWidthConv(v *ssa.Value, fk, tk types.Kind, rt *types.Type) *ssa.Value {
+	u64 := types.Types[types.TUINT64]
+	zero64 := s.constInt64(u64, int64(ir.DecimalZero64()))
+	switch {
+	case fk == types.TDECIMAL64 && tk == types.TDECIMAL128:
+		x := s.newValue2(ssaop.OpXor64, u64, s.newValue1(ssaop.OpCopy, u64, v), zero64)
+		res := s.rtcall(bidKernelWiden, true, []*types.Type{u64, u64}, x)
+		return s.newValue2(ssaop.OpDecimal128Make, rt, res[0], res[1])
+	case fk == types.TDECIMAL128 && tk == types.TDECIMAL64:
+		lo, hi := s.newValue1(ssaop.OpDecimal128Lo, u64, v), s.newValue1(ssaop.OpDecimal128Hi, u64, v)
+		res := s.rtcall(bidKernelNarrow, true, []*types.Type{u64}, lo, hi)[0]
+		return s.newValue1(ssaop.OpCopy, rt, s.newValue2(ssaop.OpXor64, u64, res, zero64))
 	}
 	return nil
 }

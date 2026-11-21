@@ -516,3 +516,70 @@ func TestUBDAppend(t *testing.T) {
 		t.Logf("%d values", len(xs))
 	}
 }
+
+// TestUBDWidenNarrow checks the direct conversions between decimal64
+// (BID64) and decimal128 on UBD against Widen and Narrow: widening on
+// random BID64 encodings of every kind, first and second form, non-canonical
+// coefficients and specials with payloads among them; narrowing on the UBD
+// pool and random values in every mode, payloads decimal64 cannot hold
+// among them.
+func TestUBDWidenNarrow(t *testing.T) {
+	r := rand.New(rand.NewPCG(151, 152))
+	errs := 0
+	fail := func(format string, args ...any) {
+		t.Helper()
+		if errs++; errs <= 20 {
+			t.Errorf(format, args...)
+		}
+	}
+	n := 500_000
+	if testing.Short() {
+		n = 50_000
+	}
+	for range n {
+		x := r.Uint64()
+		switch r.IntN(4) {
+		case 0: // first form
+			x &^= bid.Form2Mask64
+		case 1: // second form, finite (canonical or not)
+			x = x | bid.Form2Mask64&^(1<<60)
+		case 2: // a special, with a payload
+			x = x&(1<<63|1<<57|(1<<50-1)) | 0x78<<56 | uint64(r.IntN(2))<<58
+		}
+		u := bid.UBDWiden128(x)
+		got := bid.Uint128{Hi: u.Hi, Lo: u.Lo}
+		mustWellFormed128(t, "UBDWiden128", got)
+		if want := bid.UBDFromBID128(bid.Widen(x)); got != want {
+			fail("UBDWiden128(%#x) = %#x, want %#x", x, got, want)
+		}
+	}
+	modes := append(append([]bid.Mode{}, inlineModes...), 6)
+	xs := ubdPool128(t)
+	for range n {
+		var x bid.Uint128
+		switch r.IntN(4) {
+		case 0:
+			x = ubd128(r.IntN(2) == 0, r.IntN(801)-400, 0, r.Uint64N(1<<54))
+		case 1:
+			x = ubd128(r.IntN(2) == 0, r.IntN(81)-40, r.Uint64N(bid.MaxCoeff128Hi), r.Uint64())
+		case 2:
+			x = ubd128(r.IntN(2) == 0, bid.MinExp128+r.IntN(bid.MaxExp128-bid.MinExp128+1), 0, r.Uint64())
+		default:
+			x = bid.Uint128{Hi: []uint64{bid.UBDNaNHi, bid.UBDSNaNHi}[r.IntN(2)] | uint64(r.IntN(2))<<49 | r.Uint64N(4)<<50 | r.Uint64N(8), Lo: r.Uint64N(2e15)}
+		}
+		if bid.UBDWellFormed128(x) {
+			xs = append(xs, x)
+		}
+	}
+	for _, x := range xs {
+		bx := bid.BIDFromUBD128(x)
+		for _, m := range modes {
+			if got, want := bid.UBDNarrow128(bid.UBD128{Lo: x.Lo, Hi: x.Hi}, m), bid.Narrow(bx, m); got != want {
+				fail("UBDNarrow128(%#x, %d) = %#x, want %#x", x, m, got, want)
+			}
+		}
+	}
+	if errs == 0 {
+		t.Logf("%d encodings widened, %d values narrowed in %d modes", n, len(xs), len(modes))
+	}
+}

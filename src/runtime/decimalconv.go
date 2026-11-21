@@ -83,10 +83,17 @@ func dd128tof64(hi, lo uint64) float64 {
 }
 
 func dd64tod128(x uint64) (hi, lo uint64) {
+	if bid.NativeUBD128 {
+		z := bid.UBDWiden128(from64(x))
+		return z.Hi, z.Lo
+	}
 	z := bid.Widen(from64(x))
 	return to128(z)
 }
 
 func dd128tod64(hi, lo uint64) uint64 {
+	if bid.NativeUBD128 {
+		return to64(bid.UBDNarrow128(bid.UBD128{Lo: lo, Hi: hi}, bid.ToNearestEven))
+	}
 	return to64(bid.Narrow(from128(hi, lo), bid.ToNearestEven))
 }

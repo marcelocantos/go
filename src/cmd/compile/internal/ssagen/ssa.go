@@ -3029,6 +3029,9 @@ func (s *state) conv(n ir.Node, v *ssa.Value, ft, tt *types.Type) *ssa.Value {
 			}
 		}
 		if bidKernelDirect() {
+			if r := s.ubdWidthConv(v, fk, tk, rt); r != nil {
+				return r
+			}
 			if r := s.ubdIntConv(v, fk, tk, rt); r != nil {
 				if tt.IsInteger() && tt.Size() < 8 {
 					r = s.newValue1(decTrunc[tt.Size()], tt, r)
