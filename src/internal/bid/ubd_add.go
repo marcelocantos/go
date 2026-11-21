@@ -235,24 +235,38 @@ func ubdRoundFinite128(neg bool, c coef128, exp int, mode Mode, floor int) (UBD1
 	return ubdPack128(neg, c, exp), class
 }
 
-// ubdRound128 is round128 with floor MinExp128, on UBD: the same rounding,
-// the result packed by ubdPack128 and an overflow by ubdOverflow128. It
-// returns no status: no kernel entry reports one, so tiny, which only
-// sets Underflow, is not computed.
+// ubdRound128 is ubdRoundStatus128 without the status, which no
+// arithmetic entry reports. It inlines, so each caller still makes one
+// call.
 func ubdRound128(neg bool, p wide128, exp int, class digitClass, mode Mode) UBD128 {
+	r, _ := ubdRoundStatus128(neg, p, exp, class, mode)
+	return r
+}
+
+// ubdRoundStatus128 is round128 with floor MinExp128, on UBD: the same
+// rounding and status, the result packed by ubdPack128 and an overflow by
+// ubdOverflow128. UBDParse128 reports the status.
+func ubdRoundStatus128(neg bool, p wide128, exp int, class digitClass, mode Mode) (UBD128, Status) {
 	const floor = MinExp128
 	if class == classZero {
 		var zero coef128
 		if p.Hi == zero {
 			if cIsZero128(p.Lo) {
-				return ubdPack128(neg, zero, min(max(exp, floor), MaxExp128))
+				return ubdPack128(neg, zero, min(max(exp, floor), MaxExp128)), Exact
 			}
 			if exp <= MaxExp128 && !cGtMax128(p.Lo) {
 				if exp >= floor {
-					return ubdPack128(neg, p.Lo, exp)
+					return ubdPack128(neg, p.Lo, exp), Exact
 				}
-				r, _ := ubdRoundFinite128(neg, p.Lo, exp, mode, floor)
-				return r
+				r, dropped := ubdRoundFinite128(neg, p.Lo, exp, mode, floor)
+				st := Exact
+				if dropped != classZero {
+					st = Inexact
+					if exp < Emin128 && (exp < Emin128-Precision128 || cDigits128(p.Lo)-1+exp < Emin128) {
+						st |= Underflow
+					}
+				}
+				return r, st
 			}
 		}
 	}
@@ -265,6 +279,7 @@ func ubdRound128(neg bool, p wide128, exp int, class digitClass, mode Mode) UBD1
 		d = cLenFull128(p)
 	}
 	a := d - 1 + exp
+	tiny := a < Emin128
 	x := max(a-(Precision128-1), floor)
 	s := exp - x
 	var q coef128
@@ -286,11 +301,11 @@ func ubdRound128(neg bool, p wide128, exp int, class digitClass, mode Mode) UBD1
 		if exp > MaxExp128 {
 			padded, overflow := cScale128(q, exp-MaxExp128)
 			if overflow || cGtMax128(padded) {
-				return ubdOverflow128(neg, mode)
+				return ubdOverflow128(neg, mode), Inexact | Overflow
 			}
 			q, exp = padded, MaxExp128
 		}
-		return ubdPack128(neg, q, exp)
+		return ubdPack128(neg, q, exp), Exact
 	}
 	if s > 0 {
 		q = cMulPow10128(q, s)
@@ -300,9 +315,13 @@ func ubdRound128(neg bool, p wide128, exp int, class digitClass, mode Mode) UBD1
 		q, x = cPow10128(Precision128-1), x+1
 	}
 	if x > MaxExp128 {
-		return ubdOverflow128(neg, mode)
+		return ubdOverflow128(neg, mode), Inexact | Overflow
 	}
-	return ubdPack128(neg, q, x)
+	st := Inexact
+	if tiny {
+		st |= Underflow
+	}
+	return ubdPack128(neg, q, x), st
 }
 
 // ubdNaN2 is nan128(x, y, y) on UBD: a signaling NaN first, else x's NaN,

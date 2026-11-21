@@ -67,3 +67,84 @@ func UBDUnpackDigits128(buf *[Precision128]byte, x UBD128) (kind Kind, neg bool,
 // UBDQuantizeMode128 is Quantize128 on UBD with the caller's rounding: x
 // rounded to the exponent of y.
 func UBDQuantizeMode128(x, y UBD128, mode Mode) UBD128 { return ubdQuantizeRnd128(x, y, mode) }
+
+// UBDParse128 is Parse128 on UBD: parse128, its short path written out
+// here as there (see parseW for why it is not a call), the short numeral
+// packed as UBD fields, since it is exact and inside the format, and every
+// other numeral scanned by scanDecimal and rounded by ubdRoundStatus128.
+// TestParseShort checks it against Parse128.
+func UBDParse128(s string, mode Mode) (UBD128, Status) {
+	if len(s) > 0 && len(s) <= 9 && s[0] <= '9' { // a sign, a point or a digit first
+		i := 0
+		if s[0] == '+' || s[0] == '-' {
+			i = 1
+		}
+		if m := len(s) - i; m >= 1 && m <= 8 {
+			// The bytes, first lowest, left-padded with '0' to eight: two
+			// overlapping fixed-size loads (one, below four bytes).
+			b := s[i:]
+			var w uint64
+			if m >= 4 {
+				t := b[m-4:]
+				w = uint64(b[0]) | uint64(b[1])<<8 | uint64(b[2])<<16 | uint64(b[3])<<24
+				w |= (uint64(t[0]) | uint64(t[1])<<8 | uint64(t[2])<<16 | uint64(t[3])<<24) << (8 * (m - 4))
+			} else {
+				w = uint64(b[0]) | uint64(b[m-1])<<(8*(m-1))
+				if m == 3 {
+					w |= uint64(b[1]) << 8
+				}
+			}
+			w = w<<(8*(8-m)) | asciiZeros>>(8*m)
+			// Every byte must lie in '.'..'9' (0x2E..0x39), which two
+			// subtractions test at once: a byte below the range borrows in
+			// w - 0x2E…, one above it in 0x39… - w, and either sets a high
+			// bit (the bytes are ASCII, so a borrow is the only way one is
+			// set). An exponent form such as "-1.5E+300" leaves here; '/'
+			// passes and fails the digit test below.
+			if (w-0x2E2E_2E2E_2E2E_2E2E|0x3939_3939_3939_3939-w)&0x8080_8080_8080_8080 == 0 {
+				// A single point, found by the zero-byte test on
+				// w ^ "........", is removed by shifting the bytes below it
+				// up one, another '0' entering at the bottom; the digits
+				// after a point at byte k of the padded word are 7 - k,
+				// whatever the padding. A point alone has no digit and is a
+				// syntax error.
+				exp := 0
+				const points = 0x2E2E_2E2E_2E2E_2E2E
+				p := w ^ points
+				if z := (p - 0x0101_0101_0101_0101) &^ p & 0x8080_8080_8080_8080; z != 0 {
+					if m == 1 {
+						return UBD128{Hi: UBDNaNHi}, Syntax // a point alone
+					}
+					k := bits.TrailingZeros64(z) / 8
+					below := uint64(1)<<(8*k) - 1
+					w = (w&below)<<8 | w&^(uint64(1)<<(8*(k+1))-1) | '0'
+					exp = -(7 - k)
+				}
+				// All eight bytes digits proves the form: a second point or
+				// a '/' fails here.
+				if eightDigits(w) {
+					// Exact, and inside the format: the fields as they are.
+					sign := uint64(0)
+					if s[0] == '-' {
+						sign = UBDSignHi
+					}
+					return UBD128{Lo: eightDigitsValue(w), Hi: uint64(int64(exp))<<UBDExpShift | sign}, Exact
+				}
+			}
+		}
+	}
+	n := scanDecimal(s, Precision128+1)
+	switch n.kind {
+	case scanSyntax:
+		return UBD128{Hi: UBDNaNHi}, Syntax
+	case scanNaN:
+		return UBD128{Hi: UBDNaNHi}, Exact
+	case scanInf:
+		return ubdInf(n.neg), Exact
+	}
+	class := classZero
+	if n.sticky {
+		class = classBelowHalf
+	}
+	return ubdRoundStatus128(n.neg, cWide128(n.mant), n.exp, class, mode)
+}

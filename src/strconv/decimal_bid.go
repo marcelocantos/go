@@ -12,7 +12,8 @@ import (
 
 // The conversions between decimal values and text are those of
 // internal/bid: parseDecimal reads its input with bid.Parse64 or
-// bid.Parse128 once decimal_parse.go has put Go's syntax into the kernel's,
+// bid.Parse128 (bid.UBDParse128 where decimal128 is stored as UBD) once
+// decimal_parse.go has put Go's syntax into the kernel's,
 // and formatDecimal and appendDecimal take the coefficient digits, sign and
 // quantum from bid.UnpackDigits128, or from bid.UBDUnpackDigits128 where
 // decimal128 is stored as UBD (see decimalWords). This file owns the format verbs and

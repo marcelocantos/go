@@ -53,6 +53,9 @@ func TestParseShort(t *testing.T) {
 			if y, st2 := bid.ParseLong128(s, mode); x != y || st != st2 {
 				t.Fatalf("Parse128(%q, %v) = %#x, %v; the general scanner gives %#x, %v", s, mode, x, st, y, st2)
 			}
+			if u, st2 := bid.UBDParse128(s, mode); (bid.Uint128{Hi: u.Hi, Lo: u.Lo}) != bid.UBDFromBID128(x) || st != st2 {
+				t.Fatalf("UBDParse128(%q, %v) = %#x, %v; Parse128 gives %#x (UBD %#x), %v", s, mode, u, st2, x, bid.UBDFromBID128(x), st)
+			}
 			x64, st := bid.Parse64(s, mode)
 			if y, st2 := bid.ParseLong64(s, mode); x64 != y || st != st2 {
 				t.Fatalf("Parse64(%q, %v) = %#x, %v; the general scanner gives %#x, %v", s, mode, x64, st, y, st2)
