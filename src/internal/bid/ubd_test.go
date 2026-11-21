@@ -103,6 +103,7 @@ func ubdPool128(t *testing.T) []bid.Uint128 {
 		{0, 1<<56 - 1},                         // squared, or times 1<<56, just below it
 		{0, 1<<50 - 1},                         // times 1<<63, about 1.04e34: past 10^34 and below 2^113
 		{0, 1<<57 - 1},                         // squared, about 2^114: past 10^34 for a multiply bound one bit too wide
+		{0, 25},                                // 2.5 at qExp -1 quantized to qExp 0: a tie, which ties to even rounds down
 		{bid.MaxCoeff128Hi, bid.MaxCoeff128Lo}} // the largest coefficient
 	// qExp: the ends of the format and their neighbours inside it, and
 	// zero and its neighbours.

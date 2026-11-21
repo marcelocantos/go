@@ -4,6 +4,11 @@
 
 package bid
 
+import (
+	"internal/d128"
+	"math/bits"
+)
+
 // UBD (unpacked binary decimal) is an in-memory layout for decimal128:
 //
 //	bits 127..114  qExp, the exponent, two's complement, unbiased
@@ -220,22 +225,72 @@ func ubdFromBID(x Uint128) UBD128 {
 // language's operators and the functions without a mode do, and takes no
 // mode; Rnd takes the caller's.
 
-func ubdAddTTE128(x, y UBD128) UBD128 { return ubdAddRnd128(x, y, ToNearestEven) }
+// Add, subtract and multiply are decimal128-go's (internal/d128), which
+// work on UBD itself. Quantize is this package's: decimal128-go's was
+// measured slower on money-sized operands (see internal/d128's doc), so a
+// word-sized coefficient is quantized here on UBD (ubdQuantizeWord) and
+// every other operand goes through BID to quantizeSlow128. decimal128-go has no AwayFromZero, so that mode alone goes
+// through BID to this package's general path.
+
+func ubdAddTTE128(x, y UBD128) UBD128 {
+	lo, hi := d128.Add(x.Lo, x.Hi, y.Lo, y.Hi, d128.TiesToEven)
+	return UBD128{Lo: lo, Hi: hi}
+}
 
 func ubdAddRnd128(x, y UBD128, mode Mode) UBD128 {
-	return ubdFromBID(addSlow128(x.bid(), y.bid(), mode))
+	r, ok := d128Round(mode)
+	if !ok {
+		return ubdFromBID(addSlow128(x.bid(), y.bid(), mode))
+	}
+	lo, hi := d128.Add(x.Lo, x.Hi, y.Lo, y.Hi, r)
+	return UBD128{Lo: lo, Hi: hi}
 }
 
-func ubdSubTTE128(x, y UBD128) UBD128 { return ubdSubRnd128(x, y, ToNearestEven) }
+func ubdSubTTE128(x, y UBD128) UBD128 {
+	lo, hi := d128.Sub(x.Lo, x.Hi, y.Lo, y.Hi, d128.TiesToEven)
+	return UBD128{Lo: lo, Hi: hi}
+}
 
 func ubdSubRnd128(x, y UBD128, mode Mode) UBD128 {
-	return ubdFromBID(subSlow128(x.bid(), y.bid(), mode))
+	r, ok := d128Round(mode)
+	if !ok {
+		return ubdFromBID(subSlow128(x.bid(), y.bid(), mode))
+	}
+	lo, hi := d128.Sub(x.Lo, x.Hi, y.Lo, y.Hi, r)
+	return UBD128{Lo: lo, Hi: hi}
 }
 
-func ubdMulTTE128(x, y UBD128) UBD128 { return ubdMulRnd128(x, y, ToNearestEven) }
+// d128Round returns decimal128-go's rounding direction for mode, and false
+// for AwayFromZero, which it does not have. A mode outside the six rounds
+// to nearest, ties to even, as the contract says.
+func d128Round(mode Mode) (int, bool) {
+	switch mode {
+	case ToNearestAway:
+		return d128.TiesToAway, true
+	case TowardZero:
+		return d128.TowardZero, true
+	case TowardNegative:
+		return d128.TowardNegative, true
+	case TowardPositive:
+		return d128.TowardPositive, true
+	case AwayFromZero:
+		return 0, false
+	}
+	return d128.TiesToEven, true
+}
+
+func ubdMulTTE128(x, y UBD128) UBD128 {
+	lo, hi := d128.Mul(x.Lo, x.Hi, y.Lo, y.Hi, d128.TiesToEven)
+	return UBD128{Lo: lo, Hi: hi}
+}
 
 func ubdMulRnd128(x, y UBD128, mode Mode) UBD128 {
-	return ubdFromBID(mulSlow128(x.bid(), y.bid(), mode))
+	r, ok := d128Round(mode)
+	if !ok {
+		return ubdFromBID(mulSlow128(x.bid(), y.bid(), mode))
+	}
+	lo, hi := d128.Mul(x.Lo, x.Hi, y.Lo, y.Hi, r)
+	return UBD128{Lo: lo, Hi: hi}
 }
 
 func ubdDivTTE128(x, y UBD128) UBD128 { return ubdDivRnd128(x, y, ToNearestEven) }
@@ -244,10 +299,75 @@ func ubdDivRnd128(x, y UBD128, mode Mode) UBD128 {
 	return ubdFromBID(div128(x.bid(), y.bid(), mode))
 }
 
-func ubdQuantizeTTE128(x, y UBD128) UBD128 { return ubdQuantizeRnd128(x, y, ToNearestEven) }
+func ubdQuantizeTTE128(x, y UBD128) UBD128 {
+	if r, ok := ubdQuantizeWord(x, y, ToNearestEven); ok {
+		return r
+	}
+	return ubdFromBID(quantizeSlow128(x.bid(), y.bid(), ToNearestEven))
+}
 
 func ubdQuantizeRnd128(x, y UBD128, mode Mode) UBD128 {
+	if r, ok := ubdQuantizeWord(x, y, mode); ok {
+		return r
+	}
 	return ubdFromBID(quantizeSlow128(x.bid(), y.bid(), mode))
+}
+
+// ubdQuantizeWord quantizes x to y's exponent on UBD itself when x is
+// finite with a coefficient of one word and y is finite, which covers
+// money values, and reports false for every other pair, which goes
+// through BID. A finer quantum multiplies by 10^gap (gap up to 19) unless
+// the product would exceed MaxCoeff128, which is invalid; a coarser one
+// divides by 10^d (d up to 19) and rounds by the mode. The result keeps
+// x's sign, also when it is zero. A mode outside the six rounds to
+// nearest, ties to even.
+func ubdQuantizeWord(x, y UBD128, mode Mode) (UBD128, bool) {
+	// A special x has the 0x1F prefix in its coefficient's high word, so the
+	// one-word test excludes it.
+	if x.Hi&UBDCoeffMaskHi != 0 || y.Hi>>60 == UBDSpecialTag {
+		return UBD128{}, false
+	}
+	xe, ye := int64(x.Hi)>>UBDExpShift, int64(y.Hi)>>UBDExpShift
+	head := uint64(ye)<<UBDExpShift | x.Hi&UBDSignHi
+	c := x.Lo
+	switch gap := xe - ye; {
+	case gap == 0:
+		return x, true
+	case gap > 0:
+		if gap >= int64(len(pow10tab64)) {
+			return UBD128{}, false
+		}
+		hi, lo := bits.Mul64(c, pow10tab64[gap])
+		if hi > MaxCoeff128Hi || hi == MaxCoeff128Hi && lo > MaxCoeff128Lo {
+			return UBD128{}, false // invalid: the BID path gives the NaN
+		}
+		return UBD128{Lo: lo, Hi: head | hi}, true
+	case gap < -int64(len(pow10tab64)-1):
+		return UBD128{}, false
+	default:
+		p := pow10tab64[-gap]
+		q := c / p
+		rem := c - q*p
+		half := p >> 1
+		var up bool
+		switch mode {
+		case ToNearestAway:
+			up = rem >= half
+		case TowardZero:
+		case AwayFromZero:
+			up = rem != 0
+		case TowardNegative:
+			up = rem != 0 && x.Hi&UBDSignHi != 0
+		case TowardPositive:
+			up = rem != 0 && x.Hi&UBDSignHi == 0
+		default:
+			up = rem > half || rem == half && q&1 != 0
+		}
+		if up {
+			q++
+		}
+		return UBD128{Lo: q, Hi: head}, true
+	}
 }
 
 func ubdRoundToIntegralTTE128(x UBD128) UBD128 { return ubdRoundToIntegralRnd128(x, ToNearestEven) }
