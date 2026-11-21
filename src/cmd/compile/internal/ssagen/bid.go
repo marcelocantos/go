@@ -215,14 +215,14 @@ func initBIDKernelSyms() {
 //	1  the kernel call alone, the smallest code at each call site
 //	2  and decimal128-go's first-level add path, for x + y and x - y
 //	3  and its second-level add path, for both
-//	4  the first level for x + y and the second for x - y (the default)
-//	5  and decimal128-go's first-level multiply path, for x * y
+//	4  the first level for x + y and the second for x - y
+//	5  and decimal128-go's first-level multiply path, for x * y (the default)
 //
 // Level -1 is the inline paths derived from the BID lowering instead,
 // which handle more operand pairs inline at much greater size.
 func ubdLevel() int {
 	if base.Debug.UBDLevel == 0 {
-		return 4
+		return 5
 	}
 	return base.Debug.UBDLevel
 }

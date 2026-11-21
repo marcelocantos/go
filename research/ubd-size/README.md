@@ -23,7 +23,8 @@ been benchmarked.
 ## Where the UBD build stands
 
 By default every decimal128 operation compiles to its kernel call, with
-decimal128-go's add fast paths in front of `+` and `-`:
+decimal128-go's add fast paths in front of `+` and `-` and its multiply
+fast path in front of `*`:
 
 - **`x + y`:** decimal128-go's first-level path (`d128_add_rnd_ctxnull`):
   equal qExp and sign, and the high 49 coefficient bits of the operands
@@ -36,7 +37,15 @@ decimal128-go's add fast paths in front of `+` and `-`:
   coefficients are below 2^112, neither is special, and the difference is
   exact), the magnitudes subtracted, a negative difference negated with y's
   sign, an exact zero +0. Every other pair calls `ubdSubTTE128`.
-- **Everything else** (`*`, `/`, comparisons, comparisons with zero,
+- **`x * y`:** decimal128-go's first-level multiply path, narrowed: both
+  coefficients below 2^56 (the high words' coefficient bits clear and the low
+  words below 2^56, one OR'd test) and the qExp sum in range (one unsigned
+  compare). The product is then below 2^112 and needs no check after the
+  64×64 multiply; the header is the sign XOR and the qExp sum. Every other
+  pair calls `ubdMulTTE128`. Taking full 64-bit coefficients would cost a
+  test of the product's high word after the multiply: 2 more instructions on
+  amd64 (30), 1 on arm64 (21).
+- **Everything else** (`/`, comparisons, comparisons with zero,
   `decimal.Quantize`, `decimal.Round` and the other integral roundings) is
   the kernel call alone.
 
@@ -48,10 +57,11 @@ measured against the call alone:
 | 1 | none: every operation is its kernel call |
 | 2 | first-level add path, at `+` and `-` |
 | 3 | first- and second-level add paths, at both `+` and `-` |
-| **4** (default, `0`) | first level at `+`, second level at `-` |
+| 4 | first level at `+`, second level at `-` |
+| **5** (default, `0`) | level 4, and the first-level multiply path at `*` |
 | −1 | the inline paths derived from the BID lowering (see History) |
 
-At level 4, `5.00 + 3.00` and `5.00 - 3.00` are inline; `5.00 + -3.00` and
+From level 4, `5.00 + 3.00` and `5.00 - 3.00` are inline; `5.00 + -3.00` and
 `5.00 - -3.00`, operands of opposite signs, call the kernel.
 
 ## The UBD kernel contract
@@ -157,13 +167,13 @@ darwin/arm64 with `GOOS=linux`.
 
 ## Results (2026-11-20)
 
-### Inline code per call site, default (level 4)
+### Inline code per call site, default (level 5)
 
 | Op | amd64 instr | amd64 bytes | arm64 instr | arm64 bytes |
 |---|---|---|---|---|
 | `x + y` | 169 → 17 (−90%) | 714 → 60 (−92%) | 119 → 12 (−90%) | 476 → 48 (−90%) |
 | `x - y` | 179 → 41 (−77%) | 773 → 150 (−81%) | 126 → 26 (−79%) | 504 → 104 (−79%) |
-| `x * y` | 84 → 2 (−98%) | 369 → 6 (−98%) | 65 → 3 (−95%) | 260 → 12 (−95%) |
+| `x * y` | 84 → 28 (−67%) | 369 → 103 (−72%) | 65 → 20 (−69%) | 260 → 80 (−69%) |
 | `x / y` | 17 → 2 (−88%) | 64 → 6 (−91%) | 15 → 3 (−80%) | 60 → 12 (−80%) |
 | `x == y` | 169 → 5 (−97%) | 708 → 14 (−98%) | 131 → 6 (−95%) | 524 → 24 (−95%) |
 | `x < y` | 201 → 5 (−98%) | 795 → 14 (−98%) | 152 → 4 (−97%) | 608 → 16 (−97%) |
@@ -175,7 +185,7 @@ darwin/arm64 with `GOOS=linux`.
 XOR-BID → UBD. Per extra `+` in a longer expression (`scale/`): amd64 162 →
 23 instructions (695 → 96 bytes), arm64 109 → 17 (437 → 68).
 
-A call site of `x * y` on amd64 is the 5-byte `CALL ubdMulTTE128` and a
+A call site of `x / y` on amd64 is the 5-byte `CALL ubdDivTTE128` and a
 1-byte `NOP`; the operands are already in the registers the entry takes.
 `x == y` is the call and the test of its result.
 
@@ -186,7 +196,7 @@ A call site of `x * y` on amd64 is the 5-byte `CALL ubdMulTTE128` and a
 | 1: call alone | 2 (6 B) | 2 (6 B) | 3 | 3 | 5 (29 B) |
 | 2: first level | 17 (60 B) | 21 (77 B) | 12 | 14 | 23 (96 B) |
 | 3: both levels | 52 (190 B) | 55 (205 B) | 33 | 35 | 57 (227 B) |
-| **4: default** | **17 (60 B)** | **41 (150 B)** | **12** | **26** | **23 (96 B)** |
+| **4, 5 (default)** | **17 (60 B)** | **41 (150 B)** | **12** | **26** | **23 (96 B)** |
 | −1: BID-derived | 101 (383 B) | 102 (388 B) | 74 | 76 | 111 (446 B) |
 
 The first-level path on amd64:
@@ -234,8 +244,10 @@ The UBD build reached the default in steps, each measured with this harness
 | decimal128-go's first-level add path (`2dbe5a39`) | 102 | 103 | 38 | 69 | 86 | 15 | 69 |
 | TTE entries: operators pass no mode (`0a4de20d`) | 101 | 102 | 38 | 69 | 86 | 15 | 67 |
 | Level 4 default (`c87f1672`) | 17 | 41 | 2 | 5 | 5 | 7 | 2 |
+| First-level multiply, full 64-bit coefficients (`efdd84e4`, level 5) | 17 | 41 | 30 | 5 | 5 | 7 | 2 |
+| Multiply narrowed to 2^56 (`b5c2edb4`); level 5 default | 17 | 41 | 28 | 5 | 5 | 7 | 2 |
 
-The step before the default is level −1.
+The step before level 4 is level −1.
 
 ## Correctness
 

@@ -56,7 +56,7 @@ func Less64(x, y decimal64) bool {
 
 func Add128(x, y decimal128) decimal128 {
 	// ppc64le:"DADDQ" -"CALL"
-	// UBD (ubdLevel 4): decimal128-go's first-level add path, operands of
+	// UBD (the default, ubdLevel 5): decimal128-go's first-level add path, operands of
 	// one sign and one quantum, in front of the kernel's ties-to-even entry;
 	// operands of opposite signs go to the kernel.
 	// amd64:"ADCQ" "CALL internal/bid.ubdAddTTE128" -"NEGQ" -"CALL runtime.dadd128"
@@ -66,7 +66,7 @@ func Add128(x, y decimal128) decimal128 {
 
 func Sub128(x, y decimal128) decimal128 {
 	// ppc64le:"DSUBQ" -"CALL"
-	// UBD (ubdLevel 4): decimal128-go's second-level add path, operands of
+	// UBD (the default, ubdLevel 5): decimal128-go's second-level add path, operands of
 	// one sign and one quantum, in front of the kernel's ties-to-even entry.
 	// arm64:"SBCS" "CALL internal/bid.ubdSubTTE128" -"CALL runtime.dsub128"
 	// amd64:"SBBQ" "CALL internal/bid.ubdSubTTE128" -"ADCQ" -"CALL runtime.dsub128"
@@ -75,8 +75,11 @@ func Sub128(x, y decimal128) decimal128 {
 
 func Mul128(x, y decimal128) decimal128 {
 	// ppc64le:"DMULQ" -"CALL"
-	// arm64:"CALL internal/bid.ubdMulTTE128" -"UMULH" -"CALL runtime.dmul128"
-	// amd64:"CALL internal/bid.ubdMulTTE128" -"MULQ" -"CALL runtime.dmul128"
+	// UBD (the default, ubdLevel 5): decimal128-go's first-level multiply
+	// path, coefficients below 2^56, in front of the kernel's ties-to-even
+	// entry.
+	// arm64:"UMULH" "CALL internal/bid.ubdMulTTE128" -"CALL runtime.dmul128"
+	// amd64:"MULX?Q" "CALL internal/bid.ubdMulTTE128" -"CALL runtime.dmul128"
 	return x * y
 }
 
