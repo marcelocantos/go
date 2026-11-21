@@ -84,7 +84,8 @@ import (
 // bootstrap build imports it, so it is copied and not compiled.
 
 // Float64To64 returns f converted to decimal64, rounded in mode from the
-// exact binary value of f, with preferred exponent 0.
+// exact binary value of f, with clause 5.4.2's preferred exponent: 0 for
+// an exact result and the least possible for an inexact one.
 func Float64To64(f float64, mode Mode) uint64 {
 	kind, neg, m, e := float64Parts(f)
 	return fromFloat64(kind, neg, m, e, mode)

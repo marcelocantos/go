@@ -19,7 +19,8 @@ import "math/bits"
 // A finite binary value is v = m × 2^e with m an odd integer below 2^53
 // (trailing zero bits of the significand are moved into e) and e in
 // [-1074, 1023]. The contract asks for v rounded once, in the mode, from
-// its exact value, with preferred exponent 0 ("Binary floating-point
+// its exact value, with clause 5.4.2's preferred exponent: 0 for an exact
+// result and the least possible for an inexact one ("Binary floating-point
 // conversions"). The rounding routine roundW does the rounding, the
 // exponent rule and the sign of zero once it is handed the exact value in
 // parts: an integer q with more than PrecisionW digits and a sticky bit
