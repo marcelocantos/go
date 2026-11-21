@@ -217,3 +217,10 @@ func ubdStrip128(c coef128, exp int) (coef128, int) {
 // map keys, without a call. The runtime compares map keys with it where
 // decimal128 is stored as UBD.
 func UBDEqual128(x, y UBD128) bool { return ubdEqual128(x, y) }
+
+// UBDNaN128 is the NaN result of an operation on x and y, at least one of
+// them a NaN, on UBD: the first signaling NaN, else the first NaN, made
+// quiet, as nan128(x, y, y) chooses it ("NaN results" in the package
+// documentation). For one operand pass it twice. math/decimal's
+// elementary functions propagate NaNs with it.
+func UBDNaN128(x, y UBD128) UBD128 { return ubdNaN2(x, y) }
