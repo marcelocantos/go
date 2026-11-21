@@ -15,8 +15,8 @@ import (
 
 // The compiled decimal128 operators on raw UBD memory. TestOperators builds
 // its operands with BID128frombits, which converts to canonical UBD, so the
-// well-formed patterns that only memory can hold (a coefficient above
-// MaxCoeff128, a NaN payload out of range, unused bits in a special) never
+// well-formed patterns that only memory can hold (a NaN payload out of
+// range, unused bits in a special) never
 // reach the inline paths there. TestOperatorsRawUBD gives the compiled
 // operators every pair of ubdPool128, as stored words, and checks each
 // result against the BID function on the operands as the UBD kernel

@@ -103,14 +103,18 @@ func Nonzero64(x decimal64) bool {
 }
 
 func Zero128(x decimal128) bool {
-	// arm64:"CALL internal/bid.ubdCompare128"
-	// amd64:"CALL internal/bid.ubdCompare128"
+	// UBD (the default, ubdLevel 6): the coefficient bits, (hi<<15)|lo,
+	// tested inline; a special's coefficient prefix makes it nonzero.
+	// arm64:"ORR" -"CALL"
+	// amd64:"SHLQ" -"CALL"
 	return 0 == x
 }
 
 func Nonzero128(x decimal128) bool {
-	// arm64:"CALL internal/bid.ubdCompare128"
-	// amd64:"CALL internal/bid.ubdCompare128"
+	// UBD (the default, ubdLevel 6): the coefficient bits, (hi<<15)|lo,
+	// tested inline; a special's coefficient prefix makes it nonzero.
+	// arm64:"ORR" -"CALL"
+	// amd64:"SHLQ" -"CALL"
 	return x != 0.00
 }
 

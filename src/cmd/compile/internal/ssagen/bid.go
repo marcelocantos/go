@@ -87,26 +87,16 @@ func (s *state) bidIsZero(x *ssa.Value) *ssa.Value {
 		coeff = s.newValue2(ssaop.OpEq64, boolT, coeff, zero)
 		coeff = s.newValue2(ssaop.OpAndB, boolT, s.newValue1(ssaop.OpNot, boolT, form2), coeff)
 	} else {
-		// UBD: no storage mask and no second form. A special value is
-		// tagged in the top four bits.
+		// UBD: a well-formed finite coefficient is at most MaxCoeff128
+		// (the UBD kernel contract), so a finite value is zero exactly when
+		// its 113 coefficient bits are clear. Every special value has the
+		// 0x1F prefix in its coefficient bits, so none is zero by this test
+		// and no tag test is needed: x is zero exactly when the high word
+		// shifted past qExp and the sign, ORed with the low word, is 0.
 		hi = s.newValue1(ssaop.OpDecimal128Hi, u64, x)
 		lo = s.newValue1(ssaop.OpDecimal128Lo, u64, x)
-		// A finite value is zero when its coefficient c is 0 or above
-		// MaxCoeff128, which reads as zero: exactly when c - 1, in 128-bit
-		// wrapping arithmetic, is not below MaxCoeff128. That is one
-		// subtraction with borrow and one comparison by borrow, not three
-		// comparisons.
-		coeff = s.newValue2(ssaop.OpAnd64, u64, hi, s.constInt64(u64, int64(bid.UBDCoeffMaskHi)))
-		one := s.constInt64(u64, 1)
-		dec := s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), lo, one, zero)
-		dlo, b := s.newValue1(ssaop.OpSelect0, u64, dec), s.newValue1(ssaop.OpSelect1, u64, dec)
-		dhi := s.newValue2(ssaop.OpSub64, u64, coeff, b)
-		cmp := s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), dlo, s.constInt64(u64, int64(bid.MaxCoeff128Lo)), zero)
-		cmp = s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), dhi, s.constInt64(u64, int64(bid.MaxCoeff128Hi)), s.newValue1(ssaop.OpSelect1, u64, cmp))
-		zeroValue := s.newValue2(ssaop.OpEq64, boolT, s.newValue1(ssaop.OpSelect1, u64, cmp), zero)
-		tag := s.newValue2(ssaop.OpRsh64Ux64, u64, hi, s.constInt64(u64, 60))
-		finite := s.newValue2(ssaop.OpNeq64, boolT, tag, s.constInt64(u64, bid.UBDSpecialTag))
-		return s.newValue2(ssaop.OpAndB, boolT, finite, zeroValue)
+		coeff = s.newValue2(ssaop.OpLsh64x64, u64, hi, s.constInt64(u64, 64-bid.UBDExpShift+1))
+		return s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpOr64, u64, coeff, lo), zero)
 	}
 	// SpecialMask64 is the same field in decimal128's high word.
 	special := s.constInt64(u64, int64(bid.SpecialMask64))
@@ -216,13 +206,14 @@ func initBIDKernelSyms() {
 //	2  and decimal128-go's first-level add path, for x + y and x - y
 //	3  and its second-level add path, for both
 //	4  the first level for x + y and the second for x - y
-//	5  and decimal128-go's first-level multiply path, for x * y (the default)
+//	5  and decimal128-go's first-level multiply path, for x * y
+//	6  and x == 0 and x != 0 inline, with no call (the default)
 //
 // Level -1 is the inline paths derived from the BID lowering instead,
 // which handle more operand pairs inline at much greater size.
 func ubdLevel() int {
 	if base.Debug.UBDLevel == 0 {
-		return 5
+		return 6
 	}
 	return base.Debug.UBDLevel
 }

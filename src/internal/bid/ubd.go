@@ -45,13 +45,16 @@ const (
 func UBDIsSpecial128(x Uint128) bool { return x.Hi>>60 == UBDSpecialTag }
 
 // UBDWellFormed128 reports whether x is a well-formed UBD pattern: a finite
-// value with qExp in [MinExp128, MaxExp128], or a special value, which has
-// both the special tag and the 0x1F coefficient prefix. A finite coefficient
-// above MaxCoeff128 is well-formed (it reads as zero), as is any NaN payload.
+// value with qExp in [MinExp128, MaxExp128] and a coefficient at most
+// MaxCoeff128, or a special value, which has both the special tag and the
+// 0x1F coefficient prefix. Any NaN payload is well-formed.
 //
 // The 14-bit qExp field holds -8192 to 8191, of which decimal128 uses
 // -6176 to 6111 and the special tag 7168 to 8191; the 3072 values between
-// have no meaning, and neither has the tag without the prefix. Values reach
+// have no meaning, and neither has the tag without the prefix. A coefficient
+// above MaxCoeff128 has none either: BID and DPD have non-canonical
+// coefficients, which denote zero, but the conversion to UBD makes them 0,
+// so UBD has no non-canonical zero. Values reach
 // UBD only through this package's conversions and operations, which produce
 // well-formed patterns, so a malformed one is a bug (or unsafe code). The
 // inline paths and the kernel need not agree on one (see "The UBD kernel
@@ -61,7 +64,7 @@ func UBDWellFormed128(x Uint128) bool {
 		return x.Hi&UBDSpecialCoeffHi == UBDSpecialCoeffHi
 	}
 	e := int64(x.Hi) >> UBDExpShift
-	return MinExp128 <= e && e <= MaxExp128
+	return MinExp128 <= e && e <= MaxExp128 && !u128GtMaxCoeff(Uint128{Hi: x.Hi & UBDCoeffMaskHi, Lo: x.Lo})
 }
 
 // UBDFromBID128 returns the UBD encoding of the value the BID encoding x
@@ -93,9 +96,9 @@ func UBDFromBID128(x Uint128) Uint128 {
 }
 
 // BIDFromUBD128 returns the BID encoding of the value the UBD encoding x
-// denotes. A coefficient above MaxCoeff128 reads as zero, a NaN payload of
-// 10^33 or more as zero, and a pattern with neither the special tag nor an
-// exponent in range, which no operation produces, as a quiet NaN.
+// denotes. A NaN payload of 10^33 or more reads as zero. Of the malformed
+// patterns, which no operation produces, a coefficient above MaxCoeff128
+// reads as zero and an exponent out of range as a quiet NaN.
 func BIDFromUBD128(x Uint128) Uint128 {
 	hi := x.Hi
 	var sign uint64
@@ -153,9 +156,11 @@ const (
 // Each entry meets these rules, which TestUBDKernel checks:
 //
 //   - Operands. Every well-formed UBD pattern (UBDWellFormed128) is
-//     accepted and read as BIDFromUBD128 reads it: a coefficient above
-//     MaxCoeff128 is a zero and a NaN payload of 10^33 or more is a zero
-//     payload. A malformed pattern can only come from a bug or from unsafe
+//     accepted and read as BIDFromUBD128 reads it: a NaN payload of 10^33
+//     or more is a zero payload. A finite coefficient is at most
+//     MaxCoeff128, so a finite value is zero exactly when its coefficient
+//     is 0, which the inline paths rely on. A malformed pattern (a
+//     coefficient above MaxCoeff128 among them) can only come from a bug or from unsafe
 //     code; the result of any operation on one is unspecified, and the
 //     inline paths and the kernel may give different results for it.
 //   - Modes. Each rounding operation has two entries: TTE rounds to

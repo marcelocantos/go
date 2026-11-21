@@ -7,6 +7,7 @@ package bid_test
 import (
 	"fmt"
 	"internal/bid"
+	"math/big"
 	"math/rand/v2"
 	"testing"
 )
@@ -44,15 +45,20 @@ func ubdCanonical128(x bid.Uint128) bool {
 }
 
 // ubdWellFormed128 is the test's own statement of a well-formed UBD pattern
-// (bid.UBDWellFormed128), from the layout: a qExp in the format, or the
-// special tag (qExp 7168 and up) with 0x1F in the top five coefficient bits.
+// (bid.UBDWellFormed128), from the layout: a qExp in the format and a
+// coefficient below 10^34, or the special tag (qExp 7168 and up) with 0x1F
+// in the top five coefficient bits.
 func ubdWellFormed128(x bid.Uint128) bool {
 	qExp := int(int64(x.Hi) >> 50)
 	if qExp >= 7168 {
 		return x.Hi>>44&0x1F == 0x1F
 	}
-	return -6176 <= qExp && qExp <= 6111
+	c := new(big.Int).Lsh(new(big.Int).SetUint64(x.Hi&(1<<49-1)), 64)
+	c.Or(c, new(big.Int).SetUint64(x.Lo))
+	return -6176 <= qExp && qExp <= 6111 && c.Cmp(pow10_34) < 0
 }
+
+var pow10_34 = new(big.Int).Exp(big.NewInt(10), big.NewInt(34), nil)
 
 // mustWellFormed128 fails the test at once on a malformed UBD pattern, which
 // can only come from a bug: no input of these tests is malformed, so no
@@ -85,9 +91,7 @@ func ubdPool128(t *testing.T) []bid.Uint128 {
 		{0, 1<<56 - 1},                         // squared, or times 1<<56, just below it
 		{0, 1<<50 - 1},                         // times 1<<63, about 1.04e34: past 10^34 and below 2^113
 		{0, 1<<57 - 1},                         // squared, about 2^114: past 10^34 for a multiply bound one bit too wide
-		{bid.MaxCoeff128Hi, bid.MaxCoeff128Lo}, // the largest coefficient
-		{bid.MaxCoeff128Hi, bid.MaxCoeff128Lo + 1}, // 10^34, which reads as zero
-		{bid.UBDCoeffMaskHi, 1<<64 - 1}}            // the largest the field holds
+		{bid.MaxCoeff128Hi, bid.MaxCoeff128Lo}} // the largest coefficient
 	// qExp: the ends of the format and their neighbours inside it, and
 	// zero and its neighbours.
 	exps := []int{bid.MinExp128, bid.MinExp128 + 1, -1, 0, 1, bid.MaxExp128 - 1, bid.MaxExp128}
@@ -134,12 +138,6 @@ func ubdPool128(t *testing.T) []bid.Uint128 {
 		}
 		pool = append(pool, ubd128(r.IntN(2) == 0, e, hi, lo))
 	}
-	for range 8 {
-		// Random coefficient bits, often above MaxCoeff128, at a random
-		// exponent of the format.
-		e := bid.MinExp128 + r.IntN(bid.MaxExp128-bid.MinExp128+1)
-		pool = append(pool, ubd128(r.IntN(2) == 0, e, r.Uint64(), r.Uint64()))
-	}
 	for _, x := range pool {
 		mustWellFormed128(t, "ubdPool128", x)
 	}
@@ -154,7 +152,7 @@ func TestUBDWellFormed(t *testing.T) {
 		exps = append(exps, e-1, e, e+1)
 	}
 	for _, e := range exps {
-		for _, c := range []uint64{0, 1, 0x1E << 44, 0x1F << 44, 0x1F<<44 - 1, bid.UBDCoeffMaskHi} {
+		for _, c := range []uint64{0, 1, 0x1E << 44, 0x1F << 44, 0x1F<<44 - 1, bid.MaxCoeff128Hi, bid.MaxCoeff128Hi + 1, bid.UBDCoeffMaskHi} {
 			for _, neg := range []bool{false, true} {
 				x := ubd128(neg, e, c, 7)
 				if got, want := bid.UBDWellFormed128(x), ubdWellFormed128(x); got != want {

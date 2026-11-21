@@ -45,7 +45,13 @@ fast path in front of `*`:
   pair calls `ubdMulTTE128`. Taking full 64-bit coefficients would cost a
   test of the product's high word after the multiply: 2 more instructions on
   amd64 (30), 1 on arm64 (21).
-- **Everything else** (`/`, comparisons, comparisons with zero,
+- **`x == 0` and `x != 0`** (against a constant zero the compiler can see,
+  at any quantum): `(hi<<15)|lo == 0`, with no call. A well-formed finite
+  coefficient is at most 10^34 − 1, so the value is zero exactly when its
+  113 coefficient bits are clear, and every special has the `0x1F` prefix in
+  its coefficient bits, so none passes. amd64 is `SHLQ; ORQ; TESTQ`, arm64
+  `ORR R1<<15; CMP`.
+- **Everything else** (`/`, comparisons, the ordered comparisons with zero,
   `decimal.Quantize`, `decimal.Round` and the other integral roundings) is
   the kernel call alone.
 
@@ -58,7 +64,8 @@ measured against the call alone:
 | 2 | first-level add path, at `+` and `-` |
 | 3 | first- and second-level add paths, at both `+` and `-` |
 | 4 | first level at `+`, second level at `-` |
-| **5** (default, `0`) | level 4, and the first-level multiply path at `*` |
+| 5 | level 4, and the first-level multiply path at `*` |
+| **6** (default, `0`) | level 5, and `x == 0`, `x != 0` inline |
 | −1 | the inline paths derived from the BID lowering (see History) |
 
 From level 4, `5.00 + 3.00` and `5.00 - 3.00` are inline; `5.00 + -3.00` and
@@ -97,7 +104,8 @@ The compiler calls only these entries of `internal/bid` for decimal128
 
 UBD's 14-bit qExp field holds −8192..8191, of which decimal128 uses
 −6176..6111 and the special tag 7168..8191. The 3072 values between have no
-meaning, nor has the special tag without the 0x1F coefficient prefix. (BID
+meaning, nor has the special tag without the 0x1F coefficient prefix, nor
+a finite coefficient above 10^34 − 1. (BID
 has no such gap: its exponent range fills its three non-`11` prefixes
 exactly.) UBD is internal and never read from an external source, so a
 malformed pattern can only come from a bug or from unsafe code:
@@ -109,8 +117,17 @@ malformed pattern can only come from a bug or from unsafe code:
   NaN. Its comment says it should be removed.
 - The UBD tests fail at once on a malformed operand or result.
 
-A finite coefficient above 10^34 − 1 is well-formed (it reads as zero, as
-BID's non-canonical coefficients do).
+BID and DPD have non-canonical coefficients, which denote zero; the
+conversion to UBD makes them 0, so UBD has no non-canonical zero, and a
+finite value is zero exactly when its coefficient is 0. The `x == 0` test
+relies on this. Every UBD the compiled code makes is canonical: the kernel's
+results are, the add fast path's sum is below 2^112, the multiply path's
+product below 2^112, and the subtract path's difference no larger than an
+operand, all below 10^34.
+
+Ordered comparisons with zero (`x > 0` and the rest) stay calls: inline,
+they add a NaN-tag test and a sign test to the zero test, 14 instructions on
+amd64 and 11 on arm64 against the call's 9 and 8.
 
 ## What changed in `ubd128`
 
@@ -167,7 +184,7 @@ darwin/arm64 with `GOOS=linux`.
 
 ## Results (2026-11-20)
 
-### Inline code per call site, default (level 5)
+### Inline code per call site, default (level 6)
 
 | Op | amd64 instr | amd64 bytes | arm64 instr | arm64 bytes |
 |---|---|---|---|---|
@@ -177,7 +194,7 @@ darwin/arm64 with `GOOS=linux`.
 | `x / y` | 17 → 2 (−88%) | 64 → 6 (−91%) | 15 → 3 (−80%) | 60 → 12 (−80%) |
 | `x == y` | 169 → 5 (−97%) | 708 → 14 (−98%) | 131 → 6 (−95%) | 524 → 24 (−95%) |
 | `x < y` | 201 → 5 (−98%) | 795 → 14 (−98%) | 152 → 4 (−97%) | 608 → 16 (−97%) |
-| `x == 0` | 30 → 7 (−77%) | 135 → 18 (−87%) | 31 → 8 (−74%) | 124 → 32 (−74%) |
+| `x == 0` | 30 → 5 (−83%) | 135 → 14 (−90%) | 31 → 4 (−87%) | 124 → 16 (−87%) |
 | `x > 0` | 41 → 9 (−78%) | 186 → 24 (−87%) | 40 → 8 (−80%) | 160 → 32 (−80%) |
 | `Quantize` | 119 → 2 (−98%) | 491 → 6 (−99%) | 81 → 3 (−96%) | 324 → 12 (−96%) |
 | `Round` | 58 → 3 (−95%) | 248 → 11 (−96%) | 42 → 4 (−90%) | 168 → 16 (−90%) |
@@ -219,7 +236,7 @@ again at each use (`ssacompile/regalloc.go`), a 10-byte load on amd64.
 ### Notes
 
 - **Frames.** In a function that makes no other call, such as the probe's
-  `IsZero`, the kernel call also forces a stack frame (about 12 instructions
+  `Pos`, the kernel call also forces a stack frame (about 12 instructions
   on amd64) that inline code did not need. The tables exclude it; in a
   function that already calls something it costs nothing more.
 - **Kernel entries.** The UBD entries and the two conversions are about
@@ -245,7 +262,8 @@ The UBD build reached the default in steps, each measured with this harness
 | TTE entries: operators pass no mode (`0a4de20d`) | 101 | 102 | 38 | 69 | 86 | 15 | 67 |
 | Level 4 default (`c87f1672`) | 17 | 41 | 2 | 5 | 5 | 7 | 2 |
 | First-level multiply, full 64-bit coefficients (`efdd84e4`, level 5) | 17 | 41 | 30 | 5 | 5 | 7 | 2 |
-| Multiply narrowed to 2^56 (`b5c2edb4`); level 5 default | 17 | 41 | 28 | 5 | 5 | 7 | 2 |
+| Multiply narrowed to 2^56 (`b5c2edb4`); level 5 default (`fbb5804e`) | 17 | 41 | 28 | 5 | 5 | 7 | 2 |
+| Canonical coefficients only; `x == 0` inline; level 6 default | 17 | 41 | 28 | 5 | 5 | 5 | 2 |
 
 The step before level 4 is level −1.
 
