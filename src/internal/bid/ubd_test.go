@@ -288,6 +288,9 @@ func TestUBDKernel(t *testing.T) {
 			check("ubdRoundToIntegralRnd128", x, bid.Uint128{}, mode,
 				bid.UBDRoundToIntegralRnd128(x, mode), bid.UBDFromBID128(bid.RoundToIntegral128(bx, mode)))
 		}
+		if got, want := bid.UBDKey128(bid.UBD128{Lo: x.Lo, Hi: x.Hi}), bid.Key128(bx); got != want {
+			fail("UBDKey128(%#x) = %+v, want %+v", x, got, want)
+		}
 		if got, want := bid.UBDInt64From128(x), first(bid.Int64From128(bx, bid.TowardZero)); got != want {
 			fail("ubdInt64From128(%#x) = %d, want %d", x, got, want)
 		}

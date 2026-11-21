@@ -415,6 +415,13 @@ func ubdCompare128(x, y UBD128) (c int, ok bool) {
 // call site passes its operands where they are, not swapped.
 
 func ubdEqual128(x, y UBD128) bool {
+	// Equal high words with no coefficient bits in them (the shift leaves
+	// only those) are one sign and one exponent with one-word
+	// coefficients, which no special has: with equal low words too, the
+	// same value, as two map keys of one encoding are.
+	if (x.Hi^y.Hi)|x.Hi<<(64-UBDSignShift)|(x.Lo^y.Lo) == 0 {
+		return true
+	}
 	c, ok := ubdCompare128(x, y)
 	return ok && c == 0
 }
