@@ -290,8 +290,12 @@ func TestUBDKernel(t *testing.T) {
 		for _, y := range pool {
 			by := bid.BIDFromUBD128(y)
 			c, ok := bid.UBDCompare128(x, y)
-			if wc, wok := bid.Compare128(bx, by); c != wc || ok != wok {
+			wc, wok := bid.Compare128(bx, by)
+			if c != wc || ok != wok {
 				fail("ubdCompare128(%#x, %#x) = %d, %v; want %d, %v", x, y, c, ok, wc, wok)
+			}
+			if got, want := bid.UBDPredicates128(x, y), [5]bool{wok && wc == 0, wok && wc < 0, wok && wc <= 0, wok && wc > 0, wok && wc >= 0}; got != want {
+				fail("predicate entries (==, <, <=, >, >=) on %#x, %#x = %v, want %v", x, y, got, want)
 			}
 			for _, op := range ops {
 				check("ubd"+op.name+"TTE128", x, y, bid.ToNearestEven, op.tte(x, y), bid.UBDFromBID128(op.ref(bx, by, bid.ToNearestEven)))

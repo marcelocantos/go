@@ -176,6 +176,13 @@ func UBDRoundToIntegralRnd128(x Uint128, m Mode) Uint128 {
 
 func UBDCompare128(x, y Uint128) (c int, ok bool) { return ubdCompare128(ubdIn(x), ubdIn(y)) }
 
+// UBDPredicates128 returns the predicate entries' results on x and y: ==,
+// <, <=, >, >=.
+func UBDPredicates128(x, y Uint128) [5]bool {
+	ux, uy := ubdIn(x), ubdIn(y)
+	return [5]bool{ubdEqual128(ux, uy), ubdLess128(ux, uy), ubdLessEqual128(ux, uy), ubdGreater128(ux, uy), ubdGreaterEqual128(ux, uy)}
+}
+
 // Recip10tab64 and Recip10tab128 return entry k of the reciprocal tables.
 func Recip10tab64(k int) (m uint64, s uint) {
 	return recip10tab64[k].m, uint(recip10tab64[k].s)

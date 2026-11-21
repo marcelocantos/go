@@ -3401,6 +3401,10 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			}
 		}
 
+		if n.X.Type().IsDecimal() && bidCallOnly(a) && ubdLevel() >= 8 {
+			return s.ubdComparePred(n.Op(), a, b)
+		}
+
 		// Convert OGE and OGT into OLE and OLT.
 		op := n.Op()
 		switch op {

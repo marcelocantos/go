@@ -59,7 +59,18 @@ fast path in front of `*`:
   `x < 0` and `x >= 0` are the same tests on `-v` (−0 gives the least int64,
   which negation keeps). A NaN, found by its tag `hi>>59 == 15`, branches to
   false.
-- **Everything else** (`/`, comparisons of two variables,
+- **`x == y`, `x != y`, `x < y`, `x <= y`, `x > y`, `x >= y`:**
+  decimal128-go's first-level guard, one qExp and one sign
+  (`(xh ^ yh) >> 49 == 0`), and not NaN (`xh>>59 != 15`, since NaNs of one
+  sign share a qExp field), then inline. With the top 15 bits equal, the
+  128-bit words compare as the coefficients do: a canonical value equals
+  another exactly when the bits are (`(xh^yh)|(xl^yl) == 0`), and the
+  orderings are one borrow chain on the words XORed with the sign mask,
+  which reverses unsigned order for a negative sign. Every other pair calls
+  the predicate entry for the operator (`ubdLess128` and the rest), which
+  returns the result as a bool; `x > y` and `x >= y` have their own entries,
+  so the operands are passed where they are, not swapped.
+- **Everything else** (`/`,
   `decimal.Quantize`, `decimal.Round` and the other integral roundings) is
   the kernel call alone.
 
@@ -74,7 +85,9 @@ measured against the call alone:
 | 4 | first level at `+`, second level at `-` |
 | 5 | level 4, and the first-level multiply path at `*` |
 | 6 | level 5, and `x == 0`, `x != 0` inline |
-| **7** (default, `0`) | level 6, and `x < 0`, `x <= 0`, `x > 0`, `x >= 0` inline |
+| 7 | level 6, and `x < 0`, `x <= 0`, `x > 0`, `x >= 0` inline |
+| 8 | level 7, and comparisons of two values call the predicate entries |
+| **9** (default, `0`) | level 8, and those comparisons inline for one qExp and one sign |
 | −1 | the inline paths derived from the BID lowering (see History) |
 
 From level 4, `5.00 + 3.00` and `5.00 - 3.00` are inline; `5.00 + -3.00` and
@@ -94,6 +107,7 @@ The compiler calls only these entries of `internal/bid` for decimal128
 | quantize | `ubdQuantizeTTE128(x, y)` | `ubdQuantizeRnd128(x, y, mode)` |
 | round to integral | `ubdRoundToIntegralTTE128(x)` | `ubdRoundToIntegralRnd128(x, mode)` |
 | compare | `ubdCompare128(x, y)` → (c, ok) | |
+| compare, by operator | `ubdEqual128`, `ubdLess128`, `ubdLessEqual128`, `ubdGreater128`, `ubdGreaterEqual128` (x, y) → bool | |
 
 - Each decimal128 is passed as `UBD128{Lo, Hi}`, **low word first**: the
   order in which it is laid out and passed in registers, so a call site moves
@@ -206,7 +220,7 @@ darwin/arm64 with `GOOS=linux`.
 
 ## Results (2026-11-20)
 
-### Inline code per call site, default (level 7)
+### Inline code per call site, default (level 9)
 
 | Op | amd64 instr | amd64 bytes | arm64 instr | arm64 bytes |
 |---|---|---|---|---|
@@ -214,8 +228,8 @@ darwin/arm64 with `GOOS=linux`.
 | `x - y` | 179 → 41 (−77%) | 773 → 150 (−81%) | 126 → 26 (−79%) | 504 → 104 (−79%) |
 | `x * y` | 84 → 28 (−67%) | 369 → 103 (−72%) | 65 → 20 (−69%) | 260 → 80 (−69%) |
 | `x / y` | 17 → 2 (−88%) | 64 → 6 (−91%) | 15 → 3 (−80%) | 60 → 12 (−80%) |
-| `x == y` | 169 → 5 (−97%) | 708 → 14 (−98%) | 131 → 6 (−95%) | 524 → 24 (−95%) |
-| `x < y` | 201 → 5 (−98%) | 795 → 14 (−98%) | 152 → 4 (−97%) | 608 → 16 (−97%) |
+| `x == y` | 169 → 18 (−89%) | 708 → 57 (−92%) | 131 → 12 (−91%) | 524 → 48 (−91%) |
+| `x < y` | 201 → 21 (−90%) | 795 → 67 (−92%) | 152 → 18 (−88%) | 608 → 72 (−88%) |
 | `x == 0` | 30 → 5 (−83%) | 135 → 14 (−90%) | 31 → 4 (−87%) | 124 → 16 (−87%) |
 | `x > 0` | 41 → 13 (−68%) | 186 → 39 (−79%) | 40 → 10 (−75%) | 160 → 40 (−75%) |
 | `Quantize` | 119 → 2 (−98%) | 491 → 6 (−99%) | 81 → 3 (−96%) | 324 → 12 (−96%) |
@@ -286,7 +300,9 @@ The UBD build reached the default in steps, each measured with this harness
 | First-level multiply, full 64-bit coefficients (`efdd84e4`, level 5) | 17 | 41 | 30 | 5 | 5 | 7 | 2 |
 | Multiply narrowed to 2^56 (`b5c2edb4`); level 5 default (`fbb5804e`) | 17 | 41 | 28 | 5 | 5 | 7 | 2 |
 | Canonical coefficients only; `x == 0` inline; level 6 default (`02d989ec`) | 17 | 41 | 28 | 5 | 5 | 5 | 2 |
-| Ordered comparisons with zero inline (`x > 0`: 9 → 13, no call); level 7 default | 17 | 41 | 28 | 5 | 5 | 5 | 2 |
+| Ordered comparisons with zero inline (`x > 0`: 9 → 13, no call); level 7 default (`51b3168b`) | 17 | 41 | 28 | 5 | 5 | 5 | 2 |
+| Predicate entries (level 8, not a default) | 17 | 41 | 28 | 2 | 2 | 5 | 2 |
+| Comparisons inline for one qExp and one sign; level 9 default | 17 | 41 | 28 | 18 | 21 | 5 | 2 |
 
 The step before level 4 is level −1.
 

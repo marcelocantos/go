@@ -196,6 +196,8 @@ const (
 //     ubdQuantizeTTE128, ubdQuantizeRnd128                Quantize128
 //     ubdRoundToIntegralTTE128, ubdRoundToIntegralRnd128  RoundToIntegral128
 //     ubdCompare128                                       Compare128 (c and ok as they are)
+//     ubdEqual128, ubdLess128, ubdLessEqual128,           Compare128: ok and c == 0, c < 0,
+//     ubdGreater128, ubdGreaterEqual128                   c <= 0, c > 0, c >= 0
 //
 //     with mode ToNearestEven for a TTE entry. The compiler makes one call
 //     for every operand pair its inline paths do not decide, so an entry
@@ -256,4 +258,35 @@ func ubdRoundToIntegralRnd128(x UBD128, mode Mode) UBD128 {
 
 func ubdCompare128(x, y UBD128) (c int, ok bool) {
 	return quietCmpSlow128(x.bid(), y.bid())
+}
+
+// The predicate entries: each returns the operator's result itself, so
+// that a call site tests one bool instead of decoding c and ok. Unordered
+// operands (a NaN among them) satisfy none of them; x != y is
+// !ubdEqual128(x, y). x > y and x >= y have entries of their own so that a
+// call site passes its operands where they are, not swapped.
+
+func ubdEqual128(x, y UBD128) bool {
+	c, ok := ubdCompare128(x, y)
+	return ok && c == 0
+}
+
+func ubdLess128(x, y UBD128) bool {
+	c, ok := ubdCompare128(x, y)
+	return ok && c < 0
+}
+
+func ubdLessEqual128(x, y UBD128) bool {
+	c, ok := ubdCompare128(x, y)
+	return ok && c <= 0
+}
+
+func ubdGreater128(x, y UBD128) bool {
+	c, ok := ubdCompare128(x, y)
+	return ok && c > 0
+}
+
+func ubdGreaterEqual128(x, y UBD128) bool {
+	c, ok := ubdCompare128(x, y)
+	return ok && c >= 0
 }

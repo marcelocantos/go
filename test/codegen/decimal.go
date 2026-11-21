@@ -85,9 +85,26 @@ func Mul128(x, y decimal128) decimal128 {
 
 func Eq128(x, y decimal128) bool {
 	// ppc64le:"DCMPUQ" -"CALL"
-	// arm64:"CALL internal/bid.ubdCompare128" -"UMULH" -"CALL runtime.deq128"
-	// amd64:"CALL internal/bid.ubdCompare128" -"MULX?Q" -"CALL runtime.deq128"
+	// UBD (the default, ubdLevel 9): operands of one qExp and one sign
+	// compared inline, in front of the kernel's predicate entry.
+	// arm64:"CALL internal/bid.ubdEqual128" -"ubdCompare128" -"UMULH" -"CALL runtime.deq128"
+	// amd64:"CALL internal/bid.ubdEqual128" -"ubdCompare128" -"MULX?Q" -"CALL runtime.deq128"
 	return x == y
+}
+
+func Less128(x, y decimal128) bool {
+	// UBD (the default, ubdLevel 9): one borrow chain on the words XORed
+	// with the sign mask, in front of the kernel's predicate entry.
+	// arm64:"SBCS" "CALL internal/bid.ubdLess128" -"ubdCompare128"
+	// amd64:"SBBQ" "CALL internal/bid.ubdLess128" -"ubdCompare128"
+	return x < y
+}
+
+func Greater128(x, y decimal128) bool {
+	// UBD: its own entry, with the operands where they are.
+	// arm64:"SBCS" "CALL internal/bid.ubdGreater128" -"ubdLess128"
+	// amd64:"SBBQ" "CALL internal/bid.ubdGreater128" -"ubdLess128"
+	return x > y
 }
 
 func Zero64(x decimal64) bool {
@@ -103,7 +120,7 @@ func Nonzero64(x decimal64) bool {
 }
 
 func Zero128(x decimal128) bool {
-	// UBD (the default, ubdLevel 7): the coefficient bits, (hi<<15)|lo,
+	// UBD (the default, ubdLevel 9): the coefficient bits, (hi<<15)|lo,
 	// tested inline; a special's coefficient prefix makes it nonzero.
 	// arm64:"ORR" -"CALL"
 	// amd64:"SHLQ" -"CALL"
@@ -111,7 +128,7 @@ func Zero128(x decimal128) bool {
 }
 
 func Nonzero128(x decimal128) bool {
-	// UBD (the default, ubdLevel 7): the coefficient bits, (hi<<15)|lo,
+	// UBD (the default, ubdLevel 9): the coefficient bits, (hi<<15)|lo,
 	// tested inline; a special's coefficient prefix makes it nonzero.
 	// arm64:"ORR" -"CALL"
 	// amd64:"SHLQ" -"CALL"
@@ -143,28 +160,28 @@ func GreaterEqualZero64(x decimal64) bool {
 }
 
 func LessZero128(x decimal128) bool {
-	// UBD (the default, ubdLevel 7): inline, with no call.
+	// UBD (the default, ubdLevel 9): inline, with no call.
 	// arm64:"ORR" -"CALL"
 	// amd64:"SHLQ" -"CALL"
 	return 0.00 > x
 }
 
 func LessEqualZero128(x decimal128) bool {
-	// UBD (the default, ubdLevel 7): inline, with no call.
+	// UBD (the default, ubdLevel 9): inline, with no call.
 	// arm64:"ORR" -"CALL"
 	// amd64:"SHLQ" -"CALL"
 	return 0.00 >= x
 }
 
 func GreaterZero128(x decimal128) bool {
-	// UBD (the default, ubdLevel 7): inline, with no call.
+	// UBD (the default, ubdLevel 9): inline, with no call.
 	// arm64:"ORR" -"CALL"
 	// amd64:"SHLQ" -"CALL"
 	return x > 0
 }
 
 func GreaterEqualZero128(x decimal128) bool {
-	// UBD (the default, ubdLevel 7): inline, with no call.
+	// UBD (the default, ubdLevel 9): inline, with no call.
 	// arm64:"ORR" -"CALL"
 	// amd64:"SHLQ" -"CALL"
 	return x >= 0

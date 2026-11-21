@@ -233,6 +233,8 @@ func (s *state) ubdCompareZeroOrdered(op ir.Op, x *ssa.Value) *ssa.Value {
 // operator is decided here from the two.
 var (
 	bidKernelAdd, bidKernelSub, bidKernelMul, bidKernelDiv, bidKernelCmp *obj.LSym
+	// The predicate entries, by operator (ubdLevel 8).
+	bidKernelPred map[ir.Op]*obj.LSym
 	// Quantize and integral rounding: the entries that take the caller's
 	// mode, and those that round ties to even and take none.
 	bidKernelQuantize, bidKernelIntegral       *obj.LSym
@@ -250,6 +252,13 @@ func initBIDKernelSyms() {
 	bidKernelMul = base.PkgLinksym("internal/bid", "ubdMulTTE128", obj.ABIInternal)
 	bidKernelDiv = base.PkgLinksym("internal/bid", "ubdDivTTE128", obj.ABIInternal)
 	bidKernelCmp = base.PkgLinksym("internal/bid", "ubdCompare128", obj.ABIInternal)
+	bidKernelPred = map[ir.Op]*obj.LSym{
+		ir.OEQ: base.PkgLinksym("internal/bid", "ubdEqual128", obj.ABIInternal),
+		ir.OLT: base.PkgLinksym("internal/bid", "ubdLess128", obj.ABIInternal),
+		ir.OLE: base.PkgLinksym("internal/bid", "ubdLessEqual128", obj.ABIInternal),
+		ir.OGT: base.PkgLinksym("internal/bid", "ubdGreater128", obj.ABIInternal),
+		ir.OGE: base.PkgLinksym("internal/bid", "ubdGreaterEqual128", obj.ABIInternal),
+	}
 	bidKernelQuantize = base.PkgLinksym("internal/bid", "ubdQuantizeRnd128", obj.ABIInternal)
 	bidKernelIntegral = base.PkgLinksym("internal/bid", "ubdRoundToIntegralRnd128", obj.ABIInternal)
 	bidKernelQuantizeTTE = base.PkgLinksym("internal/bid", "ubdQuantizeTTE128", obj.ABIInternal)
@@ -267,13 +276,15 @@ func initBIDKernelSyms() {
 //	4  the first level for x + y and the second for x - y
 //	5  and decimal128-go's first-level multiply path, for x * y
 //	6  and x == 0 and x != 0 inline, with no call
-//	7  and x < 0, x <= 0, x > 0 and x >= 0 inline, with no call (the default)
+//	7  and x < 0, x <= 0, x > 0 and x >= 0 inline, with no call
+//	8  and comparisons of two values call the kernel's predicate entries
+//	9  and those comparisons have a fast path: one qExp and one sign (the default)
 //
 // Level -1 is the inline paths derived from the BID lowering instead,
 // which handle more operand pairs inline at much greater size.
 func ubdLevel() int {
 	if base.Debug.UBDLevel == 0 {
-		return 7
+		return 9
 	}
 	return base.Debug.UBDLevel
 }
@@ -468,6 +479,115 @@ func (s *state) ubdMulFast(rt *types.Type, x, y *ssa.Value) *ssa.Value {
 	r := s.variable(result, rt)
 	delete(s.vars, result)
 	return r
+}
+
+// ubdComparePred lowers the comparison op of two decimal128 values from
+// ubdLevel 8 to a call to the kernel's predicate entry for op, whose bool
+// result is the comparison's: x != y is !ubdEqual128(x, y). op is the
+// source operator, before OGT and OGE are turned around, so the operands
+// are passed where they are. From ubdLevel 9 a fast path comes first
+// (ubdCompareFast).
+func (s *state) ubdComparePred(op ir.Op, x, y *ssa.Value) *ssa.Value {
+	u64 := types.Types[types.TUINT64]
+	xhi, yhi := s.newValue1(ssaop.OpDecimal128Hi, u64, x), s.newValue1(ssaop.OpDecimal128Hi, u64, y)
+	xlo, ylo := s.newValue1(ssaop.OpDecimal128Lo, u64, x), s.newValue1(ssaop.OpDecimal128Lo, u64, y)
+	if ubdLevel() >= 9 {
+		return s.ubdCompareFast(op, xlo, xhi, ylo, yhi)
+	}
+	return s.ubdComparePredCall(op, xlo, xhi, ylo, yhi)
+}
+
+// ubdComparePredCall is the predicate entry's call for op.
+func (s *state) ubdComparePredCall(op ir.Op, xlo, xhi, ylo, yhi *ssa.Value) *ssa.Value {
+	boolT := types.Types[types.TBOOL]
+	fn := op
+	if op == ir.ONE {
+		fn = ir.OEQ
+	}
+	r := s.rtcall(bidKernelPred[fn], true, []*types.Type{boolT}, xlo, xhi, ylo, yhi)[0]
+	if op == ir.ONE {
+		r = s.newValue1(ssaop.OpNot, boolT, r)
+	}
+	return r
+}
+
+// ubdCompareFast lowers the comparison op of two decimal128 values at
+// ubdLevel 9: inline when the operands have one qExp and one sign and are
+// not NaN, else the predicate entry's call (ubdComparePredCall).
+//
+// With the top 15 bits of the high words equal, the 128-bit words compare
+// as the coefficients do. A canonical value is equal to another of its
+// qExp and sign exactly when the bits are, and two infinities of one sign
+// are equal by their bits too; only a NaN, which has the qExp field of
+// another NaN of its sign, needs its tag test. For a negative sign the
+// order of the coefficients is reversed: XORing all four words with the
+// sign mask m (all ones when negative) reverses unsigned order, so one
+// borrow chain serves both signs:
+//
+//	x < y   x' < y'        x <= y  !(y' < x')
+//	x > y   y' < x'        x >= y  !(x' < y')
+func (s *state) ubdCompareFast(op ir.Op, xlo, xhi, ylo, yhi *ssa.Value) *ssa.Value {
+	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
+	zero := s.constInt64(u64, 0)
+	res := ssaMarker("ubdcmp")
+	bSlow := s.f.NewBlock(block.BlockPlain)
+	bAfter := s.f.NewBlock(block.BlockPlain)
+	guard := func(v *ssa.Value) {
+		b := s.endBlock()
+		b.Kind = block.BlockIf
+		b.SetControl(v)
+		b.Likely = ssa.BranchLikely
+		next := s.f.NewBlock(block.BlockPlain)
+		b.AddEdgeTo(next)
+		b.AddEdgeTo(bSlow)
+		s.startBlock(next)
+	}
+	differ := s.newValue2(ssaop.OpXor64, u64, xhi, yhi)
+	guard(s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpRsh64Ux64, u64, differ, s.constInt64(u64, bid.UBDExpShift-1)), zero))
+	tag := s.newValue2(ssaop.OpRsh64Ux64, u64, xhi, s.constInt64(u64, 59))
+	guard(s.newValue2(ssaop.OpNeq64, boolT, tag, s.constInt64(u64, bid.UBDNaNTag)))
+
+	var r *ssa.Value
+	switch op {
+	case ir.OEQ, ir.ONE:
+		bits := s.newValue2(ssaop.OpOr64, u64, differ, s.newValue2(ssaop.OpXor64, u64, xlo, ylo))
+		if op == ir.OEQ {
+			r = s.newValue2(ssaop.OpEq64, boolT, bits, zero)
+		} else {
+			r = s.newValue2(ssaop.OpNeq64, boolT, bits, zero)
+		}
+	default:
+		m := s.newValue2(ssaop.OpRsh64x64, u64, s.newValue2(ssaop.OpLsh64x64, u64, xhi, s.constInt64(u64, 64-bid.UBDExpShift)), s.constInt64(u64, 63))
+		xl, xh := s.newValue2(ssaop.OpXor64, u64, xlo, m), s.newValue2(ssaop.OpXor64, u64, xhi, m)
+		yl, yh := s.newValue2(ssaop.OpXor64, u64, ylo, m), s.newValue2(ssaop.OpXor64, u64, yhi, m)
+		// less reports whether (ah, al) < (bh, bl), unsigned: the borrow
+		// out of their difference.
+		less := func(al, ah, bl, bh *ssa.Value) *ssa.Value {
+			lo := s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), al, bl, zero)
+			hi := s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), ah, bh, s.newValue1(ssaop.OpSelect1, u64, lo))
+			return s.newValue2(ssaop.OpNeq64, boolT, s.newValue1(ssaop.OpSelect1, u64, hi), zero)
+		}
+		switch op {
+		case ir.OLT:
+			r = less(xl, xh, yl, yh)
+		case ir.OGT:
+			r = less(yl, yh, xl, xh)
+		case ir.OLE:
+			r = s.newValue1(ssaop.OpNot, boolT, less(yl, yh, xl, xh))
+		case ir.OGE:
+			r = s.newValue1(ssaop.OpNot, boolT, less(xl, xh, yl, yh))
+		}
+	}
+	s.vars[res] = r
+	s.endBlock().AddEdgeTo(bAfter)
+
+	s.startBlock(bSlow)
+	s.vars[res] = s.ubdComparePredCall(op, xlo, xhi, ylo, yhi)
+	s.endBlock().AddEdgeTo(bAfter)
+	s.startBlock(bAfter)
+	v := s.variable(res, boolT)
+	delete(s.vars, res)
+	return v
 }
 
 // bidKernelDirect reports whether the target takes the decimal128

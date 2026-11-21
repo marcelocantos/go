@@ -77,7 +77,7 @@ type DebugFlags struct {
 	SyncFrames            int    `help:"how many writer stack frames to include at sync points in unified export data" concurrent:"ok"`
 	TailCall              int    `help:"print information about tail calls"`
 	TypeAssert            int    `help:"print information about type assertion inlining"`
-	UBDLevel              int    `help:"decimal128 operations on UBD targets: the kernel call, with fast paths added back by level\n0: the default, level 7\n1: the kernel call alone\n2: and decimal128-go's first-level add path\n3: and its second-level add path\n4: the first level for x + y and the second for x - y\n5: and decimal128-go's first-level multiply path\n6: and x == 0 and x != 0 inline\n7: and x < 0, x <= 0, x > 0, x >= 0 inline\n-1: the inline paths derived from the BID lowering" concurrent:"ok"`
+	UBDLevel              int    `help:"decimal128 operations on UBD targets: the kernel call, with fast paths added back by level\n0: the default, level 9\n1: the kernel call alone\n2: and decimal128-go's first-level add path\n3: and its second-level add path\n4: the first level for x + y and the second for x - y\n5: and decimal128-go's first-level multiply path\n6: and x == 0 and x != 0 inline\n7: and x < 0, x <= 0, x > 0, x >= 0 inline\n8: and comparisons call the predicate entries\n9: and comparisons have a fast path for one qExp and one sign\n-1: the inline paths derived from the BID lowering" concurrent:"ok"`
 	WB                    int    `help:"print information about write barriers"`
 	ABIWrap               int    `help:"print information about ABI wrapper generation"`
 	MayMoreStack          string `help:"call named function before all stack growth checks" concurrent:"ok"`
