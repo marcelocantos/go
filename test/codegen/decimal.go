@@ -56,28 +56,31 @@ func Less64(x, y decimal64) bool {
 
 func Add128(x, y decimal128) decimal128 {
 	// ppc64le:"DADDQ" -"CALL"
-	// UBD (the default, ubdLevel 5): decimal128-go's first-level add path, operands of
-	// one sign and one quantum, in front of the kernel's ties-to-even entry;
-	// operands of opposite signs go to the kernel.
-	// amd64:"ADCQ" "CALL internal/bid.ubdAddTTE128" -"NEGQ" -"CALL runtime.dadd128"
-	// arm64:"ADC" "CALL internal/bid.ubdAddTTE128" -"CSNEG" -"CALL runtime.dadd128"
+	// UBD (the default, ubdLevel 10): decimal128-go's first-level add path
+	// narrowed to one-word coefficients, one guard ((xh^yh) | xh<<15 == 0),
+	// in front of the kernel's ties-to-even entry; operands of opposite
+	// signs go to the kernel.
+	// amd64:"SHLQ\t[$]15" "ADCQ\t[$]0" "CALL internal/bid.ubdAddTTE128" -"NEGQ" -"CALL runtime.dadd128"
+	// arm64:"ORR\tR[0-9]+<<15" "ADC" "CALL internal/bid.ubdAddTTE128" -"CSNEG" -"CALL runtime.dadd128"
 	return x + y
 }
 
 func Sub128(x, y decimal128) decimal128 {
 	// ppc64le:"DSUBQ" -"CALL"
-	// UBD (the default, ubdLevel 5): decimal128-go's second-level add path, operands of
-	// one sign and one quantum, in front of the kernel's ties-to-even entry.
-	// arm64:"SBCS" "CALL internal/bid.ubdSubTTE128" -"CALL runtime.dsub128"
-	// amd64:"SBBQ" "CALL internal/bid.ubdSubTTE128" -"ADCQ" -"CALL runtime.dsub128"
+	// UBD (the default, ubdLevel 10): the second-level add path narrowed to
+	// one-word coefficients: one borrow, the difference negated by the
+	// borrow's mask, +0 for an exact zero; in front of the kernel's
+	// ties-to-even entry.
+	// arm64:"ORR\tR[0-9]+<<15" "NGC" "CSEL" -"SBCS" "CALL internal/bid.ubdSubTTE128" -"CALL runtime.dsub128"
+	// amd64:"SHLQ\t[$]15" "SBBQ" "CMOVQEQ" "CALL internal/bid.ubdSubTTE128" -"CALL runtime.dsub128"
 	return x - y
 }
 
 func Mul128(x, y decimal128) decimal128 {
 	// ppc64le:"DMULQ" -"CALL"
-	// UBD (the default, ubdLevel 5): decimal128-go's first-level multiply
-	// path, coefficients below 2^56, in front of the kernel's ties-to-even
-	// entry.
+	// UBD (the default, ubdLevel 5 and up): decimal128-go's first-level
+	// multiply path, coefficients below 2^56, in front of the kernel's
+	// ties-to-even entry.
 	// arm64:"UMULH" "CALL internal/bid.ubdMulTTE128" -"CALL runtime.dmul128"
 	// amd64:"MULX?Q" "CALL internal/bid.ubdMulTTE128" -"CALL runtime.dmul128"
 	return x * y
@@ -85,27 +88,29 @@ func Mul128(x, y decimal128) decimal128 {
 
 func Eq128(x, y decimal128) bool {
 	// ppc64le:"DCMPUQ" -"CALL"
-	// UBD (the default, ubdLevel 9): operands of one qExp and one sign
-	// compared inline, in front of the kernel's predicate entry.
-	// arm64:"CALL internal/bid.ubdEqual128" -"ubdCompare128" -"UMULH" -"CALL runtime.deq128"
-	// amd64:"CALL internal/bid.ubdEqual128" -"ubdCompare128" -"MULX?Q" -"CALL runtime.deq128"
+	// UBD (the default, ubdLevel 10): operands of one qExp and one sign and
+	// one-word coefficients compared inline, with no NaN tag test (a NaN's
+	// coefficient prefix is in the high word), in front of the kernel's
+	// predicate entry.
+	// arm64:"ORR\tR[0-9]+<<15" -"LSR\t[$]59" "CALL internal/bid.ubdEqual128" -"ubdCompare128" -"UMULH" -"CALL runtime.deq128"
+	// amd64:"SHLQ\t[$]15" -"SHRQ\t[$]59" "CALL internal/bid.ubdEqual128" -"ubdCompare128" -"MULX?Q" -"CALL runtime.deq128"
 	return x == y
 }
 
 func Less128(x, y decimal128) bool {
-	// UBD (the default, ubdLevel 9): one borrow chain on the words XORed
-	// with the sign mask, in front of the kernel's predicate entry.
-	// The borrow is read from the flags (CSET LO), not made an integer
-	// and compared again (NGC; CMN): an ARM64.rules rule.
-	// arm64:"SBCS" "CSET" -"NGC" "CALL internal/bid.ubdLess128" -"ubdCompare128"
-	// amd64:"SBBQ" "CALL internal/bid.ubdLess128" -"ubdCompare128"
+	// UBD (the default, ubdLevel 10): the low words XORed with the sign
+	// mask and compared once, no borrow chain, in front of the kernel's
+	// predicate entry. (At ubdLevel 9 the two-word borrow is read from the
+	// flags by an ARM64.rules rule: CSET LO, not NGC; CMN.)
+	// arm64:"ORR\tR[0-9]+<<15" "CSET\tHI" -"SBCS" -"NGC" "CALL internal/bid.ubdLess128" -"ubdCompare128"
+	// amd64:"SHLQ\t[$]15" "SETHI" -"SBBQ" "CALL internal/bid.ubdLess128" -"ubdCompare128"
 	return x < y
 }
 
 func Greater128(x, y decimal128) bool {
 	// UBD: its own entry, with the operands where they are.
-	// arm64:"SBCS" "CALL internal/bid.ubdGreater128" -"ubdLess128"
-	// amd64:"SBBQ" "CALL internal/bid.ubdGreater128" -"ubdLess128"
+	// arm64:"ORR\tR[0-9]+<<15" -"SBCS" "CALL internal/bid.ubdGreater128" -"ubdLess128"
+	// amd64:"SHLQ\t[$]15" -"SBBQ" "CALL internal/bid.ubdGreater128" -"ubdLess128"
 	return x > y
 }
 

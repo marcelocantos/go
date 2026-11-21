@@ -289,13 +289,15 @@ func initBIDKernelSyms() {
 //	6  and x == 0 and x != 0 inline, with no call
 //	7  and x < 0, x <= 0, x > 0 and x >= 0 inline, with no call
 //	8  and comparisons of two values call the kernel's predicate entries
-//	9  and those comparisons have a fast path: one qExp and one sign (the default)
+//	9  and those comparisons have a fast path: one qExp and one sign
+//	10 level 9 with the add, subtract and comparison paths narrowed to
+//	   one-word coefficients (ubdAddNarrow, ubdCompareNarrow) (the default)
 //
 // Level -1 is the inline paths derived from the BID lowering instead,
 // which handle more operand pairs inline at much greater size.
 func ubdLevel() int {
 	if base.Debug.UBDLevel == 0 {
-		return 9
+		return 10
 	}
 	return base.Debug.UBDLevel
 }
@@ -330,6 +332,9 @@ func bidCallOnly(x *ssa.Value) bool {
 // cancellation is -0 only when rounding toward negative, and the operators
 // round ties to even.
 func (s *state) ubdAddFast(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value {
+	if ubdLevel() == 10 {
+		return s.ubdAddNarrow(op, rt, x, y)
+	}
 	result := ssaMarker("ubdadd1") // one per lowering; see bidAddSub128
 	u64, i64, boolT := types.Types[types.TUINT64], types.Types[types.TINT64], types.Types[types.TBOOL]
 	zero := s.constInt64(u64, 0)
@@ -422,6 +427,63 @@ func (s *state) ubdAddFast(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value
 	return r
 }
 
+// ubdAddNarrow lowers x + y and x - y at ubdLevel 10: level 4's paths
+// (the first level for x + y, the second for x - y) narrowed to operands
+// whose coefficients fit the low word.
+//
+// The guard is one test: the high words are equal (one qExp, one sign) and
+// x's holds no coefficient bits, (xh ^ yh) | xh<<15 == 0. That also
+// excludes the specials, whose coefficients have the 0x1F prefix in the
+// high word.
+//
+// x + y: the coefficients add with a carry into the high word, below 2^65
+// and so below 10^34: exact. x - y of one sign is an effective subtraction:
+// the low words subtract, a borrow means |y| > |x|, so the difference is
+// negated and the sign flipped; an exact zero is +0 (IEEE 754-2019 clause
+// 6.3, ties to even). The qExp and sign ride along in xh.
+func (s *state) ubdAddNarrow(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value {
+	result := ssaMarker("ubdadd1") // one per lowering; see bidAddSub128
+	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
+	zero := s.constInt64(u64, 0)
+	xh, yh := s.newValue1(ssaop.OpDecimal128Hi, u64, x), s.newValue1(ssaop.OpDecimal128Hi, u64, y)
+	xl, yl := s.newValue1(ssaop.OpDecimal128Lo, u64, x), s.newValue1(ssaop.OpDecimal128Lo, u64, y)
+	guard := s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpXor64, u64, xh, yh),
+		s.newValue2(ssaop.OpLsh64x64, u64, xh, s.constInt64(u64, 64-bid.UBDExpShift+1)))
+
+	bSlow := s.f.NewBlock(block.BlockPlain)
+	bAfter := s.f.NewBlock(block.BlockPlain)
+	fast := s.newValue2(ssaop.OpEq64, boolT, guard, zero)
+	b := s.endBlock()
+	b.Kind = block.BlockIf
+	b.SetControl(fast)
+	bFast := s.f.NewBlock(block.BlockPlain)
+	b.AddEdgeTo(bFast)
+	b.AddEdgeTo(bSlow)
+	s.startBlock(bFast)
+	if op == ir.OADD {
+		sum := s.newValue3(ssaop.OpAdd64carry, types.NewTuple(u64, u64), xl, yl, zero)
+		hi := s.newValue1(ssaop.OpSelect0, u64, s.newValue3(ssaop.OpAdd64carry, types.NewTuple(u64, u64), xh, zero, s.newValue1(ssaop.OpSelect1, u64, sum)))
+		s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, s.newValue1(ssaop.OpSelect0, u64, sum), hi)
+	} else {
+		d := s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), xl, yl, zero)
+		m := s.newValue2(ssaop.OpSub64, u64, zero, s.newValue1(ssaop.OpSelect1, u64, d)) // all ones on a borrow
+		lo := s.newValue2(ssaop.OpSub64, u64, s.newValue2(ssaop.OpXor64, u64, s.newValue1(ssaop.OpSelect0, u64, d), m), m)
+		hi := s.newValue2(ssaop.OpXor64, u64, xh, s.newValue2(ssaop.OpAnd64, u64, m, s.constInt64(u64, bid.UBDSignHi)))
+		cancelled := s.newValue2(ssaop.OpEq64, boolT, lo, zero)
+		hi = s.newValue3(ssaop.OpCondSelect, u64, s.newValue2(ssaop.OpAnd64, u64, hi, s.constInt64(u64, ^int64(bid.UBDSignHi))), hi, cancelled)
+		s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, hi)
+	}
+	s.endBlock().AddEdgeTo(bAfter)
+
+	s.startBlock(bSlow)
+	s.vars[result] = s.softDecimalOp(op, rt, x, y)
+	s.endBlock().AddEdgeTo(bAfter)
+	s.startBlock(bAfter)
+	r := s.variable(result, rt)
+	delete(s.vars, result)
+	return r
+}
+
 // ubdMulFast lowers x * y on decimal128 to a narrowed form of
 // decimal128-go's first-level multiply path (d128_multiply_rnd_ctxnull's
 // fast entry) in front of the kernel call (ubdLevel 5): both coefficients
@@ -502,6 +564,9 @@ func (s *state) ubdComparePred(op ir.Op, x, y *ssa.Value) *ssa.Value {
 	u64 := types.Types[types.TUINT64]
 	xhi, yhi := s.newValue1(ssaop.OpDecimal128Hi, u64, x), s.newValue1(ssaop.OpDecimal128Hi, u64, y)
 	xlo, ylo := s.newValue1(ssaop.OpDecimal128Lo, u64, x), s.newValue1(ssaop.OpDecimal128Lo, u64, y)
+	if ubdLevel() == 10 {
+		return s.ubdCompareNarrow(op, xlo, xhi, ylo, yhi)
+	}
 	if ubdLevel() >= 9 {
 		return s.ubdCompareFast(op, xlo, xhi, ylo, yhi)
 	}
@@ -538,8 +603,9 @@ func (s *state) ubdComparePredCall(op ir.Op, xlo, xhi, ylo, yhi *ssa.Value) *ssa
 //	x < y   x' < y'        x <= y  !(y' < x')
 //	x > y   y' < x'        x >= y  !(x' < y')
 //
-// This is deliberately the only inline comparison path at the default
-// level, a decision taken on size per call site. Measured on arm64 (bytes
+// This was deliberately the only inline comparison path at level 9, a
+// decision taken on size per call site; level 10 narrows it further
+// (ubdCompareNarrow). Measured on arm64 (bytes
 // added by each further comparison in a function, == and then <):
 //
 //	level 8, the predicate call alone           37   37
@@ -607,6 +673,63 @@ func (s *state) ubdCompareFast(op ir.Op, xlo, xhi, ylo, yhi *ssa.Value) *ssa.Val
 			r = s.newValue1(ssaop.OpNot, boolT, less(yl, yh, xl, xh))
 		case ir.OGE:
 			r = s.newValue1(ssaop.OpNot, boolT, less(xl, xh, yl, yh))
+		}
+	}
+	s.vars[res] = r
+	s.endBlock().AddEdgeTo(bAfter)
+
+	s.startBlock(bSlow)
+	s.vars[res] = s.ubdComparePredCall(op, xlo, xhi, ylo, yhi)
+	s.endBlock().AddEdgeTo(bAfter)
+	s.startBlock(bAfter)
+	v := s.variable(res, boolT)
+	delete(s.vars, res)
+	return v
+}
+
+// ubdCompareNarrow lowers the comparison op of two decimal128 values at
+// ubdLevel 10: ubdCompareFast's path narrowed to one-word coefficients.
+// The guard is ubdAddNarrow's, (xh ^ yh) | xh<<15 == 0: one qExp, one sign
+// and coefficients below 2^64, which excludes NaN with no tag test. The
+// values are then equal exactly when the low words are, and ordered as the
+// low words are, reversed for a negative sign by XORing both with the sign
+// mask m.
+func (s *state) ubdCompareNarrow(op ir.Op, xlo, xhi, ylo, yhi *ssa.Value) *ssa.Value {
+	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
+	zero := s.constInt64(u64, 0)
+	res := ssaMarker("ubdcmp")
+	bSlow := s.f.NewBlock(block.BlockPlain)
+	bAfter := s.f.NewBlock(block.BlockPlain)
+	guard := s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpXor64, u64, xhi, yhi),
+		s.newValue2(ssaop.OpLsh64x64, u64, xhi, s.constInt64(u64, 64-bid.UBDExpShift+1)))
+	fast := s.newValue2(ssaop.OpEq64, boolT, guard, zero)
+	b := s.endBlock()
+	b.Kind = block.BlockIf
+	b.SetControl(fast)
+	b.Likely = ssa.BranchLikely
+	bFast := s.f.NewBlock(block.BlockPlain)
+	b.AddEdgeTo(bFast)
+	b.AddEdgeTo(bSlow)
+	s.startBlock(bFast)
+
+	var r *ssa.Value
+	switch op {
+	case ir.OEQ:
+		r = s.newValue2(ssaop.OpEq64, boolT, xlo, ylo)
+	case ir.ONE:
+		r = s.newValue2(ssaop.OpNeq64, boolT, xlo, ylo)
+	default:
+		m := s.newValue2(ssaop.OpRsh64x64, u64, s.newValue2(ssaop.OpLsh64x64, u64, xhi, s.constInt64(u64, 64-bid.UBDExpShift)), s.constInt64(u64, 63))
+		xl, yl := s.newValue2(ssaop.OpXor64, u64, xlo, m), s.newValue2(ssaop.OpXor64, u64, ylo, m)
+		switch op {
+		case ir.OLT:
+			r = s.newValue2(ssaop.OpLess64U, boolT, xl, yl)
+		case ir.OGT:
+			r = s.newValue2(ssaop.OpLess64U, boolT, yl, xl)
+		case ir.OLE:
+			r = s.newValue2(ssaop.OpLeq64U, boolT, xl, yl)
+		case ir.OGE:
+			r = s.newValue2(ssaop.OpLeq64U, boolT, yl, xl)
 		}
 	}
 	s.vars[res] = r

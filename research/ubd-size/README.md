@@ -26,17 +26,20 @@ By default every decimal128 operation compiles to its kernel call, with
 decimal128-go's add fast paths in front of `+` and `-` and its multiply
 fast path in front of `*`:
 
-- **`x + y`:** decimal128-go's first-level path (`d128_add_rnd_ctxnull`):
-  equal qExp and sign, and the high 49 coefficient bits of the operands
-  summing below 2^48. y's coefficient is added onto x's whole stored value
-  with one add-with-carry pair, so x's qExp and sign ride along. Every other
-  pair calls `ubdAddTTE128`.
+- **`x + y`:** decimal128-go's first-level path (`d128_add_rnd_ctxnull`),
+  narrowed to one-word coefficients (level 10): one guard,
+  `(xh ^ yh) | xh<<15 == 0` (equal qExp and sign, and no coefficient bits in
+  the high word, which also excludes the specials), then `ADD; ADC $0` with
+  x's qExp and sign riding along in its high word. Every other pair,
+  including coefficients of 2^64 or more, calls `ubdAddTTE128`. (Level 9
+  takes coefficients up to 2^112 with a second test.)
 - **`x - y`:** decimal128-go's second-level path (the first test of
   `d128_add_slow_rnd_ctxnull`), for operands of one sign and one qExp, which
-  are an effective subtraction: bit 48 clear in both high words (so both
-  coefficients are below 2^112, neither is special, and the difference is
-  exact), the magnitudes subtracted, a negative difference negated with y's
-  sign, an exact zero +0. Every other pair calls `ubdSubTTE128`.
+  are an effective subtraction, narrowed to one-word coefficients (level
+  10): `+`'s guard, one borrow, the difference negated by the borrow's mask
+  with the sign flipped, an exact zero +0. Every other pair calls
+  `ubdSubTTE128`. (Level 9 takes coefficients up to 2^112 with a two-word
+  borrow chain.)
 - **`x * y`:** decimal128-go's first-level multiply path, narrowed: both
   coefficients below 2^56 (the high words' coefficient bits clear and the low
   words below 2^56, one OR'd test) and the qExp sum in range (one unsigned
@@ -59,10 +62,12 @@ fast path in front of `*`:
   `x < 0` and `x >= 0` are the same tests on `-v` (−0 gives the least int64,
   which negation keeps). A NaN, found by its tag `hi>>59 == 15`, branches to
   false.
-- **`x == y`, `x != y`, `x < y`, `x <= y`, `x > y`, `x >= y`:**
-  decimal128-go's first-level guard, one qExp and one sign
-  (`(xh ^ yh) >> 49 == 0`), and not NaN (`xh>>59 != 15`, since NaNs of one
-  sign share a qExp field), then inline. With the top 15 bits equal, the
+- **`x == y`, `x != y`, `x < y`, `x <= y`, `x > y`, `x >= y`:** at level
+  10, `+`'s guard (one qExp, one sign, one-word coefficients, so no NaN tag
+  test), then `xl == yl`, or the low words XORed with the sign mask and
+  compared once. At level 9: decimal128-go's first-level guard, one qExp and
+  one sign (`(xh ^ yh) >> 49 == 0`), and not NaN (`xh>>59 != 15`, since NaNs
+  of one sign share a qExp field), then inline. With the top 15 bits equal, the
   128-bit words compare as the coefficients do: a canonical value equals
   another exactly when the bits are (`(xh^yh)|(xl^yl) == 0`), and the
   orderings are one borrow chain on the words XORed with the sign mask,
@@ -87,7 +92,8 @@ measured against the call alone:
 | 6 | level 5, and `x == 0`, `x != 0` inline |
 | 7 | level 6, and `x < 0`, `x <= 0`, `x > 0`, `x >= 0` inline |
 | 8 | level 7, and comparisons of two values call the predicate entries |
-| **9** (default, `0`) | level 8, and those comparisons inline for one qExp and one sign |
+| 9 | level 8, and those comparisons inline for one qExp and one sign |
+| **10** (default, `0`) | level 9 with the add, subtract and comparison paths narrowed to one-word coefficients |
 | −1 | the inline paths derived from the BID lowering (see History) |
 
 From level 4, `5.00 + 3.00` and `5.00 - 3.00` are inline; `5.00 + -3.00` and
@@ -220,23 +226,25 @@ darwin/arm64 with `GOOS=linux`.
 
 ## Results (2026-11-20)
 
-### Inline code per call site, default (level 9)
+### Inline code per call site, default (level 10; measured 2026-11-21)
 
 | Op | amd64 instr | amd64 bytes | arm64 instr | arm64 bytes |
 |---|---|---|---|---|
-| `x + y` | 169 → 17 (−90%) | 714 → 60 (−92%) | 119 → 12 (−90%) | 476 → 48 (−90%) |
-| `x - y` | 179 → 41 (−77%) | 773 → 150 (−81%) | 126 → 26 (−79%) | 504 → 104 (−79%) |
+| `x + y` | 169 → 12 (−93%) | 714 → 37 (−95%) | 119 → 8 (−93%) | 476 → 32 (−93%) |
+| `x - y` | 179 → 25 (−86%) | 773 → 87 (−89%) | 126 → 14 (−89%) | 504 → 56 (−89%) |
 | `x * y` | 84 → 28 (−67%) | 369 → 103 (−72%) | 65 → 20 (−69%) | 260 → 80 (−69%) |
 | `x / y` | 17 → 2 (−88%) | 64 → 6 (−91%) | 15 → 3 (−80%) | 60 → 12 (−80%) |
-| `x == y` | 169 → 18 (−89%) | 708 → 57 (−92%) | 131 → 12 (−91%) | 524 → 48 (−91%) |
-| `x < y` | 201 → 21 (−90%) | 795 → 67 (−92%) | 152 → 16 (−89%) | 608 → 64 (−89%) |
+| `x == y` | 169 → 12 (−93%) | 708 → 36 (−95%) | 131 → 7 (−95%) | 524 → 28 (−95%) |
+| `x < y` | 201 → 17 (−92%) | 795 → 55 (−93%) | 152 → 10 (−93%) | 608 → 40 (−93%) |
 | `x == 0` | 30 → 5 (−83%) | 135 → 14 (−90%) | 31 → 4 (−87%) | 124 → 16 (−87%) |
 | `x > 0` | 41 → 13 (−68%) | 186 → 39 (−79%) | 40 → 10 (−75%) | 160 → 40 (−75%) |
 | `Quantize` | 119 → 2 (−98%) | 491 → 6 (−99%) | 81 → 3 (−96%) | 324 → 12 (−96%) |
 | `Round` | 58 → 3 (−95%) | 248 → 11 (−96%) | 42 → 4 (−90%) | 168 → 16 (−90%) |
 
 XOR-BID → UBD. Per extra `+` in a longer expression (`scale/`): amd64 162 →
-23 instructions (695 → 96 bytes), arm64 109 → 17 (437 → 68).
+16 instructions (695 → 67 bytes), arm64 109 → 13 (437 → 52). At level 9 the
+four narrowed rows were `+` 17 / 12, `-` 41 / 26, `==` 18 / 12 and `<` 21 /
+16 instructions (amd64 / arm64), and the extra `+` 23 / 17.
 
 A call site of `x / y` on amd64 is the 5-byte `CALL ubdDivTTE128` and a
 1-byte `NOP`; the operands are already in the registers the entry takes.
@@ -249,7 +257,8 @@ A call site of `x / y` on amd64 is the 5-byte `CALL ubdDivTTE128` and a
 | 1: call alone | 2 (6 B) | 2 (6 B) | 3 | 3 | 5 (29 B) |
 | 2: first level | 17 (60 B) | 21 (77 B) | 12 | 14 | 23 (96 B) |
 | 3: both levels | 52 (190 B) | 55 (205 B) | 33 | 35 | 57 (227 B) |
-| **4, 5 (default)** | **17 (60 B)** | **41 (150 B)** | **12** | **26** | **23 (96 B)** |
+| 4–9 | 17 (60 B) | 41 (150 B) | 12 | 26 | 23 (96 B) |
+| **10 (default)**: narrowed to one-word coefficients | **12 (37 B)** | **25 (87 B)** | **8** | **14** | **16 (67 B)** |
 | −1: BID-derived | 101 (383 B) | 102 (388 B) | 74 | 76 | 111 (446 B) |
 
 The first-level path on amd64:
@@ -315,6 +324,7 @@ The UBD build reached the default in steps, each measured with this harness
 | Predicate entries (level 8, not a default) | 17 | 41 | 28 | 2 | 2 | 5 | 2 |
 | Comparisons inline for one qExp and one sign; level 9 default (`32e19bc3`) | 17 | 41 | 28 | 18 | 21 | 5 | 2 |
 | arm64 rule: a borrow read from the flags (arm64 `<`: 18 → 16) | 17 | 41 | 28 | 18 | 21 | 5 | 2 |
+| Add, subtract and comparisons narrowed to one-word coefficients; level 10 default (see `../money-form`) | 12 | 25 | 28 | 12 | 17 | 5 | 2 |
 
 The step before level 4 is level −1.
 
@@ -328,7 +338,7 @@ On darwin/arm64 (Apple Silicon, bootstrap Go 1.26.4) with
 `-run Test/codegen/decimal -all_codegen`, which checks the linux/amd64 and
 linux/arm64 code. The operator tests (`TestUBDKernel`, `TestUBDWellFormed`,
 `TestOperatorsRawUBD`, `TestOperators`, `TestOperatorZero`) also pass at
-levels 1, 2, 3 and −1. Each fast path was checked by breaking it on purpose
+levels 1, 2, 3, 9 and −1. Each fast path was checked by breaking it on purpose
 (its bound, the borrow, the sign of the result, the +0 of a cancellation, the
 opposite-sign guard) and seeing these tests fail.
 
