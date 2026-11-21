@@ -533,6 +533,26 @@ func (s *state) ubdComparePredCall(op ir.Op, xlo, xhi, ylo, yhi *ssa.Value) *ssa
 //
 //	x < y   x' < y'        x <= y  !(y' < x')
 //	x > y   y' < x'        x >= y  !(x' < y')
+//
+// This is deliberately the only inline comparison path at the default
+// level, a decision taken on size per call site. Measured on arm64 (bytes
+// added by each further comparison in a function, == and then <):
+//
+//	level 8, the predicate call alone           37   37
+//	level 9, this fast path, then the call     106  138
+//	level -1, the word comparison on UBD       282  320
+//	XOR-BID's inline comparison                586  650
+//
+// Operands of different exponents (1234.5678 == 2.5, 100 == 100.00) take
+// the call: about 5 ns where level -1 and XOR-BID decide them inline in
+// about 2.5 ns. That is accepted. Of level 9's 106 bytes only 11
+// instructions decide; the rest is the cost of a call that may happen:
+// Go's ABI saves no register across a call, so the values live at a
+// comparison are spilled, on the fast path too, and reloaded after the
+// call, and a function that may call needs a frame and a stack check.
+// Deciding more inline would grow every comparison site to cut the time
+// of some. A call that preserves registers, as the write barrier's does,
+// would remove most of that cost; it was considered and not pursued.
 func (s *state) ubdCompareFast(op ir.Op, xlo, xhi, ylo, yhi *ssa.Value) *ssa.Value {
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
 	zero := s.constInt64(u64, 0)
