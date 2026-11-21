@@ -468,7 +468,11 @@ goobjfile.pretty_printers.append(ifacematcher)
 # A decimal64 or decimal128 in memory is its IEEE 754 encoding XORed with
 # the encoding of 0E+0, so that all bits clear is 0E+0, and the high word of
 # a decimal128 is the one XORed (see d64load and d128load in the runtime).
-# The encoding is BID except on linux/ppc64le, where it is DPD. The DWARF
+# The encoding is BID except on linux/ppc64le, where it is DPD, and except
+# that a decimal128 is stored as UBD wherever decimal64 is BID: the high
+# word holds a 14-bit two's-complement exponent in bits 63..50, the sign in
+# bit 49 and the top 49 coefficient bits below it; all bits clear is 0E+0,
+# so nothing is XORed (see internal/bid/ubd.go). The DWARF
 # type is DW_ATE_decimal_float, which gdb would decode without undoing the
 # XOR, and in the libdecnumber format gdb was built with rather than the
 # target's, so DecimalPrinter decodes the bits itself. It applies wherever
@@ -488,9 +492,14 @@ DPD_ZERO128_HI = 0x2208000000000000
 
 
 def decimal_encoding(zero64, zero128hi):
-	"Return 'bid' or 'dpd' for the given encodings of 0E+0, or None."
+	"""Return 'bid', 'dpd' or 'ubd' for the given encodings of 0E+0, or None.
+
+	'ubd' is decimal64 in BID and decimal128 in UBD, whose 0E+0 is all bits
+	clear."""
 	if (zero64, zero128hi) == (BID_ZERO64, BID_ZERO128_HI):
 		return 'bid'
+	if (zero64, zero128hi) == (BID_ZERO64, 0):
+		return 'ubd'
 	if (zero64, zero128hi) == (DPD_ZERO64, DPD_ZERO128_HI):
 		return 'dpd'
 	return None
@@ -568,8 +577,44 @@ def decimal_string(x, width, encoding):
 		coeff = lead
 		for i in reversed(range(ndeclets)):
 			coeff = coeff*1000 + dpd_declet(x >> (10*i) & 0x3FF)
-	exp = biased - bias
+	return decimal_layout(neg, coeff, biased - bias)
 
+
+# UBD's decimal128 fields and special tags (internal/bid/ubd.go).
+UBD_EXP_SHIFT = 50
+UBD_SIGN = 1 << 49
+UBD_COEFF_MASK_HI = (1 << 49) - 1
+UBD_SPECIAL_TAG = 7  # hi >> 60
+UBD_INF_TAG = 14     # hi >> 59
+UBD_MIN_EXP, UBD_MAX_EXP = -6176, 6111  # decimal128's exponent range
+
+
+def ubd_string(lo, hi):
+	"""Return the character form of the UBD decimal128 with words lo and hi.
+
+	Every pattern reads as internal/bid.BIDFromUBD128 reads it: one with the
+	special tag is an infinity or a NaN by the next bit; a finite exponent
+	outside the format makes a NaN, and a coefficient above 10^34 - 1 is
+	zero. A program only ever stores well-formed patterns."""
+	neg = 1 if hi & UBD_SIGN else 0
+	if hi >> 60 == UBD_SPECIAL_TAG:
+		if hi >> 59 == UBD_INF_TAG:
+			return '-Infinity' if neg else 'Infinity'
+		return 'NaN'
+	exp = hi >> UBD_EXP_SHIFT
+	if exp >= 1 << 13:
+		exp -= 1 << 14
+	if exp < UBD_MIN_EXP or exp > UBD_MAX_EXP:
+		return 'NaN'
+	maxcoeff = DECIMAL_FORMATS[128][3]
+	coeff = (hi & UBD_COEFF_MASK_HI) << 64 | lo
+	if coeff > maxcoeff:
+		coeff = 0
+	return decimal_layout(neg, coeff, exp)
+
+
+def decimal_layout(neg, coeff, exp):
+	"""Return the to-scientific-string of (-1)^neg × coeff × 10^exp."""
 	digs = str(coeff)
 	n = len(digs)
 	adj = exp + n - 1  # the power of ten of the leading digit
@@ -592,8 +637,12 @@ def decimal_memory_string(words, encoding, zero64, zero128hi):
 	words in memory order: a decimal128 is its low word followed by its
 	high word on every target."""
 	if len(words) == 1:
+		if encoding == 'ubd':
+			encoding = 'bid'
 		return decimal_string(words[0] ^ zero64, 64, encoding)
 	lo, hi = words
+	if encoding == 'ubd':
+		return ubd_string(lo, hi ^ zero128hi)
 	return decimal_string((hi ^ zero128hi) << 64 | lo, 128, encoding)
 
 
