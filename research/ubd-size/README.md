@@ -104,8 +104,11 @@ The compiler calls only these entries of `internal/bid` for decimal128
 
 UBD's 14-bit qExp field holds −8192..8191, of which decimal128 uses
 −6176..6111 and the special tag 7168..8191. The 3072 values between have no
-meaning, nor has the special tag without the 0x1F coefficient prefix, nor
-a finite coefficient above 10^34 − 1. (BID
+meaning. Well-formed UBD is canonical UBD, exactly the patterns the
+conversion from BID produces; every other pattern is malformed, among them
+the special tag without the 0x1F coefficient prefix, a finite coefficient
+above 10^34 − 1, a NaN payload of 10^33 or more, and an infinity or NaN
+with bits set that its encoding does not use. (BID
 has no such gap: its exponent range fills its three non-`11` prefixes
 exactly.) UBD is internal and never read from an external source, so a
 malformed pattern can only come from a bug or from unsafe code:
@@ -117,9 +120,10 @@ malformed pattern can only come from a bug or from unsafe code:
   NaN. Its comment says it should be removed.
 - The UBD tests fail at once on a malformed operand or result.
 
-BID and DPD have non-canonical coefficients, which denote zero; the
-conversion to UBD makes them 0, so UBD has no non-canonical zero, and a
-finite value is zero exactly when its coefficient is 0. The `x == 0` test
+BID and DPD have non-canonical encodings, which IEEE 754 reads as a zero
+coefficient or a zero NaN payload; the conversion to UBD applies that
+reading, so UBD has no non-canonical encodings, and a finite value is zero
+exactly when its coefficient is 0. The `x == 0` test
 relies on this. Every UBD the compiled code makes is canonical: the kernel's
 results are, the add fast path's sum is below 2^112, the multiply path's
 product below 2^112, and the subtract path's difference no larger than an

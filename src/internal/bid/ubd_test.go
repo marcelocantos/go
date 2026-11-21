@@ -44,21 +44,33 @@ func ubdCanonical128(x bid.Uint128) bool {
 	return bid.UBDFromBID128(bid.BIDFromUBD128(x)) == x
 }
 
-// ubdWellFormed128 is the test's own statement of a well-formed UBD pattern
-// (bid.UBDWellFormed128), from the layout: a qExp in the format and a
-// coefficient below 10^34, or the special tag (qExp 7168 and up) with 0x1F
-// in the top five coefficient bits.
+// ubdWellFormed128 is the test's own statement of a well-formed (canonical)
+// UBD pattern (bid.UBDWellFormed128), from the layout, with qExp e and the
+// 113-bit coefficient c: a finite value has e in the format and c below
+// 10^34; an infinity has e 7168 and c the 0x1F prefix alone (c = 0x1F<<108);
+// a NaN has e 7680 + p (quiet) or 7936 + p (signaling) for p below 4, the
+// payload's top two bits, c's top five bits the prefix, and a payload
+// p<<108 + c mod 2^108 below 10^33.
 func ubdWellFormed128(x bid.Uint128) bool {
-	qExp := int(int64(x.Hi) >> 50)
-	if qExp >= 7168 {
-		return x.Hi>>44&0x1F == 0x1F
-	}
+	e := int(int64(x.Hi) >> 50)
 	c := new(big.Int).Lsh(new(big.Int).SetUint64(x.Hi&(1<<49-1)), 64)
 	c.Or(c, new(big.Int).SetUint64(x.Lo))
-	return -6176 <= qExp && qExp <= 6111 && c.Cmp(pow10_34) < 0
+	prefix := new(big.Int).Lsh(big.NewInt(0x1F), 108)
+	switch {
+	case -6176 <= e && e <= 6111:
+		return c.Cmp(pow10(34)) < 0
+	case e == 7168:
+		return c.Cmp(prefix) == 0
+	case 7680 <= e && e < 7684, 7936 <= e && e < 7940:
+		low := new(big.Int).Sub(c, prefix)
+		if low.Sign() < 0 || low.BitLen() > 108 {
+			return false
+		}
+		p := new(big.Int).Lsh(big.NewInt(int64(e&3)), 108)
+		return p.Add(p, low).Cmp(pow10(33)) < 0
+	}
+	return false
 }
-
-var pow10_34 = new(big.Int).Exp(big.NewInt(10), big.NewInt(34), nil)
 
 // mustWellFormed128 fails the test at once on a malformed UBD pattern, which
 // can only come from a bug: no input of these tests is malformed, so no
@@ -72,8 +84,8 @@ func mustWellFormed128(t *testing.T, what string, x bid.Uint128) {
 
 // ubdPool128 returns the UBD operands of TestUBDKernel: the conversions of
 // inlinePool128, which straddles the BID kernel's bounds; finite patterns at
-// the ends of the format's exponents and of the coefficient field; specials
-// canonical and not; and random values. All are well-formed: a malformed
+// the ends of the format's exponents and of the coefficient field; specials,
+// NaN payloads up to the largest; and random values. All are well-formed: a malformed
 // pattern can only come from a bug, and the contract leaves its results
 // unspecified (see "The UBD kernel contract" in ubd.go).
 func ubdPool128(t *testing.T) []bid.Uint128 {
@@ -107,15 +119,13 @@ func ubdPool128(t *testing.T) []bid.Uint128 {
 	pool = append(pool,
 		bid.Uint128{Hi: bid.UBDInfHi},
 		bid.Uint128{Hi: bid.UBDInfHi | bid.UBDSignHi},
-		bid.Uint128{Hi: bid.UBDInfHi | 1, Lo: 5}, // an infinity with coefficient bits
-		bid.Uint128{Hi: bid.UBDInfHi | 0x3F<<52}, // an infinity with the unused qExp bits set
 		bid.Uint128{Hi: bid.UBDNaNHi},
 		bid.Uint128{Hi: bid.UBDNaNHi | bid.UBDSignHi, Lo: 7},
 		bid.Uint128{Hi: bid.UBDSNaNHi, Lo: 42},
 		bid.Uint128{Hi: bid.UBDSNaNHi | bid.UBDSignHi, Lo: 9},
-		ubdNaN128(bid.UBDNaNHi, maxPayload),                                             // payload 10^33 - 1
-		ubdNaN128(bid.UBDSNaNHi, bid.Uint128{Hi: maxPayload.Hi, Lo: maxPayload.Lo + 1}), // 10^33, a zero payload
-		ubdNaN128(bid.UBDNaNHi|bid.UBDSignHi, bid.Uint128{Hi: 1<<46 - 1, Lo: 1<<64 - 1}),
+		ubdNaN128(bid.UBDNaNHi, maxPayload), // payload 10^33 - 1, the largest
+		ubdNaN128(bid.UBDSNaNHi|bid.UBDSignHi, maxPayload),
+		ubdNaN128(bid.UBDNaNHi|bid.UBDSignHi, bid.Uint128{Hi: 1 << 44}), // payload 2^108: its top bits in qExp
 	)
 
 	r := rand.New(rand.NewPCG(1, 128))
@@ -145,21 +155,54 @@ func ubdPool128(t *testing.T) []bid.Uint128 {
 }
 
 // TestUBDWellFormed checks bid.UBDWellFormed128 against the test's own
-// statement at every boundary of the qExp field and of the special prefix.
+// statement at every boundary of the qExp field, the coefficient, the
+// special prefix and the NaN payload, and checks that well-formed is
+// canonical: a pattern is well-formed exactly when the round trip through
+// BID gives it back.
 func TestUBDWellFormed(t *testing.T) {
 	var exps []int
-	for _, e := range []int{-8192, -6177, -6176, 6111, 6112, 7167, 7168, 7679, 7680, 8191} {
+	for _, e := range []int{-8192, -6177, -6176, 6111, 6112, 7167, 7168, 7423, 7424, 7679, 7680, 7683, 7684, 7935, 7936, 7939, 7940, 8191} {
 		exps = append(exps, e-1, e, e+1)
 	}
+	maxP := bid.MaxPayload128Hi & (1<<44 - 1) // the largest payload's coefficient bits, with e&3 = 3
+	his := []uint64{0, 1, 0x1E << 44, 0x1F << 44, 0x1F<<44 - 1, 0x1F<<44 | 1, 0x1F<<44 | maxP, 0x1F<<44 | maxP + 1,
+		0x1F<<44 | 1<<44 - 1, bid.MaxCoeff128Hi, bid.MaxCoeff128Hi + 1, bid.UBDCoeffMaskHi}
+	los := []uint64{0, 7, bid.MaxCoeff128Lo, bid.MaxCoeff128Lo + 1, bid.MaxPayload128Lo, bid.MaxPayload128Lo + 1, 1<<64 - 1}
+	check := func(x bid.Uint128) {
+		t.Helper()
+		got, want := bid.UBDWellFormed128(x), ubdWellFormed128(x)
+		if got != want {
+			t.Errorf("UBDWellFormed128(%#x) (qExp %d) = %v, want %v", x, int64(x.Hi)>>50, got, want)
+		}
+		if canon := ubdCanonical128(x); want != canon {
+			t.Errorf("%#x (qExp %d): well-formed %v, but canonical %v", x, int64(x.Hi)>>50, want, canon)
+		}
+	}
 	for _, e := range exps {
-		for _, c := range []uint64{0, 1, 0x1E << 44, 0x1F << 44, 0x1F<<44 - 1, bid.MaxCoeff128Hi, bid.MaxCoeff128Hi + 1, bid.UBDCoeffMaskHi} {
-			for _, neg := range []bool{false, true} {
-				x := ubd128(neg, e, c, 7)
-				if got, want := bid.UBDWellFormed128(x), ubdWellFormed128(x); got != want {
-					t.Errorf("UBDWellFormed128(%#x) (qExp %d) = %v, want %v", x, e, got, want)
+		for _, hi := range his {
+			for _, lo := range los {
+				for _, neg := range []bool{false, true} {
+					check(ubd128(neg, e, hi, lo))
 				}
 			}
 		}
+	}
+	// Random patterns, half of them under the special tag, with each of
+	// the six qExp bits below the tag and the prefix often set alone.
+	r := rand.New(rand.NewPCG(2, 128))
+	for range 100000 {
+		x := bid.Uint128{Hi: r.Uint64(), Lo: r.Uint64()}
+		if r.IntN(2) == 0 {
+			x.Hi = x.Hi&(1<<58-1) | uint64(28+r.IntN(4))<<58 | 0x1F<<44
+			if r.IntN(2) == 0 {
+				x.Hi &^= 0x3F << 52
+			}
+			if r.IntN(4) == 0 {
+				x.Hi &^= 1<<44 - 1
+				x.Lo = 0
+			}
+		}
+		check(x)
 	}
 }
 

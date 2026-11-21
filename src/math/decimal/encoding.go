@@ -96,9 +96,9 @@ func Native128bits(d decimal128) (hi, lo uint64) {
 
 // Native128frombits returns the decimal128 with the exact stored words hi
 // and lo, without encoding conversion. Where decimal128 is stored as UBD,
-// a pattern that is not well-formed UBD (a finite exponent outside the
-// format, a coefficient above 10^34 - 1, or the special tag without the
-// special coefficient prefix) is
+// a pattern that is not well-formed (canonical) UBD, such as a finite
+// exponent outside the format, a coefficient above 10^34 - 1 or a NaN
+// payload of 10^33 or more (see internal/bid.UBDWellFormed128), is
 // stored as a positive quiet NaN instead: those patterns have no meaning,
 // and the operators' inline paths assume they never occur. Every other
 // pattern is preserved, and Native128bits(Native128frombits(hi, lo))

@@ -13,12 +13,9 @@ import (
 	"unsafe"
 )
 
-// The compiled decimal128 operators on raw UBD memory. TestOperators builds
-// its operands with BID128frombits, which converts to canonical UBD, so the
-// well-formed patterns that only memory can hold (a NaN payload out of
-// range, unused bits in a special) never
-// reach the inline paths there. TestOperatorsRawUBD gives the compiled
-// operators every pair of ubdPool128, as stored words, and checks each
+// The compiled decimal128 operators on raw UBD memory. TestOperatorsRawUBD
+// gives the compiled operators every pair of ubdPool128, whose patterns sit
+// at the bounds of the inline paths, as stored words, and checks each
 // result against the BID function on the operands as the UBD kernel
 // contract reads them (see ubd.go): the inline paths must agree with the
 // kernel on every well-formed pattern, and must produce no malformed one.
