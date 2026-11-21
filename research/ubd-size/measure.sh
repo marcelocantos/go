@@ -7,7 +7,7 @@
 #
 # UBD_GCFLAGS, if set, is passed as -gcflags to the UBD builds, for example
 # UBD_GCFLAGS=-d=ubdlevel=1 for the kernel call alone at each call site, or
-# -d=ubdlevel=-1 for the inline paths derived from the BID lowering.
+# -d=ubdlevel=3 for the inline paths derived from the BID lowering.
 #
 # Writes out/{base,ubd}-{amd64,arm64}/ and prints both tables.
 set -euo pipefail

@@ -2,13 +2,13 @@
 
 Raw-word Go prototypes of decimal128 inline fast paths for three layouts,
 measured for code per call site and for the share of operations each sends
-to the general routine. The study led to `ubdlevel` 10 (UBD's add, subtract
+to the general routine. The study led to `ubdlevel` 10, now level 2 (UBD's add, subtract
 and comparison paths narrowed to one-word coefficients), now the default; the
 money form itself was not pursued.
 
 ## Layouts
 
-- **U:** UBD as the `ubd128` compiler lowers it at `ubdlevel` 9
+- **U:** UBD as the `ubd128` compiler lowered it at `ubdlevel` 9 (old numbering; those paths are now deleted)
   (`ssagen/bid.go`), transcribed to Go source.
 - **N:** UBD with the add, subtract and comparison paths narrowed to
   one-word coefficients: one guard, `(xh ^ yh) | xh<<15 == 0`. Same sign

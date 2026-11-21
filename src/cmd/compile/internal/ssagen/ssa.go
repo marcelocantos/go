@@ -3397,10 +3397,9 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			}
 		}
 
-		// On a UBD target, x == 0 and x != 0 are inline from ubdLevel 6 and
-		// the ordered comparisons with zero from ubdLevel 7, with no call
-		// (bidIsZero, ubdCompareZeroOrdered).
-		if n.X.Type().IsDecimal() && !ir.DecimalDPD() && (!bidCallOnly(a) || ubdLevel() >= 7 || ubdLevel() >= 6 && (n.Op() == ir.OEQ || n.Op() == ir.ONE)) {
+		// On a UBD target, the comparisons with zero are inline from
+		// ubdLevel 2, with no call (bidIsZero, ubdCompareZeroOrdered).
+		if n.X.Type().IsDecimal() && !ir.DecimalDPD() && (!bidCallOnly(a) || ubdLevel() >= 2) {
 			// Inspect already evaluated SSA values, before OGT/OGE are
 			// reversed. This also recognizes simple locals initialized to
 			// zero, at any quantum, without assuming anything about loads.
@@ -3412,7 +3411,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			}
 		}
 
-		if n.X.Type().IsDecimal() && bidCallOnly(a) && ubdLevel() >= 8 {
+		if n.X.Type().IsDecimal() && bidCallOnly(a) {
 			return s.ubdComparePred(n.Op(), a, b)
 		}
 

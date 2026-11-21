@@ -132,9 +132,9 @@ var dpdArith = map[opAndType]ssaop.Op{
 func (s *state) decimalOp(op ir.Op, rt *types.Type, args ...*ssa.Value) *ssa.Value {
 	if bidCallOnly(args[0]) {
 		if ubdLevel() >= 2 && (op == ir.OADD || op == ir.OSUB) {
-			return s.ubdAddFast(op, rt, args[0], args[1])
+			return s.ubdAddNarrow(op, rt, args[0], args[1])
 		}
-		if ubdLevel() >= 5 && op == ir.OMUL {
+		if ubdLevel() >= 2 && op == ir.OMUL {
 			return s.ubdMulFast(rt, args[0], args[1])
 		}
 		return s.softDecimalOp(op, rt, args...)

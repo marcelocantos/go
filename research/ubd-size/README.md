@@ -27,19 +27,20 @@ decimal128-go's add fast paths in front of `+` and `-` and its multiply
 fast path in front of `*`:
 
 - **`x + y`:** decimal128-go's first-level path (`d128_add_rnd_ctxnull`),
-  narrowed to one-word coefficients (level 10): one guard,
+  narrowed to one-word coefficients: one guard,
   `(xh ^ yh) | xh<<15 == 0` (equal qExp and sign, and no coefficient bits in
   the high word, which also excludes the specials), then `ADD; ADC $0` with
   x's qExp and sign riding along in its high word. Every other pair,
-  including coefficients of 2^64 or more, calls `ubdAddTTE128`. (Level 9
-  takes coefficients up to 2^112 with a second test.)
+  including coefficients of 2^64 or more, calls `ubdAddTTE128`. (The
+  two-word path it replaced, old level 9, took coefficients up to 2^112
+  with a second test; deleted.)
 - **`x - y`:** decimal128-go's second-level path (the first test of
   `d128_add_slow_rnd_ctxnull`), for operands of one sign and one qExp, which
-  are an effective subtraction, narrowed to one-word coefficients (level
-  10): `+`'s guard, one borrow, the difference negated by the borrow's mask
-  with the sign flipped, an exact zero +0. Every other pair calls
-  `ubdSubTTE128`. (Level 9 takes coefficients up to 2^112 with a two-word
-  borrow chain.)
+  are an effective subtraction, narrowed to one-word coefficients: `+`'s
+  guard, one borrow, the difference negated by the borrow's mask with the
+  sign flipped, an exact zero +0. Every other pair calls `ubdSubTTE128`.
+  (The path it replaced, old level 9, took coefficients up to 2^112 with a
+  two-word borrow chain; deleted.)
 - **`x * y`:** decimal128-go's first-level multiply path, narrowed: both
   coefficients below 2^56 (the high words' coefficient bits clear and the low
   words below 2^56, one OR'd test) and the qExp sum in range (one unsigned
@@ -62,10 +63,11 @@ fast path in front of `*`:
   `x < 0` and `x >= 0` are the same tests on `-v` (−0 gives the least int64,
   which negation keeps). A NaN, found by its tag `hi>>59 == 15`, branches to
   false.
-- **`x == y`, `x != y`, `x < y`, `x <= y`, `x > y`, `x >= y`:** at level
-  10, `+`'s guard (one qExp, one sign, one-word coefficients, so no NaN tag
-  test), then `xl == yl`, or the low words XORed with the sign mask and
-  compared once. At level 9: decimal128-go's first-level guard, one qExp and
+- **`x == y`, `x != y`, `x < y`, `x <= y`, `x > y`, `x >= y`:** `+`'s
+  guard (one qExp, one sign, one-word coefficients, so no NaN tag test),
+  then `xl == yl`, or the low words XORed with the sign mask and compared
+  once. The two-word path it replaced (old level 9, deleted) was
+  decimal128-go's first-level guard, one qExp and
   one sign (`(xh ^ yh) >> 49 == 0`), and not NaN (`xh>>59 != 15`, since NaNs
   of one sign share a qExp field), then inline. With the top 15 bits equal, the
   128-bit words compare as the coefficients do: a canonical value equals
@@ -79,25 +81,29 @@ fast path in front of `*`:
   `decimal.Quantize`, `decimal.Round` and the other integral roundings) is
   the kernel call alone.
 
-`-d=ubdlevel=N` selects how much is inlined, so that each fast path can be
-measured against the call alone:
+`-d=ubdlevel=N` selects how much is inlined. The baseline every level is
+measured against is Marcelo's XOR-BID toolchain (`5032fd77`), a different
+storage format that no level reproduces.
 
 | Level | Inline fast paths |
 |---|---|
-| 1 | none: every operation is its kernel call |
-| 2 | first-level add path, at `+` and `-` |
-| 3 | first- and second-level add paths, at both `+` and `-` |
-| 4 | first level at `+`, second level at `-` |
-| 5 | level 4, and the first-level multiply path at `*` |
-| 6 | level 5, and `x == 0`, `x != 0` inline |
-| 7 | level 6, and `x < 0`, `x <= 0`, `x > 0`, `x >= 0` inline |
-| 8 | level 7, and comparisons of two values call the predicate entries |
-| 9 | level 8, and those comparisons inline for one qExp and one sign |
-| **10** (default, `0`) | level 9 with the add, subtract and comparison paths narrowed to one-word coefficients |
-| −1 | the inline paths derived from the BID lowering (see History) |
+| 1 | none: every operation is its kernel call (comparisons call the predicate entries); the smallest code |
+| **2** (default, `0`) | the narrowed paths above: `+` and `-` with one-word coefficients, `*` with coefficients below 2^56, comparisons with zero with no call, comparisons of two values with one-word coefficients |
+| 3 | the inline paths derived from the BID lowering (see History), the same kernel calls behind them; the most code |
 
-From level 4, `5.00 + 3.00` and `5.00 - 3.00` are inline; `5.00 + -3.00` and
-`5.00 - -3.00`, operands of opposite signs, call the kernel.
+Any other value is a usage error. At level 2, `5.00 + 3.00` and
+`5.00 - 3.00` are inline; `5.00 + -3.00` and `5.00 - -3.00`, operands of
+opposite signs, call the kernel.
+
+Until 2026-11-22 there were levels 1 to 10 and −1, adding paths one at a
+time. The tables below and the History keep the old numbers; they map as:
+
+| Old level | Now |
+|---|---|
+| 1 (kernel calls; comparisons called `ubdCompare128`) | 1 (comparisons call the predicate entries, as old 8 did) |
+| 2–9 (two-word add and comparison paths, added in steps) | removed; the two-word paths were deleted |
+| 10 (narrowed paths, the default) | 2, the default |
+| −1 (BID-derived paths) | 3 |
 
 ## The UBD kernel contract
 
@@ -180,11 +186,11 @@ branch).
 - `internal/bid/native.go`: decimal128's native form is UBD; its zero mask
   is 0.
 - `cmd/compile/internal/ssagen/bid.go`, `dpd.go`, `bid_round.go`,
-  `intrinsics.go`: the UBD lowering (`ubdLevel`, `bidCallOnly`, `ubdAddFast`)
+  `intrinsics.go`: the UBD lowering (`ubdLevel`, `bidCallOnly`, `ubdAddNarrow`)
   and the kernel calls; `math/decimal.Quantize[shape]` is recognized with a
   constant mode, as `Round` and its relatives already were. The BID-derived
   inline paths in `bid.go`, `bid_compare.go` and `bid_round.go` use UBD bit
-  positions and remain for level −1.
+  positions and remain for level 3.
 - `cmd/compile/internal/base/debug.go`: `-d=ubdlevel`.
 - `cmd/compile/internal/ssacompile/softdecimal.go`: negation flips bit 49.
 - `cmd/compile/internal/ir/decimal.go`: constants are encoded as UBD.
@@ -218,6 +224,7 @@ Run:
 ```
 ./measure.sh BASE_GOROOT UBD_GOROOT
 UBD_GCFLAGS=-d=ubdlevel=1 ./measure.sh BASE_GOROOT UBD_GOROOT
+UBD_GCFLAGS=-d=ubdlevel=3 ./measure.sh BASE_GOROOT UBD_GOROOT
 ```
 
 where each GOROOT is a toolchain built with `src/make.bash` (bootstrap: Go
@@ -228,7 +235,7 @@ darwin/arm64 with `GOOS=linux`.
 
 ## Results (2026-11-20)
 
-### Inline code per call site, default (level 10; measured 2026-11-21)
+### Inline code per call site, default (level 2, old 10; measured 2026-11-21)
 
 | Op | amd64 instr | amd64 bytes | arm64 instr | arm64 bytes |
 |---|---|---|---|---|
@@ -244,26 +251,26 @@ darwin/arm64 with `GOOS=linux`.
 | `Round` | 58 → 3 (−95%) | 248 → 11 (−96%) | 42 → 4 (−90%) | 168 → 16 (−90%) |
 
 XOR-BID → UBD. Per extra `+` in a longer expression (`scale/`): amd64 162 →
-16 instructions (695 → 67 bytes), arm64 109 → 13 (437 → 52). At level 9 the
-four narrowed rows were `+` 17 / 12, `-` 41 / 26, `==` 18 / 12 and `<` 21 /
+16 instructions (695 → 67 bytes), arm64 109 → 13 (437 → 52). With old level
+9's two-word paths (deleted) the four narrowed rows were `+` 17 / 12, `-` 41 / 26, `==` 18 / 12 and `<` 21 /
 16 instructions (amd64 / arm64), and the extra `+` 23 / 17.
 
 A call site of `x / y` on amd64 is the 5-byte `CALL ubdDivTTE128` and a
 1-byte `NOP`; the operands are already in the registers the entry takes.
 `x == y` is the call and the test of its result.
 
-### `x + y` and `x - y` by level
+### `x + y` and `x - y` by level (old numbering)
 
-| Level | `+` amd64 | `-` amd64 | `+` arm64 | `-` arm64 | per extra `+`, amd64 |
+| Old level | `+` amd64 | `-` amd64 | `+` arm64 | `-` arm64 | per extra `+`, amd64 |
 |---|---|---|---|---|---|
-| 1: call alone | 2 (6 B) | 2 (6 B) | 3 | 3 | 5 (29 B) |
+| 1 (now 1): call alone | 2 (6 B) | 2 (6 B) | 3 | 3 | 5 (29 B) |
 | 2: first level | 17 (60 B) | 21 (77 B) | 12 | 14 | 23 (96 B) |
 | 3: both levels | 52 (190 B) | 55 (205 B) | 33 | 35 | 57 (227 B) |
 | 4–9 | 17 (60 B) | 41 (150 B) | 12 | 26 | 23 (96 B) |
-| **10 (default)**: narrowed to one-word coefficients | **12 (37 B)** | **25 (87 B)** | **8** | **14** | **16 (67 B)** |
-| −1: BID-derived | 101 (383 B) | 102 (388 B) | 74 | 76 | 111 (446 B) |
+| **10 (now 2, the default)**: narrowed to one-word coefficients | **12 (37 B)** | **25 (87 B)** | **8** | **14** | **16 (67 B)** |
+| −1 (now 3): BID-derived | 101 (383 B) | 102 (388 B) | 74 | 76 | 111 (446 B) |
 
-The first-level path on amd64:
+Old level 2's first-level path on amd64 (two-word, deleted):
 
 ```
 MOVQ $0x1ffffffffffff, DX ; ANDQ DI, DX     ; yc, the one constant
@@ -309,7 +316,7 @@ again at each use (`ssacompile/regalloc.go`), a 10-byte load on amd64.
 ### History
 
 The UBD build reached the default in steps, each measured with this harness
-(amd64 instructions per call site):
+(amd64 instructions per call site; levels in the old numbering):
 
 | Step | `+` | `-` | `*` | `==` | `<` | `== 0` | Quantize |
 |---|---|---|---|---|---|---|---|
@@ -329,8 +336,9 @@ The UBD build reached the default in steps, each measured with this harness
 | Comparisons inline for one qExp and one sign; level 9 default (`32e19bc3`) | 17 | 41 | 28 | 18 | 21 | 5 | 2 |
 | arm64 rule: a borrow read from the flags (arm64 `<`: 18 → 16) | 17 | 41 | 28 | 18 | 21 | 5 | 2 |
 | Add, subtract and comparisons narrowed to one-word coefficients; level 10 default (see `../money-form`) | 12 | 25 | 28 | 12 | 17 | 5 | 2 |
+| Levels renumbered: 1 calls only, 2 narrowed (default), 3 BID-derived; the two-word paths deleted | 12 | 25 | 28 | 12 | 17 | 5 | 2 |
 
-The step before level 4 is level −1.
+The step before old level 4 is old level −1, now level 3.
 
 ## Correctness
 
@@ -342,7 +350,8 @@ On darwin/arm64 (Apple Silicon, bootstrap Go 1.26.4) with
 `-run Test/codegen/decimal -all_codegen`, which checks the linux/amd64 and
 linux/arm64 code. The operator tests (`TestUBDKernel`, `TestUBDWellFormed`,
 `TestOperatorsRawUBD`, `TestOperators`, `TestOperatorZero`) also pass at
-levels 1, 2, 3, 9 and −1. Each fast path was checked by breaking it on purpose
+levels 1 and 3, and passed at the old levels 1, 2, 3, 9 and −1 before the
+renumbering. Each fast path was checked by breaking it on purpose
 (its bound, the borrow, the sign of the result, the +0 of a cancellation, the
 opposite-sign guard) and seeing these tests fail.
 

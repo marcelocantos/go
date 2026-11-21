@@ -56,7 +56,7 @@ func Less64(x, y decimal64) bool {
 
 func Add128(x, y decimal128) decimal128 {
 	// ppc64le:"DADDQ" -"CALL"
-	// UBD (the default, ubdLevel 10): decimal128-go's first-level add path
+	// UBD (the default, ubdLevel 2): decimal128-go's first-level add path
 	// narrowed to one-word coefficients, one guard ((xh^yh) | xh<<15 == 0),
 	// in front of the kernel's ties-to-even entry; operands of opposite
 	// signs go to the kernel.
@@ -67,7 +67,7 @@ func Add128(x, y decimal128) decimal128 {
 
 func Sub128(x, y decimal128) decimal128 {
 	// ppc64le:"DSUBQ" -"CALL"
-	// UBD (the default, ubdLevel 10): the second-level add path narrowed to
+	// UBD (the default, ubdLevel 2): the second-level add path narrowed to
 	// one-word coefficients: one borrow, the difference negated by the
 	// borrow's mask, +0 for an exact zero; in front of the kernel's
 	// ties-to-even entry.
@@ -78,7 +78,7 @@ func Sub128(x, y decimal128) decimal128 {
 
 func Mul128(x, y decimal128) decimal128 {
 	// ppc64le:"DMULQ" -"CALL"
-	// UBD (the default, ubdLevel 5 and up): decimal128-go's first-level
+	// UBD (the default, ubdLevel 2): decimal128-go's first-level
 	// multiply path, coefficients below 2^56, in front of the kernel's
 	// ties-to-even entry.
 	// arm64:"UMULH" "CALL internal/bid.ubdMulTTE128" -"CALL runtime.dmul128"
@@ -88,7 +88,7 @@ func Mul128(x, y decimal128) decimal128 {
 
 func Eq128(x, y decimal128) bool {
 	// ppc64le:"DCMPUQ" -"CALL"
-	// UBD (the default, ubdLevel 10): operands of one qExp and one sign and
+	// UBD (the default, ubdLevel 2): operands of one qExp and one sign and
 	// one-word coefficients compared inline, with no NaN tag test (a NaN's
 	// coefficient prefix is in the high word), in front of the kernel's
 	// predicate entry.
@@ -98,9 +98,9 @@ func Eq128(x, y decimal128) bool {
 }
 
 func Less128(x, y decimal128) bool {
-	// UBD (the default, ubdLevel 10): the low words XORed with the sign
+	// UBD (the default, ubdLevel 2): the low words XORed with the sign
 	// mask and compared once, no borrow chain, in front of the kernel's
-	// predicate entry. (At ubdLevel 9 the two-word borrow is read from the
+	// predicate entry. (In the deleted two-word path the borrow was read from the
 	// flags by an ARM64.rules rule: CSET LO, not NGC; CMN.)
 	// arm64:"ORR\tR[0-9]+<<15" "CSET\tHI" -"SBCS" -"NGC" "CALL internal/bid.ubdLess128" -"ubdCompare128"
 	// amd64:"SHLQ\t[$]15" "SETHI" -"SBBQ" "CALL internal/bid.ubdLess128" -"ubdCompare128"
@@ -127,7 +127,7 @@ func Nonzero64(x decimal64) bool {
 }
 
 func Zero128(x decimal128) bool {
-	// UBD (the default, ubdLevel 9): the coefficient bits, (hi<<15)|lo,
+	// UBD (the default, ubdLevel 2): the coefficient bits, (hi<<15)|lo,
 	// tested inline; a special's coefficient prefix makes it nonzero.
 	// arm64:"ORR" -"CALL"
 	// amd64:"SHLQ" -"CALL"
@@ -135,7 +135,7 @@ func Zero128(x decimal128) bool {
 }
 
 func Nonzero128(x decimal128) bool {
-	// UBD (the default, ubdLevel 9): the coefficient bits, (hi<<15)|lo,
+	// UBD (the default, ubdLevel 2): the coefficient bits, (hi<<15)|lo,
 	// tested inline; a special's coefficient prefix makes it nonzero.
 	// arm64:"ORR" -"CALL"
 	// amd64:"SHLQ" -"CALL"
@@ -167,28 +167,28 @@ func GreaterEqualZero64(x decimal64) bool {
 }
 
 func LessZero128(x decimal128) bool {
-	// UBD (the default, ubdLevel 9): inline, with no call.
+	// UBD (the default, ubdLevel 2): inline, with no call.
 	// arm64:"ORR" -"CALL"
 	// amd64:"SHLQ" -"CALL"
 	return 0.00 > x
 }
 
 func LessEqualZero128(x decimal128) bool {
-	// UBD (the default, ubdLevel 9): inline, with no call.
+	// UBD (the default, ubdLevel 2): inline, with no call.
 	// arm64:"ORR" -"CALL"
 	// amd64:"SHLQ" -"CALL"
 	return 0.00 >= x
 }
 
 func GreaterZero128(x decimal128) bool {
-	// UBD (the default, ubdLevel 9): inline, with no call.
+	// UBD (the default, ubdLevel 2): inline, with no call.
 	// arm64:"ORR" -"CALL"
 	// amd64:"SHLQ" -"CALL"
 	return x > 0
 }
 
 func GreaterEqualZero128(x decimal128) bool {
-	// UBD (the default, ubdLevel 9): inline, with no call.
+	// UBD (the default, ubdLevel 2): inline, with no call.
 	// arm64:"ORR" -"CALL"
 	// amd64:"SHLQ" -"CALL"
 	return x >= 0
