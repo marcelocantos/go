@@ -315,23 +315,39 @@ func bidCallOnly(x *ssa.Value) bool {
 // narrowed to operands whose coefficients fit the low word. Every other
 // pair is the kernel call.
 //
-// The guard is one test: the high words are equal (one qExp, one sign) and
-// x's holds no coefficient bits, (xh ^ yh) | xh<<15 == 0. That also
-// excludes the specials, whose coefficients have the 0x1F prefix in the
-// high word.
+// The guard is one test: the high words are equal but for the sign (one
+// qExp) and x's holds no coefficient bits, ((xh ^ yh) &^ sign) | xh<<15
+// == 0. That also excludes the specials, whose coefficients have the 0x1F
+// prefix in the high word. The signs may differ: a debit added to a
+// credit took the kernel call before, and with one amount in ten negative
+// an add of random cents pairs took 4.4 ns against decimal64's 3.3; it now
+// takes 2.9.
 //
-// x + y: the coefficients add with a carry into the high word, below 2^65
-// and so below 10^34: exact. x - y of one sign is an effective subtraction:
-// the low words subtract, a borrow means |y| > |x|, so the difference is
-// negated and the sign flipped; an exact zero is +0 (IEEE 754-2019 clause
-// 6.3, ties to even). The qExp and sign ride along in xh.
+// Computing both results and selecting one, instead of branching, was
+// measured and rejected (Apple M3 Pro, cents amounts at one exponent).
+// It takes a flat 2.3 ns per add of random pairs at any mix of signs, but
+// the branch is faster below about 5% negative amounts (1.8 ns at 1%, 2.5
+// at 5%, 2.9 at 10%), and a running total s += x, whose adds form one
+// dependency chain, takes 1.8 ns per add with the select against 0.7 to
+// 0.9 with the branch at every rate up to 10%. On arm64 a function that
+// returns x + y is 40 instructions with the select, 36 with the branch and
+// 24 when mixed signs took the call.
+//
+// A second branch chooses the operation. It is an effective addition when
+// x + y has one sign or x - y has two: the coefficients add with a carry
+// into the high word, below 2^65 and so below 10^34: exact, with x's sign.
+// Otherwise it is an effective subtraction: the low words subtract, a
+// borrow means |y| > |x|, so the difference is negated and the sign
+// flipped; an exact zero is +0 (IEEE 754-2019 clause 6.3, ties to even).
+// The qExp and sign ride along in xh.
 func (s *state) ubdAddNarrow(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value {
 	result := ssaMarker("ubdadd1") // one per lowering; see bidAddSub128
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
 	zero := s.constInt64(u64, 0)
 	xh, yh := s.newValue1(ssaop.OpDecimal128Hi, u64, x), s.newValue1(ssaop.OpDecimal128Hi, u64, y)
 	xl, yl := s.newValue1(ssaop.OpDecimal128Lo, u64, x), s.newValue1(ssaop.OpDecimal128Lo, u64, y)
-	guard := s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpXor64, u64, xh, yh),
+	signs := s.newValue2(ssaop.OpXor64, u64, xh, yh)
+	guard := s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpAnd64, u64, signs, s.constInt64(u64, ^int64(bid.UBDSignHi))),
 		s.newValue2(ssaop.OpLsh64x64, u64, xh, s.constInt64(u64, 64-bid.UBDExpShift+1)))
 
 	bSlow := s.f.NewBlock(block.BlockPlain)
@@ -344,19 +360,34 @@ func (s *state) ubdAddNarrow(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	b.AddEdgeTo(bFast)
 	b.AddEdgeTo(bSlow)
 	s.startBlock(bFast)
-	if op == ir.OADD {
-		sum := s.newValue3(ssaop.OpAdd64carry, types.NewTuple(u64, u64), xl, yl, zero)
-		hi := s.newValue1(ssaop.OpSelect0, u64, s.newValue3(ssaop.OpAdd64carry, types.NewTuple(u64, u64), xh, zero, s.newValue1(ssaop.OpSelect1, u64, sum)))
-		s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, s.newValue1(ssaop.OpSelect0, u64, sum), hi)
-	} else {
-		d := s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), xl, yl, zero)
-		m := s.newValue2(ssaop.OpSub64, u64, zero, s.newValue1(ssaop.OpSelect1, u64, d)) // all ones on a borrow
-		lo := s.newValue2(ssaop.OpSub64, u64, s.newValue2(ssaop.OpXor64, u64, s.newValue1(ssaop.OpSelect0, u64, d), m), m)
-		hi := s.newValue2(ssaop.OpXor64, u64, xh, s.newValue2(ssaop.OpAnd64, u64, m, s.constInt64(u64, bid.UBDSignHi)))
-		cancelled := s.newValue2(ssaop.OpEq64, boolT, lo, zero)
-		hi = s.newValue3(ssaop.OpCondSelect, u64, s.newValue2(ssaop.OpAnd64, u64, hi, s.constInt64(u64, ^int64(bid.UBDSignHi))), hi, cancelled)
-		s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, hi)
+	// x + y subtracts when the signs differ, x - y when they agree.
+	differ := s.newValue2(ssaop.OpAnd64, u64, signs, s.constInt64(u64, bid.UBDSignHi))
+	effSub := s.newValue2(ssaop.OpNeq64, boolT, differ, zero)
+	if op != ir.OADD {
+		effSub = s.newValue2(ssaop.OpEq64, boolT, differ, zero)
 	}
+	bf := s.endBlock()
+	bf.Kind = block.BlockIf
+	bf.SetControl(effSub)
+	bSub := s.f.NewBlock(block.BlockPlain)
+	bAdd := s.f.NewBlock(block.BlockPlain)
+	bf.AddEdgeTo(bSub)
+	bf.AddEdgeTo(bAdd)
+	// The effective addition.
+	s.startBlock(bAdd)
+	sum := s.newValue3(ssaop.OpAdd64carry, types.NewTuple(u64, u64), xl, yl, zero)
+	shi := s.newValue1(ssaop.OpSelect0, u64, s.newValue3(ssaop.OpAdd64carry, types.NewTuple(u64, u64), xh, zero, s.newValue1(ssaop.OpSelect1, u64, sum)))
+	s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, s.newValue1(ssaop.OpSelect0, u64, sum), shi)
+	s.endBlock().AddEdgeTo(bAfter)
+	// The effective subtraction.
+	s.startBlock(bSub)
+	d := s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), xl, yl, zero)
+	m := s.newValue2(ssaop.OpSub64, u64, zero, s.newValue1(ssaop.OpSelect1, u64, d)) // all ones on a borrow
+	dlo := s.newValue2(ssaop.OpSub64, u64, s.newValue2(ssaop.OpXor64, u64, s.newValue1(ssaop.OpSelect0, u64, d), m), m)
+	dhi := s.newValue2(ssaop.OpXor64, u64, xh, s.newValue2(ssaop.OpAnd64, u64, m, s.constInt64(u64, bid.UBDSignHi)))
+	cancelled := s.newValue2(ssaop.OpEq64, boolT, dlo, zero)
+	dhi = s.newValue3(ssaop.OpCondSelect, u64, s.newValue2(ssaop.OpAnd64, u64, dhi, s.constInt64(u64, ^int64(bid.UBDSignHi))), dhi, cancelled)
+	s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, dlo, dhi)
 	s.endBlock().AddEdgeTo(bAfter)
 
 	s.startBlock(bSlow)
@@ -471,8 +502,8 @@ func (s *state) ubdComparePredCall(op ir.Op, xlo, xhi, ylo, yhi *ssa.Value) *ssa
 // ubdLevel 2: inline when the operands have one qExp, one sign and
 // one-word coefficients (decimal128-go's first-level comparison guard,
 // narrowed), else the predicate entry's call (ubdComparePredCall).
-// The guard is ubdAddNarrow's, (xh ^ yh) | xh<<15 == 0: one qExp, one sign
-// and coefficients below 2^64, which excludes NaN with no tag test. The
+// The guard is (xh ^ yh) | xh<<15 == 0, ubdAddNarrow's with the sign bit
+// kept: one qExp, one sign and coefficients below 2^64, which excludes NaN with no tag test. The
 // values are then equal exactly when the low words are, and ordered as the
 // low words are, reversed for a negative sign by XORing both with the sign
 // mask m.
