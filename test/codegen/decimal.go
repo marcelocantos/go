@@ -60,8 +60,8 @@ func Add128(x, y decimal128) decimal128 {
 	// narrowed to one-word coefficients, one guard (((xh^yh) &^ sign) |
 	// xh<<15 == 0), in front of the kernel's ties-to-even entry; operands
 	// of opposite signs take the effective subtraction inline.
-	// amd64:"SHLQ\t[$]15" "ADCQ\t[$]0" "CALL internal/bid.ubdAddTTE128" -"NEGQ" -"CALL runtime.dadd128"
-	// arm64:"ORR\tR[0-9]+<<15" "ADC" "CALL internal/bid.ubdAddTTE128" -"CSNEG" -"CALL runtime.dadd128"
+	// amd64:"SHLQ [$]15" "BTRQ [$]49" "ADCQ [$]0" "SBBQ" "CALL internal/bid.ubdAddTTE128" -"NEGQ" -"CALL runtime.dadd128"
+	// arm64:"ORR R[0-9]+<<15" "TBZ [$]49" "ADC" "NGC" "CALL internal/bid.ubdAddTTE128" -"CSNEG" -"CALL runtime.dadd128"
 	return x + y
 }
 
@@ -71,8 +71,8 @@ func Sub128(x, y decimal128) decimal128 {
 	// one-word coefficients: one borrow, the difference negated by the
 	// borrow's mask, +0 for an exact zero; in front of the kernel's
 	// ties-to-even entry.
-	// arm64:"ORR\tR[0-9]+<<15" "NGC" "CSEL" -"SBCS" "CALL internal/bid.ubdSubTTE128" -"CALL runtime.dsub128"
-	// amd64:"SHLQ\t[$]15" "SBBQ" "CMOVQEQ" "CALL internal/bid.ubdSubTTE128" -"CALL runtime.dsub128"
+	// arm64:"ORR R[0-9]+<<15" "NGC" "CSEL" -"SBCS" "CALL internal/bid.ubdSubTTE128" -"CALL runtime.dsub128"
+	// amd64:"SHLQ [$]15" "SBBQ" "CMOVQEQ" "CALL internal/bid.ubdSubTTE128" -"CALL runtime.dsub128"
 	return x - y
 }
 
@@ -92,8 +92,8 @@ func Eq128(x, y decimal128) bool {
 	// one-word coefficients compared inline, with no NaN tag test (a NaN's
 	// coefficient prefix is in the high word), in front of the kernel's
 	// predicate entry.
-	// arm64:"ORR\tR[0-9]+<<15" -"LSR\t[$]59" "CALL internal/bid.ubdEqual128" -"ubdCompare128" -"UMULH" -"CALL runtime.deq128"
-	// amd64:"SHLQ\t[$]15" -"SHRQ\t[$]59" "CALL internal/bid.ubdEqual128" -"ubdCompare128" -"MULX?Q" -"CALL runtime.deq128"
+	// arm64:"ORR R[0-9]+<<15" -"LSR [$]59" "CALL internal/bid.ubdEqual128" -"ubdCompare128" -"UMULH" -"CALL runtime.deq128"
+	// amd64:"SHLQ [$]15" -"SHRQ [$]59" "CALL internal/bid.ubdEqual128" -"ubdCompare128" -"MULX?Q" -"CALL runtime.deq128"
 	return x == y
 }
 
@@ -102,15 +102,15 @@ func Less128(x, y decimal128) bool {
 	// mask and compared once, no borrow chain, in front of the kernel's
 	// predicate entry. (In the deleted two-word path the borrow was read from the
 	// flags by an ARM64.rules rule: CSET LO, not NGC; CMN.)
-	// arm64:"ORR\tR[0-9]+<<15" "CSET\tHI" -"SBCS" -"NGC" "CALL internal/bid.ubdLess128" -"ubdCompare128"
-	// amd64:"SHLQ\t[$]15" "SETHI" -"SBBQ" "CALL internal/bid.ubdLess128" -"ubdCompare128"
+	// arm64:"ORR R[0-9]+<<15" "CSET HI" -"SBCS" -"NGC" "CALL internal/bid.ubdLess128" -"ubdCompare128"
+	// amd64:"SHLQ [$]15" "SETHI" -"SBBQ" "CALL internal/bid.ubdLess128" -"ubdCompare128"
 	return x < y
 }
 
 func Greater128(x, y decimal128) bool {
 	// UBD: its own entry, with the operands where they are.
-	// arm64:"ORR\tR[0-9]+<<15" -"SBCS" "CALL internal/bid.ubdGreater128" -"ubdLess128"
-	// amd64:"SHLQ\t[$]15" -"SBBQ" "CALL internal/bid.ubdGreater128" -"ubdLess128"
+	// arm64:"ORR R[0-9]+<<15" -"SBCS" "CALL internal/bid.ubdGreater128" -"ubdLess128"
+	// amd64:"SHLQ [$]15" -"SBBQ" "CALL internal/bid.ubdGreater128" -"ubdLess128"
 	return x > y
 }
 
