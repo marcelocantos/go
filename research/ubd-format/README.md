@@ -478,3 +478,60 @@ estimate. It would show in no app, only in text input (JSON, CSV,
 databases), and it means changing both kernel copies of the short path
 (BID and UBD). Left as an option if text-input speed becomes part of the
 argument.
+
+## The fixed short path to the end of its buffer
+
+At the user's request the 'f' short path takes every short coefficient
+(at most eight digits) whose form fits ShortLen128 with its sign: up to
+thirteen places, "0." and thirteen digits, fifteen bytes. Before, it
+stopped at seven, where every digit shown lies within the word
+eightQuads gives.
+
+At eight places or more the value is below one and the form is fixed:
+"0.", frac-8 zeros and the eight digits of the coefficient, zeros on the
+left. Its tail (last eight bytes) is the eightQuads word itself and its
+head (first eight) is the lead with the first digits after it, so two
+overlapping eight-byte stores write any length from ten to fifteen.
+PutShort128's stores (three bytes and three of four) cover at most nine:
+putFour masks its index to three bits, so they cannot be stretched.
+
+First version, rejected: a branch on frac >= 8 inside ShortForm128 and
+PutShort128. Neither inlines (ShortForm128 costs 241), so the branch sat
+on every short value, and the money rows came out 3-4% slower and five
+and seven places 8-12% slower (rate5p 11.92 → 13.39 ns).
+
+Kept: `bid.FixedForm128(frac, c)` lays out eight to thirteen places and
+inlines; ShortForm128 and PutShort128 are byte for byte as they were.
+strconv's `shortString` and `appendDecimal` choose FixedForm128 on frac,
+which they already hold; `IsShortFixed128` and `UBDIsShortFixed128` take
+exponents down to -13 (`fixedMinExp`).
+
+Microbenchmarks (median of 9, bytes and allocations unchanged):
+
+| 'f', -1 | before ns | after ns | change |
+|---|---|---|---|
+| FormatDecimal 0.12345678 (8 places) | 25.40 | 10.54 | −58.5% |
+| FormatDecimal 0.00012345678 (11 places) | 26.76 | 10.55 | −60.6% |
+| AppendDecimal, 8 places | 15.58 | 4.25 | −72.8% |
+| AppendDecimal, 11 places | 16.77 | 4.24 | −74.7% |
+
+Every other FormatDecimal row, 'f' and 'g', within noise; AppendDecimal's
+million7, million8.1 and taxmix rows +0.1 ns (1.4-1.7%, separated), the
+rest within noise.
+
+Euro (its 32 values per run at eight and nine places), level 2, 11
+rounds interleaved, output equal: best 760.5 → 766.6 ns (+0.8%), median
++0.1%, the runs overlapping: no measurable change, as 32 values predict.
+
+arm64 instructions: `shortString` 124 → 184, `appendDecimal` 204 → 256
+(FixedForm128 inlined into both); the kernel's functions unchanged.
+
+Correctness: TestShort128 sweeps exponents -15 to 2 and checks
+FixedForm128's stores against the form built from the digits, and fails
+with fixedMinExp at -14; TestUBDIsShortFixed draws exponents -16 to 2;
+2M values end to end at exponents -15 to 2, natively, under -race and for
+amd64; strconv, math/decimal, fmt, internal/decimal; vet for s390x.
+
+The darwin/arm64 baseline gains the FixedForm/128/short row, measured on
+the same M3 Pro; the linux/amd64 baseline's stale note now names four
+rows.

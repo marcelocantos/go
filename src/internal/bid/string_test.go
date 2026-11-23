@@ -159,7 +159,7 @@ func TestParseLongExponentCompensation(t *testing.T) {
 // after it; and Append128 returns the same string with spare capacity (the
 // short path) and without (the general one). The coefficients are every
 // value below 2000, every length's bounds and a random sample of each
-// length, at every exponent from -8 to 2 and both signs; the encodings
+// length, at every exponent from -15 to 2 and both signs; the encodings
 // IsShort128 must refuse include those one bit away from a short one, the
 // second form and the special values.
 func TestShort128(t *testing.T) {
@@ -184,7 +184,7 @@ func TestShort128(t *testing.T) {
 		if got := bid.IsShort128(x); got != want {
 			t.Fatalf("IsShort128(%s) = %t, want %t", hex128(x), got, want)
 		}
-		wantFixed := v.kind == finite && v.coeff.IsUint64() && v.coeff.Uint64() < 100_000_000 && v.exp >= -7 && v.exp <= 0 && bid.IsCanonical128(x)
+		wantFixed := v.kind == finite && v.coeff.IsUint64() && v.coeff.Uint64() < 100_000_000 && v.exp >= -13 && v.exp <= 0 && bid.IsCanonical128(x)
 		if got := bid.IsShortFixed128(x); got != wantFixed {
 			t.Fatalf("IsShortFixed128(%s) = %t, want %t", hex128(x), got, wantFixed)
 		}
@@ -241,7 +241,7 @@ func TestShort128(t *testing.T) {
 	}
 	n := 0
 	for _, c := range coeffs {
-		for exp := -8; exp <= 2; exp++ {
+		for exp := -15; exp <= 2; exp++ {
 			for _, neg := range []bool{false, true} {
 				x := f.encode(value{kind: finite, neg: neg, coeff: new(big.Int).SetUint64(c), exp: exp})
 				check(x)
@@ -537,6 +537,27 @@ func checkShortFixed(t *testing.T, x bits, v value) {
 		buf[i] = '#'
 	}
 	sign, frac := bid.ShortParts128(x)
+	if frac >= 8 {
+		// FixedForm128's stores: '-' at 0, the head at sign, the tail at
+		// sign+total-8.
+		head, tail, total := bid.FixedForm128(frac, x.Lo)
+		n := int(sign + total)
+		if n != len(ref) {
+			t.Fatalf("FixedForm128(%s): length %d, want %d (%q)", hex128(x), n, len(ref), ref)
+		}
+		got := make([]byte, n)
+		got[0] = '-'
+		for k := range uint(8) {
+			got[sign+k] = byte(head >> (8 * k))
+		}
+		for k := range uint(8) {
+			got[uint(n)-8+k] = byte(tail >> (8 * k))
+		}
+		if string(got) != ref {
+			t.Fatalf("FixedForm128(%s) = %q, want %q", hex128(x), got, ref)
+		}
+		return
+	}
 	n := bid.PutShort128(&buf, sign, frac, x.Lo)
 	if n < 0 || n > len(buf) || string(buf[:n]) != ref {
 		t.Fatalf("PutShort128(%s), fixed = %q (n = %d), want %q", hex128(x), buf[:max(0, min(n, len(buf)))], n, ref)

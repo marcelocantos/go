@@ -12,7 +12,7 @@ import (
 // TestShortForm128 makes ShortForm128's documented stores into a buffer
 // of exactly the form's length and checks the bytes against PutShort128's,
 // for every coefficient below 10^5 and others to 10^8, at every count of
-// places from 0 to 4, of either sign.
+// places from 0 to 7 (beyond 4, the fixed form's), of either sign.
 func TestShortForm128(t *testing.T) {
 	check := func(sign, frac uint, c uint64) {
 		var want [bid.ShortLen128]byte
@@ -42,7 +42,7 @@ func TestShortForm128(t *testing.T) {
 		}
 	}
 	for sign := uint(0); sign < 2; sign++ {
-		for frac := uint(0); frac <= 4; frac++ {
+		for frac := uint(0); frac <= 7; frac++ {
 			for c := uint64(0); c < 100_000; c++ {
 				check(sign, frac, c)
 			}

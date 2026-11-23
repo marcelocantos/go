@@ -523,7 +523,7 @@ func TestUBDIsShortFixed(t *testing.T) {
 	xs := ubdPool128(t)
 	r := rand.New(rand.NewPCG(133, 134))
 	for range 200_000 {
-		xs = append(xs, ubd128(r.IntN(2) == 0, r.IntN(13)-10, 0, r.Uint64N(2e8)>>uint(r.IntN(28))))
+		xs = append(xs, ubd128(r.IntN(2) == 0, r.IntN(19)-16, 0, r.Uint64N(2e8)>>uint(r.IntN(28))))
 	}
 	for _, x := range xs {
 		b := bid.BIDFromUBD128(x)

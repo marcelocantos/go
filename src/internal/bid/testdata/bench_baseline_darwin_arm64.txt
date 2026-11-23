@@ -2138,3 +2138,17 @@ BenchmarkKernel/UnpackDigits/128/mixed-12                    	11843419	        1
 BenchmarkKernel/UnpackDigits/128/mixed-12                    	12347425	        10.04 ns/op	       0 B/op	       0 allocs/op
 BenchmarkKernel/UnpackDigits/128/mixed-12                    	12403260	        10.13 ns/op	       0 B/op	       0 allocs/op
 PASS
+
+# The FixedForm row was added later, with the same command restricted to it
+# (-test.bench 'BenchmarkKernel/FixedForm/'), on 2026-11-23 on the same
+# machine at load 2.07 3.11 3.43 at the start and 2.07 3.11 3.43 at the
+# end, on the tree of the commit that adds it; the lines below are that
+# output unedited.
+BenchmarkKernel/FixedForm/128/short-12         	67205716	         1.795 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FixedForm/128/short-12         	71462217	         1.757 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FixedForm/128/short-12         	71852715	         1.762 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FixedForm/128/short-12         	71023441	         1.779 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FixedForm/128/short-12         	71584821	         1.788 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FixedForm/128/short-12         	69625760	         1.771 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FixedForm/128/short-12         	71631099	         1.772 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/FixedForm/128/short-12         	71648934	         1.760 ns/op	       0 B/op	       0 allocs/op

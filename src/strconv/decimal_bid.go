@@ -105,7 +105,18 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 	// in plain notation and the canonical form does not.
 	if i := len(dst); (isShortDecimal(x) || fmt == 'f' && isShortFixedDecimal(x)) && prec < 0 && fmt != 'e' && fmt != 'E' && cap(dst)-i >= bid.ShortLen128 {
 		sign, frac := shortParts(x)
-		return dst[:i+bid.PutShort128((*[bid.ShortLen128]byte)(dst[i:i+bid.ShortLen128]), sign, frac, x.Lo)]
+		out := (*[bid.ShortLen128]byte)(dst[i : i+bid.ShortLen128])
+		if frac >= 8 {
+			// The fixed form below one at 8 to 13 places (FixedForm128):
+			// '-' first, then the head and the tail, inside the result.
+			head, tail, total := bid.FixedForm128(frac, x.Lo)
+			p := unsafe.Pointer(out)
+			*(*byte)(p) = '-'
+			put8(p, sign, head)
+			put8(p, sign+total-8, tail)
+			return dst[:i+int(sign+total)]
+		}
+		return dst[:i+bid.PutShort128(out, sign, frac, x.Lo)]
 	}
 	return appendDecimalRest(dst, x, fmt, prec)
 }
@@ -647,6 +658,18 @@ func appendExp(dst []byte, digits []byte, exp int, format byte, prec int) []byte
 // A form of fewer than four bytes stores its words to a scratch buffer, by
 // a selected address, as PutShort128 does.
 func shortString(sign, frac uint, c uint64) string {
+	if frac >= 8 {
+		// The fixed form below one at 8 to 13 places, ten to fifteen
+		// bytes: the whole head and the whole tail, overlapping.
+		head, tail, total := bid.FixedForm128(frac, c)
+		n := sign + total
+		b := bytealg.MakeNoZero(int(n))
+		p := unsafe.Pointer(unsafe.SliceData(b))
+		*(*byte)(p) = '-'
+		put8(p, sign, head)
+		put8(p, n-8, tail)
+		return unsafe.String((*byte)(p), n)
+	}
 	head, tail, total := bid.ShortForm128(frac, c)
 	n := sign + total
 	if n <= 2 {
@@ -693,4 +716,12 @@ func put4(p unsafe.Pointer, i uint, w uint32) {
 		w = bits.ReverseBytes32(w)
 	}
 	*(*uint32)(unsafe.Add(p, i)) = w
+}
+
+// put8 is put4 for eight bytes.
+func put8(p unsafe.Pointer, i uint, w uint64) {
+	if goarch.BigEndian {
+		w = bits.ReverseBytes64(w)
+	}
+	*(*uint64)(unsafe.Add(p, i)) = w
 }

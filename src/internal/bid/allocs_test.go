@@ -630,6 +630,12 @@ func allocCases() map[string]func() {
 		"AppendSci128":    each(all128, func(x bid.Uint128) { asBuf = bid.AppendSci128(buf[:0], x) }),
 		"IsShort128":      each(all128, func(x bid.Uint128) { asBool = bid.IsShort128(x) }),
 		"IsShortFixed128": each(all128, func(x bid.Uint128) { asBool = bid.IsShortFixed128(x) }),
+		"FixedForm128": func() {
+			for frac := uint(8); frac <= 13; frac++ {
+				h, t, n := bid.FixedForm128(frac, 12345678)
+				asInt = int(h^t) + int(n)
+			}
+		},
 		"PutShort128": each(shorts, func(x bid.Uint128) {
 			sign, frac := bid.ShortParts128(x)
 			asInt = bid.PutShort128(&short128, sign, frac, x.Lo)

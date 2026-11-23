@@ -116,9 +116,9 @@ const (
 	shortCoeff  = 100_000_000
 	shortMinExp = -4
 
-	// ShortLen128 is the room PutShort128 is given. The longest form it
-	// writes has ten bytes, a sign, eight digits and a point; the rest is
-	// slack that lets every store be proved inside the buffer.
+	// ShortLen128 is the room PutShort128 is given. The longest canonical
+	// form it writes has ten bytes, a sign, eight digits and a point; the
+	// longest fixed form sixteen, a sign, "0." and thirteen digits.
 	ShortLen128 = 16
 )
 
@@ -132,21 +132,21 @@ func IsShort128(x Uint128) bool {
 }
 
 // IsShortFixed128 reports whether x is finite with a coefficient below
-// 10^8 and an exponent from -7 to 0, of any magnitude: a value PutShort128
+// 10^8 and an exponent from -13 to 0, of any magnitude: a value PutShort128
 // formats in the fixed form ('f' at full precision), which writes plain
 // notation where the canonical form is exponential, at a magnitude of
 // 10^6 or more or below 10^-4. It accepts what IsShort128 does, and
 // besides coefficients of seven and eight digits at an exponent of -1 or
-// 0, and every coefficient at five to seven places. The form is then at
-// most nine bytes after the sign, every digit shown within the eight
-// eightQuads gives.
+// 0, and every coefficient at five to thirteen places: every such form
+// that fits ShortLen128 with its sign.
 func IsShortFixed128(x Uint128) bool {
 	return fixedExp128(x) <= -fixedMinExp && x.Lo < shortCoeff
 }
 
 // fixedMinExp is the least exponent of a short value in the fixed form:
-// seven places, which with a point and the units digit fill the word.
-const fixedMinExp = -7
+// thirteen places, whose form below one, "0." and thirteen digits, is
+// fifteen bytes, ShortLen128 with a sign.
+const fixedMinExp = -13
 
 // shortLimit[k] bounds the coefficient of a short value at the exponent
 // shortMinExp + k: shortCoeff, or less where 10^canonicalMaxExp is the
@@ -157,7 +157,7 @@ var shortLimit = [1 - shortMinExp]uint64{shortCoeff, shortCoeff, shortCoeff, 10_
 // the start of buf and returns its length, for an x that IsShort128 (or
 // UBDIsShort128 on UBD) accepts, given as its parts: the sign, 0 or 1; the
 // places after the point, minus the exponent, 0 to 4 (to 7 for the fixed
-// form); and the coefficient.
+// form; FixedForm128 lays out 8 to 13); and the coefficient.
 // The caller decodes them from its own encoding (shortParts128 for BID),
 // so both encodings share this layout without a call between. For parts
 // of any other x what it writes is unspecified. It writes
@@ -168,9 +168,9 @@ var shortLimit = [1 - shortMinExp]uint64{shortCoeff, shortCoeff, shortCoeff, 10_
 // not ask for an exponent agrees on the form of these values, so strconv
 // calls this for its canonical and its fixed forms. For the fixed form it
 // also takes the values IsShortFixed128 (UBDIsShortFixed128) adds, which
-// it writes in plain notation, as that form does: the layout depends only
-// on the coefficient being below 10^8 and the places 0 to 7, which put
-// every digit shown within one word.
+// it writes in plain notation, as that form does, to seven places: every
+// digit shown lies within the word eightQuads gives. The caller takes the
+// values at eight places or more to FixedForm128.
 //
 // The digits are laid out in a register, and no branch depends on the
 // value. eightQuads gives all eight digits, zeros on the left, with the
@@ -231,6 +231,22 @@ func PutShort128(buf *[ShortLen128]byte, sign, frac uint, c uint64) int {
 	return int(sign + total)
 }
 
+// FixedForm128 is ShortForm128 for the fixed form of a short value at
+// frac places from 8 to 13, which IsShortFixed128 accepts and ShortForm128
+// and PutShort128 do not lay out: the value is below one, and the form,
+// ten to fifteen bytes after the sign, is "0.", frac-8 zeros and the eight
+// digits of c (zeros on the left). The tail, its last eight bytes, is
+// those digits; the head, its first eight, is the lead with the first
+// digits after it. Its stores are '-' at 0 (overwritten by the first
+// digit unless the sign is set), the head at sign and the tail at
+// sign+total-8, which overlap and cover every such length.
+func FixedForm128(frac uint, c uint64) (head, tail uint64, total uint) {
+	w := eightQuads(c)
+	lead := (frac - 6) & 7 // "0." and the zeros, 2 to 7 bytes
+	head = 0x3030_3030_3030_2E30&(1<<(8*lead)-1) | w<<(8*lead)
+	return head, w, frac + 2
+}
+
 // ShortForm128 is PutShort128 without its stores, for a caller that
 // allocates the result at its exact length and stores it itself: the head
 // and the tail words, as PutShort128 lays them out, and total, the length
@@ -240,7 +256,8 @@ func PutShort128(buf *[ShortLen128]byte, sign, frac uint, c uint64) int {
 // sign+half, the top byte of tail at sign+total-1, and, for a total of
 // four or more, the low four bytes of head at sign, of head >> 8*(t/2) at
 // sign+t/2 and of tail >> 32 at sign+t, t = total-4. Every one lies
-// inside the form.
+// inside the form. Those stores cover a total of up to nine: frac from 0
+// to 7. The fixed form at eight places or more is FixedForm128's.
 func ShortForm128(frac uint, c uint64) (head, tail uint64, total uint) {
 	w := eightQuads(c)
 	n := uint(cDigits64(c | 1))
