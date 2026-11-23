@@ -169,7 +169,9 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 		h := s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpAnd64, u64, native, s.constInt64(u64, int64(signMask))), s.newValue2(ssaop.OpLsh64x64, u64, ye, s.constInt64(u64, int64(shift))))
 		return s.newValue2(ssaop.OpXor64, u64, h, s.constInt64(u64, int64(zeroEncoding)))
 	}
-	if !integral && !is64 && !level2Quantize {
+	// Level 4 keeps this path (the kernel's ubdQuantizeWord scales a word
+	// up the same way); level 2 leaves it to the kernel.
+	if !integral && !is64 && (!level2Quantize || ubdLevel4()) {
 		// A decimal128 word at a larger exponent than y's by at most 19
 		// places is scaled up to it, exactly, when the product is still a
 		// word: 5 quantized to cents is 5.00. One multiplication by a

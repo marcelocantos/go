@@ -319,3 +319,16 @@ and coarser-exponent paths; a finer exponent calls the kernel), `x / y`
 comparisons with a constant zero (`x == 0` 4, `x > 0` 10). `>`, `>=`,
 `Floor` and `Ceil` were not probed separately; they are the same code
 with the operands or the mode changed.
+
+## Step 5: quantize to a finer exponent
+
+Level 4 keeps level 3's scale-up path for quantize, which level 2 leaves
+to the kernel: a one-word x up to 19 places coarser than y is multiplied
+by 10^k, exact while the product is a word (5 quantized to cents is
+5.00). The kernel's `ubdQuantizeWord` does the same. It was the one case
+level 3 inlines that level 4 did not (69 calls a run in risk; too few to
+time in the apps). Site, arm64: `Quantize` 30 → 44, `Quantize(x, 0.01)`
+29 → 42, `QuantizeMode(ToZero)` 22 → 36, variable mode 55 → 68: level
+3's sizes. Levels 1 and 4 agree on 3M random quantizes (exponents from
+23 places finer to 42 coarser) in 13 roundings, on arm64 and amd64, and
+on the edge values.
