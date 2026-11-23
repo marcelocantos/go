@@ -89,11 +89,31 @@ storage format that no level reproduces.
 |---|---|
 | 1 | none: every operation is its kernel call (comparisons call the predicate entries); the smallest code |
 | **2** (default, `0`) | the narrowed paths above: `+` and `-` with one-word coefficients, `*` with coefficients below 2^56, comparisons with zero with no call, comparisons of two values with one-word coefficients |
-| 3 | the inline paths derived from the BID lowering (see History), the same kernel calls behind them; the most code |
+| 3 | level 2's paths first, unchanged; where their guard fails, the inline paths derived from the BID lowering (see History) for `+`, `-` and the comparisons, before the kernel call; quantize and rounding inline; `*` as at level 2; the most code |
 
 Any other value is a usage error. At level 2, `5.00 + 3.00` and
 `5.00 - 3.00` are inline; `5.00 + -3.00` and `5.00 - -3.00`, operands of
 opposite signs, call the kernel.
+
+Level 3 is a superset of level 2 (since 2026-11-23; before, it used the
+BID-derived paths instead of level 2's, and a money add or comparison was
+slower there than at level 2: 11 instructions against 7 for `+`, 25 against
+6 and 9 for `==` and `<`, on arm64). Every operand pair level 2 decides
+inline now runs level 2's code: the first fast paths are level 2's, `+` 7,
+`-` 13, `==` 6 and `<` 9 instructions on arm64, and on amd64 10, 23, 10 and
+15 (level 2: 11, 23, 11, 15). The pairs level 2 sends to the kernel pay one
+guard before the BID-derived paths. Per call site, level 3 is `+` 80 and
+`-` 88 instructions on arm64 (amd64 110 and 126), `==` 64 and `<` 77 (79,
+104), `Quantize` 44 and `Round` 22 (67, 33); each extra `+` in an
+expression adds 85 (amd64 118), against level 2's 13 (16).
+
+**Level 3's inlining needs additional scrutiny.** Its BID-derived paths
+were carried over from the XOR-BID lowering and adapted to UBD, not tuned
+path by path as level 2's were, and they make every `+`, `-` and comparison
+site six to ten times as large as at level 2. Putting `bidMul128` behind
+level 2's `*` changed the fast path's register allocation and made `x * y`
+6–8% slower, so level 3 keeps level 2's `*`. Each remaining path should be
+checked for what it buys against its size and its effect on the fast path.
 
 Until 2026-11-22 there were levels 1 to 10 and −1, adding paths one at a
 time. The tables below and the History keep the old numbers; they map as:

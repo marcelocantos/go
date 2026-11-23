@@ -139,6 +139,14 @@ func (s *state) decimalOp(op ir.Op, rt *types.Type, args ...*ssa.Value) *ssa.Val
 		}
 		return s.softDecimalOp(op, rt, args...)
 	}
+	if ubdSuperset(args[0]) {
+		switch op {
+		case ir.OADD, ir.OSUB:
+			return s.ubdAddNarrow(op, rt, args[0], args[1])
+		case ir.OMUL:
+			return s.ubdMulFast(rt, args[0], args[1])
+		}
+	}
 	if !ir.DecimalDPD() {
 		if rt.IsBoolean() && (Arch.LinkArch.Family == sys.ARM64 || Arch.LinkArch.Family == sys.AMD64) {
 			return s.bidCompare(op, args[0], args[1])

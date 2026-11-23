@@ -129,7 +129,7 @@ func (s *state) bidCompareZero(op ir.Op, x *ssa.Value, zeroOnLeft bool) *ssa.Val
 			op = ir.OLE
 		}
 	}
-	if bidCallOnly(x) {
+	if bidCallOnly(x) || ubdSuperset(x) {
 		return s.ubdCompareZeroOrdered(op, x)
 	}
 	var ordered, negative *ssa.Value
@@ -288,9 +288,15 @@ func initBIDKernelSyms() {
 //	   constant zero with no call (bidIsZero, ubdCompareZeroOrdered), and
 //	   comparisons of two values with one-word coefficients
 //	   (ubdCompareNarrow)
-//	3  the inline paths derived from the BID lowering instead (bidAddSub128,
-//	   bidMul128, bidCompare, bidRounding), which handle more operand pairs
-//	   inline at much greater size; the same kernel calls behind them
+//	3  level 2's paths first, unchanged, and where their guard fails the
+//	   inline paths derived from the BID lowering (bidAddSub128,
+//	   bidCompare) before the kernel call; x * y is level 2's; the operations level 2 leaves
+//	   to the kernel (rounding, quantize: bidRounding) inline as well.
+//	   Every operand pair level 2 decides inline runs level 2's code, so
+//	   level 3 is never slower than level 2 on it; the pairs level 2 sends
+//	   to the kernel pay one guard before the BID-derived paths. Level 3's
+//	   inlining needs additional scrutiny: its BID-derived paths were
+//	   carried over, not tuned (research/ubd-size/README.md)
 //
 // Until 2026-11-22 the levels were 1 to 10 and -1, adding paths one at a
 // time; research/ubd-size/README.md maps them to these. Any other value
@@ -307,6 +313,13 @@ func ubdLevel() int {
 // the BID-derived lowering takes it instead.
 func bidCallOnly(x *ssa.Value) bool {
 	return ubdLevel() <= 2 && x.Type.Kind() == types.TDECIMAL128 && bidKernelDirect()
+}
+
+// ubdSuperset reports whether the decimal128 operation on x is lowered at
+// ubdLevel 3: level 2's fast paths first, with the BID-derived inline paths
+// behind them in place of the kernel call.
+func ubdSuperset(x *ssa.Value) bool {
+	return ubdLevel() == 3 && x.Type.Kind() == types.TDECIMAL128 && bidKernelDirect()
 }
 
 // ubdAddNarrow lowers x + y and x - y at ubdLevel 2: decimal128-go's add
@@ -340,6 +353,11 @@ func (s *state) ubdAddNarrow(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	b := s.endBlock()
 	b.Kind = block.BlockIf
 	b.SetControl(fast)
+	if ubdSuperset(x) {
+		// Lay the BID-derived paths out of line, so that the fast path
+		// runs as at level 2.
+		b.Likely = ssa.BranchLikely
+	}
 	bFast := s.f.NewBlock(block.BlockPlain)
 	b.AddEdgeTo(bFast)
 	b.AddEdgeTo(bSlow)
@@ -360,7 +378,11 @@ func (s *state) ubdAddNarrow(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	s.endBlock().AddEdgeTo(bAfter)
 
 	s.startBlock(bSlow)
-	s.vars[result] = s.softDecimalOp(op, rt, x, y)
+	if ubdSuperset(x) {
+		s.vars[result] = s.bidAddSub128(op, rt, x, y)
+	} else {
+		s.vars[result] = s.softDecimalOp(op, rt, x, y)
+	}
 	s.endBlock().AddEdgeTo(bAfter)
 	s.startBlock(bAfter)
 	r := s.variable(result, rt)
@@ -430,6 +452,10 @@ func (s *state) ubdMulFast(rt *types.Type, x, y *ssa.Value) *ssa.Value {
 	s.endBlock().AddEdgeTo(bAfter)
 
 	s.startBlock(bSlow)
+	// Level 3 keeps level 2's kernel call here: bidMul128 behind this
+	// path changed the fast path's register allocation and made x * y
+	// 6-8% slower on its own operands, for products that only factors of
+	// 2^56 or more (17 digits) need.
 	s.vars[result] = s.softDecimalOp(ir.OMUL, rt, x, y)
 	s.endBlock().AddEdgeTo(bAfter)
 	s.startBlock(bAfter)
@@ -448,7 +474,7 @@ func (s *state) ubdComparePred(op ir.Op, x, y *ssa.Value) *ssa.Value {
 	xhi, yhi := s.newValue1(ssaop.OpDecimal128Hi, u64, x), s.newValue1(ssaop.OpDecimal128Hi, u64, y)
 	xlo, ylo := s.newValue1(ssaop.OpDecimal128Lo, u64, x), s.newValue1(ssaop.OpDecimal128Lo, u64, y)
 	if ubdLevel() >= 2 {
-		return s.ubdCompareNarrow(op, xlo, xhi, ylo, yhi)
+		return s.ubdCompareNarrow(op, x, y, xlo, xhi, ylo, yhi)
 	}
 	return s.ubdComparePredCall(op, xlo, xhi, ylo, yhi)
 }
@@ -497,7 +523,7 @@ func (s *state) ubdComparePredCall(op ir.Op, xlo, xhi, ylo, yhi *ssa.Value) *ssa
 // Deciding more inline would grow every comparison site to cut the time
 // of some. A call that preserves registers, as the write barrier's does,
 // would remove most of that cost; it was considered and not pursued.
-func (s *state) ubdCompareNarrow(op ir.Op, xlo, xhi, ylo, yhi *ssa.Value) *ssa.Value {
+func (s *state) ubdCompareNarrow(op ir.Op, x, y, xlo, xhi, ylo, yhi *ssa.Value) *ssa.Value {
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
 	zero := s.constInt64(u64, 0)
 	res := ssaMarker("ubdcmp")
@@ -539,7 +565,19 @@ func (s *state) ubdCompareNarrow(op ir.Op, xlo, xhi, ylo, yhi *ssa.Value) *ssa.V
 	s.endBlock().AddEdgeTo(bAfter)
 
 	s.startBlock(bSlow)
-	s.vars[res] = s.ubdComparePredCall(op, xlo, xhi, ylo, yhi)
+	if ubdSuperset(x) {
+		// bidCompare takes ==, !=, < and <=, as decimalOp passes them.
+		bop, bx, by := op, x, y
+		switch op {
+		case ir.OGT:
+			bop, bx, by = ir.OLT, y, x
+		case ir.OGE:
+			bop, bx, by = ir.OLE, y, x
+		}
+		s.vars[res] = s.bidCompare(bop, bx, by)
+	} else {
+		s.vars[res] = s.ubdComparePredCall(op, xlo, xhi, ylo, yhi)
+	}
 	s.endBlock().AddEdgeTo(bAfter)
 	s.startBlock(bAfter)
 	v := s.variable(res, boolT)
