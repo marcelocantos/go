@@ -366,7 +366,7 @@ type UBD128 struct{ Lo, Hi uint64 }
 
 func ubdAddTTE128(x, y UBD128) UBD128 {
 	if (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {
-		if r, ok := ubdAddWordTTE(x.Hi, x.Lo, y.Hi, y.Lo); ok {
+		if r, ok := ubdAddWordTTE(x, y); ok {
 			return r
 		}
 	}
@@ -377,7 +377,7 @@ func ubdAddRnd128(x, y UBD128, mode Mode) UBD128 { return ubdAddSlow128(x, y, mo
 
 func ubdSubTTE128(x, y UBD128) UBD128 {
 	if (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {
-		if r, ok := ubdAddWordTTE(x.Hi, x.Lo, y.Hi^UBDSignHi, y.Lo); ok {
+		if r, ok := ubdAddWordTTE(x, UBD128{Lo: y.Lo, Hi: y.Hi ^ UBDSignHi}); ok {
 			return r
 		}
 	}
@@ -385,7 +385,7 @@ func ubdSubTTE128(x, y UBD128) UBD128 {
 }
 
 // ubdAddWordTTE adds two finite operands whose coefficients are one word
-// each, so that their high words xh and yh hold only qExp and the sign, when
+// each, so that their high words hold only qExp and the sign, when
 // their exponents are at most maxWordGap apart: the exact sum at the smaller
 // exponent, the preferred one, and false when it passes MaxCoeff128 and must
 // round (ubdAddLong128's word path, which this is, then rounds it). It is the
@@ -399,7 +399,8 @@ func ubdSubTTE128(x, y UBD128) UBD128 {
 // negative is negated; its magnitude is then below 2^64. An exact zero is the
 // operands' sign when they agree and +0 when they differ, as rounding to
 // nearest gives (IEEE 754-2019 clause 6.3).
-func ubdAddWordTTE(xh, xl, yh, yl uint64) (UBD128, bool) {
+func ubdAddWordTTE(x, y UBD128) (UBD128, bool) {
+	xh, xl, yh, yl := x.Hi, x.Lo, y.Hi, y.Lo
 	d := int64(xh)>>UBDExpShift - int64(yh)>>UBDExpShift
 	sw := uint64(d >> 63) // all ones when y has the larger exponent
 	th, tl := (xh^yh)&sw, (xl^yl)&sw
