@@ -89,3 +89,122 @@ are 0.6–4.4% faster with it, most where they format most (telco, tax).
 The table-free forms cost 40 KB less data. The cost of formatting that
 is left lies outside the eight-digit conversion: strconv's dispatch, the
 layout of the point and exponent, and the allocation of the string.
+
+# The string formed in its own bytes (2026-11-23)
+
+decimal128-go allocates the result at its exact length, which it knows
+before writing (it counts the digits first), writes the characters into
+that allocation, and returns it as the string with no copy
+(`withStringBuffer`, `unsafe.String`). `strconv.FormatDecimal` here
+formatted into a stack buffer and returned `string(buf[:n])`:
+`slicebytetostring` allocates and copies, after `appendDecimal`'s
+dispatch. In telco's level-2 profile `slicebytetostring` was 26%
+cumulative of the run against 11% for `appendDecimal`.
+
+## What was built
+
+- `internal/bid.ShortForm128(frac, c)`: `PutShort128` without its
+  stores. It returns the two words `PutShort128` lays out and the
+  form's length after the sign, and documents the stores, every one of
+  which lies inside the form. `internal/bid` may not import `unsafe`, so
+  the stores are the caller's.
+- `strconv.formatDecimal` takes the format switch and the short test
+  once, then:
+  - a short value of one or two characters (0 to 99, −0 to −9) is a
+    slice of a constant: no allocation;
+  - any other short value is allocated at its exact length
+    (`internal/bytealg.MakeNoZero`, which `strings.Builder` uses: no
+    zeroing) and `PutShort128`'s stores are made into it, each through a
+    pointer to its own bytes (`*(*uint32)(unsafe.Add(p, i))`, byte-swapped
+    on big-endian targets); a form of fewer than four bytes stores its
+    words to a scratch buffer by a selected address, as `PutShort128`
+    does; the bytes become the string with `unsafe.String`;
+  - every other value takes `appendDecimal`'s remaining paths
+    (`appendDecimalRest`, split out of `appendDecimal`) with the words
+    decoded once, and is copied as before.
+- Long values keep the copy: going direct would allocate `PutLong128`'s
+  42-byte room for results often 10–20 bytes long, and in the apps long
+  values use 'f', which `PutLong128` does not serve (see below).
+
+## Variants measured on the way
+
+ns per call (`strconv.FormatDecimal`, 'g'; money is 7–8 characters):
+
+| variant | money | 11-digit amount | bytes per money string |
+|---|---|---|---|
+| original | 13.4 | 14.6 | 8 |
+| X1: both paths straight into `make([]byte, room)` | 11.1 | 14.2 | 16 |
+| X2: no dispatch, but stack buffer and copy | 12.7 | 13.9 | 8 |
+| X3: X1's short path only, the format checked once | 11.8 | 15.3 | 16 |
+| X4: exact length, `MakeNoZero` | 12.2 | 15.5 | 8 |
+| X4b: exact length, `make` (zeroing) | 12.9 | 15.5 | 8 |
+| X6: X4 with one- and two-character results from constants | 11.7 | 15.4 | 8 |
+
+Findings:
+
+- Dispatch alone (X2) is about 5%; the copy and its call another 10–15%
+  on short values.
+- A 16-byte allocation (X1, X3) is barely dearer than a tiny one, but
+  doubles the memory of a money string.
+- `make` zeroes and packs a 3-byte string in 3 bytes where `MakeNoZero`
+  rounds it to 8; the zeroing costs more than the packing saves.
+- X3 and X4 made the tax apps 3–12% slower, although each was faster on
+  every microbenchmark row. In compute mode the tax apps keep only the
+  length of each string, and a tax form is full of zeros and single
+  digits: the original's `string(buf[:n])` gave those the runtime's
+  static one-byte strings, with no allocation; X3 and X4 allocated every
+  one. Garbage collection was not the cause (one to three collections a
+  pass in every variant), nor code placement (a control build, the
+  original with a padding function before `formatDecimal`, moved tax by
+  about 1%).
+
+## Results (X6)
+
+Microbenchmark, ns per call:
+
+| class | original | X6 | bytes, allocations |
+|---|---|---|---|
+| money, 'g' | 13.42 | 11.98 | 8, 1 → 8, 1 |
+| −money, 'g' | 13.76 | 11.98 | 8, 1 → 8, 1 |
+| integers below 1000, 'g' | 13.50 | 12.30 | 3, 0 → 7, 0 |
+| money, 'f' | 13.34 | 12.00 | 8, 1 → 8, 1 |
+| 11-digit amount, 'g' | 14.61 | 15.4 | 16, 1 (no change) |
+| 11-digit amount, 'f' | 23.68 | 23.9 | 16, 1 (no change) |
+| 34 digits, 'g' | 19.34 | 19.9 | 48, 1 (no change) |
+
+Apps at level 2, best of 11 interleaved, outputs equal:
+
+| app | X6 vs original | median |
+|---|---|---|
+| telco | −10.1% | −10.0% |
+| tax nc | −6.1% | −4.4% |
+| tax fed | −0.6% | −1.5% |
+| tax ca | −0.6% | +0.5% |
+| risk | −0.3% | −0.9% |
+| banking | +0.3% | +0.6% |
+| euro | +0.6% | +0.2% |
+
+arm64 instructions: `strconv.FormatDecimal` 64 → 48, and
+`formatDecimal`, which `FormatDecimal` inlined, is now a function of 88;
+`shortString` 124 (with `ShortForm128` 84, a call); `appendDecimal` 712
+→ 192 and `appendDecimalRest` 536.
+
+Correctness: `FormatDecimal` (the new paths) against `AppendDecimal`
+(the old) on 2M random short values in 'f', 'g' and 'G' (signs, 0 to 9
+places, zeros, small integers), natively, under `-race` (`checkptr`)
+and for amd64; the strconv, math/decimal, fmt and internal/decimal
+tests; `TestShortForm128` checks `ShortForm128`'s documented stores
+against `PutShort128` for every coefficient below 10^5 and a sweep to
+10^8 at 0 to 4 places of either sign; strconv builds for s390x
+(big-endian).
+
+Open:
+
+- `internal/bid`'s `TestBenchBaselineShape` fails: the new row
+  ShortForm/128/short has no sample in
+  testdata/bench_baseline_darwin_arm64.txt, which is a run on the M4 Max
+  and has to be retaken there, by a deliberate commit, as the file says.
+- Long values with 'f' (the apps' `String`) take the general path, 23.7
+  ns against 14.6 for 'g' through `PutLong128`. Where the canonical
+  form is plain notation, which is 'f''s output, `PutLong128` could
+  serve 'f' too. That is the larger remaining gain for long values.

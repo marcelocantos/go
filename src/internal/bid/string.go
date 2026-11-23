@@ -209,6 +209,32 @@ func PutShort128(buf *[ShortLen128]byte, sign, frac uint, c uint64) int {
 	return int(sign + total)
 }
 
+// ShortForm128 is PutShort128 without its stores, for a caller that
+// allocates the result at its exact length and stores it itself: the head
+// and the tail words, as PutShort128 lays them out, and total, the length
+// of the form after the sign. The form is sign+total bytes. Its stores are
+// PutShort128's: '-' at 0 (overwritten by the first digit unless the sign
+// is set), the low byte of head at sign, byte half = total/2 of head at
+// sign+half, the top byte of tail at sign+total-1, and, for a total of
+// four or more, the low four bytes of head at sign, of head >> 8*(t/2) at
+// sign+t/2 and of tail >> 32 at sign+t, t = total-4. Every one lies
+// inside the form.
+func ShortForm128(frac uint, c uint64) (head, tail uint64, total uint) {
+	w := eightQuads(c)
+	n := uint(cDigits64(c | 1))
+	shown := max(n, frac+1)
+	dot := (frac + 7) >> 3
+	total = shown + dot
+	pt := uint64('.') * uint64(dot)
+	m := ^uint64(0) >> (8 * frac & 63)
+	tail = w&^m | w&m>>(8*dot&63) | pt<<(8*(7-frac)&63)
+	hw := w >> (8 * (8 - shown) & 63)
+	before := shown - frac
+	lm := ^uint64(0) >> ((64 - 8*before) & 63)
+	head = hw&lm | hw&^lm<<8 | pt<<(8*before&63)
+	return head, tail, total
+}
+
 // putFour stores w little-endian in buf[i:i+4]; the caller bounds i so that
 // the compiler proves the four indexes and emits one store.
 func putFour(buf *[ShortLen128]byte, i uint, w uint32) {

@@ -843,6 +843,13 @@ func benchRowList() benchRows {
 	}
 	var short [bid.ShortLen128]byte
 	rs.add("IsShort", "128", "mixed", "IsShort128", func(b *testing.B) { loop1(b, mixed.x128, bid.IsShort128) })
+	rs.add("ShortForm", "128", "short", "ShortForm128", func(b *testing.B) {
+		loop1(b, shorts, func(x bits) int {
+			_, frac := bid.ShortParts128(x)
+			h, t, n := bid.ShortForm128(frac, x.Lo)
+			return int(h^t) + int(n)
+		})
+	})
 	rs.add("PutShort", "128", "short", "PutShort128", func(b *testing.B) {
 		loop1(b, shorts, func(x bits) int { sign, frac := bid.ShortParts128(x); return bid.PutShort128(&short, sign, frac, x.Lo) })
 	})

@@ -633,6 +633,11 @@ func allocCases() map[string]func() {
 			sign, frac := bid.ShortParts128(x)
 			asInt = bid.PutShort128(&short128, sign, frac, x.Lo)
 		}),
+		"ShortForm128": each(shorts, func(x bid.Uint128) {
+			_, frac := bid.ShortParts128(x)
+			h, t, n := bid.ShortForm128(frac, x.Lo)
+			asInt = int(h^t) + int(n)
+		}),
 		"IsLong128": each(all128, func(x bid.Uint128) { asBool = bid.IsLong128(x) }),
 		"PutLong128": each(longs, func(x bid.Uint128) {
 			sign, exp, c := bid.LongParts128(x)

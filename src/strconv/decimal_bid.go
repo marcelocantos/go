@@ -6,8 +6,11 @@ package strconv
 
 import (
 	"internal/bid"
+	"internal/bytealg"
 	"internal/decimal"
-	_ "unsafe"
+	"internal/goarch"
+	"math/bits"
+	"unsafe"
 )
 
 // The conversions between decimal values and text are those of
@@ -43,6 +46,20 @@ func formatDecimal(d decimal128, fmt byte, prec int, bitSize int) string {
 	// The canonical form fits on the stack. Explicit fixed-point formats
 	// and large precisions may grow past this buffer through append.
 	var buf [bid.MaxLen128]byte
+	switch fmt {
+	case 'e', 'E', 'f', 'g', 'G':
+		// A short value (appendDecimal's first path) is stored in the
+		// string's own bytes: one allocation of the room PutShort128 is
+		// given, which it writes exactly the bytes of the result in, and
+		// no copy. Every other value takes appendDecimal's other paths,
+		// with the words decoded and the short test made once.
+		x := decimalWords(d)
+		if prec < 0 && fmt != 'e' && fmt != 'E' && isShortDecimal(x) {
+			sign, frac := shortParts(x)
+			return shortString(sign, frac, x.Lo)
+		}
+		return string(appendDecimalRest(buf[:0], x, fmt, prec))
+	}
 	return string(appendDecimal(buf[:0], d, fmt, prec, bitSize))
 }
 
@@ -88,7 +105,12 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 		sign, frac := shortParts(x)
 		return dst[:i+bid.PutShort128((*[bid.ShortLen128]byte)(dst[i:i+bid.ShortLen128]), sign, frac, x.Lo)]
 	}
+	return appendDecimalRest(dst, x, fmt, prec)
+}
 
+// appendDecimalRest is appendDecimal past its short path, for a format
+// of 'e', 'E', 'f', 'g' or 'G' and the words x.
+func appendDecimalRest(dst []byte, x bid.Uint128, fmt byte, prec int) []byte {
 	// A coefficient of nine digits or more, in the canonical form: the
 	// kernel converts the digits eight at a time and stores the whole form
 	// in place, exactly the bytes appended. It asks for the room of the
@@ -590,4 +612,59 @@ func appendExp(dst []byte, digits []byte, exp int, format byte, prec int) []byte
 	}
 	dst = append(dst, byte(e%10)+'0')
 	return dst
+}
+
+// shortString is the form of a short value as a string allocated at its
+// exact length, which bid.ShortForm128 gives before anything is stored:
+// PutShort128's stores, made here into the string's own bytes, each
+// through a pointer to its own bytes, all of which lie inside the form.
+// A form of fewer than four bytes stores its words to a scratch buffer, by
+// a selected address, as PutShort128 does.
+func shortString(sign, frac uint, c uint64) string {
+	head, tail, total := bid.ShortForm128(frac, c)
+	n := sign + total
+	if n <= 2 {
+		// One or two characters: an integer, 0 to 99 or -0 to -9, which
+		// is c. A slice of a constant, with no allocation.
+		switch {
+		case n == 1:
+			return digitStrings[c : c+1]
+		case sign != 0:
+			return minusDigitStrings[2*c : 2*c+2]
+		}
+		return pairStrings[2*c : 2*c+2]
+	}
+	b := bytealg.MakeNoZero(int(n))
+	p := unsafe.Pointer(unsafe.SliceData(b))
+	half := total / 2
+	*(*byte)(p) = '-'
+	*(*byte)(unsafe.Add(p, sign)) = byte(head)
+	*(*byte)(unsafe.Add(p, sign+half)) = byte(head >> (8 * half & 63))
+	*(*byte)(unsafe.Add(p, n-1)) = byte(tail >> 56)
+	var scratch [16]byte
+	q := p
+	if total < 4 {
+		q = unsafe.Pointer(&scratch)
+	}
+	t := (total - 4) & 7
+	put4(q, sign, uint32(head))
+	put4(q, sign+t/2, uint32(head>>(8*(t/2))))
+	put4(q, sign+t, uint32(tail>>32))
+	return unsafe.String((*byte)(p), n)
+}
+
+// The forms of one and two characters: 0 to 9, -0 to -9 (two each), and
+// 10 to 99 (two each, from 00).
+const (
+	digitStrings      = "0123456789"
+	minusDigitStrings = "-0-1-2-3-4-5-6-7-8-9"
+	pairStrings       = "00010203040506070809101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263646566676869707172737475767778798081828384858687888990919293949596979899"
+)
+
+// put4 stores w little-endian at p+i.
+func put4(p unsafe.Pointer, i uint, w uint32) {
+	if goarch.BigEndian {
+		w = bits.ReverseBytes32(w)
+	}
+	*(*uint32)(unsafe.Add(p, i)) = w
 }
