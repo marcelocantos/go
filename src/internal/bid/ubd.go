@@ -491,9 +491,14 @@ func ubdMulRnd128(x, y UBD128, mode Mode) UBD128 {
 	return ubdMulLong128(x, y, mode)
 }
 
-func ubdDivTTE128(x, y UBD128) UBD128 { return ubdDiv128(x, y, ToNearestEven) }
+// ubdDivTTE128 is in ubd_div.go.
 
-func ubdDivRnd128(x, y UBD128, mode Mode) UBD128 { return ubdDiv128(x, y, mode) }
+func ubdDivRnd128(x, y UBD128, mode Mode) UBD128 {
+	if mode == ToNearestEven {
+		return ubdDivTTE128(x, y)
+	}
+	return ubdDivLong128(x, y, mode)
+}
 
 func ubdQuantizeTTE128(x, y UBD128) UBD128 { // ubdQuantize128, written out
 	if ubdQuantizeSame128(x, y) {

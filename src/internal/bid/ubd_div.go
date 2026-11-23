@@ -6,8 +6,8 @@ package bid
 
 import "math/bits"
 
-// This package's divide on UBD operands. ubdDiv128,
-// ubdDivWide128 and ubdDivLong128 are div128, divWide128 and divLong128
+// This package's divide on UBD operands. ubdDivTTE128, ubdDivWide128 and
+// ubdDivLong128 are div128 (for ties to even), divWide128 and divLong128
 // (their comments explain the method) with the BID decoding (divPair128,
 // unpackFirst128, unpackRest128) replaced by UBD's, the specials decided on
 // UBD, and the packing and rounding by ubdPackWord, ubdRoundFace128 and
@@ -22,7 +22,15 @@ func ubdDivPair128(x, y UBD128) (xhi, yhi uint64, exp int, neg, ok bool) {
 	return x.Hi & UBDCoeffMaskHi, y.Hi & UBDCoeffMaskHi, exp, (x.Hi^y.Hi)&UBDSignHi != 0, ok
 }
 
-func ubdDiv128(x, y UBD128, mode Mode) UBD128 {
+// ubdDivTTE128, the divide entry the compiler calls, is div128 on UBD for
+// ties to even, written into the entry so that a divide is one call with
+// one frame, where it was the entry and then a ubdDiv128 (-6 to -8% on
+// word operands in BenchmarkUBDKernel; money 12.59 ns against 11.86, BID's
+// div128 15.58). ubdDivRnd128,
+// which no compiled code calls, calls it for ToNearestEven and
+// ubdDivLong128, which takes every mode, otherwise.
+func ubdDivTTE128(x, y UBD128) UBD128 {
+	const mode = ToNearestEven
 	xhi, yhi, exp, neg, ok := ubdDivPair128(x, y)
 	a, b := x.Lo, y.Lo
 	if !ok || mode > ToNearestAway {

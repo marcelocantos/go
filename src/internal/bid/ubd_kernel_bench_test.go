@@ -451,3 +451,30 @@ func TestUBDMulAgrees(t *testing.T) {
 		}
 	}
 }
+
+// TestUBDDivAgrees checks the divide entries, ties to even and the Rnd
+// entry in every mode, against the BID kernel on coefficients of 1 to 34
+// digits, zeros among them.
+func TestUBDDivAgrees(t *testing.T) {
+	r := rand.New(rand.NewPCG(53, 59))
+	modes := []Mode{ToNearestEven, ToNearestAway, TowardZero, AwayFromZero, TowardNegative, TowardPositive}
+	coeff := func() Uint128 {
+		if r.IntN(16) == 0 {
+			return Uint128{}
+		}
+		return ubdBenchDigits(r, 1, 34)
+	}
+	for i := 0; i < 500000; i++ {
+		bx, ux := ubdBenchVal(r.IntN(2) == 0, coeff(), r.IntN(400)-200)
+		by, uy := ubdBenchVal(r.IntN(2) == 0, coeff(), r.IntN(400)-200)
+		got := UBDKernelDiv(ux, uy)
+		if g, want := BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}), BIDKernelDiv(bx, by, ToNearestEven); g != want {
+			t.Fatalf("div(%#x, %#x): got %#x, want %#x", bx, by, g, want)
+		}
+		m := modes[i%len(modes)]
+		g := UBDDivRnd128(Uint128{Hi: ux.Hi, Lo: ux.Lo}, Uint128{Hi: uy.Hi, Lo: uy.Lo}, m)
+		if g, want := BIDFromUBDAny128(g), Div128(bx, by, m); g != want {
+			t.Fatalf("div(%#x, %#x, %v): got %#x, want %#x", bx, by, m, g, want)
+		}
+	}
+}
