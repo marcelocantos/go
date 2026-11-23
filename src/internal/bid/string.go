@@ -132,14 +132,21 @@ func IsShort128(x Uint128) bool {
 }
 
 // IsShortFixed128 reports whether x is finite with a coefficient below
-// 10^8 and an exponent from -4 to 0, of any magnitude: a value PutShort128
+// 10^8 and an exponent from -7 to 0, of any magnitude: a value PutShort128
 // formats in the fixed form ('f' at full precision), which writes plain
-// notation where the canonical form of a magnitude of 10^6 or more is
-// exponential. It accepts what IsShort128 does, and coefficients of seven
-// and eight digits at an exponent of -1 or 0 besides.
+// notation where the canonical form is exponential, at a magnitude of
+// 10^6 or more or below 10^-4. It accepts what IsShort128 does, and
+// besides coefficients of seven and eight digits at an exponent of -1 or
+// 0, and every coefficient at five to seven places. The form is then at
+// most nine bytes after the sign, every digit shown within the eight
+// eightQuads gives.
 func IsShortFixed128(x Uint128) bool {
-	return shortExp128(x) <= -shortMinExp && x.Lo < shortCoeff
+	return fixedExp128(x) <= -fixedMinExp && x.Lo < shortCoeff
 }
+
+// fixedMinExp is the least exponent of a short value in the fixed form:
+// seven places, which with a point and the units digit fill the word.
+const fixedMinExp = -7
 
 // shortLimit[k] bounds the coefficient of a short value at the exponent
 // shortMinExp + k: shortCoeff, or less where 10^canonicalMaxExp is the
@@ -149,7 +156,8 @@ var shortLimit = [1 - shortMinExp]uint64{shortCoeff, shortCoeff, shortCoeff, 10_
 // PutShort128 writes the character form of x, as Append128 gives it, to
 // the start of buf and returns its length, for an x that IsShort128 (or
 // UBDIsShort128 on UBD) accepts, given as its parts: the sign, 0 or 1; the
-// places after the point, minus the exponent, 0 to 4; and the coefficient.
+// places after the point, minus the exponent, 0 to 4 (to 7 for the fixed
+// form); and the coefficient.
 // The caller decodes them from its own encoding (shortParts128 for BID),
 // so both encodings share this layout without a call between. For parts
 // of any other x what it writes is unspecified. It writes
@@ -161,7 +169,8 @@ var shortLimit = [1 - shortMinExp]uint64{shortCoeff, shortCoeff, shortCoeff, 10_
 // calls this for its canonical and its fixed forms. For the fixed form it
 // also takes the values IsShortFixed128 (UBDIsShortFixed128) adds, which
 // it writes in plain notation, as that form does: the layout depends only
-// on the coefficient being below 10^8 and the places 0 to 4.
+// on the coefficient being below 10^8 and the places 0 to 7, which put
+// every digit shown within one word.
 //
 // The digits are laid out in a register, and no branch depends on the
 // value. eightQuads gives all eight digits, zeros on the left, with the

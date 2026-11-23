@@ -346,3 +346,40 @@ also lacks IsShortFixed/128/mixed.
 
 Left: euro's 140 values with five places or more, which need the short
 layout widened past four places (about 1% for euro, nothing elsewhere).
+
+## Five to seven places in the fixed form
+
+Euro's 140 short coefficients at five places or more: 5 places 42, 6
+35, 7 31, 8 26, 9 6. With at most eight digits and at most seven places,
+the form is at most nine bytes after the sign and every digit it shows is
+among the eight eightQuads gives, so PutShort128's masks and stores hold
+unchanged (`8*frac` stays inside a word, and the point never lands on
+the first byte). At eight places or more a value below one shows more
+than eight digits, past the word: those 32 are left on the general path.
+
+'g' is unchanged: it writes a value whose leading digit is below 10^-4
+(0.0000123) in exponential notation, so its short test would need a
+lower bound on the coefficient as well. `IsShortFixed128` and
+`UBDIsShortFixed128` alone go down to an exponent of -7
+(`fixedMinExp`); the rotation is `fixedExp128` in encoding.go, where
+`TestRoundIsTheOnlyPacker` allows the exponent field to be read.
+
+`TestShort128` covers exponents -8 to 2, so it checks the new places
+against the fixed form built from the digits, and fails if the bound is
+moved to -8 (PutShort128 then writes "0.\x00\x00\x00\x00000." for
+0E-8). `TestUBDIsShortFixed` now draws exponents from -10 to 2; the
+end-to-end check in strconv runs exponents -9 to 2.
+
+Microbenchmarks ('f', -1, median of 9; bytes and allocations unchanged):
+one digit and five places (2.20371) 26.75 → 12.41 ns (−53.6%); 0.00
+and five digits (seven places) 27.97 → 12.95 (−53.7%). The 11-digit
+amount and the million-with-cents rows, which take the long path the
+change does not touch, came out 5–6% faster: placement. The rest within
+±1%.
+
+Euro at level 2, 11 rounds interleaved, output equal: best 795.0 →
+786.6 ns (−1.1%), median 805.9 → 790.5 (−1.9%). (The machine ran slower
+this session than the last, both builds alike.) No other app formats
+values with five places or more.
+
+arm64 instructions: `formatDecimal` 96 → 100, `appendDecimal` 200 → 204.

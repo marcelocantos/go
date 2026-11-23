@@ -24,10 +24,10 @@ func UBDIsShort128(x UBD128) bool {
 }
 
 // UBDIsShortFixed128 is IsShortFixed128 on UBD: UBDIsShort128 without the
-// bound on the magnitude.
+// bound on the magnitude, from an exponent of -7.
 func UBDIsShortFixed128(x UBD128) bool {
-	k := bits.RotateLeft64(x.Hi&^UBDSignHi+uint64(-shortMinExp)<<UBDExpShift, 64-UBDExpShift)
-	return k <= -shortMinExp && x.Lo < shortCoeff
+	k := bits.RotateLeft64(x.Hi&^UBDSignHi+uint64(-fixedMinExp)<<UBDExpShift, 64-UBDExpShift)
+	return k <= -fixedMinExp && x.Lo < shortCoeff
 }
 
 // UBDIsLong128 is IsLong128 on UBD: finite with a coefficient of at least

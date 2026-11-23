@@ -184,7 +184,7 @@ func TestShort128(t *testing.T) {
 		if got := bid.IsShort128(x); got != want {
 			t.Fatalf("IsShort128(%s) = %t, want %t", hex128(x), got, want)
 		}
-		wantFixed := v.kind == finite && v.coeff.IsUint64() && v.coeff.Uint64() < 100_000_000 && v.exp >= -4 && v.exp <= 0 && bid.IsCanonical128(x)
+		wantFixed := v.kind == finite && v.coeff.IsUint64() && v.coeff.Uint64() < 100_000_000 && v.exp >= -7 && v.exp <= 0 && bid.IsCanonical128(x)
 		if got := bid.IsShortFixed128(x); got != wantFixed {
 			t.Fatalf("IsShortFixed128(%s) = %t, want %t", hex128(x), got, wantFixed)
 		}
