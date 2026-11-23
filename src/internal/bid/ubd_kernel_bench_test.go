@@ -228,3 +228,45 @@ func TestUBDAddWordAgrees(t *testing.T) {
 		}
 	}
 }
+
+// TestUBDCmpWordAgrees checks the compare and predicate entries on word
+// operands, which their word path (ubdCmpWord) decides, against the BID
+// kernel: exponent gaps of 0 to 25 either way, zeros of both signs, and
+// coefficients of every size.
+func TestUBDCmpWordAgrees(t *testing.T) {
+	r := rand.New(rand.NewPCG(13, 17))
+	coeff := func() uint64 {
+		switch r.IntN(5) {
+		case 0:
+			return 0
+		case 1:
+			return ^uint64(0) - uint64(r.IntN(3))
+		default:
+			return r.Uint64() >> uint(r.IntN(64))
+		}
+	}
+	for i := 0; i < 2000000; i++ {
+		xe := r.IntN(60) - 30
+		ye := xe + r.IntN(51) - 25
+		xc := coeff()
+		yc := coeff()
+		if r.IntN(4) == 0 { // equal values at different exponents
+			yc, ye = xc, xe
+			for k := r.IntN(3); k > 0 && yc <= ^uint64(0)/10; k-- {
+				yc, ye = yc*10, ye-1
+			}
+		}
+		bx, ux := ubdBenchVal(r.IntN(2) == 0, Uint128{Lo: xc}, xe)
+		by, uy := ubdBenchVal(r.IntN(2) == 0, Uint128{Lo: yc}, ye)
+		wc, wok := BIDKernelCmp(bx, by)
+		if c, ok := UBDKernelCmp(ux, uy); c != wc || ok != wok {
+			t.Fatalf("compare %#x %#x: got %d %v, want %d %v", bx, by, c, ok, wc, wok)
+		}
+		if got, want := UBDKernelLess(ux, uy), wok && wc < 0; got != want {
+			t.Fatalf("less %#x %#x: got %v, want %v", bx, by, got, want)
+		}
+		if got, want := UBDKernelEqual(ux, uy), wok && wc == 0; got != want {
+			t.Fatalf("equal %#x %#x: got %v, want %v", bx, by, got, want)
+		}
+	}
+}

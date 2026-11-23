@@ -592,26 +592,41 @@ func ubdEqual128(x, y UBD128) bool {
 	if (x.Hi^y.Hi)|x.Hi<<(64-UBDSignShift)|(x.Lo^y.Lo) == 0 {
 		return true
 	}
-	c, ok := ubdCompare128(x, y)
+	if (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {
+		return ubdCmpWord(x, y) == 0
+	}
+	c, ok := ubdQuietCmp128(x, y)
 	return ok && c == 0
 }
 
 func ubdLess128(x, y UBD128) bool {
-	c, ok := ubdCompare128(x, y)
+	if (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {
+		return ubdCmpWord(x, y) < 0
+	}
+	c, ok := ubdQuietCmp128(x, y)
 	return ok && c < 0
 }
 
 func ubdLessEqual128(x, y UBD128) bool {
-	c, ok := ubdCompare128(x, y)
+	if (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {
+		return ubdCmpWord(x, y) <= 0
+	}
+	c, ok := ubdQuietCmp128(x, y)
 	return ok && c <= 0
 }
 
 func ubdGreater128(x, y UBD128) bool {
-	c, ok := ubdCompare128(x, y)
+	if (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {
+		return ubdCmpWord(x, y) > 0
+	}
+	c, ok := ubdQuietCmp128(x, y)
 	return ok && c > 0
 }
 
 func ubdGreaterEqual128(x, y UBD128) bool {
-	c, ok := ubdCompare128(x, y)
+	if (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {
+		return ubdCmpWord(x, y) >= 0
+	}
+	c, ok := ubdQuietCmp128(x, y)
 	return ok && c >= 0
 }
