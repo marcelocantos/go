@@ -589,6 +589,8 @@ func (s *state) ubdCompareNarrow(op ir.Op, x, y, xlo, xhi, ylo, yhi *ssa.Value) 
 			bop, bx, by = ir.OLE, y, x
 		}
 		s.vars[res] = s.bidCompare(bop, bx, by)
+	} else if ubdLevel4() {
+		s.vars[res] = s.ubdCmpWord4(op, xhi, yhi, xlo, ylo)
 	} else {
 		s.vars[res] = s.ubdComparePredCall(op, xlo, xhi, ylo, yhi)
 	}

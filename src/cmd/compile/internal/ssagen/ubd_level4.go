@@ -268,3 +268,87 @@ func (s *state) ubdDivWord4(rt *types.Type, x, y *ssa.Value) *ssa.Value {
 	u.done(s.newValue2(ssaop.OpDecimal128Make, rt, q, s.newValue2(ssaop.OpOr64, u64, sign, s.newValue2(ssaop.OpLsh64x64, u64, exp, shift))))
 	return u.finish(rt, func() *ssa.Value { return s.softDecimalOp(ir.ODIV, rt, x, y) })
 }
+
+// ubdCmpWord4 is the comparison op of x and y at ubdLevel 4 where level
+// 2's guard has failed (ubdCompareNarrow): the kernel's ubdCmpWord, the
+// predicate entries' first path, for a pair of one-word coefficients
+// (which excludes NaN) whose exponents are at most 19 apart, written for
+// the one predicate the site asks. a, the operand with the larger
+// exponent, scaled by 10^gap, is compared with b once each way, P > b and
+// P < b, one borrow chain each; which of the two is x < y depends on
+// whether x is a and on the sign, and one select picks it. Signs that
+// differ decide by themselves, unless both values are zero. Branch-free
+// past the guards, since a comparison's outcome is the data's, not its
+// kind's. Every other pair is the predicate entry's call.
+func (s *state) ubdCmpWord4(op ir.Op, xh, yh, xl, yl *ssa.Value) *ssa.Value {
+	u := s.newUBD4("ubdcmp4")
+	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
+	tup := types.NewTuple(u64, u64)
+	zero := s.constInt64(u64, 0)
+	c := func(v int64) *ssa.Value { return s.constInt64(u64, v) }
+	or := func(a, b *ssa.Value) *ssa.Value { return s.newValue2(ssaop.OpOr64, u64, a, b) }
+	xor := func(a, b *ssa.Value) *ssa.Value { return s.newValue2(ssaop.OpXor64, u64, a, b) }
+	sel := func(a, b, cond *ssa.Value) *ssa.Value { return s.newValue3(ssaop.OpCondSelect, u64, a, b, cond) }
+	notB := func(a *ssa.Value) *ssa.Value { return s.newValue1(ssaop.OpNot, boolT, a) }
+	words := s.newValue2(ssaop.OpLsh64x64, u64, or(xh, yh), c(64-bid.UBDExpShift+1))
+	u.guard(s.newValue2(ssaop.OpEq64, boolT, words, zero), u.call)
+	shift := c(bid.UBDExpShift)
+	gap := s.newValue2(ssaop.OpSub64, u64, s.newValue2(ssaop.OpRsh64x64, u64, xh, shift), s.newValue2(ssaop.OpRsh64x64, u64, yh, shift))
+	yIsA := s.newValue2(ssaop.OpLess64, boolT, gap, zero) // y has the larger exponent
+	g := sel(s.newValue1(ssaop.OpNeg64, u64, gap), gap, yIsA)
+	u.guard(s.newValue2(ssaop.OpLeq64U, boolT, g, c(bidMaxWordPower)), u.call)
+	ptrT := types.NewPtr(u64)
+	table := s.newValue1A(ssaop.OpAddr, ptrT, bidComparePowers, s.sb)
+	power := s.rawLoad(u64, s.newValue2(ssaop.OpAddPtr, ptrT, table, s.newValue2(ssaop.OpMul64, u64, g, c(bidWordBytes))))
+	a, b := sel(yl, xl, yIsA), sel(xl, yl, yIsA)
+	prod := s.newValue2(ssaop.OpMul64uhilo, tup, a, power)
+	phi, plo := s.newValue1(ssaop.OpSelect0, u64, prod), s.newValue1(ssaop.OpSelect1, u64, prod)
+	borrow := func(xh, xl, yh, yl *ssa.Value) *ssa.Value { // (xh, xl) < (yh, yl)
+		d := s.newValue3(ssaop.OpSub64borrow, tup, xl, yl, zero)
+		d = s.newValue3(ssaop.OpSub64borrow, tup, xh, yh, s.newValue1(ssaop.OpSelect1, u64, d))
+		return s.newValue2(ssaop.OpNeq64, boolT, s.newValue1(ssaop.OpSelect1, u64, d), zero)
+	}
+	negX := s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, xh, c(bid.UBDSignHi)), zero)
+	signsDiffer := s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, xor(xh, yh), c(bid.UBDSignHi)), zero)
+	bothZero := s.newValue2(ssaop.OpEq64, boolT, or(xl, yl), zero)
+	// x before y in magnitude order, adjusted for the sign: with one sign,
+	// x < y is |x| < |y| for a positive sign and |y| < |x| for a negative
+	// one, and |x| < |y| is P < b when x is a, P > b when y is.
+	less := func(xFirst bool) *ssa.Value { // x < y, or y < x when !xFirst
+		pLess, pMore := borrow(phi, plo, zero, b), borrow(zero, b, phi, plo)
+		flip := s.newValue2(ssaop.OpNeqB, boolT, yIsA, negX)
+		if !xFirst {
+			flip = notB(flip)
+		}
+		same := s.newValue3(ssaop.OpCondSelect, boolT, pMore, pLess, flip)
+		// Signs that differ: the negative one is less, unless both are 0.
+		first := negX
+		if !xFirst {
+			first = notB(negX)
+		}
+		diff := s.newValue2(ssaop.OpAndB, boolT, first, notB(bothZero))
+		return s.newValue3(ssaop.OpCondSelect, boolT, diff, same, signsDiffer)
+	}
+	var res *ssa.Value
+	switch op {
+	case ir.OEQ, ir.ONE:
+		// Equal: one sign and P == b, or both zero.
+		eqMag := s.newValue2(ssaop.OpEq64, boolT, or(phi, xor(plo, b)), zero)
+		res = s.newValue2(ssaop.OpOrB, boolT, s.newValue2(ssaop.OpAndB, boolT, notB(signsDiffer), eqMag), bothZero)
+		if op == ir.ONE {
+			res = notB(res)
+		}
+	case ir.OLT:
+		res = less(true)
+	case ir.OGT:
+		res = less(false)
+	case ir.OLE:
+		res = notB(less(false))
+	case ir.OGE:
+		res = notB(less(true))
+	default:
+		s.Fatalf("ubdCmpWord4: %v", op)
+	}
+	u.done(res)
+	return u.finish(boolT, func() *ssa.Value { return s.ubdComparePredCall(op, xl, xh, yl, yh) })
+}

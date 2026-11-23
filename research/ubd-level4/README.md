@@ -152,3 +152,37 @@ a small share of every app.
 **For the user:** the exact divide gains banking and euro little and
 costs risk's inexact divides about 1%. Kept for now; it can be dropped
 without touching the rest.
+
+## Step 3: comparisons of one-word coefficients
+
+Behind level 2's compare guard (one exponent, one sign, one word): the
+kernel's `ubdCmpWord` for a pair of one-word coefficients at most 19
+places apart (wider gaps, none in the apps' counts, take the call).
+
+First written as the kernel's code, branch-free to a three-way result
+and then tested: `<` 3.35 ns against level 3's 2.58, a long serial
+chain. Rewritten for the one predicate the site asks: a (the larger
+exponent) times 10^gap is compared with b once each way, P > b and
+P < b, one borrow chain each; one select picks which is x < y, from
+whether x is a and the sign; signs that differ decide alone unless both
+values are zero; `==` is one sign and P == b, or both zero.
+Branch-free past the guards, since the outcome is the data's.
+
+| ns | L2 | L3 | L4 |
+|---|---|---|---|
+| `<`, one exponent, one sign (money) | 1.04 | 1.03 | 1.03 |
+| `<`, 10% negative (cents10neg) | 1.38 | 1.11 | 1.15 |
+| `<`, exponents 2 apart (gap2) | 4.85 | 2.58 | 2.60 |
+| `<`, exponents −1..−6 (mixexp) | 6.57 | 2.43 | 2.60 |
+| `==`, gap2 | 5.04 | 2.25 | 1.89 |
+| running maximum, gap2neg | 1.25 | 1.03 | 1.10 |
+
+Site, arm64: `<` 56 instructions (level 2: 10, level 3: 77), `==` 38
+(7, 64), `<=` 60 (10, 78).
+
+Levels 1 and 4 agree on 10M random pairs, one in eight a member of x's
+cohort or one unit from it, all six comparisons.
+
+Apps, best of 7: against step 2, tax fed −3.0%, risk −0.9%, tax ca
+−0.9%, the rest within ±0.6% (medians −4.3% to +2.0%); against level 3,
+−2.1% (tax nc) to +2.9% (tax ca), medians −0.5% to +1.9%: even.
