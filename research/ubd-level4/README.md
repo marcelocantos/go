@@ -282,3 +282,25 @@ kernel function appears in the level-4 profiles. Their remaining kernel
 traffic is two-word coefficients (outside the 64-bit constraint) and
 divides (an inexact divide's long division does not fit the site
 limit).
+
+## What level 4 inlines beyond level 2 (after step 4, exact divide dropped)
+
+All for one-word coefficients (at most 19 digits). Each case added is the
+kernel's own first path for the operation. Instructions at the call site
+on arm64, from the probe (function less frame, nothing else live):
+
+| operation | inline at level 2 | added at level 4 | still the kernel call at level 4 | arm64 instructions L2 → L4 |
+|---|---|---|---|---|
+| `x + y` | one exponent, one sign | one exponent, opposite signs; exponents 1–19 apart, any signs | exponents more than 19 apart; a result of 2^112 or more; two-word coefficients; NaN, infinity | 8 → 86 |
+| `x - y` | one exponent, one sign | one exponent, opposite signs; exponents 1–19 apart, any signs | as for `x + y` | 14 → 80 |
+| `x * y` | both factors below 2^56, exponent sum in range | factors of 17–19 digits whose product is below 2^112 | products of 2^112 or more; two-word factors; exponent sum out of range | 20 → 33 |
+| `==` / `!=` | one exponent, one sign; a constant zero | one exponent, opposite signs; exponents 1–19 apart, any signs (equal values at different exponents, zeros of either sign) | exponents more than 19 apart; two-word coefficients; NaN | 7 → 38 / 8 → 39 |
+| `<` / `<=` (`>` / `>=` alike) | as for `==` | as for `==` | as for `==` | 10 → 54 / 10 → 57 |
+| `Round` / `Trunc` / `RoundToEven` (`Floor`, `Ceil` alike) | no fraction (exponent ≥ 0) only | a fraction of 1–19 digits: one division, rounded in the mode | two-word coefficients; NaN, infinity | 7 → 22 / 7 → 15 / 6 → 24 |
+
+The same at both levels: quantize (level 2 already has the same-exponent
+and coarser-exponent paths; a finer exponent calls the kernel), `x / y`
+(the kernel call), `int64(x)`, `uint64(x)`, `min`, `max`, and the
+comparisons with a constant zero (`x == 0` 4, `x > 0` 10). `>`, `>=`,
+`Floor` and `Ceil` were not probed separately; they are the same code
+with the operands or the mode changed.
