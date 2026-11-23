@@ -237,38 +237,6 @@ func (s *state) ubdMulWord4(rt *types.Type, x, y, xh, yh, xl, yl *ssa.Value) *ss
 	return u.finish(rt, func() *ssa.Value { return s.softDecimalOp(ir.OMUL, rt, x, y) })
 }
 
-// ubdDivWord4 lowers x / y at ubdLevel 4: the kernel's exact quotient of
-// one-word coefficients (ubdDivTTE128) where the divisor divides the
-// dividend, a % b == 0, the usual result of dividing an amount by a count
-// that divides it (about half of the word divides in banking and euro).
-// The quotient a / b is then exact at the preferred exponent, the
-// difference of the operands', which must be in the format, with the sign
-// the XOR of theirs; a zero dividend is a zero there. The kernel's paths
-// give the same result for such a pair: its power-of-ten divisor strips
-// every zero it shifts in, and its exact path finds no places to add.
-// Every other pair (a zero divisor, a remainder, a two-word coefficient,
-// a special) is the kernel call.
-func (s *state) ubdDivWord4(rt *types.Type, x, y *ssa.Value) *ssa.Value {
-	u := s.newUBD4("ubddiv4")
-	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
-	zero := s.constInt64(u64, 0)
-	c := func(v int64) *ssa.Value { return s.constInt64(u64, v) }
-	xh, yh := s.newValue1(ssaop.OpDecimal128Hi, u64, x), s.newValue1(ssaop.OpDecimal128Hi, u64, y)
-	xl, yl := s.newValue1(ssaop.OpDecimal128Lo, u64, x), s.newValue1(ssaop.OpDecimal128Lo, u64, y)
-	words := s.newValue2(ssaop.OpLsh64x64, u64, s.newValue2(ssaop.OpOr64, u64, xh, yh), c(64-bid.UBDExpShift+1))
-	u.guard(s.newValue2(ssaop.OpEq64, boolT, words, zero), u.call)
-	u.guard(s.newValue2(ssaop.OpNeq64, boolT, yl, zero), u.call)
-	shift := c(bid.UBDExpShift)
-	exp := s.newValue2(ssaop.OpSub64, u64, s.newValue2(ssaop.OpRsh64x64, u64, xh, shift), s.newValue2(ssaop.OpRsh64x64, u64, yh, shift))
-	q := s.newValue2(ssaop.OpDiv64u, u64, xl, yl)
-	r := s.newValue2(ssaop.OpSub64, u64, xl, s.newValue2(ssaop.OpMul64, u64, q, yl))
-	u.guard(s.newValue2(ssaop.OpEq64, boolT, r, zero), u.call)
-	u.guard(s.newValue2(ssaop.OpLeq64U, boolT, s.newValue2(ssaop.OpAdd64, u64, exp, c(-bid.MinExp128)), c(bid.MaxExp128-bid.MinExp128)), u.call)
-	sign := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpXor64, u64, xh, yh), c(bid.UBDSignHi))
-	u.done(s.newValue2(ssaop.OpDecimal128Make, rt, q, s.newValue2(ssaop.OpOr64, u64, sign, s.newValue2(ssaop.OpLsh64x64, u64, exp, shift))))
-	return u.finish(rt, func() *ssa.Value { return s.softDecimalOp(ir.ODIV, rt, x, y) })
-}
-
 // ubdCmpWord4 is the comparison op of x and y at ubdLevel 4 where level
 // 2's guard has failed (ubdCompareNarrow): the kernel's ubdCmpWord, the
 // predicate entries' first path, for a pair of one-word coefficients

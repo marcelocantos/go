@@ -149,9 +149,9 @@ operations. Apps, against step 1 (best of 7): banking −0.6%, risk +1.1%,
 tax nc +1.7%, the rest within ±0.6%; medians −1.7% to +0.8%. Divide is
 a small share of every app.
 
-**For the user:** the exact divide gains banking and euro little and
-costs risk's inexact divides about 1%. Kept for now; it can be dropped
-without touching the rest.
+**Dropped (the user's decision, 2026-11-23):** the exact divide gained
+banking and euro little and cost every inexact divide its `UDIV` (risk
+about 1%). Level 4's divide is the kernel call again, as at level 2.
 
 ## Step 3: comparisons of one-word coefficients
 
@@ -227,7 +227,7 @@ all five operations and on the rounding test.
 | `x + y` | 8 | 80 | 86 |
 | `x - y` | 14 | 88 | 80 |
 | `x * y` | 20 | 20 | 33 |
-| `x / y` | 3 | 3 | 21 |
+| `x / y` | 3 | 3 | 3 (21 with the exact divide, dropped) |
 | `x == y` | 7 | 64 | 38 |
 | `x != y` | 8 | 67 | 39 |
 | `x < y` | 10 | 77 | 54 |
