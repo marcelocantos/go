@@ -352,8 +352,8 @@ type UBD128 struct{ Lo, Hi uint64 }
 // arithmetic on UBD itself (ubd_add.go, ubd_mul.go, ubd_div.go,
 // ubd_quant.go): its general paths with UBD's decoding and packing, nothing
 // converted. Quantize and round-to-integral have word paths in front
-// (ubdQuantizeWord, ubdRoundToIntegralWord). Compare is this package's on UBD
-// itself (ubd_cmp.go).
+// (ubdQuantizeWord, called by the quantize and round-to-integral entries).
+// Compare is this package's on UBD itself (ubd_cmp.go).
 //
 // decimal128-go (github.com/migueldecimal128/decimal128-go), whose
 // arithmetic works on UBD itself, was tried behind these entries and
@@ -523,7 +523,13 @@ func ubdQuantizeWord(x, y UBD128, mode Mode) (UBD128, bool) {
 	case gap < -int64(len(pow10tab64)-1):
 		return UBD128{}, false
 	default:
-		p := pow10tab64[-gap]
+		// The index unsigned and bounded and the divisor tested make the
+		// function a leaf with no frame: a bounds check and a division
+		// check each gave it one, which cost a quantize to cents 0.4 ns.
+		p := pow10tab64[min(uint(-gap), maxWordGap)]
+		if p == 0 {
+			return UBD128{}, false // never
+		}
 		q := c / p
 		rem := c - q*p
 		// The rounding is computed, not branched on: whether a remainder
@@ -554,9 +560,21 @@ func ubdQuantizeWord(x, y UBD128, mode Mode) (UBD128, bool) {
 	}
 }
 
+// The round-to-integral entries round x on UBD itself when it is finite
+// with a coefficient of one word: an x with an exponent of zero or more is
+// an integer already and is returned as it is; one with a fraction of 1 to
+// 19 digits is x quantized to exponent zero (ubdQuantizeWord against 1E0):
+// one division, rounding by the mode, the sign kept also on a zero. Every
+// other x is ubdRoundToIntegral128's. The word path is written into the
+// entries, so that ubdQuantizeWord, a leaf with no frame, is their one call
+// (through a helper of its own it cost 3.71 ns against 3.45).
+
 func ubdRoundToIntegralTTE128(x UBD128) UBD128 {
-	if x.Hi&UBDCoeffMaskHi == 0 {
-		if r, ok := ubdRoundToIntegralWord(x, ToNearestEven); ok {
+	if x.Hi&UBDCoeffMaskHi == 0 { // also every special: its prefix is in those bits
+		if int64(x.Hi) >= 0 {
+			return x // qExp >= 0: qExp's sign is the word's top bit
+		}
+		if r, ok := ubdQuantizeWord(x, UBD128{Lo: 1}, ToNearestEven); ok {
 			return r
 		}
 	}
@@ -565,27 +583,14 @@ func ubdRoundToIntegralTTE128(x UBD128) UBD128 {
 
 func ubdRoundToIntegralRnd128(x UBD128, mode Mode) UBD128 {
 	if x.Hi&UBDCoeffMaskHi == 0 {
-		if r, ok := ubdRoundToIntegralWord(x, mode); ok {
+		if int64(x.Hi) >= 0 {
+			return x
+		}
+		if r, ok := ubdQuantizeWord(x, UBD128{Lo: 1}, mode); ok {
 			return r
 		}
 	}
 	return ubdRoundToIntegral128(x, mode)
-}
-
-// ubdRoundToIntegralWord rounds x to an integer on UBD itself when x is
-// finite with a coefficient of one word, and reports false otherwise. An x
-// with an exponent of zero or more is an integer already and is returned as
-// it is; one with a fraction of 1 to 19 digits is x quantized to exponent
-// zero (ubdQuantizeWord against 1E0): one division, rounding by the mode,
-// the sign kept also on a zero.
-func ubdRoundToIntegralWord(x UBD128, mode Mode) (UBD128, bool) {
-	if x.Hi&UBDCoeffMaskHi != 0 {
-		return UBD128{}, false // also every special: its prefix is in those bits
-	}
-	if int64(x.Hi) >= 0 {
-		return x, true // qExp >= 0: qExp's sign is the word's top bit
-	}
-	return ubdQuantizeWord(x, UBD128{Lo: 1}, mode)
 }
 
 // ubdCompare128 orders x and y: this package's compare on UBD itself
