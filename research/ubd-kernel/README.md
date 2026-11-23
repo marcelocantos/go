@@ -325,3 +325,34 @@ ubd-kernel-tune (medians alike):
 
 Telco and risk are the apps whose level-2 kernel traffic is quantize
 (above); the others make few quantize calls.
+
+### Call-site size (research/ubd-size's probe)
+
+Each probe function is one `//go:noinline` operation, so its size is the
+call site's code plus a frame; nothing else is live, so no spills are
+counted (a lower bound). Added for this measurement: `QuantizeCent`
+(y the constant 0.01), `QuantizeTZ` (`ToZero`), `QuantizeVar` (the mode
+a variable), `Trunc`, `RoundToEven`, `int64(x)`, `uint64(x)`. Bytes
+(instructions); level 1 and level 2 before are identical:
+
+| op | arch | level 2 before | level 2 after | change | level 3 |
+|---|---|---|---|---|---|
+| Quantize | amd64 | 68 (18) | 231 (61) | +163 | 326 (86) |
+| Quantize to 0.01 | amd64 | 66 (17) | 205 (52) | +139 | 308 (75) |
+| QuantizeMode ToZero | amd64 | 74 (20) | 179 (47) | +105 | 286 (74) |
+| QuantizeMode, variable mode | amd64 | 79 (21) | 357 (91) | +278 | 437 (112) |
+| Round, Trunc, RoundToEven | amd64 | 49–53 (15) | 66–68 (18) | +15–17 | 124–180 |
+| int64(x) | amd64 | 49 (15) | 98 (30) | +49 | 98 (30) |
+| uint64(x) | amd64 | 49 (15) | 53 (16) | +4 | 53 (16) |
+| Quantize | arm64 | 68 (17) | 184 (46) | +116 | 240 (60) |
+| Quantize to 0.01 | arm64 | 68 (17) | 172 (43) | +104 | 224 (56) |
+| QuantizeMode ToZero | arm64 | 76 (19) | 152 (38) | +76 | 208 (52) |
+| QuantizeMode, variable mode | arm64 | 80 (20) | 292 (73) | +212 | 344 (86) |
+| Round, Trunc, RoundToEven | arm64 | 60–64 (15–16) | 72–76 (18–19) | +12 | 116–152 |
+| int64(x) | arm64 | 60 (15) | 96 (24) | +36 | 96 (24) |
+| uint64(x) | arm64 | 60 (15) | 64 (16) | +4 | 64 (16) |
+
+A quantize with a constant mode grows by 76–163 bytes, about 2.5× the
+call alone, and stays 50–100 bytes under level 3's; a variable mode
+keeps all six roundings and costs 212–278. The trivial exits cost 4–17
+bytes, `int64(x)` 36–49 (its sign application).
