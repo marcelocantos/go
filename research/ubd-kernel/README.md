@@ -6,14 +6,75 @@ decimal128 operation is a kernel call. Branch `ubd-kernel-tune`, off `ubd128`
 at 447e9c0b4e. No inline-path (compiler) changes and no new kernel entries:
 the kernel contract is unchanged.
 
+## Results in brief
+
+The five apps of go-decimal128-app-benchmark, compute mode, best of 7
+interleaved runs, this branch's kernel against 447e9c0b4e's, Apple M3 Pro,
+both built with `-ldflags=-funcalign=64`. Outputs equal the goldens (tax
+stderr, banking, telco's SHA-256) at every level.
+
+| app | level 1 | level 2 | level 3 |
+|---|---|---|---|
+| telco | −15.9% | +0.5% | −0.0% |
+| risk_management | −11.6% | −5.6% | +0.4% |
+| tax ca | −10.9% | −7.7% | +0.5% |
+| tax fed | −10.7% | −4.4% | −1.0% |
+| tax nc | −9.4% | −4.2% | +0.1% |
+| banking | −2.5% | −0.9% | +0.2% |
+| euro_conversion | −0.5% | −0.2% | −0.6% |
+
+Level 2 gains because its inline paths hand the kernel everything they do
+not take (different exponents, mixed signs); level 3's BID-derived inline
+paths take most of that themselves.
+
+Per call, against BID's kernel on the same operands (UBD before → after,
+BID; ns):
+
+| | before | after | BID |
+|---|---|---|---|
+| Add money | 3.71 | 1.97 | 3.45 |
+| Sub money | 6.01 | 2.02 | 6.56 |
+| Add cents, 10% negative | 4.86 | 2.65 | 4.45 |
+| Add amount + rate (gap2) | 3.71 | 2.52 | 3.46 |
+| running total, money (AddChain) | 4.23 | 2.38 | 3.71 |
+| running balance, gap2 (SubChain) | 4.76 | 2.39 | 5.04 |
+| running total, 22–25 digits (AddChain w25) | 6.34 | 3.86 | 6.38 |
+| Mul 17–19 digits (w19) | 14.42 | 11.60 | 13.20 |
+| Mul 14–16 digits (w16) | 4.08 | 2.00 | 3.19 |
+| Less money | 4.18 | 3.70 | 4.57 |
+| Equal money | 6.12 | 4.02 | |
+| Compare money | 5.75 | 4.47 | |
+| Min money | 5.89 | 4.28 | 8.19 |
+| Quantize gap2 | 2.47 | 2.38 | 3.04 |
+| RoundToIntegral money | 3.44 | 3.18 | 4.86 |
+| int64(x), money | 4.50 | 2.37 | 5.91 |
+| compound: quantize(acc × rate, 0.01) | 6.50 | 6.38 | 9.48 |
+
+Worse than before, all two-word, each a throughput row whose running-total
+row improved: Sub q34 (a 34-digit quotient minus an amount) 6.46 → 7.43, Add
+w25 5.93 → 6.32, Sub w25 6.66 → 6.92, int64 of two-word values +4%. None
+could be pinned to one change: the add and subtract entries' non-word path
+differs from 447e9c0b4e's by three instructions, and removing each later
+change in turn moved these rows by a few percent either way.
+
+Still slower than BID: two-word operands, by 2–17% (Add/Sub w25 and q34,
+Mul w25/d34/q34, Quantize w25/d34/q34, RoundToIntegral w25/q34, Div of a
+divisor past 2^32). The cause is structural: the UBD entry calls
+`ubdAddSlow128`, `ubdMulSlow128`, `ubdQuantizeSlow128` or `ubdDiv128`, two
+frames, where the XOR-BID compiler calls BID's function directly, one frame.
+Removing it means writing those bodies into the TTE entries (a copy of each
+for the Rnd entries) or changing which function the compiler calls, a
+contract change; not done.
+
 ## Method
 
 `BenchmarkUBDKernel` (`src/internal/bid/ubd_kernel_bench_test.go`) times each
 UBD entry against the BID entry the XOR-BID compiler calls for the same
 operation (`addSlow128`, `subSlow128`, `mulSlow128`, `div128`,
-`quantizeSlow128`, `quietCmpSlow128`), each on its own encoding of the same
+`quantizeSlow128`, `roundToIntegral128`, `quietCmpSlow128`, and `Min128`,
+`Int64From128` for min and conversion), each on its own encoding of the same
 operands, so neither side converts. Both are called through function values
-(`export_test.go`), as a call site calls the kernel: never inlined, and no
+(`export_test.go`), as a call site calls the kernel: never inlined, no
 adapter between. Rows are `Op/class/side` over 1024 pairs in a fixed
 pseudo-random order:
 
@@ -24,95 +85,124 @@ pseudo-random order:
 | gap2 | 3–10 at 10^-2 | 1–5 at 10^-4 | 0% |
 | gap2neg | same | same | 10% |
 | int | 1–6 at 10^0 | 1–6 at 10^0 | 0% |
+| w16 | 14–16 at 10^-4 | 14–16 at 10^-6 | 10% |
 | w19 | 17–19 at 10^-6 | 17–19 at 10^-9 | 0% |
 | w25 | 22–25 at 10^-6 | 22–25 at 10^-9 | 10% |
 | d34 | 34 at 10^-20 | 34 at 10^-24 | 10% |
 | q34 | 30–34 at 10^-28 | 1–6 at 10^-2 | 10% |
 | mixexp | 3–10 at 10^-2 | 1–8 at 10^-2 or 10^-4, at random | 10% |
 
-`TestUBDKernelBenchAgrees` checks that both sides give the same result on
-every benchmarked pair. A/B timings below are two test binaries built with
-`-ldflags=-funcalign=64` and run interleaved, 6–8 runs each, medians; Apple
-M3 Pro.
+Most rows time throughput: the calls are independent. `AddChain` and
+`SubChain` are a running total and a running balance, each call waiting for
+the one before, and `BenchmarkUBDKernelCompound` is compounding,
+`acc = quantize(acc × rate, 0.01)`. **Both kinds are needed**: the first
+word-path version won every throughput row and lost every chain row to BID
+by 13–45% (below).
+
+`TestUBDKernelBenchAgrees` checks that both sides agree on every benchmarked
+pair; `TestUBDAddWordAgrees`, `TestUBDCmpWordAgrees` and
+`TestUBDInt64WordAgrees` check the new word paths against the BID kernel on
+two million random pairs each. `-bid.vectors=ubd` (new) runs the published
+vectors (GDAS decTest, Intel readtest) through the UBD entries: 70705 pass, 0
+fail, the kernel target's count. Before it, no published vector reached a UBD
+entry.
+
+A/B timings: two test binaries built with `-ldflags=-funcalign=64`, run
+interleaved 6–8 times, medians.
 
     cd src && GOEXPERIMENT=decimal ../bin/go test internal/bid -run '^$' -bench UBDKernel -count 6
+    BID_DECTEST_DIR=... BID_INTEL_READTEST=... GOEXPERIMENT=decimal ../bin/go test internal/bid \
+        -run 'TestPublishedVectors$' -args -bid.vectors=ubd
 
-Noise: some rows (Add and Sub on d34 in particular) are bimodal from run to
-run, 8.4–8.7 or 9.3–9.5 ns, in every build including the unchanged base, so a
-5–9% change on them in a single A/B is not evidence. Checked by building the
-base code with padding functions that moved `ubdAddSlow128` to the offsets
-seen in the new builds: all builds showed the same two modes.
+The apps were built from a scratch copy of the benchmark repository whose
+harness writes a CPU profile when `D128_CPUPROFILE` is set; the repository
+itself is unchanged.
 
-## Where level-1 time goes in the applications
+Noise: Add and Sub on d34 are bimodal from run to run (8.4–8.7 or 9.3–9.5
+ns) in every build, the base included, so a 5–9% change there in one A/B is
+not evidence. Checked by padding the base code so that `ubdAddSlow128` moved
+to the offsets of the new builds: all builds showed the same two modes.
 
-The five apps of go-decimal128-app-benchmark built at `-d=ubdlevel=1` and
-profiled in compute mode (a scratch copy of the harness with
-`runtime/pprof`; the benchmark repository is unchanged): the hot kernel
-functions are word paths. tax-fed: `ubdAddWordTTE` 27% of samples,
-`ubdCmpWord` 8%, `ubdEqual128`, `ubdLess128`; telco: word add, quantize word
-(`ubdQuantizeWord`), `ubdMulShort128`. Two-word paths did not show. (Risk's
-profile stops early because its harness reports more than once; euro and
-banking are dominated by formatting and I/O.)
+## What the time went to
+
+**Frames.** A function with any call, a panic's included, gets a prologue
+(stack check, link register saved) and an epilogue. On the word paths these
+were most of the cost. `ubdCmpWord` with a bounds check in it (a signed index
+into `pow10tab64`) made Less slower than three calls had been, 6.0 ns against
+4.1; with the index unsigned and bounded by `min`, no frame, 3.7.
+`ubdQuantizeWord` had a frame for a bounds check and a division-by-zero
+check. A leaf with no frame, called from the entry, costs little; a helper
+with a frame in between costs a lot (the round-to-integral entries through
+`ubdRoundToIntegralWord`: 3.71 ns against 3.45 calling the leaf directly).
+
+**The chain.** Masks instead of branches won independent operations with
+mixed signs and lost every chain: a sum chosen by masks put a dozen
+dependent instructions between one total and the next where BID's predicted
+branches put three. Where a branch's direction goes with the kind of data (one
+exponent and one sign; which operand has the larger exponent), it stays a
+branch; where it goes either way for random data (the sign of a difference),
+a select. This is the same lesson as the reverted sign-agnostic inline add
+(04befab964).
+
+**The level-2 traffic.** At level 2 the kernel sees what the inline paths
+refuse: different exponents and mixed signs. The masked two-exponent path
+made level 2's tax fed 3.5% slower than 447e9c0b4e (bisected to the first
+word-path commit); with branches it is 4.4% faster.
 
 ## Changes
 
-### 1. Add and subtract decide word pairs in the entry (5232eddb43, 04fc1d5ba7)
-
-`ubdAddTTE128` and `ubdSubTTE128` called `ubdAddSlow128`, which called
-`ubdAddLong128` for a word pair: two calls with frames of 112 and 192 bytes,
-and in `ubdAddLong128` a branch on the sign of a difference that `x - y` of
-random positive amounts took about half the time. The entries now call
-`ubdAddWordTTE`, a frameless leaf that adds or subtracts by mask.
-
-A first version read the sign of a difference from the top bit of the
-high word; `TestUBDAddWordAgrees` (new) and the existing pool test caught it:
-a word scaled by 10^19 can pass 2^127. The sign now comes from the carry out.
-
-### 2. Word compares call one frameless leaf (e627581a92)
-
-A compare of word coefficients made three calls: the predicate,
-`ubdQuietCmp128` and `compareWords`, which does not inline. The predicates
-and `ubdQuietCmp128` now call `ubdCmpWord` first. The frame mattered more
-than the calls: with a bounds check (`pow10tab64[min(g, 19)]` on a signed
-`g`) giving it a frame, `ubdCmpWord` made Less slower than before, 6.0
-against 4.1 ns; with the index unsigned and no frame, 3.7.
-
-### 3. Add of one exponent skips the scaling (9d3462dbed)
-
-| row | before | after | BID |
-|---|---|---|---|
-| Add money | 3.26 | 2.20 | 3.46 |
-| Sub money | 3.31 | 2.21 | 6.59 |
-| Add gap2 | 3.26 | 3.33 | 3.46 |
-| Add mixexp | 3.39 | 3.42 | 4.76 |
-
-The same branch in `ubdCmpWord` gained 20–27% on one exponent but took Less
-and Equal on mixexp from 4.0 to 6.2 ns (a mispredict half the time) and
-Compare at gap 2 up 15–20%. Set aside.
+1. **Add and subtract decide word pairs in the entry** (dbf30ae565,
+   04fc1d5ba7). The entries called `ubdAddSlow128`, which called
+   `ubdAddLong128`: two frames of 112 and 192 bytes. They now call
+   `ubdAddWordTTE`, a leaf. A first version read the sign of a difference
+   from the top bit of the high word; the tests caught it (a word scaled by
+   10^19 can pass 2^127).
+2. **Word compares call one leaf** (e627581a92): the predicates,
+   `ubdQuietCmp128`, and later min and max, call `ubdCmpWord` for a word pair
+   instead of `ubdQuietCmp128` → `compareWords`.
+3. **Add of one exponent skips the scaling** (9d3462dbed).
+4. **Multiply takes every word product below 2^112 inline** (92e023c89d):
+   `ubdMulShort128`'s bound was BID's 2^96; UBD's high word holds a
+   product's top 48 bits below the sign. `ubdMulSlow128` no longer sends word
+   pairs to `ubdMulLong128`: those that reach it mostly round, and its own
+   two-word path rounds them in one call.
+5. **int64 conversion and min/max take word operands directly**
+   (18eabce336). A sign chosen by mask in the conversion was slower than the
+   branch (3.46 ns against 2.33 for positive values) and was set aside.
+6. **The quantize word path is a leaf** (b77418666c); the round-to-integral
+   entries call it directly.
+7. **cDigits128 and cCmpFinite128 are leaves** (e6136cb4b1), shared with
+   the BID kernel.
+8. **Running totals** (305cbb333e): one exponent and one sign is a branch to
+   an add and its carry; one exponent and opposite signs selects the
+   difference that did not borrow; `ubdAddSlow128` sums two-word coefficients
+   of one exponent and one sign before its general path.
+9. **Two exponents branch as BID's do** (4b71df59ee).
 
 ## Tried and dropped
 
 - The add word path written into the entry instead of a leaf call: no
-  change (3.26 against 3.25 ns). The path is bound by its own work, not by
-  the call.
+  change in throughput.
+- The one-exponent branch in `ubdCmpWord`: 20–27% faster on one exponent,
+  but Less and Equal on mixexp 50% slower (a mispredict half the time), and
+  Compare at gap 2 15–20% slower.
+- A two-word one-exponent sum in the add entries: as a helper over the
+  inlining budget it was a call on every two-word add (+9–23%); with the test
+  in the entry, the word rows lost 7–33%. In `ubdAddSlow128` it costs the word
+  rows nothing.
+- `ubdMulShort128` widened by comparing with MaxCoeff128: over the inlining
+  budget (83 against 80), a call on every multiply.
+- `divPow10Recip128` without its bounds checks: no change on q34 quantize,
+  and a bad index would no longer panic; reverted.
+- A reciprocal multiply in place of the divide in `ubdQuantizeWord`, for
+  compounding's chain: not tried after reading the existing measurement (3%
+  slower) and counting the chain (one or two cycles at most).
 
-## Standing: UBD against BID after change 3
+## Not done
 
-ns per call, medians (UBD / BID); word classes:
-
-| | money | gap2 | int | w19 |
-|---|---|---|---|---|
-| Add | 2.20 / 3.46 | 3.33 / 3.46 | 2.20 / 3.46 | 3.32 / 3.46 |
-| Sub | 2.21 / 6.59 | 3.38 / 4.85 | 2.21 / 6.63 | 3.36 / 5.05 |
-| Mul | 2.01 / 3.19 | 2.01 / 3.19 | 2.01 / 3.19 | 14.3 / 13.0 |
-| Div | 12.6 / 15.7 | 11.2 / 14.3 | 11.4 / 15.2 | 16.3 / 15.5 |
-| Quantize | 2.00 / 3.04 | 2.49 / 3.08 | 2.00 / 3.04 | 2.48 / 3.07 |
-| Less | 3.76 / 4.62 | 3.77 / 4.69 | 3.79 / 4.64 | 3.78 / 4.29 |
-
-Still slower than BID: two-word operands, by 6–11% (Add w25 and q34, Mul
-w19/w25/d34/q34, Quantize w25/d34/q34, Sub d34). The cause is structural:
-the UBD entry calls `ubdAddSlow128`, `ubdMulSlow128` or
-`ubdQuantizeSlow128`, two frames, where the XOR-BID compiler calls BID's
-slow function directly, one frame. Removing it means writing those bodies
-into the entries (duplicating them for the Rnd entries) or changing which
-function the compiler calls, which is a contract change; not done.
+- The two-word structural frame (above).
+- Divide: UBD is 20% faster than BID on word operands already; four
+  dependent divides by a divisor below 2^32 are most of its 11–12 ns.
+- Formatting (`PutShort128`, `writeWordDigits`, `PutLong128`) is 6–8% of
+  the tax and telco profiles at every level and has frames for bounds
+  checks; it is not a compiler-called entry, so outside this step.

@@ -124,6 +124,44 @@ func bidBench2(b *testing.B, ps []ubdBenchPair, f func(x, y Uint128, mode Mode) 
 	ubdSinkB = acc
 }
 
+// BenchmarkUBDKernelCompound times compounding, a chain of a multiply by
+// a rate near one and a quantize to cents, each step waiting for the one
+// before: acc = quantize(acc × rate, 0.01), restarted every 64 steps.
+func BenchmarkUBDKernelCompound(b *testing.B) {
+	r := rand.New(rand.NewPCG(29, 31))
+	type rate struct {
+		u UBD128
+		b Uint128
+	}
+	rates := make([]rate, ubdBenchN)
+	for i := range rates {
+		rb, ru := ubdBenchVal(false, Uint128{Lo: 10001 + uint64(r.IntN(500))}, -4)
+		rates[i] = rate{ru, rb}
+	}
+	b0, u0 := ubdBenchVal(false, Uint128{Lo: 12345678}, -2)
+	bq, uq := ubdBenchVal(false, Uint128{Lo: 1}, -2)
+	b.Run("ubd", func(b *testing.B) {
+		acc := u0
+		for i := 0; i < b.N; i++ {
+			acc = UBDKernelQnt(UBDKernelMul(acc, rates[i&(ubdBenchN-1)].u), uq)
+			if i&63 == 63 {
+				acc = u0
+			}
+		}
+		ubdSinkU = acc
+	})
+	b.Run("bid", func(b *testing.B) {
+		acc := b0
+		for i := 0; i < b.N; i++ {
+			acc = BIDKernelQnt(BIDKernelMul(acc, rates[i&(ubdBenchN-1)].b, ToNearestEven), bq, ToNearestEven)
+			if i&63 == 63 {
+				acc = b0
+			}
+		}
+		ubdSinkB = acc
+	})
+}
+
 func BenchmarkUBDKernel(b *testing.B) {
 	for _, cl := range ubdBenchClasses {
 		ps := ubdBenchPairs(cl)
