@@ -466,7 +466,11 @@ func (s *state) ubdMulFast(rt *types.Type, x, y *ssa.Value) *ssa.Value {
 	// path changed the fast path's register allocation and made x * y
 	// 6-8% slower on its own operands, for products that only factors of
 	// 2^56 or more (17 digits) need.
-	s.vars[result] = s.softDecimalOp(ir.OMUL, rt, x, y)
+	if ubdLevel4() {
+		s.vars[result] = s.ubdMulWord4(rt, x, y, xh, yh, xl, yl)
+	} else {
+		s.vars[result] = s.softDecimalOp(ir.OMUL, rt, x, y)
+	}
 	s.endBlock().AddEdgeTo(bAfter)
 	s.startBlock(bAfter)
 	r := s.variable(result, rt)

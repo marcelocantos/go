@@ -105,3 +105,50 @@ different exponents and integral rounding, which level 4 has not reached.
 `cmd/compile/internal/ssagen`'s TestIntrinsics fails at this branch's
 base as well (it does not list the `Quantize[shape]` intrinsics); left
 alone.
+
+## Step 2: multiply and divide of one-word coefficients
+
+**Multiply.** Behind level 2's guard (both factors below 2^56, exponent
+sum in range): the kernel's `ubdMulShort128` for one-word factors, with
+the product tested instead of the factors: below 2^112, exact at the sum
+of the exponents. It takes the factors of 17 to 19 digits whose product
+still fits. Level 2's counts show none in the apps (their kernel
+multiplies are two-word), so this is for code that has them: 1.50 ns
+against 2.67 at levels 2 and 3. Site: 33 instructions on arm64 (level
+2: 20), 52 on amd64.
+
+**Divide.** Level 2 has no inline divide. Counted at level 2 (scratch
+counting toolchain), divides of two one-word coefficients:
+
+| app | a % b == 0 | a == 0 | b a power of ten | inexact |
+|---|---|---|---|---|
+| banking | 1348 | 98 | 496 | 870 |
+| euro | 162 | 0 | 8 | 228 |
+| risk | 6 | 28 | 10 | 2579 |
+| tax fed, nc | 0–3 | 0 | 0 | 3–6 |
+
+Promoted: the kernel's exact quotient where b divides a: one `UDIV`,
+the remainder zero, the exponent difference in range; the quotient is
+exact at the preferred exponent (the kernel's power-of-ten and exact
+paths give the same for such a pair). A zero dividend is the same path.
+The inexact divide stays in the kernel: its long division (up to four
+dependent divides) would not fit the site limit and would save only the
+call.
+
+| ns | L2 | L3 | L4 |
+|---|---|---|---|
+| amount / a count that divides it (Div exact) | 4.34 | 4.33 | 1.33 |
+| amount / 3 (Div inexact) | 10.65 | 10.64 | 11.49 |
+
+The inexact divide pays the `UDIV` before the call: +0.84 ns, 8%. Site:
+21 instructions on arm64, 34 on amd64.
+
+Levels 1 and 4 agree on 5M random multiply/divide pairs, one in six with
+x's coefficient a multiple of y's, and on 3M pairs of all five
+operations. Apps, against step 1 (best of 7): banking −0.6%, risk +1.1%,
+tax nc +1.7%, the rest within ±0.6%; medians −1.7% to +0.8%. Divide is
+a small share of every app.
+
+**For the user:** the exact divide gains banking and euro little and
+costs risk's inexact divides about 1%. Kept for now; it can be dropped
+without touching the rest.
