@@ -302,3 +302,26 @@ subtracts (about 0.05 ns), which is below what the apps can show.
 `ubdCmpWord` is branch-free, so there is no test to remove there; Equal's
 identical-encoding test is redundant at level 2, but Equal is at most 40
 calls a run in these apps.
+
+### Quantize to a coarser exponent inline at level 2 (8032567fef)
+
+Quantize at level 2 now runs level 3's inline word paths, less the one
+that scales x up: x at y's exponent is x, and a one-word x 1 to 19 places
+finer than y is divided by the power of ten and rounded in the mode
+(constant modes fold). Level 1 and level 2 agree on 3M random quantizes
+in every mode and on the 43 edge values; `QuantizeCent128`'s codegen
+test now expects the divide. Apps at level 2, best of 7 against
+ubd-kernel-tune (medians alike):
+
+| app | change |
+|---|---|
+| telco | −9.2% |
+| risk | −5.1% |
+| tax fed | −0.6% |
+| tax ca | −0.4% |
+| euro | −0.2% |
+| tax nc | +0.4% |
+| banking | +0.7% |
+
+Telco and risk are the apps whose level-2 kernel traffic is quantize
+(above); the others make few quantize calls.
