@@ -76,7 +76,9 @@ func ubdCmpWord(x, y UBD128) int {
 	a, b := xc^(xc^yc)&uint64(m), yc^(xc^yc)&uint64(m)
 	g := uint((gap ^ m) - m)
 	hi, lo := bits.Mul64(a, pow10tab64[min(g, maxWordGap)]) // no bounds check: g is unsigned
-	far := uint64(maxWordGap-g) >> 63 & ((a | -a) >> 63)
+	// Signed and 64 bits wide: as a uint, maxWordGap - g would wrap at 32
+	// bits on a 32-bit target and leave bit 63 clear.
+	far := uint64(int64(maxWordGap)-int64(g)) >> 63 & ((a | -a) >> 63)
 	_, lt := bits.Sub64(lo, b, 0)
 	_, gt := bits.Sub64(b, lo, 0)
 	h := (hi|-hi)>>63 | far
