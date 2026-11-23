@@ -65,6 +65,21 @@ Tried and dropped:
 - The tail written once per order, so that no phi moves are needed: 16
   more instructions on arm64; single operations 6–12% faster, running
   totals 5–23% slower.
+- (2026-11-23, at the user's request) The swap rearranged so that one
+  order needs no moves: the gap path's refusals (a gap past 19, a
+  result of 2^112 or more) call the add entry with a and b as the path
+  holds them (two finite words, whose exact sum does not depend on their
+  order; for x − y, y's sign already flipped, as `ubdSubTTE128` does), so
+  x and y are not live past the swap; the moves went from 4 + 8 to 0 + 6,
+  and the swap branch's prediction picks which order has none. The add
+  site fell from 86 to 80 instructions (level 3's size), and single
+  operations gained 2–10% (amount − rate 2.43 → 2.20 ns). But running
+  totals lost 8–23% (rate-and-amount total 1.60 → 1.86 ns, a balance
+  crossing zero 0.87 → 1.07): with the second call's result registers,
+  the allocator moved the loop's total to another register, and the
+  same-exponent path, which the change does not touch, now ends in a move
+  and a jump to a join block where it ended in a jump back to the loop.
+  Running totals are what the apps do, so the tail stays as it was.
 
 Correctness: levels 1 and 4 agree on 10M random pairs (add, subtract and
 the six comparisons). math/decimal and strconv pass built at level 4.
