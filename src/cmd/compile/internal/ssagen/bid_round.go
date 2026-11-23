@@ -38,9 +38,9 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 	// operand words kargs, low first: the ties-to-even entry, with no mode,
 	// when the mode is that constant, and otherwise the entry that takes it.
 	kernelCall := func(kargs []*ssa.Value) *ssa.Value {
-		fn, tte := bidKernelQuantize, bidKernelQuantizeTTE
+		fn, tte := ubdKernelQuantize, ubdKernelQuantizeTTE
 		if integral {
-			fn, tte = bidKernelIntegral, bidKernelIntegralTTE
+			fn, tte = ubdKernelIntegral, ubdKernelIntegralTTE
 		}
 		if mode.Op == ssaop.OpConst8 && mode.AuxInt == int64(bid.ToNearestEven) {
 			fn = tte
@@ -58,8 +58,8 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 	// integral rounding takes them as well (the kernel's word path: an x
 	// with qExp >= 0 is x, one with a fraction of 1 to 19 digits is one
 	// division, rounded in the mode).
-	level2Quantize := bidCallOnly(x) && (!integral && ubdLevel() >= 2 || ubdLevel3())
-	if bidCallOnly(x) && !level2Quantize {
+	level2Quantize := ubdLowered(x) && (!integral && ubdLevel() >= 2 || ubdLevel3())
+	if ubdLowered(x) && !level2Quantize {
 		xh := s.newValue1(ssaop.OpDecimal128Hi, u64, x)
 		kargs := []*ssa.Value{s.newValue1(ssaop.OpDecimal128Lo, u64, x), xh}
 		if !integral {
@@ -244,7 +244,7 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 	s.startBlock(bSlow)
 	if !is64 && bidKernelDirect() {
 		// The kernel's general path, called directly as the operators'
-		// are (bidKernelOp): the typed helper would only convert the
+		// are (ubdKernelOp): the typed helper would only convert the
 		// operands and the mode, whose values the public and the kernel
 		// modes share, and call it.
 		// UBD: the kernel's UBD entries take the stored words as they are,
@@ -253,7 +253,7 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 		if !integral {
 			kargs = append(kargs, s.newValue1(ssaop.OpDecimal128Lo, u64, args[1]), high(args[1]))
 		}
-		// One call for every operand, as in bidKernelOp: the kernel's
+		// One call for every operand, as in ubdKernelOp: the kernel's
 		// entry sends a word coefficient to its word path itself.
 		s.vars[result] = kernelCall(kargs)
 	} else {

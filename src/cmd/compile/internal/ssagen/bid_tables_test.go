@@ -22,10 +22,10 @@ import (
 
 func TestBIDPowerTables(t *testing.T) {
 	oldContext, oldArch := base.Ctxt, Arch.LinkArch
-	oldAdd, oldCompare, oldRound := bidAddPowers, bidComparePowers, bidRoundPowers
+	oldAdd, oldCompare, oldRound := ubdAddPowers, bidComparePowers, bidRoundPowers
 	defer func() {
 		base.Ctxt, Arch.LinkArch = oldContext, oldArch
-		bidAddPowers, bidComparePowers, bidRoundPowers = oldAdd, oldCompare, oldRound
+		ubdAddPowers, bidComparePowers, bidRoundPowers = oldAdd, oldCompare, oldRound
 	}()
 	for _, arch := range []*sys.Arch{sys.ArchARM64, sys.ArchPPC64} {
 		Arch.LinkArch = &obj.LinkArch{Arch: arch}
@@ -38,7 +38,7 @@ func TestBIDPowerTables(t *testing.T) {
 		for _, table := range []struct {
 			sym         *obj.LSym
 			first, last int
-		}{{bidAddPowers, 0, 14}, {bidComparePowers, 0, 19}, {bidRoundPowers, 1, 19}} {
+		}{{ubdAddPowers, 0, 14}, {bidComparePowers, 0, 19}, {bidRoundPowers, 1, 19}} {
 			if !table.sym.OnList() || len(table.sym.P) != 8*(table.last-table.first+1) {
 				t.Fatalf("%s: undeclared or wrong-size table %s", arch.Name, table.sym.Name)
 			}

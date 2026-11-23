@@ -59,7 +59,7 @@ func (s *state) bidKernelOp64(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Va
 		fn = bidKernelAdd64
 	case ir.OSUB:
 		// x - y is x + (-y), except that a NaN y keeps its sign (see
-		// bidKernelOp).
+		// ubdKernelOp).
 		fn = bidKernelAdd64
 		nanMask := s.constInt64(u64, int64(bid.NaN64))
 		nan := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpAnd64, u64, yn, nanMask), nanMask)

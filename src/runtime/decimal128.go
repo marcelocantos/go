@@ -8,7 +8,7 @@
 // the comparisons, are in decimal128_call.go for the targets without those
 // paths. On amd64 and arm64 the compiler calls internal/bid for the
 // operands its fast paths refuse, and for division, with no function here
-// between them (cmd/compile/internal/ssagen.bidKernelOp).
+// between them (cmd/compile/internal/ssagen.ubdKernelOp).
 
 package runtime
 

@@ -104,7 +104,7 @@ func (u *ubd3) finish(rt *types.Type, call func() *ssa.Value) *ssa.Value {
 //     below 2^64 and 10^14 + 1 is below 2^48, so a × 10^gap + b is below
 //     2^112 < 10^34, and a difference no larger. The BID-derived add of
 //     the former level 3 had the same bound for the same reason
-//     (bidAddMaxGap).
+//     (ubdAddMaxGap).
 //
 // Every other pair (a two-word coefficient, a special, exponents more than
 // 14 apart) is the kernel call.
@@ -168,9 +168,9 @@ func (s *state) ubdAddWord3(op ir.Op, rt *types.Type, x, y, xh, yh, xl, yl *ssa.
 	}
 	shift := c(bid.UBDExpShift)
 	gap := s.newValue2(ssaop.OpSub64, u64, s.newValue2(ssaop.OpRsh64x64, u64, aH, shift), s.newValue2(ssaop.OpRsh64x64, u64, bH, shift))
-	u.guard(s.newValue2(ssaop.OpLeq64U, boolT, gap, c(bidAddMaxGap)), u.call)
+	u.guard(s.newValue2(ssaop.OpLeq64U, boolT, gap, c(ubdAddMaxGap)), u.call)
 	ptrT := types.NewPtr(u64)
-	table := s.newValue1A(ssaop.OpAddr, ptrT, bidAddPowers, s.sb)
+	table := s.newValue1A(ssaop.OpAddr, ptrT, ubdAddPowers, s.sb)
 	power := s.rawLoad(u64, s.newValue2(ssaop.OpAddPtr, ptrT, table, s.newValue2(ssaop.OpMul64, u64, gap, c(bidWordBytes))))
 	prod := s.newValue2(ssaop.OpMul64uhilo, tup, aL, power)
 	phi, plo := s.newValue1(ssaop.OpSelect0, u64, prod), s.newValue1(ssaop.OpSelect1, u64, prod)

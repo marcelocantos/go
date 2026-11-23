@@ -130,7 +130,7 @@ var dpdArith = map[opAndType]ssaop.Op{
 // result type rt: on a DPD target the hardware's instructions, elsewhere
 // integer fast paths with runtime calls for the general case.
 func (s *state) decimalOp(op ir.Op, rt *types.Type, args ...*ssa.Value) *ssa.Value {
-	if bidCallOnly(args[0]) {
+	if ubdLowered(args[0]) {
 		if ubdLevel() >= 2 && (op == ir.OADD || op == ir.OSUB) {
 			return s.ubdAddNarrow(op, rt, args[0], args[1])
 		}

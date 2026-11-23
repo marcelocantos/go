@@ -1882,7 +1882,7 @@
 // coefficients of one word each, addLong128 and mulLong128 directly, which
 // take those first), quietCmpSlow128 for the
 // comparisons, and for two finite operands it has decoded itself,
-// cCmpFinite128 (cmd/compile/internal/ssagen.bidKernelOp and bidCompare).
+// cCmpFinite128 (cmd/compile/internal/ssagen.ubdKernelOp, and bidCompare for decimal64).
 // No runtime function stands between the operator and the kernel there:
 // one cost a frame and a second call on every such operand pair, 0.6 to
 // 0.8 ns of an addition's 9. Those functions' parameters are therefore a

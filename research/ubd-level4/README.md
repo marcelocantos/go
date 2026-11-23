@@ -546,3 +546,15 @@ TestWordPathsAgreeWithCompiler and math/decimal at each level pass;
 ssagen's TestIntrinsics fails as it did before.
 
 This log keeps the name "level 4" for the work above.
+
+Then the BID-named lowerings (punch list 1(ii)): with the old level 3
+gone, `bidAddSub128` no longer exists and `bidCompare` is decimal64's (a
+BID encoding), so its name is right. The identifiers that serve only
+decimal128 on UBD are renamed: the kernel symbols `bidKernelAdd` …
+`bidKernelNarrow` (each a `ubd*` entry) → `ubdKernelAdd` …
+`ubdKernelNarrow`; `bidKernelOp` → `ubdKernelOp`; `bidCallOnly` →
+`ubdLowered`; `bidAddMaxGap` and `bidAddPowers`, level 3's alone →
+`ubdAddMaxGap`, `ubdAddPowers`. Kept: names shared with decimal64's BID
+path (`bidKernelDirect`, a target test; `bidRounding`, `bidCompareZero`,
+`bidIsZero`, `bidConstZero`; the other power tables and word constants;
+bid64.go). Disassembly again identical at levels 1 to 3 (96 files).
