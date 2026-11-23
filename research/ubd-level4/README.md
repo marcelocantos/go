@@ -419,3 +419,59 @@ version (page-aligned, medians of 7): no row slower; subtract rate −
 amount (Sub gap2r) −4.5%, the rest within noise. Levels 1 and 4 agree
 on 10M random pairs on arm64 and 3M on amd64 (gaps up to 30, coefficients
 near 2^64 among them).
+
+## Apps at levels 2, 3 and 4 (2026-11-23, after steps 1–6, gap ≤ 14)
+
+All seven apps built at each level with this branch's compiler
+(`-funcalign=64`), outputs equal at every level and to the earlier
+builds; compute mode, ns per record, the three builds interleaved, best
+of 7:
+
+| app | L2 | L3 | L4 | L4 vs L2 | L4 vs L3 | medians L4 vs L2 / L3 |
+|---|---|---|---|---|---|---|
+| tax fed | 2275.2 | 2173.5 | 2132.9 | −6.3% | −1.9% | −7.9% / −2.5% |
+| tax ca | 483.3 | 445.5 | 455.7 | −5.7% | +2.3% | −5.9% / +2.0% |
+| tax nc | 737.0 | 705.9 | 706.5 | −4.1% | +0.1% | −2.5% / +0.3% |
+| risk | 5818.8 | 5741.6 | 5641.6 | −3.0% | −1.7% | −3.0% / −2.0% |
+| banking | 639.3 | 629.6 | 626.7 | −2.0% | −0.5% | −2.0% / −0.2% |
+| telco | 29.0 | 28.6 | 28.5 | −1.7% | −0.6% | −1.6% / −0.6% |
+| euro | 870.4 | 857.9 | 858.5 | −1.4% | +0.1% | −1.3% / −0.2% |
+
+Each app's own code, arm64 instructions (the text of its `main` and
+benchmark-repository functions, which hold the inlined decimal
+operations, over 4):
+
+| app | L2 | L3 | L4 | L4 vs L3 |
+|---|---|---|---|---|
+| tax fed | 11,808 | 28,064 | 28,752 | +2.5% |
+| banking | 20,080 | 28,144 | 29,456 | +4.7% |
+| tax nc | 5,584 | 12,016 | 11,616 | −3.3% |
+| tax ca | 4,176 | 8,032 | 7,776 | −3.2% |
+| risk | 3,568 | 5,216 | 5,200 | −0.3% |
+| euro | 2,288 | 2,560 | 2,576 | +0.6% |
+| telco | 1,920 | 2,336 | 2,384 | +2.1% |
+
+Instructions per call site, arm64 (probe function less frame):
+
+| op | L2 | L3 | L4 |
+|---|---|---|---|
+| `x + y` | 8 | 80 | 84 |
+| `x - y` | 14 | 88 | 78 |
+| `x * y` | 20 | 20 | 33 |
+| `x / y` | 3 | 3 | 3 |
+| `x == y` | 7 | 64 | 38 |
+| `x < y` | 10 | 77 | 54 |
+| `x <= y` | 10 | 78 | 57 |
+| `x == 0` / `x > 0` | 4 / 10 | 4 / 10 | 4 / 10 |
+| `min(x, y)` | 3 | 3 | 66 |
+| `Quantize(x, y)` | 30 | 44 | 44 |
+| `Quantize(x, 0.01)` | 29 | 42 | 42 |
+| `QuantizeMode`, ToZero / variable | 22 / 55 | 36 / 68 | 36 / 68 |
+| `Round` / `Trunc` / `RoundToEven` | 7 / 15 / 6 | 22 / 15 / 24 | 22 / 15 / 24 |
+| `int64(x)` | 12 | 12 | 12 |
+
+Level 4 is 1.4–6.3% faster than level 2 on every app and within −1.9%
+to +2.3% of level 3 (faster on tax fed and risk, behind on tax ca, even
+elsewhere), at about level 3's size: smaller where comparisons and
+subtracts dominate (tax ca, tax nc), larger where `min`/`max` and adds
+do (banking, tax fed). Banking's numbers mostly measure its file reads.
