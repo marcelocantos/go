@@ -198,8 +198,24 @@ and `ubdDiv128` have since become the TTE entries' bodies (change 11).
     TTE entry's (above).
 12. **Round to integral of two-word values is one call** (d25c81928c):
     `ubdQuantizeWideTTE` against 1E0.
+13. **uint64 conversion takes word operands directly** (6cd480a681), as
+    int64 does: Uint64 money 3.98 → 2.45 ns (BID 5.64).
+
+The benchmark also times the Rnd quantize entry toward zero (806a45c26f),
+which telco's truncated taxes call (9% of its level-1 profile): word rows
+1.98–2.39 ns against BID's 3.02–3.06.
 
 ## Tried and dropped
+
+- Equal without its identical-encoding test: word rows 40% slower (4.1 →
+  5.9 ns), though the test only answers for equal values. Kept.
+- The add word path handing the operands it refuses back in its results,
+  so that the entry need not save them across the call: the prologue's
+  stores went, but word adds at two exponents and of mixed sign were 7–10%
+  slower.
+- The predicates calling `cCmpFinite128` themselves for two finite
+  two-word operands, through a helper meant to inline: it did not (cost
+  100), and two-word compares were 17–44% slower.
 
 - Quantize's two-word rounding alone in a leaf: q34 4.25 ns, but every other
   two-word quantize paid the call before falling through (w25, d34 +33–40%);
