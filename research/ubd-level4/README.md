@@ -239,8 +239,8 @@ all five operations and on the rounding test.
 
 | op | L2 | L3 | L4 |
 |---|---|---|---|
-| `x + y` | 8 | 80 | 86 |
-| `x - y` | 14 | 88 | 80 |
+| `x + y` | 8 | 80 | 86 (84 with gap ≤ 14) |
+| `x - y` | 14 | 88 | 80 (78 with gap ≤ 14) |
 | `x * y` | 20 | 20 | 33 |
 | `x / y` | 3 | 3 | 3 (21 with the exact divide, dropped) |
 | `x == y` | 7 | 64 | 38 |
@@ -403,3 +403,19 @@ the first, for 0.1–0.6 ns on calls that are a negligible share of app
 time. If one were made, subtract is the case: a level-4 subtract entry
 could call the add entry with y's sign flipped at once (−5 to −9% on
 two-word rows).
+
+## Step 1 revised: exponents at most 14 apart, no result test
+
+At the user's suggestion: with a and b below 2^64 and the gap at most 14,
+a × 10^gap + b < 2^64 × (10^14 + 1) < 2^64 × 2^48 = 2^112 < 10^34, and a
+difference is no larger, so the sum cannot pass MaxCoeff128 and the test
+of the result (`hi >> 48 == 0`, a shift and a branch) goes. Gaps of 15 to
+19 places, none in the apps' counts, take the kernel call. Level 3's add
+has the same bound (`bidAddMaxGap`). The comparison keeps 19: it
+compares the 128-bit product with b and builds no coefficient.
+
+Site, arm64: add 86 → 84, subtract 80 → 78. Speed against the gap-19
+version (page-aligned, medians of 7): no row slower; subtract rate −
+amount (Sub gap2r) −4.5%, the rest within noise. Levels 1 and 4 agree
+on 10M random pairs on arm64 and 3M on amd64 (gaps up to 30, coefficients
+near 2^64 among them).

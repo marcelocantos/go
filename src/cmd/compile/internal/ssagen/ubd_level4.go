@@ -92,18 +92,21 @@ func (u *ubd4) finish(rt *types.Type, call func() *ssa.Value) *ssa.Value {
 //     difference of the low words, the one that did not borrow chosen by
 //     a select, the sign flipped by the borrow and an exact zero +0; for
 //     x - y the sum, an add and its carry.
-//   - Exponents 1 to 19 apart: a, the operand with the larger exponent,
+//   - Exponents 1 to 14 apart: a, the operand with the larger exponent,
 //     is scaled by 10^gap, one 64×64 multiply from the table, and b added
 //     or subtracted. Which operand is a goes with the data's kind (an
 //     amount and a rate, a total and an amount), so it is a branch, not
 //     a select: a select would put the comparison of the high words on
 //     the running total's dependency chain, ahead of the multiply. A
 //     difference that borrows out of the high word is b's magnitude
-//     less a's, the sign flipped; an exact zero is +0. The result, at
-//     b's exponent, the preferred one, must be below 2^112.
+//     less a's, the sign flipped; an exact zero is +0. The result is at
+//     b's exponent, the preferred one, and needs no test: a and b are
+//     below 2^64 and 10^14 + 1 is below 2^48, so a × 10^gap + b is below
+//     2^112 < 10^34, and a difference no larger. Level 3's add has the
+//     same bound for the same reason (bidAddMaxGap).
 //
 // Every other pair (a two-word coefficient, a special, exponents more than
-// 19 apart, a sum that must round) is the kernel call.
+// 14 apart) is the kernel call.
 func (s *state) ubdAddWord4(op ir.Op, rt *types.Type, x, y, xh, yh, xl, yl *ssa.Value) *ssa.Value {
 	u := s.newUBD4("ubdadd4")
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
@@ -164,9 +167,9 @@ func (s *state) ubdAddWord4(op ir.Op, rt *types.Type, x, y, xh, yh, xl, yl *ssa.
 	}
 	shift := c(bid.UBDExpShift)
 	gap := s.newValue2(ssaop.OpSub64, u64, s.newValue2(ssaop.OpRsh64x64, u64, aH, shift), s.newValue2(ssaop.OpRsh64x64, u64, bH, shift))
-	u.guard(s.newValue2(ssaop.OpLeq64U, boolT, gap, c(bidMaxWordPower)), u.call)
+	u.guard(s.newValue2(ssaop.OpLeq64U, boolT, gap, c(bidAddMaxGap)), u.call)
 	ptrT := types.NewPtr(u64)
-	table := s.newValue1A(ssaop.OpAddr, ptrT, bidComparePowers, s.sb)
+	table := s.newValue1A(ssaop.OpAddr, ptrT, bidAddPowers, s.sb)
 	power := s.rawLoad(u64, s.newValue2(ssaop.OpAddPtr, ptrT, table, s.newValue2(ssaop.OpMul64, u64, gap, c(bidWordBytes))))
 	prod := s.newValue2(ssaop.OpMul64uhilo, tup, aL, power)
 	phi, plo := s.newValue1(ssaop.OpSelect0, u64, prod), s.newValue1(ssaop.OpSelect1, u64, prod)
@@ -203,12 +206,6 @@ func (s *state) ubdAddWord4(op ir.Op, rt *types.Type, x, y, xh, yh, xl, yl *ssa.
 	for _, m := range []*ir.Name{rlo, rhi, rsign} {
 		delete(s.vars, m)
 	}
-	// Below 2^112, so below 10^34 and not past MaxCoeff128: one shift
-	// and test, where a comparison with MaxCoeff128 would build its two
-	// words, a constant the compiler hoists onto level 2's fast path. A
-	// coefficient from 2^112 to MaxCoeff128 takes the kernel call, which
-	// gives the same result.
-	u.guard(s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpRsh64Ux64, u64, Hi, c(48)), zero), u.call)
 	header := s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpAnd64, u64, bH, c(^int64(bid.UBDSignHi))),
 		s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpLsh64x64, u64, Sign, c(bid.UBDSignShift)), Hi))
 	u.done(s.newValue2(ssaop.OpDecimal128Make, rt, Lo, header))
