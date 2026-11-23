@@ -350,7 +350,7 @@ const (
 )
 
 var (
-	vecTarget = flag.String("bid.vectors", "kernel", "implementation the published vectors run against: kernel or reference")
+	vecTarget = flag.String("bid.vectors", "kernel", "implementation the published vectors run against: kernel, reference, or ubd (the kernel with the UBD entries for decimal128)")
 	vecShow   = flag.Int("bid.vecshow", 20, "print at most this many failing vectors per file")
 	vecAll    = flag.Bool("bid.vecall", false, "print every failing vector")
 	vecFiles  = flag.String("bid.vecfiles", "", "run only the decTest and FPgen files whose names match this regular expression")
@@ -467,8 +467,10 @@ func vecTargetImpl(t *testing.T) impl {
 		return kernel{}
 	case "reference":
 		return reference{}
+	case "ubd":
+		return ubdKernel{}
 	}
-	t.Fatalf("-bid.vectors=%q: want kernel or reference", *vecTarget)
+	t.Fatalf("-bid.vectors=%q: want kernel, reference or ubd", *vecTarget)
 	return nil
 }
 
@@ -1095,7 +1097,7 @@ const skipNextafterEqual = "contract: Nextafter(x, y) is x when x == y, as math.
 // elementary runs fn, a call of one of those functions, for a vector whose
 // rounding mode is m.
 func elementary(im impl, m bid.Mode, fn func() bits) decRes {
-	if _, ok := im.(kernel); !ok {
+	if _, ok := im.(reference); ok {
 		return decRes{skip: "reference: the model has no elementary functions"}
 	}
 	if m != bid.ToNearestEven {
@@ -2014,7 +2016,7 @@ func (c *intelCall) elementaryDivergence(res string, status uint64, want, got bi
 // rounding mode, which those functions do not take: they round to nearest
 // even.
 func (c *intelCall) elementary(n int, modal bool, fn func(a []bits) bits) vecOutcome {
-	if _, ok := c.im.(kernel); !ok {
+	if _, ok := c.im.(reference); ok {
 		return vecSkip("reference: the model has no elementary functions")
 	}
 	if modal && c.mode != bid.ToNearestEven {
@@ -2027,7 +2029,7 @@ func (c *intelCall) elementary(n int, modal bool, fn func(a []bits) bits) vecOut
 // scale runs scalbn, scalbln and ldexp, which are Ldexp with the count as
 // a C integer.
 func (c *intelCall) scale() vecOutcome {
-	if _, ok := c.im.(kernel); !ok {
+	if _, ok := c.im.(reference); ok {
 		return vecSkip("reference: the model has no elementary functions")
 	}
 	if c.mode != bid.ToNearestEven {
@@ -2059,7 +2061,7 @@ func (c *intelCall) scale() vecOutcome {
 // ilogb runs ilogb, which is Ilogb with a C int result. Intel's ilogb of a
 // NaN is INT_MIN; Ilogb's is math.Ilogb's, MaxInt32.
 func (c *intelCall) ilogb() vecOutcome {
-	if _, ok := c.im.(kernel); !ok {
+	if _, ok := c.im.(reference); ok {
 		return vecSkip("reference: the model has no elementary functions")
 	}
 	ops, res, _, skip := c.split(1)
