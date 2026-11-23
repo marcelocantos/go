@@ -73,6 +73,7 @@ var ubdBenchClasses = []ubdBenchClass{
 	{"gap2", 3, 10, -2, 1, 5, -4, 0, 0},         // amount and rate
 	{"gap2neg", 3, 10, -2, 1, 5, -4, 10, 0},
 	{"int", 1, 6, 0, 1, 6, 0, 0, 0},
+	{"w16", 14, 16, -4, 14, 16, -6, 10, 0}, // words whose product passes 2^96 but is exact
 	{"w19", 17, 19, -6, 17, 19, -9, 0, 0},  // just inside one word
 	{"w25", 22, 25, -6, 22, 25, -9, 10, 0}, // two words, exact
 	{"d34", 34, 34, -20, 34, 34, -24, 10, 0},

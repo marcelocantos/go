@@ -14,9 +14,13 @@ import "math/bits"
 // packing replaced by UBD's (signs at bit 49, exponents unbiased) and the
 // rounding by ubdRound128; the arithmetic is unchanged. Nothing converts.
 
-// ubdMulShort128 is mulShort128 on UBD: coefficients of one word each whose
-// product has under 97 bits, below 10^34 and so exact, at an exponent sum in
-// [-4096, 4095], inside the format. As in mulShort128 the three tests are
+// ubdMulShort128 is mulShort128 on UBD, for more products: coefficients of
+// one word each whose product has under 113 bits, below 2^112 < 10^34 and so
+// exact, at an exponent sum in [-4096, 4095], inside the format. (BID's
+// mulShort128 stops at 97 bits; UBD's high word holds a product's top 48
+// bits below the sign at once. Products of 97 to 112 bits, of two 15-digit
+// coefficients for instance, took ubdMulSlow128 and ubdMulLong128, two calls
+// with frames: 3.96 ns against 2.04.) As in mulShort128 the three tests are
 // one, without a branch: a special has the 0x1F prefix in its coefficient's
 // high word, so the one-word test excludes it, and the exponent sum is in
 // that range exactly when adding 4096 leaves it below 2^13 (mulShort128
@@ -25,17 +29,18 @@ func ubdMulShort128(x, y UBD128) (UBD128, bool) {
 	hi, lo := bits.Mul64(x.Lo, y.Lo)
 	e := int64(x.Hi)>>UBDExpShift + int64(y.Hi)>>UBDExpShift
 	return UBD128{Lo: lo, Hi: uint64(e)<<UBDExpShift | (x.Hi^y.Hi)&UBDSignHi | hi},
-		(x.Hi|y.Hi)&UBDCoeffMaskHi|hi>>32|uint64(e+4096)>>13 == 0
+		(x.Hi|y.Hi)&UBDCoeffMaskHi|hi>>48|uint64(e+4096)>>13 == 0
 }
 
-// ubdMulSlow128 is mulSlow128 on UBD.
+// ubdMulSlow128 is mulSlow128 on UBD, except that coefficients of one word
+// each take the two-word path below like any others, where mulSlow128 sends
+// them to mulLong128: the ones that reach it, after ubdMulShort128, are
+// products of 112 bits or more, most of which round, and the two-word path
+// rounds them in one call where ubdMulLong128 was a second (w19 in
+// BenchmarkUBDKernel, 17- to 19-digit coefficients: 14.3 ns against 11.6).
 func ubdMulSlow128(x, y UBD128, mode Mode) UBD128 {
-	// Coefficients of one word each go on at once, as in mulSlow128. A
-	// special has the 0x1F prefix in its coefficient's high word, so it is
-	// never a word pair; addPair128's test for one becomes the tag test.
-	if (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {
-		return ubdMulLong128(x, y, mode)
-	}
+	// A special has the 0x1F prefix in its coefficient's high word;
+	// addPair128's test for one becomes the tag test.
 	if x.Hi>>60 == UBDSpecialTag || y.Hi>>60 == UBDSpecialTag || mode > ToNearestAway {
 		return ubdMulLong128(x, y, mode)
 	}
