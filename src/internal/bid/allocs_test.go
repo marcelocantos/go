@@ -643,6 +643,10 @@ func allocCases() map[string]func() {
 			sign, exp, c := bid.LongParts128(x)
 			asInt = bid.PutLong128(&long128, sign, exp, c)
 		}),
+		"PutLongFixed128": each(longs, func(x bid.Uint128) {
+			sign, exp, c := bid.LongParts128(x)
+			asInt = bid.PutLongFixed128(&long128, sign, exp, c)
+		}),
 		"UnpackDigits64": each(all64, func(x uint64) {
 			asKind, asBool, asInt, _ = bid.UnpackDigits64(&digs64, x)
 		}),

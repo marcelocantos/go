@@ -78,6 +78,23 @@ func IsLong128(x Uint128) bool {
 // point, and the same lane a byte further on before it. The point is
 // stored after the words it overlaps.
 func PutLong128(buf *[LongLen128]byte, sign uint, exp int, c Uint128) int {
+	return putLong128(buf, sign, exp, c, false)
+}
+
+// PutLongFixed128 is PutLong128 for the fixed form at full precision,
+// strconv's 'f' with a precision of -1: all the digits in plain notation,
+// with no exponent. It writes the form of a value whose exponent is zero
+// or negative and whose leading digit's exponent is -4 or more, and
+// returns its length; for any other value it writes nothing and returns 0,
+// and the caller formats it another way. In the window of PutLong128's
+// plain notation the two forms are the same; above it, a point after the
+// sixth digit or further on, only PutLongFixed128 writes plain notation.
+func PutLongFixed128(buf *[LongLen128]byte, sign uint, exp int, c Uint128) int {
+	return putLong128(buf, sign, exp, c, true)
+}
+
+// putLong128 is PutLong128, and PutLongFixed128 when fixed.
+func putLong128(buf *[LongLen128]byte, sign uint, exp int, c Uint128, fixed bool) int {
 	const (
 		e8  = 100_000_000
 		e16 = e8 * e8
@@ -134,13 +151,16 @@ func PutLong128(buf *[LongLen128]byte, sign uint, exp int, c Uint128) int {
 
 	z := uint(40 - n) // where the digits start in d
 	e := exp + n - 1  // the exponent of the leading digit
+	if fixed && (e < canonicalMinExp || exp > 0) {
+		return 0
+	}
 	// Everything after the sign is laid out from the start of b, in which
 	// an index of five bits is a proof for a word.
 	buf[0] = '-' // overwritten unless the sign is set
 	b := (*[longBody]byte)(buf[sign&1:])
 	var scratch [longBody]byte
 
-	if e < canonicalMinExp || e >= canonicalMaxExp || exp > 0 {
+	if !fixed && (e < canonicalMinExp || e >= canonicalMaxExp || exp > 0) {
 		// d.ddd…e±dd: the first digit and the point, the rest from
 		// the right, and the exponent: "e", a sign and two digits or
 		// more.
@@ -178,8 +198,8 @@ func PutLong128(buf *[LongLen128]byte, sign uint, exp int, c Uint128) int {
 		return int(sign + s1 + 2 + k)
 	}
 
-	// Plain notation: exp is zero or negative and e from -4 to 5. Each
-	// condition is a sign bit.
+	// Plain notation: exp is zero or negative and e from -4 to 5, or to
+	// 33 in the fixed form. Each condition is a sign bit.
 	below := uint(e) >> intSign             // below one: a lead
 	inside := uint(exp) >> intSign &^ below // the point within the digits
 	p := uint(e+1) & -inside
@@ -195,6 +215,9 @@ func PutLong128(buf *[LongLen128]byte, sign uint, exp int, c Uint128) int {
 	putEightAt(pick(b, &scratch, m >= 16), lead+8, loadEightAt(&d, z+8))
 	if wide {
 		putEightAt(pick(b, &scratch, m >= 24), lead+16, loadEightAt(&d, z+16))
+		// The fixed form puts the point as far as 33 digits in: the
+		// digits before it reach here, unless the last word holds them.
+		putEightAt(pick(b, &scratch, m >= 32), lead+24, loadEightAt(&d, z+24))
 		putEightAt(pick(b, &scratch, f >= 32), s1-32, loadEightAt(&d, 8))
 		putEightAt(pick(b, &scratch, f >= 24), s1-24, loadEightAt(&d, 16))
 	}
@@ -202,7 +225,7 @@ func PutLong128(buf *[LongLen128]byte, sign uint, exp int, c Uint128) int {
 	putEightAt(pick(b, &scratch, f >= 8), lead+p+inside, loadEightAt(&d, z+p))
 	putEightAt(pick(b, &scratch, f >= 16), s1-16, loadEightAt(&d, 24))
 	putEightAt(b, s1-8, last&hi|last>>8&^hi)
-	pick(b, &scratch, inside != 0)[(lead+p)&31] = '.'
+	pick(b, &scratch, inside != 0)[min(lead+p, longBody-1)] = '.'
 	return int(sign + s1)
 }
 

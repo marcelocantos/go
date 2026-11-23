@@ -202,9 +202,89 @@ Open:
 
 - `internal/bid`'s `TestBenchBaselineShape` fails: the new row
   ShortForm/128/short has no sample in
-  testdata/bench_baseline_darwin_arm64.txt, which is a run on the M4 Max
-  and has to be retaken there, by a deliberate commit, as the file says.
+  testdata/bench_baseline_darwin_arm64.txt, which is Marcelo's run on
+  his M4 Max and has to be retaken there, by a deliberate commit, as the
+  file says.
 - Long values with 'f' (the apps' `String`) take the general path, 23.7
   ns against 14.6 for 'g' through `PutLong128`. Where the canonical
   form is plain notation, which is 'f''s output, `PutLong128` could
   serve 'f' too. That is the larger remaining gain for long values.
+
+## Long values in the fixed form
+
+Long values (coefficients of nine digits or more) formatted with 'f' at
+precision -1, which is what the apps' `String` asks for, took the
+general path: the digits unpacked a byte each and appended. 'g' had
+`PutLong128`.
+
+Counts first (one normal run of each app, a temporary counter in
+strconv, since removed). Every app formats with 'f' at -1, but for euro's
+10 'b':
+
+| app | formatted | short path | long, e −4..5 | long, e ≥ 6 | long, other | n ≤ 8, not short |
+|---|---|---|---|---|---|---|
+| euro | 2,145 | 862 | 367 (17%) | 654 (30%) | 4 (e < −4) | 243 (11%) |
+| banking | 2,085 | 1,846 | 18 (1%) | 121 (6%) | | 100 (5%) |
+| tax fed | 57 | 50 | 7 | | | |
+| tax nc | 37 | 37 | | | | |
+| tax ca | 19 | 19 | | | | |
+| telco | 1,000,003 | 1,000,002 | | 1 | | |
+| risk | 0 | | | | | |
+
+e is the exponent of the leading digit. In PutLong128's plain window
+(exponent ≤ 0, e from −4 to 5) 'f' and 'g' are the same bytes; long
+money of a million or more (e ≥ 6) is exponential in 'g', and was most
+of euro's long values. So the fixed form goes past the window:
+
+- `bid.PutLongFixed128` shares PutLong128's body (`putLong128`, with a
+  flag) and writes plain notation for any exponent ≤ 0 and e ≥ −4,
+  returning 0, with nothing written, for other values (trailing zeros,
+  or below 0.0001), which take the general path.
+- The point can now be as far as 33 digits in. Two changes make the
+  plain layout hold there: a fourth word stored from the left (at 24,
+  when the form has 32 characters), since the digits before the point
+  reach past 23 unless the last word holds them; and the point's index
+  is clamped, not masked to five bits. `TestLong128` now checks
+  `PutLongFixed128` on all its values against the fixed form built from
+  the digits; it fails with either change undone.
+- `appendDecimalRest` sends 'f' and 'g' to the kernel; 'G', 'e' and 'E'
+  keep the general path.
+
+Microbenchmarks (M3 Pro, funcalign=4096, median of 9; bytes and
+allocations unchanged):
+
+| 'f', -1 | before ns | after ns | change |
+|---|---|---|---|
+| money (short path) | 12.05 | 12.05 | 0 |
+| 11-digit amount | 26.36 | 18.66 | −29.2% |
+| 20-digit amount | 28.75 | 20.45 | −28.9% |
+| 34 digits | 34.98 | 20.96 | −40.1% |
+| rate, 6 places | 27.92 | 17.85 | −36.1% |
+| a million or more, cents | 26.16 | 18.62 | −28.8% |
+| tax mix | 20.28 | 17.15 | −15.4% |
+
+'g' is unchanged but for 34 digits, +2.0% (0.4 ns): the fourth store.
+
+Apps at level 2, 11 rounds interleaved, outputs equal:
+
+| app | before best | after best | change | median change |
+|---|---|---|---|---|
+| euro | 890.3 | 781.2 | −12.3% | −12.8% |
+| banking | 636.7 | 638.5 | +0.3% | −0.7% |
+
+The other apps format no long values (telco one), so were not rerun.
+
+arm64 instructions: `PutLong128` 456 → `putLong128` 480 (the exported
+wrappers inline into strconv); `appendDecimalRest` 536 → 600.
+
+Correctness: `TestLong128` (above); strconv, math/decimal and fmt tests;
+2M random long values, 9 to 34 digits, exponents from 8 places left of
+the digits to 3 past them, through `FormatDecimal` and `AppendDecimal`
+at five amounts of spare capacity, against the fixed form built from the
+digits, natively, under `-race` and for amd64; internal/bid and strconv
+vet for s390x. `TestBenchBaselineShape` now also lacks
+PutLongFixed/128/long.
+
+Next in line: values of eight digits or fewer that the short path turns
+down (11% of euro's formatting, 5% of banking's) still take the general
+path.

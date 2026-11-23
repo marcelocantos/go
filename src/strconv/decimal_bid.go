@@ -111,18 +111,33 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 // appendDecimalRest is appendDecimal past its short path, for a format
 // of 'e', 'E', 'f', 'g' or 'G' and the words x.
 func appendDecimalRest(dst []byte, x bid.Uint128, fmt byte, prec int) []byte {
-	// A coefficient of nine digits or more, in the canonical form: the
-	// kernel converts the digits eight at a time and stores the whole form
-	// in place, exactly the bytes appended. It asks for the room of the
-	// longest form, which formatDecimal's buffer and fmt's have; with less
-	// it lays the form out in a buffer of its own.
-	if prec < 0 && isLongDecimal(x) && fmt != 'e' && fmt != 'E' && fmt != 'f' && fmt != 'G' {
+	// A coefficient of nine digits or more, in the canonical form ('g')
+	// or the fixed form ('f') at full precision: the kernel converts the
+	// digits eight at a time and stores the whole form in place, exactly
+	// the bytes appended. The fixed form is written there only in plain
+	// notation down to 0.0001, with no zeros after the digits; the kernel
+	// writes nothing for any other value, which goes on below. It asks
+	// for the room of the longest form, which formatDecimal's buffer and
+	// fmt's have; with less it lays the form out in a buffer of its own.
+	if prec < 0 && (fmt == 'g' || fmt == 'f') && isLongDecimal(x) {
 		sign, exp, c := longParts(x)
 		if i := len(dst); cap(dst)-i >= bid.LongLen128 {
-			return dst[:i+bid.PutLong128((*[bid.LongLen128]byte)(dst[i:i+bid.LongLen128]), sign, exp, c)]
+			out := (*[bid.LongLen128]byte)(dst[i : i+bid.LongLen128])
+			if fmt == 'g' {
+				return dst[:i+bid.PutLong128(out, sign, exp, c)]
+			}
+			if n := bid.PutLongFixed128(out, sign, exp, c); n > 0 {
+				return dst[:i+n]
+			}
+		} else {
+			var buf [bid.LongLen128]byte
+			if fmt == 'g' {
+				return append(dst, buf[:bid.PutLong128(&buf, sign, exp, c)]...)
+			}
+			if n := bid.PutLongFixed128(&buf, sign, exp, c); n > 0 {
+				return append(dst, buf[:n]...)
+			}
 		}
-		var buf [bid.LongLen128]byte
-		return append(dst, buf[:bid.PutLong128(&buf, sign, exp, c)]...)
 	}
 
 	var digs [bid.Precision128]byte

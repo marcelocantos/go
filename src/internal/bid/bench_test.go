@@ -870,6 +870,9 @@ func benchRowList() benchRows {
 	rs.add("PutLong", "128", "long", "PutLong128", func(b *testing.B) {
 		loop1(b, longs, func(x bits) int { sign, exp, c := bid.LongParts128(x); return bid.PutLong128(&long, sign, exp, c) })
 	})
+	rs.add("PutLongFixed", "128", "long", "PutLongFixed128", func(b *testing.B) {
+		loop1(b, longs, func(x bits) int { sign, exp, c := bid.LongParts128(x); return bid.PutLongFixed128(&long, sign, exp, c) })
+	})
 	rs.add("Append", "128", "long", "Append128", func(b *testing.B) {
 		loop1(b, longs, func(x bits) int { return len(bid.Append128(lbuf[:0], x)) })
 	})
