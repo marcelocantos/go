@@ -967,9 +967,58 @@ func (s *state) ubdIntConv(v *ssa.Value, fk, tk types.Kind, rt *types.Type) *ssa
 			fn = bidKernelToUint64
 		}
 		lo, hi := s.newValue1(ssaop.OpDecimal128Lo, u64, v), s.newValue1(ssaop.OpDecimal128Hi, u64, v)
-		return s.rtcall(fn, true, []*types.Type{rt}, lo, hi)[0]
+		call := func() *ssa.Value { return s.rtcall(fn, true, []*types.Type{rt}, lo, hi)[0] }
+		if ubdLevel() < 2 {
+			return call()
+		}
+		// From ubdLevel 2, the kernel entry's first path inline: an
+		// integer coefficient at exponent 0 that fits the result. For
+		// uint64 the high word is 0 (a positive sign); for int64 it holds
+		// at most the sign, and the low word is below 2^63, so that the
+		// value is the low word with the sign applied: (lo ^ m) - m with m
+		// all ones for a negative sign.
+		boolT := types.Types[types.TBOOL]
+		zero := s.constInt64(u64, 0)
+		var fast, val *ssa.Value
+		if tk == types.TUINT64 {
+			fast = s.newValue2(ssaop.OpEq64, boolT, hi, zero)
+			val = lo
+		} else {
+			g := s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpAnd64, u64, hi, s.constInt64(u64, ^int64(bid.UBDSignHi))),
+				s.newValue2(ssaop.OpRsh64Ux64, u64, lo, s.constInt64(u64, 63)))
+			fast = s.newValue2(ssaop.OpEq64, boolT, g, zero)
+			m := s.newValue2(ssaop.OpSub64, u64, zero, s.newValue2(ssaop.OpRsh64Ux64, u64, hi, s.constInt64(u64, bid.UBDSignShift)))
+			val = s.newValue2(ssaop.OpSub64, u64, s.newValue2(ssaop.OpXor64, u64, lo, m), m)
+		}
+		return s.ubdEarlyExit(rt, fast, val, call)
 	}
 	return nil
+}
+
+// ubdEarlyExit is the value val where fast holds, else what slow builds (a
+// kernel call): one of the kernel entry's first paths, at the call site.
+// val is computed before the branch, so it must be cheap and safe for any
+// operand.
+func (s *state) ubdEarlyExit(rt *types.Type, fast, val *ssa.Value, slow func() *ssa.Value) *ssa.Value {
+	res := ssaMarker("ubdexit")
+	bSlow := s.f.NewBlock(block.BlockPlain)
+	bAfter := s.f.NewBlock(block.BlockPlain)
+	b := s.endBlock()
+	b.Kind = block.BlockIf
+	b.SetControl(fast)
+	bFast := s.f.NewBlock(block.BlockPlain)
+	b.AddEdgeTo(bFast)
+	b.AddEdgeTo(bSlow)
+	s.startBlock(bFast)
+	s.vars[res] = val
+	s.endBlock().AddEdgeTo(bAfter)
+	s.startBlock(bSlow)
+	s.vars[res] = slow()
+	s.endBlock().AddEdgeTo(bAfter)
+	s.startBlock(bAfter)
+	r := s.variable(res, rt)
+	delete(s.vars, res)
+	return r
 }
 
 // ubdWidthConv lowers a conversion between decimal64 and decimal128, or

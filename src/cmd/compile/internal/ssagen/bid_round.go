@@ -51,11 +51,30 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 		return s.newValue2(ssaop.OpDecimal128Make, n.Type(), res[0], res[1])
 	}
 	if bidCallOnly(x) {
-		kargs := []*ssa.Value{s.newValue1(ssaop.OpDecimal128Lo, u64, x), s.newValue1(ssaop.OpDecimal128Hi, u64, x)}
+		xh := s.newValue1(ssaop.OpDecimal128Hi, u64, x)
+		kargs := []*ssa.Value{s.newValue1(ssaop.OpDecimal128Lo, u64, x), xh}
 		if !integral {
 			kargs = append(kargs, s.newValue1(ssaop.OpDecimal128Lo, u64, args[1]), s.newValue1(ssaop.OpDecimal128Hi, u64, args[1]))
 		}
-		return kernelCall(kargs)
+		if ubdLevel() < 2 {
+			return kernelCall(kargs)
+		}
+		// From ubdLevel 2, the kernel entry's first path inline, where x
+		// is returned as it is. Integral rounding: x finite with qExp >= 0,
+		// which is the high word below 7<<60 (qExp's sign is its top bit,
+		// a finite qExp >= 0 leaves the top four bits at most 5, and a
+		// special's are 7). Quantize: x a one-word coefficient (no special
+		// is) at y's qExp (ubdQuantizeSame128).
+		var fast *ssa.Value
+		if integral {
+			fast = s.newValue2(ssaop.OpLess64U, boolT, xh, s.constInt64(u64, int64(bid.UBDSpecialTag)<<60))
+		} else {
+			g := s.newValue2(ssaop.OpOr64, u64,
+				s.newValue2(ssaop.OpRsh64Ux64, u64, s.newValue2(ssaop.OpXor64, u64, xh, kargs[3]), s.constInt64(u64, bid.UBDExpShift)),
+				s.newValue2(ssaop.OpAnd64, u64, xh, s.constInt64(u64, int64(bid.UBDCoeffMaskHi))))
+			fast = s.newValue2(ssaop.OpEq64, boolT, g, zero)
+		}
+		return s.ubdEarlyExit(n.Type(), fast, x, func() *ssa.Value { return kernelCall(kargs) })
 	}
 	shift, bias := bid.ExpShift128, bid.Bias128
 	zeroEncoding := uint64(bid.Zero128Hi)
