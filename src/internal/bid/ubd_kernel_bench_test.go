@@ -244,6 +244,21 @@ func BenchmarkUBDKernel(b *testing.B) {
 			}
 			ubdSinkI = int(n)
 		})
+		b.Run("Uint64/"+cl.name+"/ubd", func(b *testing.B) {
+			n := uint64(0)
+			for i := 0; i < b.N; i++ {
+				n += UBDKernelUint64(ps[i&(ubdBenchN-1)].ux)
+			}
+			ubdSinkI = int(n)
+		})
+		b.Run("Uint64/"+cl.name+"/bid", func(b *testing.B) {
+			n := uint64(0)
+			for i := 0; i < b.N; i++ {
+				v, _ := BIDKernelUint64(ps[i&(ubdBenchN-1)].bx, TowardZero)
+				n += v
+			}
+			ubdSinkI = int(n)
+		})
 		b.Run("Less/"+cl.name+"/ubd", func(b *testing.B) {
 			n := 0
 			for i := 0; i < b.N; i++ {
@@ -392,9 +407,9 @@ func TestUBDCmpWordAgrees(t *testing.T) {
 	}
 }
 
-// TestUBDInt64WordAgrees checks the int64 conversion entry on word
-// operands, with fractions of up to 19 digits and integers of either sign,
-// against Int64From128 with TowardZero.
+// TestUBDInt64WordAgrees checks the int64 and uint64 conversion entries on
+// word operands, with fractions of up to 19 digits and integers of either
+// sign, against Int64From128 and Uint64From128 with TowardZero.
 func TestUBDInt64WordAgrees(t *testing.T) {
 	r := rand.New(rand.NewPCG(19, 23))
 	for i := 0; i < 2000000; i++ {
@@ -407,6 +422,10 @@ func TestUBDInt64WordAgrees(t *testing.T) {
 		want, _ := BIDKernelInt64(bx, TowardZero)
 		if got := UBDKernelInt64(ux); got != want {
 			t.Fatalf("int64(%#x): got %d, want %d", bx, got, want)
+		}
+		uwant, _ := BIDKernelUint64(bx, TowardZero)
+		if got := UBDKernelUint64(ux); got != uwant {
+			t.Fatalf("uint64(%#x): got %d, want %d", bx, got, uwant)
 		}
 	}
 }

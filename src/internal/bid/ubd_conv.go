@@ -139,6 +139,14 @@ func ubdUint64From128(x UBD128) uint64 {
 	if x.Hi == 0 {
 		return x.Lo
 	}
+	// A word coefficient with a fraction of up to 19 digits truncates by
+	// one division, as in ubdInt64From128; a negative one whose integer
+	// part is not zero is out of range, ubdIntParts128's case.
+	if e := int64(x.Hi) >> UBDExpShift; x.Hi&UBDCoeffMaskHi == 0 && uint64(e+int64(maxWordGap)) < uint64(maxWordGap) {
+		if q := x.Lo / pow10tab64[-e]; q == 0 || x.Hi&UBDSignHi == 0 {
+			return q
+		}
+	}
 	r, _ := uint64Result(ubdIntParts128(x))
 	return r
 }

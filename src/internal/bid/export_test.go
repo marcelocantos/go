@@ -301,18 +301,19 @@ func LongParts128(x Uint128) (sign uint, exp int, c Uint128) {
 // compiler calls for the same operations. A function value is called as a
 // call site calls the kernel, never inlined, with no adapter between.
 var (
-	UBDKernelAdd   = ubdAddTTE128
-	UBDKernelSub   = ubdSubTTE128
-	UBDKernelMul   = ubdMulTTE128
-	UBDKernelDiv   = ubdDivTTE128
-	UBDKernelQnt   = ubdQuantizeTTE128
-	UBDKernelLess  = ubdLess128
-	UBDKernelEqual = ubdEqual128
-	UBDKernelCmp   = ubdCompare128
-	UBDKernelMin   = ubdMin128
-	UBDKernelMax   = ubdMax128
-	UBDKernelRTI   = ubdRoundToIntegralTTE128
-	UBDKernelInt64 = ubdInt64From128
+	UBDKernelAdd    = ubdAddTTE128
+	UBDKernelSub    = ubdSubTTE128
+	UBDKernelMul    = ubdMulTTE128
+	UBDKernelDiv    = ubdDivTTE128
+	UBDKernelQnt    = ubdQuantizeTTE128
+	UBDKernelLess   = ubdLess128
+	UBDKernelEqual  = ubdEqual128
+	UBDKernelCmp    = ubdCompare128
+	UBDKernelMin    = ubdMin128
+	UBDKernelMax    = ubdMax128
+	UBDKernelRTI    = ubdRoundToIntegralTTE128
+	UBDKernelInt64  = ubdInt64From128
+	UBDKernelUint64 = ubdUint64From128
 
 	BIDKernelAdd = addSlow128
 	BIDKernelSub = subSlow128
@@ -325,5 +326,6 @@ var (
 	BIDKernelRTI = roundToIntegral128
 	// The XOR-BID compiler converts to int64 through Int64From128 with
 	// TowardZero, which also returns a status.
-	BIDKernelInt64 = Int64From128
+	BIDKernelInt64  = Int64From128
+	BIDKernelUint64 = Uint64From128
 )
