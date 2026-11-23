@@ -243,3 +243,42 @@ all five operations and on the rounding test.
 | `RoundToEven` | 6 | 24 | 24 |
 | `int64(x)` | 12 | 12 | 12 |
 | `uint64(x)` | 4 | 4 | 4 |
+
+## Which cases level 3 and level 4 handle (2026-11-23, after step 4)
+
+Counted as in research/ubd-kernel ("What level 2 sends the kernel"): the
+scratch counting toolchain, moved to this branch, points the compiler's
+kernel symbols at counting wrappers, which level 3's fallbacks reach
+too. Each app run once at levels 2, 3 and 4. Kernel calls (quantize mode
+counts and the divide sub-classes left out):
+
+| app | L2 | L3 | L4 | where L3 and L4 differ |
+|---|---|---|---|---|
+| banking | 32,790 | 17,254 | 17,254 | nowhere |
+| risk | 13,653 | 5,603 | 5,672 | 69 quantizes of a word to a finer exponent (level 3's scale-up path, which level 4 leaves out); 40 two-word `==` reach `ubdCompare128` at level 3 and `ubdEqual128` at level 4 |
+| euro | 2,420 | 1,200 | 1,200 | nowhere |
+| tax fed | 347 | 14 | 14 | nowhere |
+| tax ca | 62 | 0 | 0 | nowhere |
+| tax nc | 63 | 6 | 6 | nowhere |
+| telco | 6 | 0 | 0 | nowhere |
+
+What both still send the kernel:
+
+| app | calls |
+|---|---|
+| banking | two-word add 1,768, sub 2,380, mul 1,980, div 4,156, integral rounding 4,040; word divides 2,812; max 118 |
+| risk | word divides 2,623; two-word quantize 2,380, add 80, sub 200, mul 240, `==` 40, integral rounding 40 |
+| euro | two-word sub 206, div 196, integral rounding 400; word divides 398 |
+| tax | 6–14 a run: word divides, min |
+
+So the two levels inline the same cases in these apps. They differ in
+how fast and how large the inline paths are: level 4 is faster on
+running totals at different exponents (1.61 against 3.19 ns) and on
+`==` (1.88 against 2.25), even elsewhere, and smaller at most sites. The
+apps cannot show that: most of their operations take level 2's paths,
+the same code at both levels; the inline operations are about a tenth
+of a profile and formatting, parsing and allocation 40–60%; and no
+kernel function appears in the level-4 profiles. Their remaining kernel
+traffic is two-word coefficients (outside the 64-bit constraint) and
+divides (an inexact divide's long division does not fit the site
+limit).
