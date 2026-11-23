@@ -391,7 +391,14 @@ func ubdSubTTE128(x, y UBD128) UBD128 {
 // round (ubdAddLong128's word path, which this is, then rounds it). It is the
 // first thing the ties-to-even entries try, before any call.
 //
-// Nothing is branched on but the gap and the fit. The operand with the larger
+// Operands of one exponent, money amounts of one quantum, are summed
+// without scaling: that branch took such a sum from 3.26 to 2.20 ns (Apple
+// M3 Pro, BenchmarkUBDKernel), cost operands two places apart 2%, and cost
+// nothing on operands of one exponent or two apart at random, where it
+// mispredicts half the time. (The same branch in ubdCmpWord was set aside:
+// there those random operands took 50% longer.)
+//
+// Otherwise nothing is branched on but the gap and the fit. The operand with the larger
 // exponent is chosen by mask, and the other is added or subtracted by mask:
 // a difference whose sign is the other operand's was a branch taken about
 // half the time in ubdAddLong128 (x - y of random positive amounts), and so
@@ -401,6 +408,16 @@ func ubdSubTTE128(x, y UBD128) UBD128 {
 // nearest gives (IEEE 754-2019 clause 6.3).
 func ubdAddWordTTE(x, y UBD128) (UBD128, bool) {
 	xh, xl, yh, yl := x.Hi, x.Lo, y.Hi, y.Lo
+	if (xh^yh)>>UBDExpShift == 0 {
+		// One exponent: no scaling. Same as below with a = x, b = y, hi = 0.
+		s := uint64(int64((xh^yh)<<(63-UBDSignShift)) >> 63)
+		lo, c := bits.Add64(xl, yl^s, s&1)
+		hi := c &^ s // a carry of a sum; of a difference, no borrow
+		m := s & (c - 1)
+		lo = (lo ^ m) - m
+		sign := (xh>>UBDSignShift ^ m) & (b2u(hi|lo != 0) | ^s) & 1
+		return UBD128{Lo: lo, Hi: xh&^UBDSignHi | sign<<UBDSignShift | hi}, true
+	}
 	d := int64(xh)>>UBDExpShift - int64(yh)>>UBDExpShift
 	sw := uint64(d >> 63) // all ones when y has the larger exponent
 	th, tl := (xh^yh)&sw, (xl^yl)&sw
