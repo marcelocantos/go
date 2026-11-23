@@ -55,7 +55,7 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 	// places finer than y's (one division, rounded in the mode: telco's
 	// products to cents), and the kernel call for the rest; it leaves out
 	// level 3's path for an x coarser than y's exponent.
-	level2Quantize := !integral && bidCallOnly(x) && ubdLevel() == 2
+	level2Quantize := !integral && bidCallOnly(x) && ubdLevel() >= 2
 	if bidCallOnly(x) && !level2Quantize {
 		xh := s.newValue1(ssaop.OpDecimal128Hi, u64, x)
 		kargs := []*ssa.Value{s.newValue1(ssaop.OpDecimal128Lo, u64, x), xh}

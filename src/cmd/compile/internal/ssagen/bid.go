@@ -297,6 +297,9 @@ func initBIDKernelSyms() {
 //	   to the kernel pay one guard before the BID-derived paths. Level 3's
 //	   inlining needs additional scrutiny: its BID-derived paths were
 //	   carried over, not tuned (research/ubd-size/README.md)
+//	4  level 2's paths, unchanged, then the kernel's own first paths
+//	   promoted inline one at a time, for 64-bit coefficients
+//	   (research/ubd-level4/README.md); in development, to replace level 3
 //
 // Until 2026-11-22 the levels were 1 to 10 and -1, adding paths one at a
 // time; research/ubd-size/README.md maps them to these. Any other value
@@ -305,14 +308,19 @@ func ubdLevel() int {
 	if base.Debug.UBDLevel == 0 {
 		return 2
 	}
-	return base.Debug.UBDLevel // 1, 2 or 3: base.ParseFlags rejects the rest
+	return base.Debug.UBDLevel // 1 to 4: base.ParseFlags rejects the rest
 }
 
+// ubdLevel4 reports whether ubdLevel is 4: level 2's lowering, with the
+// kernel's first paths promoted inline behind level 2's.
+func ubdLevel4() bool { return ubdLevel() == 4 }
+
 // bidCallOnly reports whether the decimal128 operation on x is lowered by
-// ubdLevel 1 or 2: its kernel call, with level 2's fast paths. At level 3
-// the BID-derived lowering takes it instead.
+// ubdLevel 1, 2 or 4: its kernel call, with level 2's fast paths (and at
+// level 4 the kernel's promoted ones). At level 3 the BID-derived lowering
+// takes it instead.
 func bidCallOnly(x *ssa.Value) bool {
-	return ubdLevel() <= 2 && x.Type.Kind() == types.TDECIMAL128 && bidKernelDirect()
+	return ubdLevel() != 3 && x.Type.Kind() == types.TDECIMAL128 && bidKernelDirect()
 }
 
 // ubdSuperset reports whether the decimal128 operation on x is lowered at
@@ -353,9 +361,9 @@ func (s *state) ubdAddNarrow(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	b := s.endBlock()
 	b.Kind = block.BlockIf
 	b.SetControl(fast)
-	if ubdSuperset(x) {
-		// Lay the BID-derived paths out of line, so that the fast path
-		// runs as at level 2.
+	if ubdSuperset(x) || ubdLevel4() {
+		// Lay the BID-derived (level 3) or promoted (level 4) paths out
+		// of line, so that the fast path runs as at level 2.
 		b.Likely = ssa.BranchLikely
 	}
 	bFast := s.f.NewBlock(block.BlockPlain)
@@ -380,6 +388,8 @@ func (s *state) ubdAddNarrow(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	s.startBlock(bSlow)
 	if ubdSuperset(x) {
 		s.vars[result] = s.bidAddSub128(op, rt, x, y)
+	} else if ubdLevel4() {
+		s.vars[result] = s.ubdAddWord4(op, rt, x, y, xh, yh, xl, yl)
 	} else {
 		s.vars[result] = s.softDecimalOp(op, rt, x, y)
 	}

@@ -1,0 +1,211 @@
+// Copyright 2026 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package ssagen
+
+import (
+	"internal/bid"
+
+	"cmd/compile/internal/ir"
+	"cmd/compile/internal/ssa"
+	"cmd/compile/internal/ssa/block"
+	"cmd/compile/internal/ssa/ssaop"
+	"cmd/compile/internal/types"
+)
+
+// ubdLevel 4: the kernel's own first paths, promoted inline one at a time
+// behind level 2's, for 64-bit coefficients. Each is the kernel leaf's
+// code for the operand pairs it settles, so that it gives the kernel's
+// result by construction, and every other pair is the kernel call
+// (research/ubd-level4/README.md).
+
+// ubd4 holds the blocks of one level-4 lowering: the kernel call that
+// every refused pair reaches, and the join where the result is read.
+type ubd4 struct {
+	s           *state
+	res         *ir.Name
+	call, after *ssa.Block
+}
+
+func (s *state) newUBD4(name string) *ubd4 {
+	return &ubd4{s: s, res: ssaMarker(name), call: s.f.NewBlock(block.BlockPlain), after: s.f.NewBlock(block.BlockPlain)}
+}
+
+// guard continues in a new block where cond holds and sends the rest to
+// otherwise.
+func (u *ubd4) guard(cond *ssa.Value, otherwise *ssa.Block) {
+	s := u.s
+	b := s.endBlock()
+	b.Kind = block.BlockIf
+	b.SetControl(cond)
+	next := s.f.NewBlock(block.BlockPlain)
+	b.AddEdgeTo(next)
+	b.AddEdgeTo(otherwise)
+	s.startBlock(next)
+}
+
+// branch ends the current block in a two-way branch on cond and returns
+// the blocks for true and false.
+func (u *ubd4) branch(cond *ssa.Value) (yes, no *ssa.Block) {
+	s := u.s
+	b := s.endBlock()
+	b.Kind = block.BlockIf
+	b.SetControl(cond)
+	yes, no = s.f.NewBlock(block.BlockPlain), s.f.NewBlock(block.BlockPlain)
+	b.AddEdgeTo(yes)
+	b.AddEdgeTo(no)
+	return yes, no
+}
+
+// done makes v the result of the current block and ends it at the join.
+func (u *ubd4) done(v *ssa.Value) {
+	u.s.vars[u.res] = v
+	u.s.endBlock().AddEdgeTo(u.after)
+}
+
+// finish emits the kernel call, built by call, and returns the result at
+// the join.
+func (u *ubd4) finish(rt *types.Type, call func() *ssa.Value) *ssa.Value {
+	s := u.s
+	s.startBlock(u.call)
+	u.done(call())
+	s.startBlock(u.after)
+	r := s.variable(u.res, rt)
+	delete(s.vars, u.res)
+	return r
+}
+
+// ubdAddWord4 lowers x + y and x - y at ubdLevel 4 where level 2's guard
+// has failed (ubdAddNarrow): the kernel's ubdAddWordTTE for a pair of
+// one-word coefficients, the ties-to-even entries' first path. x - y is
+// x + (-y): a word is not a NaN, so y's sign is flipped as it is.
+//
+//   - One exponent: level 2 took one sign (x + y) or an effective
+//     subtraction (x - y), so what is left is the other: for x + y the
+//     difference of the low words, the one that did not borrow chosen by
+//     a select, the sign flipped by the borrow and an exact zero +0; for
+//     x - y the sum, an add and its carry.
+//   - Exponents 1 to 19 apart: a, the operand with the larger exponent,
+//     is scaled by 10^gap, one 64×64 multiply from the table, and b added
+//     or subtracted. Which operand is a goes with the data's kind (an
+//     amount and a rate, a total and an amount), so it is a branch, not
+//     a select: a select would put the comparison of the high words on
+//     the running total's dependency chain, ahead of the multiply. A
+//     difference that borrows out of the high word is b's magnitude
+//     less a's, the sign flipped; an exact zero is +0. The result, at
+//     b's exponent, the preferred one, must be below 2^112.
+//
+// Every other pair (a two-word coefficient, a special, exponents more than
+// 19 apart, a sum that must round) is the kernel call.
+func (s *state) ubdAddWord4(op ir.Op, rt *types.Type, x, y, xh, yh, xl, yl *ssa.Value) *ssa.Value {
+	u := s.newUBD4("ubdadd4")
+	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
+	tup := types.NewTuple(u64, u64)
+	zero := s.constInt64(u64, 0)
+	c := func(v int64) *ssa.Value { return s.constInt64(u64, v) }
+	signHi := c(bid.UBDSignHi)
+	signBit := func(h *ssa.Value) *ssa.Value { // 0 or 1
+		return s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpRsh64Ux64, u64, h, c(bid.UBDSignShift)), c(1))
+	}
+	// Both coefficients one word: no coefficient bits in either high word,
+	// which also excludes the specials.
+	words := s.newValue2(ssaop.OpLsh64x64, u64, s.newValue2(ssaop.OpOr64, u64, xh, yh), c(64-bid.UBDExpShift+1))
+	u.guard(s.newValue2(ssaop.OpEq64, boolT, words, zero), u.call)
+	if op == ir.OSUB {
+		yh = s.newValue2(ssaop.OpXor64, u64, yh, signHi)
+	}
+	sameExp := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpRsh64Ux64, u64, s.newValue2(ssaop.OpXor64, u64, xh, yh), c(bid.UBDExpShift)), zero)
+	bSame, bGap := u.branch(sameExp)
+
+	s.startBlock(bSame)
+	if op == ir.OADD {
+		// Opposite signs.
+		d := s.newValue3(ssaop.OpSub64borrow, tup, xl, yl, zero)
+		lo, bw := s.newValue1(ssaop.OpSelect0, u64, d), s.newValue1(ssaop.OpSelect1, u64, d)
+		borrowed := s.newValue2(ssaop.OpNeq64, boolT, bw, zero)
+		lo = s.newValue3(ssaop.OpCondSelect, u64, s.newValue2(ssaop.OpSub64, u64, yl, xl), lo, borrowed)
+		nonzero := s.newValue1(ssaop.OpZeroExt8to64, u64, s.newValue1(ssaop.OpCvtBoolToUint8, types.Types[types.TUINT8], s.newValue2(ssaop.OpNeq64, boolT, lo, zero)))
+		sign := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpXor64, u64, signBit(xh), bw), nonzero)
+		hi := s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpAnd64, u64, xh, c(^int64(bid.UBDSignHi))), s.newValue2(ssaop.OpLsh64x64, u64, sign, c(bid.UBDSignShift)))
+		u.done(s.newValue2(ssaop.OpDecimal128Make, rt, lo, hi))
+	} else {
+		// One sign after the flip: the sum.
+		sum := s.newValue3(ssaop.OpAdd64carry, tup, xl, yl, zero)
+		hi := s.newValue2(ssaop.OpOr64, u64, xh, s.newValue1(ssaop.OpSelect1, u64, sum))
+		u.done(s.newValue2(ssaop.OpDecimal128Make, rt, s.newValue1(ssaop.OpSelect0, u64, sum), hi))
+	}
+
+	// Exponents apart: a has the larger (qExp is the high word's top bits,
+	// and the exponents differ, so the signed order of the high words is
+	// theirs).
+	s.startBlock(bGap)
+	ah, al, bh, bl := ssaMarker("ubdadd4ah"), ssaMarker("ubdadd4al"), ssaMarker("ubdadd4bh"), ssaMarker("ubdadd4bl")
+	bSwap, bKeep := u.branch(s.newValue2(ssaop.OpLess64, boolT, xh, yh))
+	bOrdered := s.f.NewBlock(block.BlockPlain)
+	for _, p := range []struct {
+		b              *ssa.Block
+		hA, lA, hB, lB *ssa.Value
+	}{{bSwap, yh, yl, xh, xl}, {bKeep, xh, xl, yh, yl}} {
+		s.startBlock(p.b)
+		s.vars[ah], s.vars[al], s.vars[bh], s.vars[bl] = p.hA, p.lA, p.hB, p.lB
+		s.endBlock().AddEdgeTo(bOrdered)
+	}
+	s.startBlock(bOrdered)
+	aH, aL, bH, bL := s.variable(ah, u64), s.variable(al, u64), s.variable(bh, u64), s.variable(bl, u64)
+	for _, m := range []*ir.Name{ah, al, bh, bl} {
+		delete(s.vars, m)
+	}
+	shift := c(bid.UBDExpShift)
+	gap := s.newValue2(ssaop.OpSub64, u64, s.newValue2(ssaop.OpRsh64x64, u64, aH, shift), s.newValue2(ssaop.OpRsh64x64, u64, bH, shift))
+	u.guard(s.newValue2(ssaop.OpLeq64U, boolT, gap, c(bidMaxWordPower)), u.call)
+	ptrT := types.NewPtr(u64)
+	table := s.newValue1A(ssaop.OpAddr, ptrT, bidComparePowers, s.sb)
+	power := s.rawLoad(u64, s.newValue2(ssaop.OpAddPtr, ptrT, table, s.newValue2(ssaop.OpMul64, u64, gap, c(bidWordBytes))))
+	prod := s.newValue2(ssaop.OpMul64uhilo, tup, aL, power)
+	phi, plo := s.newValue1(ssaop.OpSelect0, u64, prod), s.newValue1(ssaop.OpSelect1, u64, prod)
+	sameSign := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpXor64, u64, aH, bH), signHi), zero)
+	rlo, rhi, rsign := ssaMarker("ubdadd4lo"), ssaMarker("ubdadd4hi"), ssaMarker("ubdadd4sign")
+	bAdd, bSub := u.branch(sameSign)
+	bCheck := s.f.NewBlock(block.BlockPlain)
+
+	s.startBlock(bAdd)
+	sum := s.newValue3(ssaop.OpAdd64carry, tup, plo, bL, zero)
+	s.vars[rlo] = s.newValue1(ssaop.OpSelect0, u64, sum)
+	s.vars[rhi] = s.newValue2(ssaop.OpAdd64, u64, phi, s.newValue1(ssaop.OpSelect1, u64, sum))
+	s.vars[rsign] = signBit(aH)
+	s.endBlock().AddEdgeTo(bCheck)
+
+	s.startBlock(bSub)
+	d := s.newValue3(ssaop.OpSub64borrow, tup, plo, bL, zero)
+	dlo := s.newValue1(ssaop.OpSelect0, u64, d)
+	h := s.newValue3(ssaop.OpSub64borrow, tup, phi, zero, s.newValue1(ssaop.OpSelect1, u64, d))
+	dhi, bw := s.newValue1(ssaop.OpSelect0, u64, h), s.newValue1(ssaop.OpSelect1, u64, h)
+	// A borrow out of the high word: a × 10^gap is below 2^64 and below
+	// b, and the difference is b's magnitude less it, with b's sign.
+	under := s.newValue2(ssaop.OpNeq64, boolT, bw, zero)
+	lo := s.newValue3(ssaop.OpCondSelect, u64, s.newValue1(ssaop.OpNeg64, u64, dlo), dlo, under)
+	hi := s.newValue3(ssaop.OpCondSelect, u64, zero, dhi, under)
+	sign := s.newValue2(ssaop.OpXor64, u64, signBit(aH), bw)
+	nonzero := s.newValue1(ssaop.OpZeroExt8to64, u64, s.newValue1(ssaop.OpCvtBoolToUint8, types.Types[types.TUINT8],
+		s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpOr64, u64, hi, lo), zero)))
+	s.vars[rlo], s.vars[rhi], s.vars[rsign] = lo, hi, s.newValue2(ssaop.OpAnd64, u64, sign, nonzero)
+	s.endBlock().AddEdgeTo(bCheck)
+
+	s.startBlock(bCheck)
+	Lo, Hi, Sign := s.variable(rlo, u64), s.variable(rhi, u64), s.variable(rsign, u64)
+	for _, m := range []*ir.Name{rlo, rhi, rsign} {
+		delete(s.vars, m)
+	}
+	// Below 2^112, so below 10^34 and not past MaxCoeff128: one shift
+	// and test, where a comparison with MaxCoeff128 would build its two
+	// words, a constant the compiler hoists onto level 2's fast path. A
+	// coefficient from 2^112 to MaxCoeff128 takes the kernel call, which
+	// gives the same result.
+	u.guard(s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpRsh64Ux64, u64, Hi, c(48)), zero), u.call)
+	header := s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpAnd64, u64, bH, c(^int64(bid.UBDSignHi))),
+		s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpLsh64x64, u64, Sign, c(bid.UBDSignShift)), Hi))
+	u.done(s.newValue2(ssaop.OpDecimal128Make, rt, Lo, header))
+
+	return u.finish(rt, func() *ssa.Value { return s.softDecimalOp(op, rt, x, y) })
+}
