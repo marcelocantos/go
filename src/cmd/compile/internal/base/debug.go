@@ -77,7 +77,7 @@ type DebugFlags struct {
 	SyncFrames            int    `help:"how many writer stack frames to include at sync points in unified export data" concurrent:"ok"`
 	TailCall              int    `help:"print information about tail calls"`
 	TypeAssert            int    `help:"print information about type assertion inlining"`
-	UBDLevel              int    `help:"decimal128 operations on UBD targets\n0: the default, level 2\n1: every operation is its kernel call, nothing inline\n2: the narrowed inline paths in front of the calls (add, subtract, multiply, comparisons)\n3: the inline paths derived from the BID lowering\n4: level 2's paths, then the kernel's first paths promoted inline (in development)" concurrent:"ok"`
+	UBDLevel              int    `help:"decimal128 operations on UBD targets\n0: the default, level 2\n1: every operation is its kernel call, nothing inline\n2: the narrowed inline paths in front of the calls (add, subtract, multiply, comparisons)\n3: level 2's paths, then the kernel's first paths promoted inline" concurrent:"ok"`
 	WB                    int    `help:"print information about write barriers"`
 	ABIWrap               int    `help:"print information about ABI wrapper generation"`
 	MayMoreStack          string `help:"call named function before all stack growth checks" concurrent:"ok"`

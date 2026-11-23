@@ -29,7 +29,7 @@ import (
 // Any unproved case calls the portable typed helper with already-evaluated args;
 // this preserves special values, arbitrary encodings and argument evaluation.
 func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fallback *obj.LSym) *ssa.Value {
-	result := ssaMarker("bidround") // one per lowering; see bidAddSub128
+	result := ssaMarker("bidround") // one per lowering; see ubdAddNarrow
 	u64, u8, boolT := types.Types[types.TUINT64], types.Types[types.TUINT8], types.Types[types.TBOOL]
 	zero, one := s.constInt64(u64, 0), s.constInt64(u64, 1)
 	x, mode := args[0], args[len(args)-1]
@@ -54,11 +54,11 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 	// for a one-word x at y's exponent (x itself) and for one 1 to 19
 	// places finer than y's (one division, rounded in the mode: telco's
 	// products to cents), and the kernel call for the rest; it leaves out
-	// level 3's path for an x coarser than y's exponent. At ubdLevel 4
+	// the path for an x coarser than y's exponent. At ubdLevel 3
 	// integral rounding takes them as well (the kernel's word path: an x
 	// with qExp >= 0 is x, one with a fraction of 1 to 19 digits is one
 	// division, rounded in the mode).
-	level2Quantize := bidCallOnly(x) && (!integral && ubdLevel() >= 2 || ubdLevel4())
+	level2Quantize := bidCallOnly(x) && (!integral && ubdLevel() >= 2 || ubdLevel3())
 	if bidCallOnly(x) && !level2Quantize {
 		xh := s.newValue1(ssaop.OpDecimal128Hi, u64, x)
 		kargs := []*ssa.Value{s.newValue1(ssaop.OpDecimal128Lo, u64, x), xh}
@@ -169,9 +169,9 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 		h := s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpAnd64, u64, native, s.constInt64(u64, int64(signMask))), s.newValue2(ssaop.OpLsh64x64, u64, ye, s.constInt64(u64, int64(shift))))
 		return s.newValue2(ssaop.OpXor64, u64, h, s.constInt64(u64, int64(zeroEncoding)))
 	}
-	// Level 4 keeps this path (the kernel's ubdQuantizeWord scales a word
+	// Level 3 keeps this path (the kernel's ubdQuantizeWord scales a word
 	// up the same way); level 2 leaves it to the kernel.
-	if !integral && !is64 && (!level2Quantize || ubdLevel4()) {
+	if !integral && !is64 && (!level2Quantize || ubdLevel3()) {
 		// A decimal128 word at a larger exponent than y's by at most 19
 		// places is scaled up to it, exactly, when the product is still a
 		// word: 5 quantized to cents is 5.00. One multiplication by a

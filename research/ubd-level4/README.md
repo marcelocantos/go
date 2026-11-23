@@ -520,3 +520,29 @@ What it suggests:
   configuration to measure.
 - The largest app-level cost left is formatting (`PutShort128`,
   `strconv.FormatDecimal`), not inlining.
+
+## Level 4 becomes level 3 (2026-11-24)
+
+At the user's direction the old level 3 (level 2's paths, then the inline
+paths derived from the BID lowering) is deleted and level 4 takes its
+number: `-d=ubdlevel=3` is now this log's level, and 4 is a usage error.
+
+- Deleted: the level-3 dispatch (`ubdSuperset`) and the two lowerings
+  reachable only from it, `bidAddSub128` and `bidMul128`; and
+  `bidCompare`'s decimal128 branches, which only it reached (bidCompare
+  is now decimal64's alone). `bidCallOnly` no longer depends on the level.
+- Renamed: ubd_level4.go → ubd_level3.go; `ubdLevel4` → `ubdLevel3`;
+  `ubdAddWord4`, `ubdMulWord4`, `ubdCmpWord4`, `ubdMinMax4`, `ubd4`,
+  `newUBD4` → the same with 3. The SSA-marker comment that lived on
+  `bidAddSub128` moved to `ubdAddNarrow`.
+
+Check: the compiler before (at 11b58472ef) and after built the size
+probes (research/ubd-size probe and scale) and all seven apps, with
+decimal128 and with decimal64, for arm64 and amd64, at levels 1, 2 and
+old 4 against new 1, 2 and 3. The disassembly, less the build ID, is
+identical in all 96 comparisons; old level 2 against old level 4 differs,
+so the comparison sees a change of level. The codegen test, internal/bid's
+TestWordPathsAgreeWithCompiler and math/decimal at each level pass;
+ssagen's TestIntrinsics fails as it did before.
+
+This log keeps the name "level 4" for the work above.

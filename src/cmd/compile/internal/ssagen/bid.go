@@ -129,7 +129,7 @@ func (s *state) bidCompareZero(op ir.Op, x *ssa.Value, zeroOnLeft bool) *ssa.Val
 			op = ir.OLE
 		}
 	}
-	if bidCallOnly(x) || ubdSuperset(x) {
+	if bidCallOnly(x) {
 		return s.ubdCompareZeroOrdered(op, x)
 	}
 	var ordered, negative *ssa.Value
@@ -288,46 +288,35 @@ func initBIDKernelSyms() {
 //	   constant zero with no call (bidIsZero, ubdCompareZeroOrdered), and
 //	   comparisons of two values with one-word coefficients
 //	   (ubdCompareNarrow)
-//	3  level 2's paths first, unchanged, and where their guard fails the
-//	   inline paths derived from the BID lowering (bidAddSub128,
-//	   bidCompare) before the kernel call; x * y is level 2's; the operations level 2 leaves
-//	   to the kernel (rounding, quantize: bidRounding) inline as well.
-//	   Every operand pair level 2 decides inline runs level 2's code, so
-//	   level 3 is never slower than level 2 on it; the pairs level 2 sends
-//	   to the kernel pay one guard before the BID-derived paths. Level 3's
-//	   inlining needs additional scrutiny: its BID-derived paths were
-//	   carried over, not tuned (research/ubd-size/README.md)
-//	4  level 2's paths, unchanged, then the kernel's own first paths
-//	   promoted inline one at a time, for 64-bit coefficients
-//	   (research/ubd-level4/README.md); in development, to replace level 3
+//	3  level 2's paths, unchanged, then the kernel's own first paths
+//	   promoted inline behind them, for one-word coefficients
+//	   (ubd_level3.go): add and subtract at exponents up to 14 apart,
+//	   multiply, comparisons, min and max, integral rounding and quantize
+//	   to a coarser exponent. Every operand pair level 2 decides inline
+//	   runs level 2's code; the inline results are the kernel's by
+//	   construction. Developed as level 4 (research/ubd-level4/README.md)
 //
 // Until 2026-11-22 the levels were 1 to 10 and -1, adding paths one at a
-// time; research/ubd-size/README.md maps them to these. Any other value
-// is a usage error (base.ParseFlags).
+// time; research/ubd-size/README.md maps them to these. Until 2026-11-24
+// level 3 was the inline paths derived from the BID lowering, behind level
+// 2's, and the present level 3 was level 4. Any other value is a usage
+// error (base.ParseFlags).
 func ubdLevel() int {
 	if base.Debug.UBDLevel == 0 {
 		return 2
 	}
-	return base.Debug.UBDLevel // 1 to 4: base.ParseFlags rejects the rest
+	return base.Debug.UBDLevel // 1 to 3: base.ParseFlags rejects the rest
 }
 
-// ubdLevel4 reports whether ubdLevel is 4: level 2's lowering, with the
+// ubdLevel3 reports whether ubdLevel is 3: level 2's lowering, with the
 // kernel's first paths promoted inline behind level 2's.
-func ubdLevel4() bool { return ubdLevel() == 4 }
+func ubdLevel3() bool { return ubdLevel() == 3 }
 
-// bidCallOnly reports whether the decimal128 operation on x is lowered by
-// ubdLevel 1, 2 or 4: its kernel call, with level 2's fast paths (and at
-// level 4 the kernel's promoted ones). At level 3 the BID-derived lowering
-// takes it instead.
+// bidCallOnly reports whether the decimal128 operation on x is lowered as
+// the kernel call, with the fast paths of ubdLevel in front of it: every
+// decimal128 operation on a target bidKernelDirect accepts.
 func bidCallOnly(x *ssa.Value) bool {
-	return ubdLevel() != 3 && x.Type.Kind() == types.TDECIMAL128 && bidKernelDirect()
-}
-
-// ubdSuperset reports whether the decimal128 operation on x is lowered at
-// ubdLevel 3: level 2's fast paths first, with the BID-derived inline paths
-// behind them in place of the kernel call.
-func ubdSuperset(x *ssa.Value) bool {
-	return ubdLevel() == 3 && x.Type.Kind() == types.TDECIMAL128 && bidKernelDirect()
+	return x.Type.Kind() == types.TDECIMAL128 && bidKernelDirect()
 }
 
 // ubdAddNarrow lowers x + y and x - y at ubdLevel 2: decimal128-go's add
@@ -347,7 +336,12 @@ func ubdSuperset(x *ssa.Value) bool {
 // negated and the sign flipped; an exact zero is +0 (IEEE 754-2019 clause
 // 6.3, ties to even). The qExp and sign ride along in xh.
 func (s *state) ubdAddNarrow(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value {
-	result := ssaMarker("ubdadd1") // one per lowering; see bidAddSub128
+	// The paths below merge through a variable of their own, as ternary
+	// does. The phi builder for functions of more than smallBlocks blocks
+	// gives a variable the type of the first read it meets, so a marker
+	// shared by every lowering would give a function that lowers both
+	// decimal widths a phi of the wrong width.
+	result := ssaMarker("ubdadd1")
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
 	zero := s.constInt64(u64, 0)
 	xh, yh := s.newValue1(ssaop.OpDecimal128Hi, u64, x), s.newValue1(ssaop.OpDecimal128Hi, u64, y)
@@ -361,9 +355,9 @@ func (s *state) ubdAddNarrow(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	b := s.endBlock()
 	b.Kind = block.BlockIf
 	b.SetControl(fast)
-	if ubdSuperset(x) || ubdLevel4() {
-		// Lay the BID-derived (level 3) or promoted (level 4) paths out
-		// of line, so that the fast path runs as at level 2.
+	if ubdLevel3() {
+		// Lay level 3's promoted paths out of line, so that the fast
+		// path runs as at level 2.
 		b.Likely = ssa.BranchLikely
 	}
 	bFast := s.f.NewBlock(block.BlockPlain)
@@ -386,10 +380,8 @@ func (s *state) ubdAddNarrow(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	s.endBlock().AddEdgeTo(bAfter)
 
 	s.startBlock(bSlow)
-	if ubdSuperset(x) {
-		s.vars[result] = s.bidAddSub128(op, rt, x, y)
-	} else if ubdLevel4() {
-		s.vars[result] = s.ubdAddWord4(op, rt, x, y, xh, yh, xl, yl)
+	if ubdLevel3() {
+		s.vars[result] = s.ubdAddWord3(op, rt, x, y, xh, yh, xl, yl)
 	} else {
 		s.vars[result] = s.softDecimalOp(op, rt, x, y)
 	}
@@ -427,7 +419,7 @@ func (s *state) ubdAddNarrow(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 // the products of word coefficients of 2^56 (about 7.2e16) or more that
 // still fit, which the narrowed path sends to the kernel.
 func (s *state) ubdMulFast(rt *types.Type, x, y *ssa.Value) *ssa.Value {
-	result := ssaMarker("ubdmul1") // one per lowering; see bidAddSub128
+	result := ssaMarker("ubdmul1") // one per lowering; see ubdAddNarrow
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
 	zero := s.constInt64(u64, 0)
 	xh, yh := s.newValue1(ssaop.OpDecimal128Hi, u64, x), s.newValue1(ssaop.OpDecimal128Hi, u64, y)
@@ -462,12 +454,12 @@ func (s *state) ubdMulFast(rt *types.Type, x, y *ssa.Value) *ssa.Value {
 	s.endBlock().AddEdgeTo(bAfter)
 
 	s.startBlock(bSlow)
-	// Level 3 keeps level 2's kernel call here: bidMul128 behind this
-	// path changed the fast path's register allocation and made x * y
-	// 6-8% slower on its own operands, for products that only factors of
-	// 2^56 or more (17 digits) need.
-	if ubdLevel4() {
-		s.vars[result] = s.ubdMulWord4(rt, x, y, xh, yh, xl, yl)
+	// The former level 3 kept level 2's kernel call here: the BID-derived
+	// multiply behind this path changed the fast path's register
+	// allocation and made x * y 6-8% slower on its own operands, for
+	// products that only factors of 2^56 or more (17 digits) need.
+	if ubdLevel3() {
+		s.vars[result] = s.ubdMulWord3(rt, x, y, xh, yh, xl, yl)
 	} else {
 		s.vars[result] = s.softDecimalOp(ir.OMUL, rt, x, y)
 	}
@@ -524,12 +516,12 @@ func (s *state) ubdComparePredCall(op ir.Op, xlo, xhi, ylo, yhi *ssa.Value) *ssa
 //
 //	the predicate call alone (level 1)                 37   37
 //	two-word fast path, then the call                 106  138
-//	the BID-derived word comparison (level 3)         282  320
+//	the BID-derived word comparison (former level 3)  282  320
 //	XOR-BID's inline comparison                       586  650
 //
 // Operands of different exponents (1234.5678 == 2.5, 100 == 100.00) take
-// the call: about 5 ns where level 3 and XOR-BID decide them inline in
-// about 2.5 ns. That is accepted. Of the two-word path's 106 bytes only 11
+// the call: about 5 ns where XOR-BID decides them inline in about 2.5 ns.
+// That is accepted at level 2; level 3 decides them inline (ubdCmpWord3). Of the two-word path's 106 bytes only 11
 // instructions decide; the rest is the cost of a call that may happen:
 // Go's ABI saves no register across a call, so the values live at a
 // comparison are spilled, on the fast path too, and reloaded after the
@@ -579,18 +571,8 @@ func (s *state) ubdCompareNarrow(op ir.Op, x, y, xlo, xhi, ylo, yhi *ssa.Value) 
 	s.endBlock().AddEdgeTo(bAfter)
 
 	s.startBlock(bSlow)
-	if ubdSuperset(x) {
-		// bidCompare takes ==, !=, < and <=, as decimalOp passes them.
-		bop, bx, by := op, x, y
-		switch op {
-		case ir.OGT:
-			bop, bx, by = ir.OLT, y, x
-		case ir.OGE:
-			bop, bx, by = ir.OLE, y, x
-		}
-		s.vars[res] = s.bidCompare(bop, bx, by)
-	} else if ubdLevel4() {
-		s.vars[res] = s.ubdCmpWord4(op, xhi, yhi, xlo, ylo)
+	if ubdLevel3() {
+		s.vars[res] = s.ubdCmpWord3(op, xhi, yhi, xlo, ylo)
 	} else {
 		s.vars[res] = s.ubdComparePredCall(op, xlo, xhi, ylo, yhi)
 	}
@@ -660,303 +642,6 @@ func (s *state) bidKernelOp(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Valu
 	// take no rounding mode: the operators round to nearest, ties to even.
 	res := s.rtcall(fn, true, []*types.Type{u64, u64}, xlo, xhi, ylo, yhi)
 	return s.newValue2(ssaop.OpDecimal128Make, rt, res[0], res[1])
-}
-
-// bidAddSub128 adds or subtracts coefficients directly where the result is
-// exact.
-//
-// First, effective same-sign addition at one quantum, the first-level fast
-// path of decimal128-go (d128_add_rnd_ctxnull): equal qExp and sign (the
-// high words' top 15 bits), and the high 49 coefficient bits of the two
-// operands summing below 2^48. That bound makes both coefficients below
-// 2^112, so neither operand is special (a special's coefficient begins 0x1F,
-// which sets bit 48 of the high word) and the sum, below 2^113 - 2^64 + 2,
-// is below 10^34: exact at the common exponent, with no rounding and no
-// clamping. y's coefficient is added straight onto x's whole stored value,
-// so x's qExp and sign ride along and nothing is unpacked or repacked; the
-// bound keeps the carry out of the sign. A negative zero keeps its sign. For
-// subtraction, y's sign is flipped only in the fast paths; the fallback
-// receives the original y, including its NaN sign.
-//
-// Next, effective subtraction at one quantum: stored high words that differ
-// in the sign bit alone (x - y of one sign, or x + y of opposite signs). The
-// same word and first-form guards on x hold for y, whose high word differs
-// only in the sign. The coefficient difference xl - yl, negated when it
-// borrows, is below 2^64 <= 10^34 and exact at the common exponent, the
-// preferred one. Its sign is x's when xl >= yl and the other sign when the
-// difference borrows. An exact zero difference is +0: under IEEE 754-2019
-// clause 6.3 a cancellation is -0 only when rounding toward negative, and the
-// operators always round to nearest, ties to even. Without this branch these
-// operands took the aligned path below at a gap of zero: a table load, a
-// multiply by one and the general sign selection.
-//
-// Both operands were evaluated before this method. Only the slow branch calls
-// the runtime, with the original operands. The normal variable/memory phis at
-// bAfter join that call's memory with the unchanged fast-branch memory.
-func (s *state) bidAddSub128(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value {
-	// The paths below merge through a variable of their own, as ternary
-	// does. The phi builder for functions of more than smallBlocks blocks
-	// gives a variable the type of the first read it meets, so a marker
-	// shared by every lowering would give a function that lowers both
-	// decimal widths a phi of the wrong width.
-	result := ssaMarker("bidadd")
-	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
-	zero := s.constInt64(u64, 0)
-	xh := s.newValue1(ssaop.OpDecimal128Hi, u64, x)
-	yh := s.newValue1(ssaop.OpDecimal128Hi, u64, y)
-	// UBD: the sign is bit 49, the exponent a signed shift away, and no
-	// second form or storage mask exists. A word coefficient (the high
-	// coefficient bits clear) also rules out every special value, whose
-	// coefficient begins 0x1F, so no separate finiteness guard is needed.
-	signMask := uint64(bid.UBDSignHi)
-	signBit := s.constInt64(u64, int64(signMask))
-	if op == ir.OSUB {
-		yh = s.newValue2(ssaop.OpXor64, u64, yh, signBit)
-	}
-	xl := s.newValue1(ssaop.OpDecimal128Lo, u64, x)
-	yl := s.newValue1(ssaop.OpDecimal128Lo, u64, y)
-	coeffMask := s.constInt64(u64, int64(bid.UBDCoeffMaskHi))
-	// Equal qExp and sign: the high words agree in their top 15 bits. The
-	// opposite-sign path below tests the same difference.
-	differ := s.newValue2(ssaop.OpXor64, u64, xh, yh)
-	same := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpRsh64Ux64, u64, differ, s.constInt64(u64, bid.UBDExpShift-1)), zero)
-	ych := s.newValue2(ssaop.OpAnd64, u64, yh, coeffMask)
-	coeffs := s.newValue2(ssaop.OpAdd64, u64, s.newValue2(ssaop.OpAnd64, u64, xh, coeffMask), ych)
-	fits := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpRsh64Ux64, u64, coeffs, s.constInt64(u64, 48)), zero)
-	coeff := s.newValue2(ssaop.OpAnd64, u64, xh, coeffMask)
-	word := s.newValue2(ssaop.OpEq64, boolT, coeff, zero)
-
-	bSlow := s.f.NewBlock(block.BlockPlain)
-	bAfter := s.f.NewBlock(block.BlockPlain)
-	bAlign := s.f.NewBlock(block.BlockPlain)
-	bOpposite := s.f.NewBlock(block.BlockPlain)
-	// Short-circuit the guards, particularly the common mismatch in quantum
-	// or sign. Branches also let the backend use condition codes directly
-	// instead of materializing and combining three boolean values.
-	for i, guard := range []*ssa.Value{same, fits} {
-		b := s.endBlock()
-		b.Kind = block.BlockIf
-		b.SetControl(guard)
-		next := s.f.NewBlock(block.BlockPlain)
-		b.AddEdgeTo(next)
-		if i == 0 {
-			// A sign or quantum mismatch may still have an exact result.
-			b.AddEdgeTo(bOpposite)
-		} else {
-			b.AddEdgeTo(bSlow)
-		}
-		s.startBlock(next)
-	}
-
-	sum := s.newValue3(ssaop.OpAdd64carry, types.NewTuple(u64, u64), xl, yl, zero)
-	lo := s.newValue1(ssaop.OpSelect0, u64, sum)
-	carry := s.newValue1(ssaop.OpSelect1, u64, sum)
-	hi := s.newValue3(ssaop.OpAdd64carry, types.NewTuple(u64, u64), xh, ych, carry)
-	hi = s.newValue1(ssaop.OpSelect0, u64, hi)
-	s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, hi)
-	s.endBlock().AddEdgeTo(bAfter)
-
-	s.startBlock(bOpposite)
-	opposite := s.newValue2(ssaop.OpEq64, boolT, differ, signBit)
-	for i, guard := range []*ssa.Value{opposite, word} {
-		b := s.endBlock()
-		b.Kind = block.BlockIf
-		b.SetControl(guard)
-		next := s.f.NewBlock(block.BlockPlain)
-		b.AddEdgeTo(next)
-		if i == 0 {
-			b.AddEdgeTo(bAlign)
-		} else {
-			b.AddEdgeTo(bSlow)
-		}
-		s.startBlock(next)
-	}
-	diff := s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), xl, yl, zero)
-	lo = s.newValue1(ssaop.OpSelect0, u64, diff)
-	borrow := s.newValue1(ssaop.OpSelect1, u64, diff)
-	borrowed := s.newValue2(ssaop.OpNeq64, boolT, borrow, zero)
-	lo = s.newValue3(ssaop.OpCondSelect, u64, s.newValue1(ssaop.OpNeg64, u64, lo), lo, borrowed)
-	hi = s.newValue2(ssaop.OpXor64, u64, xh, s.newValue2(ssaop.OpLsh64x64, u64, borrow, s.constInt64(u64, 49)))
-	cancelled := s.newValue2(ssaop.OpEq64, boolT, lo, zero)
-	hi = s.newValue3(ssaop.OpCondSelect, u64, s.newValue2(ssaop.OpAnd64, u64, hi, s.constInt64(u64, int64(^signMask))), hi, cancelled)
-	s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, hi)
-	s.endBlock().AddEdgeTo(bAfter)
-
-	s.startBlock(bAlign)
-	// For two uint64 coefficients and a quantum gap at most 14, the largest
-	// aligned sum is (2^64-1)*(10^14+1) < 10^34. A difference is no larger.
-	// Both are exact at the smaller input exponent, including subnormals.
-	const maxGap = bidAddMaxGap
-	highs := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpOr64, u64, xh, yh), coeffMask)
-	words := s.newValue2(ssaop.OpEq64, boolT, highs, zero)
-	for _, guard := range []*ssa.Value{words} {
-		b := s.endBlock()
-		b.Kind = block.BlockIf
-		b.SetControl(guard)
-		next := s.f.NewBlock(block.BlockPlain)
-		b.AddEdgeTo(next)
-		b.AddEdgeTo(bSlow)
-		s.startBlock(next)
-	}
-	shift := s.constInt64(u64, bid.UBDExpShift)
-	xe := s.newValue2(ssaop.OpRsh64x64, u64, xh, shift)
-	ye := s.newValue2(ssaop.OpRsh64x64, u64, yh, shift)
-	swap := s.newValue2(ssaop.OpLess64, boolT, xe, ye)
-	gap := s.newValue3(ssaop.OpCondSelect, u64,
-		s.newValue2(ssaop.OpSub64, u64, ye, xe), s.newValue2(ssaop.OpSub64, u64, xe, ye), swap)
-	bounded := s.newValue2(ssaop.OpLeq64U, boolT, gap, s.constInt64(u64, maxGap))
-	b := s.endBlock()
-	b.Kind = block.BlockIf
-	b.SetControl(bounded)
-	bScale := s.f.NewBlock(block.BlockPlain)
-	b.AddEdgeTo(bScale)
-	b.AddEdgeTo(bSlow)
-	s.startBlock(bScale)
-
-	higher := s.newValue3(ssaop.OpCondSelect, u64, yl, xl, swap)
-	lower := s.newValue3(ssaop.OpCondSelect, u64, xl, yl, swap)
-	highHeader := s.newValue3(ssaop.OpCondSelect, u64, yh, xh, swap)
-	lowHeader := s.newValue3(ssaop.OpCondSelect, u64, xh, yh, swap)
-	// Use the compiler's immutable content-addressed literal data, not a
-	// mutable runtime table. The guarded gap proves the load is in bounds.
-	// The selected ARM64/AMD64 backends support unaligned uint64 loads.
-	const wordBytes = bidWordBytes
-	ptrT := types.NewPtr(u64)
-	table := s.newValue1A(ssaop.OpAddr, ptrT, bidAddPowers, s.sb)
-	index := s.newValue2(ssaop.OpMul64, u64, gap, s.constInt64(u64, wordBytes))
-	power := s.rawLoad(u64, s.newValue2(ssaop.OpAddPtr, ptrT, table, index))
-	product := s.newValue2(ssaop.OpMul64uhilo, types.NewTuple(u64, u64), higher, power)
-	phi := s.newValue1(ssaop.OpSelect0, u64, product)
-	plo := s.newValue1(ssaop.OpSelect1, u64, product)
-	signs := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpXor64, u64, xh, yh), signBit)
-	sameSign := s.newValue2(ssaop.OpEq64, boolT, signs, zero)
-	b = s.endBlock()
-	b.Kind = block.BlockIf
-	b.SetControl(sameSign)
-	bSum := s.f.NewBlock(block.BlockPlain)
-	bDiff := s.f.NewBlock(block.BlockPlain)
-	b.AddEdgeTo(bSum)
-	b.AddEdgeTo(bDiff)
-	s.startBlock(bSum)
-	sum = s.newValue3(ssaop.OpAdd64carry, types.NewTuple(u64, u64), plo, lower, zero)
-	lo = s.newValue1(ssaop.OpSelect0, u64, sum)
-	carry = s.newValue1(ssaop.OpSelect1, u64, sum)
-	hi = s.newValue2(ssaop.OpAdd64, u64, phi, carry)
-	s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, s.newValue2(ssaop.OpOr64, u64, lowHeader, hi))
-	s.endBlock().AddEdgeTo(bAfter)
-
-	s.startBlock(bDiff)
-	// The lower-quantum operand has a word coefficient. It can exceed the
-	// aligned operand only when that operand's high product word is zero.
-	less := s.newValue2(ssaop.OpAndB, boolT,
-		s.newValue2(ssaop.OpEq64, boolT, phi, zero), s.newValue2(ssaop.OpLess64U, boolT, plo, lower))
-	diff = s.newValue3(ssaop.OpSub64borrow, types.NewTuple(u64, u64), plo, lower, zero)
-	lo = s.newValue1(ssaop.OpSelect0, u64, diff)
-	borrow = s.newValue1(ssaop.OpSelect1, u64, diff)
-	hi = s.newValue2(ssaop.OpSub64, u64, phi, borrow)
-	lo = s.newValue3(ssaop.OpCondSelect, u64, s.newValue2(ssaop.OpSub64, u64, lower, plo), lo, less)
-	hi = s.newValue3(ssaop.OpCondSelect, u64, zero, hi, less)
-	negative := s.newValue2(ssaop.OpAnd64, u64, s.newValue3(ssaop.OpCondSelect, u64, lowHeader, highHeader, less), signBit)
-	isZero := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpOr64, u64, hi, lo), zero)
-	// Cancellation under round-half-even gives +0 at the preferred quantum.
-	negative = s.newValue3(ssaop.OpCondSelect, u64, zero, negative, isZero)
-	header := s.newValue2(ssaop.OpAnd64, u64, lowHeader, s.constInt64(u64, int64(^signMask)))
-	header = s.newValue2(ssaop.OpOr64, u64, header, negative)
-	s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, s.newValue2(ssaop.OpOr64, u64, header, hi))
-	s.endBlock().AddEdgeTo(bAfter)
-
-	s.startBlock(bSlow)
-	s.vars[result] = s.softDecimalOp(op, rt, x, y)
-	s.endBlock().AddEdgeTo(bAfter)
-
-	s.startBlock(bAfter)
-	r := s.variable(result, rt)
-	delete(s.vars, result)
-	return r
-}
-
-// bidMul128 multiplies two canonical finite word coefficients directly when
-// the full product and the sum of exponents fit decimal128. Mul64uhilo gives
-// the exact product, including every bit needed to decide the coefficient
-// bound. An unsigned range check on the biased exponent sum rejects both
-// underflow and overflow. Within these bounds the preferred quantum is the
-// exponent sum, the sign is the XOR of the operand signs (also for zero), and
-// no digit is discarded. This is an exact packing exception; every failed
-// guard calls the original multiplication, which handles rounding, clamping,
-// noncanonical encodings and specials.
-func (s *state) bidMul128(rt *types.Type, x, y *ssa.Value) *ssa.Value {
-	result := ssaMarker("bidmul") // one per lowering; see bidAddSub128
-	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
-	zero := s.constInt64(u64, 0)
-	xh := s.newValue1(ssaop.OpDecimal128Hi, u64, x)
-	yh := s.newValue1(ssaop.OpDecimal128Hi, u64, y)
-	xl := s.newValue1(ssaop.OpDecimal128Lo, u64, x)
-	yl := s.newValue1(ssaop.OpDecimal128Lo, u64, y)
-	// UBD: word coefficients rule out the special values (see
-	// bidAddSub128), so no finiteness guards.
-	coeff := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpOr64, u64, xh, yh), s.constInt64(u64, int64(bid.UBDCoeffMaskHi)))
-	words := s.newValue2(ssaop.OpEq64, boolT, coeff, zero)
-	bSlow := s.f.NewBlock(block.BlockPlain)
-	bAfter := s.f.NewBlock(block.BlockPlain)
-	for _, guard := range []*ssa.Value{words} {
-		b := s.endBlock()
-		b.Kind = block.BlockIf
-		b.SetControl(guard)
-		next := s.f.NewBlock(block.BlockPlain)
-		b.AddEdgeTo(next)
-		b.AddEdgeTo(bSlow)
-		s.startBlock(next)
-	}
-
-	shift := s.constInt64(u64, bid.UBDExpShift)
-	xe := s.newValue2(ssaop.OpRsh64x64, u64, xh, shift)
-	ye := s.newValue2(ssaop.OpRsh64x64, u64, yh, shift)
-	exp := s.newValue2(ssaop.OpAdd64, u64, xe, ye)
-	biased := s.newValue2(ssaop.OpAdd64, u64, exp, s.constInt64(u64, bid.Bias128))
-	expOK := s.newValue2(ssaop.OpLeq64U, boolT, biased, s.constInt64(u64, bid.MaxExp128+bid.Bias128))
-	b := s.endBlock()
-	b.Kind = block.BlockIf
-	b.SetControl(expOK)
-	bProduct := s.f.NewBlock(block.BlockPlain)
-	b.AddEdgeTo(bProduct)
-	b.AddEdgeTo(bSlow)
-	s.startBlock(bProduct)
-
-	product := s.newValue2(ssaop.OpMul64uhilo, types.NewTuple(u64, u64), xl, yl)
-	hi := s.newValue1(ssaop.OpSelect0, u64, product)
-	lo := s.newValue1(ssaop.OpSelect1, u64, product)
-	maxHi, maxLo := s.constInt64(u64, int64(bid.MaxCoeff128Hi)), s.constInt64(u64, int64(bid.MaxCoeff128Lo))
-	// Most word products are well below the 34-digit limit. Only inspect
-	// the low-word boundary when the high word cannot establish that.
-	below := s.newValue2(ssaop.OpLess64U, boolT, hi, maxHi)
-	b = s.endBlock()
-	b.Kind = block.BlockIf
-	b.SetControl(below)
-	bExact := s.f.NewBlock(block.BlockPlain)
-	bBoundary := s.f.NewBlock(block.BlockPlain)
-	b.AddEdgeTo(bExact)
-	b.AddEdgeTo(bBoundary)
-	s.startBlock(bBoundary)
-	coeffOK := s.newValue2(ssaop.OpAndB, boolT, s.newValue2(ssaop.OpEq64, boolT, hi, maxHi), s.newValue2(ssaop.OpLeq64U, boolT, lo, maxLo))
-	b = s.endBlock()
-	b.Kind = block.BlockIf
-	b.SetControl(coeffOK)
-	b.AddEdgeTo(bExact)
-	b.AddEdgeTo(bSlow)
-	s.startBlock(bExact)
-
-	sign := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpXor64, u64, xh, yh), s.constInt64(u64, bid.UBDSignHi))
-	header := s.newValue2(ssaop.OpOr64, u64, sign, s.newValue2(ssaop.OpLsh64x64, u64, exp, shift))
-	s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, lo, s.newValue2(ssaop.OpOr64, u64, header, hi))
-	s.endBlock().AddEdgeTo(bAfter)
-
-	s.startBlock(bSlow)
-	s.vars[result] = s.softDecimalOp(ir.OMUL, rt, x, y)
-	s.endBlock().AddEdgeTo(bAfter)
-	s.startBlock(bAfter)
-	r := s.variable(result, rt)
-	delete(s.vars, result)
-	return r
 }
 
 // ubdIntConv lowers a conversion between decimal128 and int64 or uint64

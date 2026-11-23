@@ -3411,7 +3411,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			}
 		}
 
-		if n.X.Type().IsDecimal() && (bidCallOnly(a) || ubdSuperset(a)) {
+		if n.X.Type().IsDecimal() && bidCallOnly(a) {
 			return s.ubdComparePred(n.Op(), a, b)
 		}
 

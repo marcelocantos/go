@@ -93,7 +93,7 @@ func (s *state) bidKernelOp64(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Va
 // more than 53 bits, a cancellation to zero, a second form or a special)
 // goes to the kernel with the original operands.
 func (s *state) bidAddSub64(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value {
-	result := ssaMarker("bidadd64") // one per lowering; see bidAddSub128
+	result := ssaMarker("bidadd64") // one per lowering; see ubdAddNarrow
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
 	zero := s.constInt64(u64, 0)
 	m := s.constInt64(u64, int64(1<<bid.CoeffBits64-1))
@@ -179,7 +179,7 @@ func (s *state) bidAddSub64(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Valu
 // the signs. The header arithmetic is on native encodings, so it removes
 // the storage XOR first and restores it after.
 func (s *state) bidMul64(rt *types.Type, x, y *ssa.Value) *ssa.Value {
-	result := ssaMarker("bidmul64") // one per lowering; see bidAddSub128
+	result := ssaMarker("bidmul64") // one per lowering; see ubdAddNarrow
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
 	zero := s.constInt64(u64, 0)
 	storage := s.constInt64(u64, int64(ir.DecimalZero64()))

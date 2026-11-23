@@ -14,27 +14,27 @@ import (
 	"cmd/compile/internal/types"
 )
 
-// ubdLevel 4: the kernel's own first paths, promoted inline one at a time
+// ubdLevel 3: the kernel's own first paths, promoted inline one at a time
 // behind level 2's, for 64-bit coefficients. Each is the kernel leaf's
 // code for the operand pairs it settles, so that it gives the kernel's
 // result by construction, and every other pair is the kernel call
 // (research/ubd-level4/README.md).
 
-// ubd4 holds the blocks of one level-4 lowering: the kernel call that
+// ubd3 holds the blocks of one level-3 lowering: the kernel call that
 // every refused pair reaches, and the join where the result is read.
-type ubd4 struct {
+type ubd3 struct {
 	s           *state
 	res         *ir.Name
 	call, after *ssa.Block
 }
 
-func (s *state) newUBD4(name string) *ubd4 {
-	return &ubd4{s: s, res: ssaMarker(name), call: s.f.NewBlock(block.BlockPlain), after: s.f.NewBlock(block.BlockPlain)}
+func (s *state) newUBD3(name string) *ubd3 {
+	return &ubd3{s: s, res: ssaMarker(name), call: s.f.NewBlock(block.BlockPlain), after: s.f.NewBlock(block.BlockPlain)}
 }
 
 // guard continues in a new block where cond holds and sends the rest to
 // otherwise.
-func (u *ubd4) guard(cond *ssa.Value, otherwise *ssa.Block) {
+func (u *ubd3) guard(cond *ssa.Value, otherwise *ssa.Block) {
 	s := u.s
 	b := s.endBlock()
 	b.Kind = block.BlockIf
@@ -47,12 +47,12 @@ func (u *ubd4) guard(cond *ssa.Value, otherwise *ssa.Block) {
 
 // branch ends the current block in a two-way branch on cond and returns
 // the blocks for true and false.
-func (u *ubd4) branch(cond *ssa.Value) (yes, no *ssa.Block) {
+func (u *ubd3) branch(cond *ssa.Value) (yes, no *ssa.Block) {
 	return u.branchLikely(cond, ssa.BranchUnknown)
 }
 
 // branchLikely is branch with the prediction for cond.
-func (u *ubd4) branchLikely(cond *ssa.Value, likely ssa.BranchPrediction) (yes, no *ssa.Block) {
+func (u *ubd3) branchLikely(cond *ssa.Value, likely ssa.BranchPrediction) (yes, no *ssa.Block) {
 	s := u.s
 	b := s.endBlock()
 	b.Kind = block.BlockIf
@@ -65,14 +65,14 @@ func (u *ubd4) branchLikely(cond *ssa.Value, likely ssa.BranchPrediction) (yes, 
 }
 
 // done makes v the result of the current block and ends it at the join.
-func (u *ubd4) done(v *ssa.Value) {
+func (u *ubd3) done(v *ssa.Value) {
 	u.s.vars[u.res] = v
 	u.s.endBlock().AddEdgeTo(u.after)
 }
 
 // finish emits the kernel call, built by call, and returns the result at
 // the join.
-func (u *ubd4) finish(rt *types.Type, call func() *ssa.Value) *ssa.Value {
+func (u *ubd3) finish(rt *types.Type, call func() *ssa.Value) *ssa.Value {
 	s := u.s
 	s.startBlock(u.call)
 	u.done(call())
@@ -82,7 +82,7 @@ func (u *ubd4) finish(rt *types.Type, call func() *ssa.Value) *ssa.Value {
 	return r
 }
 
-// ubdAddWord4 lowers x + y and x - y at ubdLevel 4 where level 2's guard
+// ubdAddWord3 lowers x + y and x - y at ubdLevel 3 where level 2's guard
 // has failed (ubdAddNarrow): the kernel's ubdAddWordTTE for a pair of
 // one-word coefficients, the ties-to-even entries' first path. x - y is
 // x + (-y): a word is not a NaN, so y's sign is flipped as it is.
@@ -102,13 +102,14 @@ func (u *ubd4) finish(rt *types.Type, call func() *ssa.Value) *ssa.Value {
 //     less a's, the sign flipped; an exact zero is +0. The result is at
 //     b's exponent, the preferred one, and needs no test: a and b are
 //     below 2^64 and 10^14 + 1 is below 2^48, so a × 10^gap + b is below
-//     2^112 < 10^34, and a difference no larger. Level 3's add has the
-//     same bound for the same reason (bidAddMaxGap).
+//     2^112 < 10^34, and a difference no larger. The BID-derived add of
+//     the former level 3 had the same bound for the same reason
+//     (bidAddMaxGap).
 //
 // Every other pair (a two-word coefficient, a special, exponents more than
 // 14 apart) is the kernel call.
-func (s *state) ubdAddWord4(op ir.Op, rt *types.Type, x, y, xh, yh, xl, yl *ssa.Value) *ssa.Value {
-	u := s.newUBD4("ubdadd4")
+func (s *state) ubdAddWord3(op ir.Op, rt *types.Type, x, y, xh, yh, xl, yl *ssa.Value) *ssa.Value {
+	u := s.newUBD3("ubdadd3")
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
 	tup := types.NewTuple(u64, u64)
 	zero := s.constInt64(u64, 0)
@@ -213,7 +214,7 @@ func (s *state) ubdAddWord4(op ir.Op, rt *types.Type, x, y, xh, yh, xl, yl *ssa.
 	return u.finish(rt, func() *ssa.Value { return s.softDecimalOp(op, rt, x, y) })
 }
 
-// ubdMulWord4 is x * y at ubdLevel 4 where level 2's guard has failed
+// ubdMulWord3 is x * y at ubdLevel 3 where level 2's guard has failed
 // (ubdMulFast): the kernel's ubdMulShort128 for a pair of one-word
 // coefficients, whose product needs no test of the factors, only of
 // itself. The 64×64 product below 2^112, so below 10^34, is exact at the
@@ -221,8 +222,8 @@ func (s *state) ubdAddWord4(op ir.Op, rt *types.Type, x, y, xh, yh, xl, yl *ssa.
 // of the operands'. Level 2 takes factors below 2^56; this takes the
 // products of larger word factors that still fit. Every other pair is the
 // kernel call.
-func (s *state) ubdMulWord4(rt *types.Type, x, y, xh, yh, xl, yl *ssa.Value) *ssa.Value {
-	u := s.newUBD4("ubdmul4")
+func (s *state) ubdMulWord3(rt *types.Type, x, y, xh, yh, xl, yl *ssa.Value) *ssa.Value {
+	u := s.newUBD3("ubdmul3")
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
 	zero := s.constInt64(u64, 0)
 	c := func(v int64) *ssa.Value { return s.constInt64(u64, v) }
@@ -240,7 +241,7 @@ func (s *state) ubdMulWord4(rt *types.Type, x, y, xh, yh, xl, yl *ssa.Value) *ss
 	return u.finish(rt, func() *ssa.Value { return s.softDecimalOp(ir.OMUL, rt, x, y) })
 }
 
-// ubdCmpWord4 is the comparison op of x and y at ubdLevel 4 where level
+// ubdCmpWord3 is the comparison op of x and y at ubdLevel 3 where level
 // 2's guard has failed (ubdCompareNarrow): the kernel's ubdCmpWord, the
 // predicate entries' first path, for a pair of one-word coefficients
 // (which excludes NaN) whose exponents are at most 19 apart, written for
@@ -251,8 +252,8 @@ func (s *state) ubdMulWord4(rt *types.Type, x, y, xh, yh, xl, yl *ssa.Value) *ss
 // differ decide by themselves, unless both values are zero. Branch-free
 // past the guards, since a comparison's outcome is the data's, not its
 // kind's. Every other pair is the predicate entry's call.
-func (s *state) ubdCmpWord4(op ir.Op, xh, yh, xl, yl *ssa.Value) *ssa.Value {
-	u := s.newUBD4("ubdcmp4")
+func (s *state) ubdCmpWord3(op ir.Op, xh, yh, xl, yl *ssa.Value) *ssa.Value {
+	u := s.newUBD3("ubdcmp3")
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
 	zero := s.constInt64(u64, 0)
 	notB := func(a *ssa.Value) *ssa.Value { return s.newValue1(ssaop.OpNot, boolT, a) }
@@ -272,17 +273,17 @@ func (s *state) ubdCmpWord4(op ir.Op, xh, yh, xl, yl *ssa.Value) *ssa.Value {
 	case ir.OGE:
 		res = s.newValue2(ssaop.OpEq64, boolT, less(true), zero)
 	default:
-		s.Fatalf("ubdCmpWord4: %v", op)
+		s.Fatalf("ubdCmpWord3: %v", op)
 	}
 	u.done(res)
 	return u.finish(boolT, func() *ssa.Value { return s.ubdComparePredCall(op, xl, xh, yl, yh) })
 }
 
-// ubdWordOrder emits ubdCmpWord4's guards, which send every other pair to
+// ubdWordOrder emits ubdCmpWord3's guards, which send every other pair to
 // u's call, and returns the orders of x and y: less(true) is 1 when
 // x < y, else 0, less(false) the same for y < x, and equal() whether
 // x == y.
-func (s *state) ubdWordOrder(u *ubd4, xh, yh, xl, yl *ssa.Value) (less func(xFirst bool) *ssa.Value, equal func() *ssa.Value) {
+func (s *state) ubdWordOrder(u *ubd3, xh, yh, xl, yl *ssa.Value) (less func(xFirst bool) *ssa.Value, equal func() *ssa.Value) {
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
 	tup := types.NewTuple(u64, u64)
 	zero := s.constInt64(u64, 0)
@@ -343,15 +344,15 @@ func (s *state) ubdWordOrder(u *ubd4, xh, yh, xl, yl *ssa.Value) (less func(xFir
 	return less, equal
 }
 
-// ubdMinMax4 is the language's min (op OMIN) or max of x and y at
-// ubdLevel 4: one exponent and one sign, as level 2 compares them, and
+// ubdMinMax3 is the language's min (op OMIN) or max of x and y at
+// ubdLevel 3: one exponent and one sign, as level 2 compares them, and
 // then the kernel's ubdMin128 and ubdMax128 for a pair of one-word
 // coefficients at most 19 places apart (ubdWordOrder) that are not equal:
 // the lesser or the greater operand, chosen by selects. Equal values (-0
 // and +0, members of one cohort, one pattern twice) and every other pair
 // are the kernel call, whose totalOrder decides them.
-func (s *state) ubdMinMax4(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value {
-	u := s.newUBD4("ubdminmax4")
+func (s *state) ubdMinMax3(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value {
+	u := s.newUBD3("ubdminmax3")
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
 	zero := s.constInt64(u64, 0)
 	xh, yh := s.newValue1(ssaop.OpDecimal128Hi, u64, x), s.newValue1(ssaop.OpDecimal128Hi, u64, y)
