@@ -219,6 +219,14 @@ func BenchmarkUBDKernel(b *testing.B) {
 			}
 			ubdSinkB = acc
 		})
+		// The Rnd entry, which the compiler calls for a mode other than
+		// ties to even: telco truncates its taxes.
+		b.Run("QuantizeTZ/"+cl.name+"/ubd", func(b *testing.B) {
+			ubdBench2(b, ps, func(x, y UBD128) UBD128 { return UBDKernelQntR(x, y, TowardZero) })
+		})
+		b.Run("QuantizeTZ/"+cl.name+"/bid", func(b *testing.B) {
+			bidBench2(b, ps, func(x, y Uint128, _ Mode) Uint128 { return BIDKernelQnt(x, y, TowardZero) })
+		})
 		b.Run("Min/"+cl.name+"/ubd", func(b *testing.B) { ubdBench2(b, ps, UBDKernelMin) })
 		b.Run("Min/"+cl.name+"/bid", func(b *testing.B) {
 			bidBench2(b, ps, func(x, y Uint128, _ Mode) Uint128 { return BIDKernelMin(x, y) })

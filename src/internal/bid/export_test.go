@@ -306,6 +306,7 @@ var (
 	UBDKernelMul    = ubdMulTTE128
 	UBDKernelDiv    = ubdDivTTE128
 	UBDKernelQnt    = ubdQuantizeTTE128
+	UBDKernelQntR   = ubdQuantizeRnd128
 	UBDKernelLess   = ubdLess128
 	UBDKernelEqual  = ubdEqual128
 	UBDKernelCmp    = ubdCompare128
