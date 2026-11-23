@@ -9,19 +9,20 @@ the kernel contract is unchanged.
 ## Results in brief
 
 The five apps of go-decimal128-app-benchmark, compute mode, best of 7
-interleaved runs, this branch's kernel against 447e9c0b4e's, Apple M3 Pro,
-both built with `-ldflags=-funcalign=64`. Outputs equal the goldens (tax
-stderr, banking, telco's SHA-256) at every level.
+interleaved runs, this branch's kernel (d25c81928c) against 447e9c0b4e's,
+Apple M3 Pro, both built with `-ldflags=-funcalign=64`. Outputs equal the
+goldens (tax stderr, banking, telco's SHA-256, risk's 20 files; euro equal to
+447e9c0b4e's output) at every level.
 
 | app | level 1 | level 2 | level 3 |
 |---|---|---|---|
-| telco | −15.9% | +0.5% | −0.0% |
-| risk_management | −11.6% | −5.6% | +0.4% |
-| tax ca | −10.9% | −7.7% | +0.5% |
-| tax fed | −10.7% | −4.4% | −1.0% |
-| tax nc | −9.4% | −4.2% | +0.1% |
-| banking | −2.5% | −0.9% | +0.2% |
-| euro_conversion | −0.5% | −0.2% | −0.6% |
+| telco | −14.7% | −0.3% | +0.0% |
+| tax fed | −12.3% | −5.5% | −0.1% |
+| risk_management | −12.0% | −8.6% | −4.7% |
+| tax ca | −11.1% | −6.2% | +1.0% |
+| tax nc | −7.0% | −4.6% | −0.1% |
+| banking | −4.2% | −3.0% | −1.1% |
+| euro_conversion | −1.2% | −0.8% | −1.0% |
 
 Level 2 gains because its inline paths hand the kernel everything they do
 not take (different exponents, mixed signs); level 3's BID-derived inline
@@ -32,39 +33,48 @@ BID; ns):
 
 | | before | after | BID |
 |---|---|---|---|
-| Add money | 3.71 | 1.97 | 3.45 |
-| Sub money | 6.01 | 2.02 | 6.56 |
+| Add money | 3.71 | 1.97 | 3.46 |
+| Sub money | 6.01 | 2.02 | 6.58 |
 | Add cents, 10% negative | 4.86 | 2.65 | 4.45 |
-| Add amount + rate (gap2) | 3.71 | 2.52 | 3.46 |
-| running total, money (AddChain) | 4.23 | 2.38 | 3.71 |
+| Add amount + rate (gap2) | 3.71 | 2.48 | 3.46 |
+| Add 22–25 digits (w25) | 5.93 | 5.63 | 5.87 |
+| running total, money (AddChain) | 4.23 | 2.39 | 3.71 |
 | running balance, gap2 (SubChain) | 4.76 | 2.39 | 5.04 |
-| running total, 22–25 digits (AddChain w25) | 6.34 | 3.86 | 6.38 |
-| Mul 17–19 digits (w19) | 14.42 | 11.60 | 13.20 |
-| Mul 14–16 digits (w16) | 4.08 | 2.00 | 3.19 |
-| Less money | 4.18 | 3.70 | 4.57 |
-| Equal money | 6.12 | 4.02 | |
-| Compare money | 5.75 | 4.47 | |
-| Min money | 5.89 | 4.28 | 8.19 |
-| Quantize gap2 | 2.47 | 2.38 | 3.04 |
-| RoundToIntegral money | 3.44 | 3.18 | 4.86 |
-| int64(x), money | 4.50 | 2.37 | 5.91 |
+| running total, 17–19 digits (AddChain w19) | 5.51 | 2.33 | 5.32 |
+| running total, 22–25 digits (AddChain w25) | 6.34 | 3.27 | 6.38 |
+| Mul 14–16 digits (w16) | 4.08 | 2.01 | 3.19 |
+| Mul 17–19 digits (w19) | 14.42 | 10.74 | 13.03 |
+| Mul quotient × amount (q34) | 11.43 | 9.37 | 10.64 |
+| Div money | 12.53 | 11.85 | 16.16 |
+| Div 17–19 digits (w19) | 16.25 | 15.23 | 15.50 |
+| Less money | 4.18 | 3.72 | 4.63 |
+| Equal money | 6.12 | 4.04 | |
+| Compare money | 5.75 | 4.49 | |
+| Min money | 5.89 | 4.29 | 8.21 |
+| Quantize gap2 | 2.47 | 2.17 | 3.06 |
+| Quantize quotient to cents (q34) | 5.04 | 4.52 | 4.53 |
+| RoundToIntegral money | 3.44 | 2.92 | 4.85 |
+| RoundToIntegral q34 | 6.42 | 4.52 | 6.60 |
+| int64(x), money | 4.50 | 2.38 | 5.92 |
 | compound: quantize(acc × rate, 0.01) | 6.50 | 6.38 | 9.48 |
 
-Worse than before, all two-word, each a throughput row whose running-total
-row improved: Sub q34 (a 34-digit quotient minus an amount) 6.46 → 7.43, Add
-w25 5.93 → 6.32, Sub w25 6.66 → 6.92, int64 of two-word values +4%. None
-could be pinned to one change: the add and subtract entries' non-word path
-differs from 447e9c0b4e's by three instructions, and removing each later
-change in turn moved these rows by a few percent either way.
+Still slower than BID (8 of 143 rows): subtract on two-word operands (Sub
+q34 7.60 against 6.80, Sub w25 7.04 against 6.78, SubChain q34 +7%), whose
+entry negates y and calls the add entry, two frames where BID's subSlow128
+is one; Quantize w25 2.92 against 2.74; and the d34 rows (34-digit operands),
+which are bimodal from run to run, and whose quantize is the invalid
+operation, a NaN. Sub q34 is also the one row clearly worse than before
+(6.46 → 7.60); it could not be pinned to one change.
 
-Still slower than BID: two-word operands, by 2–17% (Add/Sub w25 and q34,
-Mul w25/d34/q34, Quantize w25/d34/q34, RoundToIntegral w25/q34, Div of a
-divisor past 2^32). The cause is structural: the UBD entry calls
-`ubdAddSlow128`, `ubdMulSlow128`, `ubdQuantizeSlow128` or `ubdDiv128`, two
-frames, where the XOR-BID compiler calls BID's function directly, one frame.
-Removing it means writing those bodies into the TTE entries (a copy of each
-for the Rnd entries) or changing which function the compiler calls, a
-contract change; not done.
+**The structural fix** that closed most of the two-word gap: the entries
+called a slow function (`ubdAddSlow128`, `ubdMulSlow128`, `ubdDiv128`,
+`ubdQuantizeSlow128`), a second frame, where the XOR-BID compiler calls
+BID's slow function directly. The Rnd entries have no caller in compiled
+code, so the slow function's body could become the TTE entry's, with `const
+mode = ToNearestEven` at its top so its mode tests fold, and the Rnd entry
+calls the TTE entry for ToNearestEven and the `Long` function, which takes
+every mode, otherwise. No code is duplicated. Quantize and round to integral
+call a leaf (`ubdQuantizeWideTTE`) instead.
 
 ## Method
 
@@ -151,6 +161,9 @@ word-path commit); with branches it is 4.4% faster.
 
 ## Changes
 
+Names are as they were at each commit; `ubdAddSlow128`, `ubdMulSlow128`
+and `ubdDiv128` have since become the TTE entries' bodies (change 11).
+
 1. **Add and subtract decide word pairs in the entry** (dbf30ae565,
    04fc1d5ba7). The entries called `ubdAddSlow128`, which called
    `ubdAddLong128`: two frames of 112 and 192 bytes. They now call
@@ -178,8 +191,23 @@ word-path commit); with branches it is 4.4% faster.
    difference that did not borrow; `ubdAddSlow128` sums two-word coefficients
    of one exponent and one sign before its general path.
 9. **Two exponents branch as BID's do** (4b71df59ee).
+10. **Quantize of two-word coefficients is one call** (cc28c29fff):
+    `ubdQuantizeWideTTE`, `ubdQuantizeSlow128`'s paths for ties to even.
+11. **Multiply, add and divide past their fast paths are one call**
+    (924e2adb91, f038ed971f, e62da7db33): the slow function's body is the
+    TTE entry's (above).
+12. **Round to integral of two-word values is one call** (d25c81928c):
+    `ubdQuantizeWideTTE` against 1E0.
 
 ## Tried and dropped
+
+- Quantize's two-word rounding alone in a leaf: q34 4.25 ns, but every other
+  two-word quantize paid the call before falling through (w25, d34 +33–40%);
+  testing the exponents in the entry first made the word rows 11% slower
+  instead (the entries' layout moves their word paths by up to ±10%).
+- The add entry's body folded in with the word-pair test kept in both
+  places: the entry saved and retested it around the word path's call, and
+  word adds at two exponents were 5% slower.
 
 - The add word path written into the entry instead of a leaf call: no
   change in throughput.
@@ -200,9 +228,10 @@ word-path commit); with branches it is 4.4% faster.
 
 ## Not done
 
-- The two-word structural frame (above).
-- Divide: UBD is 20% faster than BID on word operands already; four
-  dependent divides by a divisor below 2^32 are most of its 11–12 ns.
+- Subtract on two-word operands: one call would need a copy of the add
+  entry's body.
+- Divide: four dependent divides by a divisor below 2^32 are most of its
+  10–12 ns on word operands; BID's same code takes 14.7–16.2.
 - Formatting (`PutShort128`, `writeWordDigits`, `PutLong128`) is 6–8% of
   the tax and telco profiles at every level and has frames for bounds
   checks; it is not a compiler-called entry, so outside this step.
