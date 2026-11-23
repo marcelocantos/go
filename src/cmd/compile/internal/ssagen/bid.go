@@ -297,7 +297,7 @@ func initBIDKernelSyms() {
 //	   construction. Developed as level 4 (research/ubd-level4/README.md)
 //
 // Until 2026-11-22 the levels were 1 to 10 and -1, adding paths one at a
-// time; research/ubd-size/README.md maps them to these. Until 2026-11-24
+// time; research/ubd-size/README.md maps them to these. Until 2026-11-23
 // level 3 was the inline paths derived from the BID lowering, behind level
 // 2's, and the present level 3 was level 4. Any other value is a usage
 // error (base.ParseFlags).

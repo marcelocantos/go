@@ -521,7 +521,7 @@ What it suggests:
 - The largest app-level cost left is formatting (`PutShort128`,
   `strconv.FormatDecimal`), not inlining.
 
-## Level 4 becomes level 3 (2026-11-24)
+## Level 4 becomes level 3 (2026-11-23)
 
 At the user's direction the old level 3 (level 2's paths, then the inline
 paths derived from the BID lowering) is deleted and level 4 takes its

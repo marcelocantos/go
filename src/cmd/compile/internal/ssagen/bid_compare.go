@@ -31,7 +31,7 @@ var (
 // needs no decimal rounding, division or digit counting. Special values
 // reached after the word guard are decided by kind and sign. Both operands
 // are already evaluated. decimal128 comparisons on these targets are
-// ubdComparePred's (until 2026-11-24 the former ubdlevel 3 used a
+// ubdComparePred's (until 2026-11-23 the former ubdlevel 3 used a
 // decimal128 branch of this function).
 func (s *state) bidCompare(op ir.Op, x, y *ssa.Value) *ssa.Value {
 	if x.Type.Kind() != types.TDECIMAL64 {
