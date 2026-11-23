@@ -48,10 +48,16 @@ func (u *ubd4) guard(cond *ssa.Value, otherwise *ssa.Block) {
 // branch ends the current block in a two-way branch on cond and returns
 // the blocks for true and false.
 func (u *ubd4) branch(cond *ssa.Value) (yes, no *ssa.Block) {
+	return u.branchLikely(cond, ssa.BranchUnknown)
+}
+
+// branchLikely is branch with the prediction for cond.
+func (u *ubd4) branchLikely(cond *ssa.Value, likely ssa.BranchPrediction) (yes, no *ssa.Block) {
 	s := u.s
 	b := s.endBlock()
 	b.Kind = block.BlockIf
 	b.SetControl(cond)
+	b.Likely = likely
 	yes, no = s.f.NewBlock(block.BlockPlain), s.f.NewBlock(block.BlockPlain)
 	b.AddEdgeTo(yes)
 	b.AddEdgeTo(no)
@@ -251,6 +257,36 @@ func (s *state) ubdMulWord4(rt *types.Type, x, y, xh, yh, xl, yl *ssa.Value) *ss
 func (s *state) ubdCmpWord4(op ir.Op, xh, yh, xl, yl *ssa.Value) *ssa.Value {
 	u := s.newUBD4("ubdcmp4")
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
+	zero := s.constInt64(u64, 0)
+	notB := func(a *ssa.Value) *ssa.Value { return s.newValue1(ssaop.OpNot, boolT, a) }
+	less, equal := s.ubdWordOrder(u, xh, yh, xl, yl)
+	var res *ssa.Value
+	switch op {
+	case ir.OEQ:
+		res = equal()
+	case ir.ONE:
+		res = notB(equal())
+	case ir.OLT:
+		res = s.newValue2(ssaop.OpNeq64, boolT, less(true), zero)
+	case ir.OGT:
+		res = s.newValue2(ssaop.OpNeq64, boolT, less(false), zero)
+	case ir.OLE:
+		res = s.newValue2(ssaop.OpEq64, boolT, less(false), zero)
+	case ir.OGE:
+		res = s.newValue2(ssaop.OpEq64, boolT, less(true), zero)
+	default:
+		s.Fatalf("ubdCmpWord4: %v", op)
+	}
+	u.done(res)
+	return u.finish(boolT, func() *ssa.Value { return s.ubdComparePredCall(op, xl, xh, yl, yh) })
+}
+
+// ubdWordOrder emits ubdCmpWord4's guards, which send every other pair to
+// u's call, and returns the orders of x and y: less(true) is 1 when
+// x < y, else 0, less(false) the same for y < x, and equal() whether
+// x == y.
+func (s *state) ubdWordOrder(u *ubd4, xh, yh, xl, yl *ssa.Value) (less func(xFirst bool) *ssa.Value, equal func() *ssa.Value) {
+	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
 	tup := types.NewTuple(u64, u64)
 	zero := s.constInt64(u64, 0)
 	c := func(v int64) *ssa.Value { return s.constInt64(u64, v) }
@@ -286,7 +322,7 @@ func (s *state) ubdCmpWord4(op ir.Op, xh, yh, xl, yl *ssa.Value) *ssa.Value {
 	// x before y, 1 or 0, adjusted for the sign: with one sign, x < y is
 	// |x| < |y| for a positive sign and |y| < |x| for a negative one, and
 	// |x| < |y| is P < b when x is a, P > b when y is.
-	less := func(xFirst bool) *ssa.Value { // x < y, or y < x when !xFirst
+	less = func(xFirst bool) *ssa.Value { // x < y, or y < x when !xFirst
 		pLess, pMore := borrow(phi, plo, zero, b), borrow(zero, b, phi, plo)
 		flip := s.newValue2(ssaop.OpNeqB, boolT, yIsA, negX)
 		if !xFirst {
@@ -302,26 +338,54 @@ func (s *state) ubdCmpWord4(op ir.Op, xh, yh, xl, yl *ssa.Value) *ssa.Value {
 			s.newValue2(ssaop.OpAndB, boolT, first, notBothZero))), same, signsDiffer)
 		return diff
 	}
-	var res *ssa.Value
-	switch op {
-	case ir.OEQ, ir.ONE:
-		// Equal: one sign and P == b, or both zero.
+	equal = func() *ssa.Value {
+		// One sign and P == b, or both zero.
 		eqMag := s.newValue2(ssaop.OpEq64, boolT, or(phi, xor(plo, b)), zero)
-		res = s.newValue2(ssaop.OpOrB, boolT, s.newValue2(ssaop.OpAndB, boolT, notB(signsDiffer), eqMag), notB(notBothZero))
-		if op == ir.ONE {
-			res = notB(res)
-		}
-	case ir.OLT:
-		res = s.newValue2(ssaop.OpNeq64, boolT, less(true), zero)
-	case ir.OGT:
-		res = s.newValue2(ssaop.OpNeq64, boolT, less(false), zero)
-	case ir.OLE:
-		res = s.newValue2(ssaop.OpEq64, boolT, less(false), zero)
-	case ir.OGE:
-		res = s.newValue2(ssaop.OpEq64, boolT, less(true), zero)
-	default:
-		s.Fatalf("ubdCmpWord4: %v", op)
+		return s.newValue2(ssaop.OpOrB, boolT, s.newValue2(ssaop.OpAndB, boolT, notB(signsDiffer), eqMag), notB(notBothZero))
 	}
-	u.done(res)
-	return u.finish(boolT, func() *ssa.Value { return s.ubdComparePredCall(op, xl, xh, yl, yh) })
+	return less, equal
+}
+
+// ubdMinMax4 is the language's min (op OMIN) or max of x and y at
+// ubdLevel 4: one exponent and one sign, as level 2 compares them, and
+// then the kernel's ubdMin128 and ubdMax128 for a pair of one-word
+// coefficients at most 19 places apart (ubdWordOrder) that are not equal:
+// the lesser or the greater operand, chosen by selects. Equal values (-0
+// and +0, members of one cohort, one pattern twice) and every other pair
+// are the kernel call, whose totalOrder decides them.
+func (s *state) ubdMinMax4(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Value {
+	u := s.newUBD4("ubdminmax4")
+	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
+	zero := s.constInt64(u64, 0)
+	xh, yh := s.newValue1(ssaop.OpDecimal128Hi, u64, x), s.newValue1(ssaop.OpDecimal128Hi, u64, y)
+	xl, yl := s.newValue1(ssaop.OpDecimal128Lo, u64, x), s.newValue1(ssaop.OpDecimal128Lo, u64, y)
+	c := func(v int64) *ssa.Value { return s.constInt64(u64, v) }
+	// One exponent, one sign, one-word coefficients (level 2's comparison
+	// guard): the low words order the values, reversed for a negative
+	// sign by XORing both with the sign mask; equal low words are one
+	// pattern, and the result is x.
+	sameGuard := s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpXor64, u64, xh, yh),
+		s.newValue2(ssaop.OpLsh64x64, u64, xh, c(64-bid.UBDExpShift+1)))
+	bSame, bGeneral := u.branchLikely(s.newValue2(ssaop.OpEq64, boolT, sameGuard, zero), ssa.BranchLikely)
+	s.startBlock(bSame)
+	m := s.newValue2(ssaop.OpRsh64x64, u64, s.newValue2(ssaop.OpLsh64x64, u64, xh, c(64-bid.UBDExpShift)), c(63))
+	xo, yo := s.newValue2(ssaop.OpXor64, u64, xl, m), s.newValue2(ssaop.OpXor64, u64, yl, m)
+	takeY := s.newValue2(ssaop.OpLess64U, boolT, yo, xo) // min: y < x
+	if op == ir.OMAX {
+		takeY = s.newValue2(ssaop.OpLess64U, boolT, xo, yo)
+	}
+	u.done(s.newValue2(ssaop.OpDecimal128Make, rt, s.newValue3(ssaop.OpCondSelect, u64, yl, xl, takeY), xh))
+	s.startBlock(bGeneral)
+	less, _ := s.ubdWordOrder(u, xh, yh, xl, yl)
+	lt, gt := less(true), less(false)
+	u.guard(s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpOr64, u64, lt, gt), zero), u.call)
+	takeX := lt // min: x when x < y
+	if op == ir.OMAX {
+		takeX = gt
+	}
+	pick := s.newValue2(ssaop.OpNeq64, boolT, takeX, zero)
+	lo := s.newValue3(ssaop.OpCondSelect, u64, xl, yl, pick)
+	hi := s.newValue3(ssaop.OpCondSelect, u64, xh, yh, pick)
+	u.done(s.newValue2(ssaop.OpDecimal128Make, rt, lo, hi))
+	return u.finish(rt, func() *ssa.Value { return s.softDecimalOp(op, rt, x, y) })
 }

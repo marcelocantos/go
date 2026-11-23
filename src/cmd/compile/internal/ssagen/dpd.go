@@ -137,6 +137,9 @@ func (s *state) decimalOp(op ir.Op, rt *types.Type, args ...*ssa.Value) *ssa.Val
 		if ubdLevel() >= 2 && op == ir.OMUL {
 			return s.ubdMulFast(rt, args[0], args[1])
 		}
+		if ubdLevel4() && (op == ir.OMIN || op == ir.OMAX) {
+			return s.ubdMinMax4(op, rt, args[0], args[1])
+		}
 		return s.softDecimalOp(op, rt, args...)
 	}
 	if ubdSuperset(args[0]) {

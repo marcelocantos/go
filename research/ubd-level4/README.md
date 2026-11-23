@@ -332,3 +332,33 @@ time in the apps). Site, arm64: `Quantize` 30 → 44, `Quantize(x, 0.01)`
 3's sizes. Levels 1 and 4 agree on 3M random quantizes (exponents from
 23 places finer to 42 coarser) in 13 roundings, on arm64 and amd64, and
 on the edge values.
+
+## Step 6: min and max
+
+The language's `min` and `max` on decimal128 are the kernel call at
+levels 2 and 3 (`ubdMin128`, `ubdMax128`). At level 4:
+
+- One exponent, one sign, one-word coefficients (level 2's comparison
+  guard): the low words, XORed with the sign mask, order the values; one
+  select picks the operand. Equal low words are one pattern: x.
+- Otherwise, one-word coefficients at most 19 places apart: the
+  comparison's word order (`ubdWordOrder`, factored out of step 3's
+  `ubdCmpWord4`), x < y and y < x, and two selects for the operand.
+- Equal values that are not one pattern (−0 and +0, members of one
+  cohort), and every other pair: the kernel call, whose totalOrder
+  decides them.
+
+| ns | L3 | L4 |
+|---|---|---|
+| `min`, amounts at one exponent (money) | 5.01 | 1.14 |
+| `min`, 10% negative (cents10neg) | 5.01 | 1.36 |
+| `min`, exponents 2 apart (gap2) | 5.01 | 2.91 |
+| running `max`, money | 8.76 | 1.10 |
+| running `max`, gap2neg | 8.57 | 1.42 |
+| running `max`, exponents −1..−6 | 9.52 | 4.84 |
+
+Site, arm64: 66 instructions (levels 2 and 3: 3). Banking calls `max`
+118 times a run and tax `min` a few times: too few to time in the apps.
+Levels 1 and 4 agree on 10M random pairs (arm64) and 3M (amd64), cohort
+members and zeros of either sign among them; the comparisons, which now
+share `ubdWordOrder`, are unchanged in size (`<` 54, `==` 38) and speed.
