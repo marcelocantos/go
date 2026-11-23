@@ -6,18 +6,19 @@ package bid
 
 import "math/bits"
 
-// This package's add on UBD operands. ubdAddSlow128,
+// This package's add on UBD operands. ubdAddTTE128 (after its word path),
 // ubdAddLong128 and the rounding they end in (ubdRound128, ubdRoundFace128,
-// ubdOverflow128, ubdPack128) are addSlow128, addLong128, round128,
-// roundFace128, overflow128 and pack128 with the BID decoding and packing
-// replaced by UBD's; the arithmetic is unchanged. Nothing converts.
+// ubdOverflow128, ubdPack128) are addSlow128 for ties to even, addLong128,
+// round128, roundFace128, overflow128 and pack128 with the BID decoding and
+// packing replaced by UBD's; the arithmetic is unchanged. Nothing converts.
 
 // ubdSubSlow128 is subSlow128: y negated unless it is a NaN, then added.
+// Only ubdSubRnd128 calls it.
 func ubdSubSlow128(x, y UBD128, mode Mode) UBD128 {
 	if y.Hi>>59 != UBDNaNTag {
 		y.Hi ^= UBDSignHi
 	}
-	return ubdAddSlow128(x, y, mode)
+	return ubdAddRnd128(x, y, mode)
 }
 
 // ubdAddLong128 is addLong128 on UBD operands: the operands are decoded on
@@ -363,15 +364,22 @@ func ubdPackWord(neg bool, hi, lo uint64, exp int) (UBD128, bool) {
 	return UBD128{Lo: lo, Hi: h}, true
 }
 
-// ubdAddSlow128 is addSlow128 on UBD: the operands' signs are bit 49 and
-// their exponents unbiased, and the result packs into UBD. A special has
-// the 0x1F prefix in its coefficient's high word, so it is never a word
-// pair; addPair128's test for one becomes the tag test. Where addSlow128
-// calls addLong128 it calls ubdAddLong128.
-func ubdAddSlow128(x, y UBD128, mode Mode) UBD128 {
-	// Coefficients of one word each go on at once, before anything is
-	// decoded, as in addSlow128: ubdAddLong128's word path decides them.
+// ubdAddTTE128, the add entry the compiler calls, tries ubdAddWordTTE and
+// is then addSlow128 on UBD for ties to even, written into the entry so that
+// an add past the word path is one call with one frame, where it was the
+// entry and then a ubdAddSlow128. The operands' signs are bit 49 and their
+// exponents unbiased, and the result packs into UBD. A special has the 0x1F
+// prefix in its coefficient's high word, so it is never a word pair;
+// addPair128's test for one becomes the tag test. Where addSlow128 calls
+// addLong128 it calls ubdAddLong128.
+func ubdAddTTE128(x, y UBD128) UBD128 {
+	const mode = ToNearestEven
 	if (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {
+		if r, ok := ubdAddWordTTE(x, y); ok {
+			return r
+		}
+		// Exponents too far apart, or a sum that rounds: as in
+		// addSlow128, ubdAddLong128 decides coefficients of one word each.
 		return ubdAddLong128(x, y, mode)
 	}
 	if x.Hi>>60 == UBDSpecialTag || y.Hi>>60 == UBDSpecialTag || mode > ToNearestAway {

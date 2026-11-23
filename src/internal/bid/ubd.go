@@ -364,16 +364,16 @@ type UBD128 struct{ Lo, Hi uint64 }
 // take 128- and 256-bit routes and a final rounding step for word-sized
 // operands too.
 
-func ubdAddTTE128(x, y UBD128) UBD128 {
-	if (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {
-		if r, ok := ubdAddWordTTE(x, y); ok {
-			return r
-		}
-	}
-	return ubdAddSlow128(x, y, ToNearestEven)
-}
+// ubdAddTTE128 is in ubd_add.go.
 
-func ubdAddRnd128(x, y UBD128, mode Mode) UBD128 { return ubdAddSlow128(x, y, mode) }
+// ubdAddRnd128 has no caller in compiled code: ubdAddTTE128 for
+// ToNearestEven, ubdAddLong128, which takes every mode, otherwise.
+func ubdAddRnd128(x, y UBD128, mode Mode) UBD128 {
+	if mode == ToNearestEven {
+		return ubdAddTTE128(x, y)
+	}
+	return ubdAddLong128(x, y, mode)
+}
 
 func ubdSubTTE128(x, y UBD128) UBD128 {
 	if (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {
@@ -381,7 +381,10 @@ func ubdSubTTE128(x, y UBD128) UBD128 {
 			return r
 		}
 	}
-	return ubdSubSlow128(x, y, ToNearestEven)
+	if y.Hi>>59 != UBDNaNTag {
+		y.Hi ^= UBDSignHi // as in ubdSubSlow128
+	}
+	return ubdAddTTE128(x, y)
 }
 
 // ubdAddWordTTE adds two finite operands whose coefficients are one word
