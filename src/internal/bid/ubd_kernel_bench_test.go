@@ -410,3 +410,23 @@ func TestUBDInt64WordAgrees(t *testing.T) {
 		}
 	}
 }
+
+// TestUBDQuantizeWideAgrees checks the ties-to-even quantize entry on
+// operands wider than a word, which ubdQuantizeWideTTE decides, against
+// the BID kernel: coefficients of 20 to 34 digits, quantized to exponents
+// from 40 below to 40 above their own, so that the result rounds, scales,
+// is the same, is zero, or is invalid.
+func TestUBDQuantizeWideAgrees(t *testing.T) {
+	r := rand.New(rand.NewPCG(37, 41))
+	for i := 0; i < 1000000; i++ {
+		xe := r.IntN(200) - 100
+		ye := xe + r.IntN(81) - 40
+		bx, ux := ubdBenchVal(r.IntN(2) == 0, ubdBenchDigits(r, 20, 34), xe)
+		by, uy := ubdBenchVal(r.IntN(2) == 0, ubdBenchDigits(r, 1, 5), ye)
+		got := UBDKernelQnt(ux, uy)
+		want := BIDKernelQnt(bx, by, ToNearestEven)
+		if g := BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}); g != want {
+			t.Fatalf("quantize(%#x, %#x): got %#x, want %#x", bx, by, g, want)
+		}
+	}
+}

@@ -502,8 +502,45 @@ func ubdQuantizeTTE128(x, y UBD128) UBD128 { // ubdQuantize128, written out
 		if r, ok := ubdQuantizeWord(x, y, ToNearestEven); ok {
 			return r
 		}
+	} else if r, ok := ubdQuantizeWideTTE(x, y); ok {
+		return r
 	}
 	return ubdQuantizeSlow128(x, y, ToNearestEven)
+}
+
+// ubdQuantizeWideTTE is ubdQuantizeSlow128 for ties to even, called by the
+// entry itself for an x wider than a word, so that a quantize of a
+// quotient to cents makes one call where it made two, each with a frame (a
+// 30- to 34-digit quotient to cents: 5.11 ns against 4.25, BID's
+// quantizeSlow128 4.52). It reports false for a special operand and for a
+// coefficient that is not canonical, which ubdQuantizeSlow128 sends on to
+// ubdQuantizeLong128.
+func ubdQuantizeWideTTE(x, y UBD128) (UBD128, bool) {
+	xc := Uint128{Hi: x.Hi & UBDCoeffMaskHi, Lo: x.Lo}
+	if x.Hi>>60 == UBDSpecialTag || y.Hi>>60 == UBDSpecialTag || u128GtMaxCoeff(xc) {
+		return UBD128{}, false
+	}
+	switch gap := int(int64(x.Hi)>>UBDExpShift) - int(int64(y.Hi)>>UBDExpShift); {
+	case gap == 0:
+		return x, true
+	case gap > 0:
+		if gap >= Precision128 || !u128Lt(xc, pow10tab128[Precision128-gap]) {
+			return UBD128{Hi: UBDNaNHi}, true // invalid: the coefficient would not fit
+		}
+		xc = u128MulLow(xc, pow10tab128[gap])
+	case gap < -Precision128:
+		xc = Uint128{}
+	default:
+		d := -gap
+		t, _ := u128Add(xc, u128Shr(pow10tab128[d], 1))
+		var r Uint128
+		xc, r = divPow10Recip128(t, d)
+		if r == (Uint128{}) {
+			xc.Lo &^= 1 // a tie: the even neighbour is the one below
+		}
+	}
+	// xc is below 10^34 and y's exponent is in the format.
+	return UBD128{Lo: xc.Lo, Hi: y.Hi&^(UBDSignHi|UBDCoeffMaskHi) | x.Hi&UBDSignHi | xc.Hi}, true
 }
 
 func ubdQuantizeRnd128(x, y UBD128, mode Mode) UBD128 { // ubdQuantize128, written out
