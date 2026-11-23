@@ -624,11 +624,12 @@ func allocCases() map[string]func() {
 		"Float32From128": eachMode(all128, func(x bid.Uint128, m bid.Mode) { asF32 += bid.Float32From128(x, m) }),
 
 		// string.go. dst has the spare capacity the contract requires.
-		"Append64":     each(all64, func(x uint64) { asBuf = bid.Append64(buf[:0], x) }),
-		"Append128":    each(all128, func(x bid.Uint128) { asBuf = bid.Append128(buf[:0], x) }),
-		"AppendSci64":  each(all64, func(x uint64) { asBuf = bid.AppendSci64(buf[:0], x) }),
-		"AppendSci128": each(all128, func(x bid.Uint128) { asBuf = bid.AppendSci128(buf[:0], x) }),
-		"IsShort128":   each(all128, func(x bid.Uint128) { asBool = bid.IsShort128(x) }),
+		"Append64":        each(all64, func(x uint64) { asBuf = bid.Append64(buf[:0], x) }),
+		"Append128":       each(all128, func(x bid.Uint128) { asBuf = bid.Append128(buf[:0], x) }),
+		"AppendSci64":     each(all64, func(x uint64) { asBuf = bid.AppendSci64(buf[:0], x) }),
+		"AppendSci128":    each(all128, func(x bid.Uint128) { asBuf = bid.AppendSci128(buf[:0], x) }),
+		"IsShort128":      each(all128, func(x bid.Uint128) { asBool = bid.IsShort128(x) }),
+		"IsShortFixed128": each(all128, func(x bid.Uint128) { asBool = bid.IsShortFixed128(x) }),
 		"PutShort128": each(shorts, func(x bid.Uint128) {
 			sign, frac := bid.ShortParts128(x)
 			asInt = bid.PutShort128(&short128, sign, frac, x.Lo)

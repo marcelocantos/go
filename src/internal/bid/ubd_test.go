@@ -517,6 +517,27 @@ func TestUBDAppend(t *testing.T) {
 	}
 }
 
+// TestUBDIsShortFixed checks UBDIsShortFixed128 and UBDIsShort128
+// against the BID functions on the same values.
+func TestUBDIsShortFixed(t *testing.T) {
+	xs := ubdPool128(t)
+	r := rand.New(rand.NewPCG(133, 134))
+	for range 200_000 {
+		xs = append(xs, ubd128(r.IntN(2) == 0, r.IntN(9)-6, 0, r.Uint64N(2e8)>>uint(r.IntN(28))))
+	}
+	for _, x := range xs {
+		b := bid.BIDFromUBD128(x)
+		u := bid.UBD128{Lo: x.Lo, Hi: x.Hi}
+		if got, want := bid.UBDIsShortFixed128(u), bid.IsShortFixed128(b); got != want {
+			t.Fatalf("UBDIsShortFixed128(%#x) = %t, want %t", x, got, want)
+		}
+		if got, want := bid.UBDIsShort128(u), bid.IsShort128(b); got != want {
+			t.Fatalf("UBDIsShort128(%#x) = %t, want %t", x, got, want)
+		}
+	}
+	t.Logf("%d values", len(xs))
+}
+
 // TestUBDWidenNarrow checks the direct conversions between decimal64
 // (BID64) and decimal128 on UBD against Widen and Narrow: widening on
 // random BID64 encodings of every kind, first and second form, non-canonical

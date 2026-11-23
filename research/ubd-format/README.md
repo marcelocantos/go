@@ -288,3 +288,61 @@ PutLongFixed/128/long.
 Next in line: values of eight digits or fewer that the short path turns
 down (11% of euro's formatting, 5% of banking's) still take the general
 path.
+
+## Short coefficients of a million or more in the fixed form
+
+The values of eight digits or fewer that the short path turned down,
+counted per app (same temporary counter, removed):
+
+| app | turned down | 10^6 or more | 5 to 9 places | exponent > 0 | below 0.0001 |
+|---|---|---|---|---|---|
+| euro | 243 | 103 | 140 | 0 | 0 |
+| banking | 100 | 100 | 0 | 0 | 0 |
+| tax fed, ca, nc | 0 | | | | |
+
+Euro's 140 with more places: 5 places 42, 6 35, 7 31, 8 26, 9 6; mostly
+six digits (its rates and intermediate results). The values of 10^6 or
+more have seven or eight digits at an exponent of 0 or -1.
+
+The second group is the simpler fix and the only one for banking. The
+short layout depends only on a coefficient below 10^8 and 0 to 4 places;
+IsShort128's bound on the magnitude is there because 'g' writes 10^6 and
+more in exponential notation. 'f' writes them plain, so:
+
+- `bid.IsShortFixed128` and `bid.UBDIsShortFixed128`: the short test
+  without the magnitude bound.
+- strconv's `formatDecimal` and `appendDecimal` take a value that
+  `isShortDecimal` refuses when the format is 'f' and
+  `isShortFixedDecimal` accepts it; the test runs only after the short
+  test fails.
+- `TestShort128` checks `IsShortFixed128` on all its values and, for
+  those it accepts, `PutShort128` and `ShortForm128`'s length against
+  the fixed form built from the digits; `TestUBDIsShortFixed` checks the
+  UBD tests against BID on the UBD pool and 200,000 random values.
+
+Microbenchmarks ('f', -1, median of 9, bytes and allocations unchanged):
+seven-digit integers of a million or more 22.79 → 12.37 ns (−45.7%);
+eight digits with one place 26.66 → 12.74 (−52.2%); every other row,
+'f' and 'g', within ±1.6% and not separated.
+
+Apps at level 2, 11 rounds interleaved, outputs equal:
+
+| app | best | median |
+|---|---|---|
+| euro | 759.6 → 751.3 (−1.1%) | −0.9% |
+| banking | 635.2 → 632.6 (−0.4%) | −1.1% |
+
+(Euro's times are lower than in the previous section's run, before and
+after alike: the machine, not the code.)
+
+arm64 instructions: `formatDecimal` 88 → 96, `appendDecimal` 192 → 200.
+
+Correctness: as above, plus 2M random coefficients below 10^8 at
+exponents −6 to 2 (half of a million or more) through `FormatDecimal`
+and `AppendDecimal` at five amounts of spare capacity against the fixed
+form, natively, under `-race` and for amd64; strconv, math/decimal, fmt,
+internal/decimal tests; vet for s390x. `TestBenchBaselineShape` now
+also lacks IsShortFixed/128/mixed.
+
+Left: euro's 140 values with five places or more, which need the short
+layout widened past four places (about 1% for euro, nothing elsewhere).

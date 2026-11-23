@@ -54,7 +54,7 @@ func formatDecimal(d decimal128, fmt byte, prec int, bitSize int) string {
 		// no copy. Every other value takes appendDecimal's other paths,
 		// with the words decoded and the short test made once.
 		x := decimalWords(d)
-		if prec < 0 && fmt != 'e' && fmt != 'E' && isShortDecimal(x) {
+		if prec < 0 && fmt != 'e' && fmt != 'E' && (isShortDecimal(x) || fmt == 'f' && isShortFixedDecimal(x)) {
 			sign, frac := shortParts(x)
 			return shortString(sign, frac, x.Lo)
 		}
@@ -100,8 +100,10 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 	// (money and most quantities) is plain digits around a point in every
 	// notation that keeps all the digits, which is each verb but 'e' and
 	// 'E' at precision -1. The kernel lays those out in registers and stores
-	// them straight into dst, exactly the bytes appended.
-	if i := len(dst); isShortDecimal(x) && prec < 0 && fmt != 'e' && fmt != 'E' && cap(dst)-i >= bid.ShortLen128 {
+	// them straight into dst, exactly the bytes appended. The fixed form
+	// ('f') also takes them at a magnitude of 10^6 or more, which it writes
+	// in plain notation and the canonical form does not.
+	if i := len(dst); (isShortDecimal(x) || fmt == 'f' && isShortFixedDecimal(x)) && prec < 0 && fmt != 'e' && fmt != 'E' && cap(dst)-i >= bid.ShortLen128 {
 		sign, frac := shortParts(x)
 		return dst[:i+bid.PutShort128((*[bid.ShortLen128]byte)(dst[i:i+bid.ShortLen128]), sign, frac, x.Lo)]
 	}
@@ -251,6 +253,15 @@ func shortParts(x bid.Uint128) (sign, frac uint) {
 		return uint(x.Hi >> bid.UBDSignShift & 1), uint(-(int64(x.Hi) >> bid.UBDExpShift))
 	}
 	return uint(x.Hi >> 63), uint(bid.Bias128 - int(x.Hi>>bid.ExpShift128&bid.ExpMask128))
+}
+
+// isShortFixedDecimal reports whether x is short in the fixed form: what
+// isShortDecimal accepts, at any magnitude.
+func isShortFixedDecimal(x bid.Uint128) bool {
+	if bid.NativeUBD128 {
+		return bid.UBDIsShortFixed128(ubdWords(x))
+	}
+	return bid.IsShortFixed128(x)
 }
 
 func isLongDecimal(x bid.Uint128) bool {

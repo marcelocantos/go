@@ -131,6 +131,16 @@ func IsShort128(x Uint128) bool {
 	return k <= -shortMinExp && x.Lo < shortLimit[k]
 }
 
+// IsShortFixed128 reports whether x is finite with a coefficient below
+// 10^8 and an exponent from -4 to 0, of any magnitude: a value PutShort128
+// formats in the fixed form ('f' at full precision), which writes plain
+// notation where the canonical form of a magnitude of 10^6 or more is
+// exponential. It accepts what IsShort128 does, and coefficients of seven
+// and eight digits at an exponent of -1 or 0 besides.
+func IsShortFixed128(x Uint128) bool {
+	return shortExp128(x) <= -shortMinExp && x.Lo < shortCoeff
+}
+
 // shortLimit[k] bounds the coefficient of a short value at the exponent
 // shortMinExp + k: shortCoeff, or less where 10^canonicalMaxExp is the
 // lower bound, 10^(canonicalMaxExp - shortMinExp - k).
@@ -148,7 +158,10 @@ var shortLimit = [1 - shortMinExp]uint64{shortCoeff, shortCoeff, shortCoeff, 10_
 //
 // Every notation that keeps all the digits of the coefficient and does
 // not ask for an exponent agrees on the form of these values, so strconv
-// calls this for its canonical and its fixed forms.
+// calls this for its canonical and its fixed forms. For the fixed form it
+// also takes the values IsShortFixed128 (UBDIsShortFixed128) adds, which
+// it writes in plain notation, as that form does: the layout depends only
+// on the coefficient being below 10^8 and the places 0 to 4.
 //
 // The digits are laid out in a register, and no branch depends on the
 // value. eightQuads gives all eight digits, zeros on the left, with the
