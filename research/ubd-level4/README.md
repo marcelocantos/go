@@ -475,3 +475,48 @@ to +2.3% of level 3 (faster on tax fed and risk, behind on tax ca, even
 elsewhere), at about level 3's size: smaller where comparisons and
 subtracts dominate (tax ca, tax nc), larger where `min`/`max` and adds
 do (banking, tax fed). Banking's numbers mostly measure its file reads.
+
+## Assessment (2026-11-23)
+
+Tuning the kernel improved level 2: its apps gained 0.3–8.6% with the
+tuned kernel (research/ubd-kernel), and its call-site exits and inline
+quantize gave telco −9.2% and risk −5.1% more. Level 1, where every
+operation is a kernel call, gained most (up to −15%).
+
+At the app level, level 4 is only slightly faster than level 2, at a
+significant cost in inline code:
+
+| app | L4 vs L2 | app code, arm64 instructions L2 → L4 |
+|---|---|---|
+| tax fed | −6.3% | 11,808 → 28,752 (2.4×) |
+| tax ca | −5.7% | 4,176 → 7,776 (1.9×) |
+| tax nc | −4.1% | 5,584 → 11,616 (2.1×) |
+| risk | −3.0% | 3,568 → 5,200 (1.5×) |
+| banking | −2.0% | 20,080 → 29,456 (1.5×) |
+| telco | −1.7% | 1,920 → 2,384 (1.2×) |
+| euro | −1.4% | 2,288 → 2,576 (1.1×) |
+
+Per call site, `+` grows from 8 to 84 instructions, `<` from 10 to 54,
+`min` from 3 to 66. The largest gains are in the tax apps, which grow
+most.
+
+Why the gain is small: per operation, level 4 is two to five times
+faster on the cases it adds (running totals and comparisons at different
+exponents, `min`/`max`, integral rounding), but the apps spend most of
+their time elsewhere (formatting, parsing and allocation 40–60% of the
+profiles; banking's compute time mostly file reads), and most of their
+decimal operations already take level 2's paths, the same code at level
+4. A few percent is near the ceiling for these apps, and level 3 is in
+the same place: as large, no faster.
+
+What it suggests:
+
+- Level 2 is the right default: small sites, most of the speed.
+- Level 4 is worth having only as an opt-in speed level, for code
+  dominated by mixed-exponent arithmetic and comparisons, or as level
+  3's replacement: equal speed, similar size, and the kernel's results
+  by construction.
+- For the decimal64-versus-decimal128 comparison, level 2 is the
+  configuration to measure.
+- The largest app-level cost left is formatting (`PutShort128`,
+  `strconv.FormatDecimal`), not inlining.
