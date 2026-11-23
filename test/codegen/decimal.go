@@ -252,8 +252,10 @@ func QuantizeCent64(x decimal64) decimal64 {
 	return decimal.Quantize(x, decimal64(0.01))
 }
 func QuantizeCent128(x decimal128) decimal128 {
-	// arm64:"CALL internal/bid.ubdQuantizeTTE128" -"UDIV" -"CALL .*[.]Quantize"
-	// amd64:"CALL internal/bid.ubdQuantizeTTE128" -"DIVQ" -"CALL .*[.]Quantize"
+	// A word finer than cents by 1 to 19 places is divided inline; the
+	// rest call the kernel's ties-to-even entry.
+	// arm64:"UDIV" "CALL internal/bid.ubdQuantizeTTE128" -"CALL .*[.]Quantize"
+	// amd64:"DIVQ" "CALL internal/bid.ubdQuantizeTTE128" -"CALL .*[.]Quantize"
 	return decimal.Quantize(x, decimal128(0.01))
 }
 func IntegralEven128(x decimal128) decimal128 {

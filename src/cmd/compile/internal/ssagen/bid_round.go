@@ -50,7 +50,13 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 		res := s.rtcall(fn, true, []*types.Type{u64, u64}, kargs...)
 		return s.newValue2(ssaop.OpDecimal128Make, n.Type(), res[0], res[1])
 	}
-	if bidCallOnly(x) {
+	// level2Quantize: quantize at ubdLevel 2 takes the inline paths below
+	// for a one-word x at y's exponent (x itself) and for one 1 to 19
+	// places finer than y's (one division, rounded in the mode: telco's
+	// products to cents), and the kernel call for the rest; it leaves out
+	// level 3's path for an x coarser than y's exponent.
+	level2Quantize := !integral && bidCallOnly(x) && ubdLevel() == 2
+	if bidCallOnly(x) && !level2Quantize {
 		xh := s.newValue1(ssaop.OpDecimal128Hi, u64, x)
 		kargs := []*ssa.Value{s.newValue1(ssaop.OpDecimal128Lo, u64, x), xh}
 		if !integral {
@@ -59,21 +65,12 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 		if ubdLevel() < 2 {
 			return kernelCall(kargs)
 		}
-		// From ubdLevel 2, the kernel entry's first path inline, where x
-		// is returned as it is. Integral rounding: x finite with qExp >= 0,
-		// which is the high word below 7<<60 (qExp's sign is its top bit,
-		// a finite qExp >= 0 leaves the top four bits at most 5, and a
-		// special's are 7). Quantize: x a one-word coefficient (no special
-		// is) at y's qExp (ubdQuantizeSame128).
-		var fast *ssa.Value
-		if integral {
-			fast = s.newValue2(ssaop.OpLess64U, boolT, xh, s.constInt64(u64, int64(bid.UBDSpecialTag)<<60))
-		} else {
-			g := s.newValue2(ssaop.OpOr64, u64,
-				s.newValue2(ssaop.OpRsh64Ux64, u64, s.newValue2(ssaop.OpXor64, u64, xh, kargs[3]), s.constInt64(u64, bid.UBDExpShift)),
-				s.newValue2(ssaop.OpAnd64, u64, xh, s.constInt64(u64, int64(bid.UBDCoeffMaskHi))))
-			fast = s.newValue2(ssaop.OpEq64, boolT, g, zero)
-		}
+		// From ubdLevel 2, integral rounding's first kernel path inline,
+		// where x is returned as it is: x finite with qExp >= 0, which is
+		// the high word below 7<<60 (qExp's sign is its top bit, a finite
+		// qExp >= 0 leaves the top four bits at most 5, and a special's
+		// are 7). Quantize at level 2 is level2Quantize's.
+		fast := s.newValue2(ssaop.OpLess64U, boolT, xh, s.constInt64(u64, int64(bid.UBDSpecialTag)<<60))
 		return s.ubdEarlyExit(n.Type(), fast, x, func() *ssa.Value { return kernelCall(kargs) })
 	}
 	shift, bias := bid.ExpShift128, bid.Bias128
@@ -169,7 +166,7 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 		h := s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpAnd64, u64, native, s.constInt64(u64, int64(signMask))), s.newValue2(ssaop.OpLsh64x64, u64, ye, s.constInt64(u64, int64(shift))))
 		return s.newValue2(ssaop.OpXor64, u64, h, s.constInt64(u64, int64(zeroEncoding)))
 	}
-	if !integral && !is64 {
+	if !integral && !is64 && !level2Quantize {
 		// A decimal128 word at a larger exponent than y's by at most 19
 		// places is scaled up to it, exactly, when the product is still a
 		// word: 5 quantized to cents is 5.00. One multiplication by a
