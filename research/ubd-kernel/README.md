@@ -221,6 +221,10 @@ which telco's truncated taxes call (9% of its level-1 profile): word rows
   so that the entry need not save them across the call: the prologue's
   stores went, but word adds at two exponents and of mixed sign were 7–10%
   slower.
+- `ubdCompare128` (the 3-way compare entry) calling `ubdCmpWord` for a
+  word pair itself instead of through `ubdQuietCmp128`: Compare 20–37%
+  slower, and min and max, which called it inline, 13–19% slower on
+  two-word operands once it no longer inlined (cost 144).
 - The predicates calling `cCmpFinite128` themselves for two finite
   two-word operands, through a helper meant to inline: it did not (cost
   100), and two-word compares were 17–44% slower.
