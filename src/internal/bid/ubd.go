@@ -391,32 +391,45 @@ func ubdSubTTE128(x, y UBD128) UBD128 {
 // round (ubdAddLong128's word path, which this is, then rounds it). It is the
 // first thing the ties-to-even entries try, before any call.
 //
-// Operands of one exponent, money amounts of one quantum, are summed
-// without scaling: that branch took such a sum from 3.26 to 2.20 ns (Apple
-// M3 Pro, BenchmarkUBDKernel), cost operands two places apart 2%, and cost
-// nothing on operands of one exponent or two apart at random, where it
-// mispredicts half the time. (The same branch in ubdCmpWord was set aside:
-// there those random operands took 50% longer.)
+// Three paths, in the order of how common they are in money arithmetic:
 //
-// Otherwise nothing is branched on but the gap and the fit. The operand with the larger
-// exponent is chosen by mask, and the other is added or subtracted by mask:
-// a difference whose sign is the other operand's was a branch taken about
-// half the time in ubdAddLong128 (x - y of random positive amounts), and so
-// was same-or-opposite signs on operands of mixed sign. A difference that goes
-// negative is negated; its magnitude is then below 2^64. An exact zero is the
-// operands' sign when they agree and +0 when they differ, as rounding to
-// nearest gives (IEEE 754-2019 clause 6.3).
+//   - One exponent and one sign, a sum of amounts: an add and its carry.
+//     This is a branch, and it must be: a running total waits for each sum,
+//     and with the sum chosen by masks (the third path) it took 4.82 ns a
+//     step against 2.39 (and BID's 3.72); operands of mixed sign, which
+//     mispredict it, take 2.67 against 2.21 that way.
+//   - One exponent and opposite signs, a difference: both differences, and
+//     the one that did not borrow chosen by a select, not a branch, since
+//     x - y of random positive amounts goes either way half the time (a
+//     branch there took 5.89 ns). A running balance that stays positive
+//     takes 2.39 ns a step.
+//   - Exponents up to maxWordGap apart: the operand with the larger exponent
+//     chosen by mask, scaled, and the other added or subtracted by mask; a
+//     difference that goes negative is negated, its magnitude then below
+//     2^64.
+//
+// (Apple M3 Pro, BenchmarkUBDKernel, rows money, cents10neg, Sub and the
+// AddChain and SubChain rows.) An exact zero is the operands' sign when they
+// agree and +0 when they differ, as rounding to nearest gives (IEEE 754-2019
+// clause 6.3). The same one-exponent branch in ubdCmpWord was set aside: on
+// operands of one exponent or two apart at random a compare took 50%
+// longer.
 func ubdAddWordTTE(x, y UBD128) (UBD128, bool) {
 	xh, xl, yh, yl := x.Hi, x.Lo, y.Hi, y.Lo
+	if (xh^yh)>>UBDSignShift == 0 {
+		// One exponent and one sign: the usual sum, an add and its carry.
+		lo, c := bits.Add64(xl, yl, 0)
+		return UBD128{Lo: lo, Hi: xh | c}, true
+	}
 	if (xh^yh)>>UBDExpShift == 0 {
-		// One exponent: no scaling. Same as below with a = x, b = y, hi = 0.
-		s := uint64(int64((xh^yh)<<(63-UBDSignShift)) >> 63)
-		lo, c := bits.Add64(xl, yl^s, s&1)
-		hi := c &^ s // a carry of a sum; of a difference, no borrow
-		m := s & (c - 1)
-		lo = (lo ^ m) - m
-		sign := (xh>>UBDSignShift ^ m) & (b2u(hi|lo != 0) | ^s) & 1
-		return UBD128{Lo: lo, Hi: xh&^UBDSignHi | sign<<UBDSignShift | hi}, true
+		// One exponent, opposite signs: both differences, and the one
+		// that did not borrow, chosen by a select.
+		d, b := bits.Sub64(xl, yl, 0)
+		if b != 0 {
+			d = yl - xl
+		}
+		sign := (xh>>UBDSignShift ^ b) & b2u(d != 0)
+		return UBD128{Lo: d, Hi: xh&^UBDSignHi | sign<<UBDSignShift}, true
 	}
 	d := int64(xh)>>UBDExpShift - int64(yh)>>UBDExpShift
 	sw := uint64(d >> 63) // all ones when y has the larger exponent

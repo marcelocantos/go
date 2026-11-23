@@ -137,6 +137,50 @@ func BenchmarkUBDKernel(b *testing.B) {
 		b.Run("Div/"+cl.name+"/bid", func(b *testing.B) { bidBench2(b, ps, BIDKernelDiv) })
 		b.Run("Quantize/"+cl.name+"/ubd", func(b *testing.B) { ubdBench2(b, ps, UBDKernelQnt) })
 		b.Run("Quantize/"+cl.name+"/bid", func(b *testing.B) { bidBench2(b, ps, BIDKernelQnt) })
+		// A running total: each sum waits for the one before, as a loop
+		// that accumulates amounts does, so these rows time the latency of
+		// a call where the others time its throughput.
+		b.Run("AddChain/"+cl.name+"/ubd", func(b *testing.B) {
+			acc := ps[0].ux
+			for i := 0; i < b.N; i++ {
+				acc = UBDKernelAdd(acc, ps[i&(ubdBenchN-1)].uy)
+				if i&(ubdBenchN-1) == ubdBenchN-1 {
+					acc = ps[0].ux // keep the total from growing past a word
+				}
+			}
+			ubdSinkU = acc
+		})
+		b.Run("AddChain/"+cl.name+"/bid", func(b *testing.B) {
+			acc := ps[0].bx
+			for i := 0; i < b.N; i++ {
+				acc = BIDKernelAdd(acc, ps[i&(ubdBenchN-1)].by, ToNearestEven)
+				if i&(ubdBenchN-1) == ubdBenchN-1 {
+					acc = ps[0].bx
+				}
+			}
+			ubdSinkB = acc
+		})
+		// A running balance: each difference waits for the one before.
+		b.Run("SubChain/"+cl.name+"/ubd", func(b *testing.B) {
+			acc := ps[0].ux
+			for i := 0; i < b.N; i++ {
+				acc = UBDKernelSub(acc, ps[i&(ubdBenchN-1)].uy)
+				if i&(ubdBenchN-1) == ubdBenchN-1 {
+					acc = ps[0].ux
+				}
+			}
+			ubdSinkU = acc
+		})
+		b.Run("SubChain/"+cl.name+"/bid", func(b *testing.B) {
+			acc := ps[0].bx
+			for i := 0; i < b.N; i++ {
+				acc = BIDKernelSub(acc, ps[i&(ubdBenchN-1)].by, ToNearestEven)
+				if i&(ubdBenchN-1) == ubdBenchN-1 {
+					acc = ps[0].bx
+				}
+			}
+			ubdSinkB = acc
+		})
 		b.Run("Min/"+cl.name+"/ubd", func(b *testing.B) { ubdBench2(b, ps, UBDKernelMin) })
 		b.Run("Min/"+cl.name+"/bid", func(b *testing.B) {
 			bidBench2(b, ps, func(x, y Uint128, _ Mode) Uint128 { return BIDKernelMin(x, y) })
