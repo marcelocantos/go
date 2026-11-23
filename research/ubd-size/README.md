@@ -216,8 +216,20 @@ branch).
 3. slow-call setup: argument moves and the calls into the kernel.
 
 **Inline code per call site = (2) + (3).** It excludes the frame and the
-shared kernel. `scale/s.go` cross-checks it: functions with 1, 2 and 4
-additions give the code added per extra `+`.
+shared kernel. It is a lower bound for a site in real code: each probe
+function has nothing live but the operation's own operands, so none of its
+code is spilling. Go's internal ABI has no callee-saved registers, so at a
+site that may call the kernel, every other value live across the call is
+stored before it and reloaded after, and the more values are live, the more
+code that is. `scale/s.go` measures a site with values live: functions with
+1, 2 and 4 additions of five decimal128 arguments,
+`a + b + c + d + e`, whose difference, divided by three, is the code each
+extra `+` adds, its spills and reloads and the moves of the running sum
+included. That is the second row of the table below; with more values
+live, a site costs more still. The cost is not only size: on arm64 the
+compiler stores `d` and `e` once, at the function's entry, before the first
+guard, so those stores run even when every `+` takes its fast path; the
+reloads and argument moves are on the call path only.
 
 Run:
 
@@ -240,6 +252,7 @@ darwin/arm64 with `GOOS=linux`.
 | Op | amd64 instr | amd64 bytes | arm64 instr | arm64 bytes |
 |---|---|---|---|---|
 | `x + y` | 169 → 12 (−93%) | 714 → 37 (−95%) | 119 → 8 (−93%) | 476 → 32 (−93%) |
+| each extra `+` in `a + b + c + d + e` | 162 → 16 (−90%) | 695 → 67 (−90%) | 109 → 13 (−88%) | 437 → 52 (−88%) |
 | `x - y` | 179 → 25 (−86%) | 773 → 87 (−89%) | 126 → 14 (−89%) | 504 → 56 (−89%) |
 | `x * y` | 84 → 28 (−67%) | 369 → 103 (−72%) | 65 → 20 (−69%) | 260 → 80 (−69%) |
 | `x / y` | 17 → 2 (−88%) | 64 → 6 (−91%) | 15 → 3 (−80%) | 60 → 12 (−80%) |
@@ -250,8 +263,10 @@ darwin/arm64 with `GOOS=linux`.
 | `Quantize` | 119 → 2 (−98%) | 491 → 6 (−99%) | 81 → 3 (−96%) | 324 → 12 (−96%) |
 | `Round` | 58 → 3 (−95%) | 248 → 11 (−96%) | 42 → 4 (−90%) | 168 → 16 (−90%) |
 
-XOR-BID → UBD. Per extra `+` in a longer expression (`scale/`): amd64 162 →
-16 instructions (695 → 67 bytes), arm64 109 → 13 (437 → 52). With old level
+XOR-BID → UBD. The extra `+` (`scale/`, remeasured 2026-11-23 at
+`04befab964`, unchanged) is 4 instructions more than the single `x + y` on
+amd64 and 5 on arm64: the spills, reloads and moves a site pays when other
+values are live. With old level
 9's two-word paths (deleted) the four narrowed rows were `+` 17 / 12, `-` 41 / 26, `==` 18 / 12 and `<` 21 /
 16 instructions (amd64 / arm64), and the extra `+` 23 / 17.
 
