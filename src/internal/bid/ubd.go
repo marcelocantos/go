@@ -364,11 +364,70 @@ type UBD128 struct{ Lo, Hi uint64 }
 // take 128- and 256-bit routes and a final rounding step for word-sized
 // operands too.
 
-func ubdAddTTE128(x, y UBD128) UBD128 { return ubdAddSlow128(x, y, ToNearestEven) }
+func ubdAddTTE128(x, y UBD128) UBD128 {
+	if (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {
+		if r, ok := ubdAddWordTTE(x.Hi, x.Lo, y.Hi, y.Lo); ok {
+			return r
+		}
+	}
+	return ubdAddSlow128(x, y, ToNearestEven)
+}
 
 func ubdAddRnd128(x, y UBD128, mode Mode) UBD128 { return ubdAddSlow128(x, y, mode) }
 
-func ubdSubTTE128(x, y UBD128) UBD128 { return ubdSubSlow128(x, y, ToNearestEven) }
+func ubdSubTTE128(x, y UBD128) UBD128 {
+	if (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {
+		if r, ok := ubdAddWordTTE(x.Hi, x.Lo, y.Hi^UBDSignHi, y.Lo); ok {
+			return r
+		}
+	}
+	return ubdSubSlow128(x, y, ToNearestEven)
+}
+
+// ubdAddWordTTE adds two finite operands whose coefficients are one word
+// each, so that their high words xh and yh hold only qExp and the sign, when
+// their exponents are at most maxWordGap apart: the exact sum at the smaller
+// exponent, the preferred one, and false when it passes MaxCoeff128 and must
+// round (ubdAddLong128's word path, which this is, then rounds it). It is the
+// first thing the ties-to-even entries try, before any call.
+//
+// Nothing is branched on but the gap and the fit. The operand with the larger
+// exponent is chosen by mask, and the other is added or subtracted by mask:
+// a difference whose sign is the other operand's was a branch taken about
+// half the time in ubdAddLong128 (x - y of random positive amounts), and so
+// was same-or-opposite signs on operands of mixed sign. A difference that goes
+// negative is negated; its magnitude is then below 2^64. An exact zero is the
+// operands' sign when they agree and +0 when they differ, as rounding to
+// nearest gives (IEEE 754-2019 clause 6.3).
+func ubdAddWordTTE(xh, xl, yh, yl uint64) (UBD128, bool) {
+	d := int64(xh)>>UBDExpShift - int64(yh)>>UBDExpShift
+	sw := uint64(d >> 63) // all ones when y has the larger exponent
+	th, tl := (xh^yh)&sw, (xl^yl)&sw
+	ah, al := xh^th, xl^tl // a: the larger exponent
+	bh, bl := yh^th, yl^tl // b: the smaller, the result's
+	gap := (uint64(d) ^ sw) - sw
+	if gap > uint64(maxWordGap) {
+		return UBD128{}, false
+	}
+	hi, lo := bits.Mul64(al, pow10tab64[gap])
+	s := uint64(int64((ah^bh)<<(63-UBDSignShift)) >> 63) // all ones when the signs differ
+	var c uint64
+	lo, c = bits.Add64(lo, bl^s, s&1)
+	hi, c = bits.Add64(hi, s, c)
+	// A difference went negative, b's magnitude the larger, when the
+	// subtraction (an add of b's complement) carries nothing out. The top
+	// bit of hi cannot tell: a's coefficient scaled by 10^19 can pass 2^127.
+	m := s & (c - 1)
+	lo = (lo ^ m) - m
+	hi &^= m
+	_, bw := bits.Sub64(MaxCoeff128Lo, lo, 0)
+	_, bw = bits.Sub64(MaxCoeff128Hi, hi, bw)
+	if bw != 0 {
+		return UBD128{}, false
+	}
+	sign := (ah>>UBDSignShift ^ m) & (b2u(hi|lo != 0) | ^s) & 1
+	return UBD128{Lo: lo, Hi: bh&^UBDSignHi | sign<<UBDSignShift | hi}, true
+}
 
 func ubdSubRnd128(x, y UBD128, mode Mode) UBD128 { return ubdSubSlow128(x, y, mode) }
 

@@ -295,3 +295,25 @@ func LongParts128(x Uint128) (sign uint, exp int, c Uint128) {
 	sign, exp = longParts128(x)
 	return sign, exp, c
 }
+
+// The kernel entries BenchmarkUBDKernel times, as function values: the UBD
+// entries the compiler calls at -d=ubdlevel=1 and the BID entries the XOR-BID
+// compiler calls for the same operations. A function value is called as a
+// call site calls the kernel, never inlined, with no adapter between.
+var (
+	UBDKernelAdd   = ubdAddTTE128
+	UBDKernelSub   = ubdSubTTE128
+	UBDKernelMul   = ubdMulTTE128
+	UBDKernelDiv   = ubdDivTTE128
+	UBDKernelQnt   = ubdQuantizeTTE128
+	UBDKernelLess  = ubdLess128
+	UBDKernelEqual = ubdEqual128
+	UBDKernelCmp   = ubdCompare128
+
+	BIDKernelAdd = addSlow128
+	BIDKernelSub = subSlow128
+	BIDKernelMul = mulSlow128
+	BIDKernelDiv = div128
+	BIDKernelQnt = quantizeSlow128
+	BIDKernelCmp = quietCmpSlow128
+)
