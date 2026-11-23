@@ -186,3 +186,24 @@ cohort or one unit from it, all six comparisons.
 Apps, best of 7: against step 2, tax fed −3.0%, risk −0.9%, tax ca
 −0.9%, the rest within ±0.6% (medians −4.3% to +2.0%); against level 3,
 −2.1% (tax nc) to +2.9% (tax ca), medians −0.5% to +1.9%: even.
+
+## Step 4: integral rounding of one-word coefficients
+
+Level 4 runs integral rounding through the inline word paths level 2
+gives quantize (which are level 3's): x with qExp ≥ 0 is x, a one-word x
+with a fraction of 1 to 19 digits is one division by the power of ten,
+rounded in the mode; the rest call the kernel. The kernel's word path
+does the same (`ubdQuantizeWord` against 1E0). Level 2 had only the
+qExp ≥ 0 exit.
+
+| ns | L2 | L3 | L4 |
+|---|---|---|---|
+| RoundToEven, money | 3.21 | 1.40 | 1.40 |
+| Trunc, money | 3.20 | 1.16 | 1.15 |
+
+Site, arm64: `Round` 22, `Trunc` 15, `RoundToEven` 24 (level 2: 6–7).
+Levels 1 and 4 agree on 3M random values rounded 13 ways (five integral
+roundings, quantize in eight forms) and on the 43 edge values.
+
+Apps, best of 7, against step 3: −1.0% (euro) to +1.4% (tax ca);
+against level 3: −0.9% to +2.1%, medians −0.9% to +1.4%.

@@ -54,8 +54,11 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 	// for a one-word x at y's exponent (x itself) and for one 1 to 19
 	// places finer than y's (one division, rounded in the mode: telco's
 	// products to cents), and the kernel call for the rest; it leaves out
-	// level 3's path for an x coarser than y's exponent.
-	level2Quantize := !integral && bidCallOnly(x) && ubdLevel() >= 2
+	// level 3's path for an x coarser than y's exponent. At ubdLevel 4
+	// integral rounding takes them as well (the kernel's word path: an x
+	// with qExp >= 0 is x, one with a fraction of 1 to 19 digits is one
+	// division, rounded in the mode).
+	level2Quantize := bidCallOnly(x) && (!integral && ubdLevel() >= 2 || ubdLevel4())
 	if bidCallOnly(x) && !level2Quantize {
 		xh := s.newValue1(ssaop.OpDecimal128Hi, u64, x)
 		kargs := []*ssa.Value{s.newValue1(ssaop.OpDecimal128Lo, u64, x), xh}
