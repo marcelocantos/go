@@ -117,6 +117,14 @@ vectors (GDAS decTest, Intel readtest) through the UBD entries: 70705 pass, 0
 fail, the kernel target's count. Before it, no published vector reached a UBD
 entry.
 
+Correctness on other targets: internal/bid's tests, the `ubd` vector run,
+math/decimal, strconv and internal/decimal also pass as amd64 under Rosetta
+(which takes the native 128-by-64 divide in the divide path). No 32-bit
+target can run here; the package and its test binary build for 386 and
+arm. Reviewing the unsigned-index changes for 32-bit targets found one bug,
+fixed in 3f4c7e279d: `ubdCmpWord`'s test for a swamped y wrapped at 32 bits.
+**A 32-bit test run is still owed.**
+
 A/B timings: two test binaries built with `-ldflags=-funcalign=64`, run
 interleaved 6–8 times, medians.
 
