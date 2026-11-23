@@ -476,18 +476,16 @@ func ubdAddWordTTE(x, y UBD128) (UBD128, bool) {
 
 func ubdSubRnd128(x, y UBD128, mode Mode) UBD128 { return ubdSubSlow128(x, y, mode) }
 
-func ubdMulTTE128(x, y UBD128) UBD128 {
-	if r, ok := ubdMulShort128(x, y); ok {
-		return r
-	}
-	return ubdMulSlow128(x, y, ToNearestEven)
-}
+// ubdMulTTE128 is in ubd_mul.go.
 
 func ubdMulRnd128(x, y UBD128, mode Mode) UBD128 {
+	if mode == ToNearestEven {
+		return ubdMulTTE128(x, y)
+	}
 	if r, ok := ubdMulShort128(x, y); ok {
 		return r
 	}
-	return ubdMulSlow128(x, y, mode)
+	return ubdMulLong128(x, y, mode)
 }
 
 func ubdDivTTE128(x, y UBD128) UBD128 { return ubdDiv128(x, y, ToNearestEven) }

@@ -6,11 +6,11 @@ package bid
 
 import "math/bits"
 
-// This package's multiply on UBD operands. The multiply entries
-// (ubdMulTTE128, ubdMulRnd128) are mul128 on UBD, ubdMulShort128 then
-// ubdMulSlow128, so that a multiply is one call; ubdMulShort128,
-// ubdMulSlow128 and ubdMulLong128 are mulShort128, mulSlow128 and
-// mulLong128 with the BID decoding and
+// This package's multiply on UBD operands. The ties-to-even entry
+// (ubdMulTTE128) is mul128 on UBD, ubdMulShort128 and then mulSlow128's
+// paths written into the entry, so that a multiply is one call;
+// ubdMulShort128, ubdMulTTE128 and ubdMulLong128 are mulShort128,
+// mulSlow128 and mulLong128 with the BID decoding and
 // packing replaced by UBD's (signs at bit 49, exponents unbiased) and the
 // rounding by ubdRound128; the arithmetic is unchanged. Nothing converts.
 
@@ -19,7 +19,7 @@ import "math/bits"
 // exact, at an exponent sum in [-4096, 4095], inside the format. (BID's
 // mulShort128 stops at 97 bits; UBD's high word holds a product's top 48
 // bits below the sign at once. Products of 97 to 112 bits, of two 15-digit
-// coefficients for instance, took ubdMulSlow128 and ubdMulLong128, two calls
+// coefficients for instance, took mulSlow128's path and ubdMulLong128, two calls
 // with frames: 3.96 ns against 2.04.) As in mulShort128 the three tests are
 // one, without a branch: a special has the 0x1F prefix in its coefficient's
 // high word, so the one-word test excludes it, and the exponent sum is in
@@ -32,13 +32,25 @@ func ubdMulShort128(x, y UBD128) (UBD128, bool) {
 		(x.Hi|y.Hi)&UBDCoeffMaskHi|hi>>48|uint64(e+4096)>>13 == 0
 }
 
-// ubdMulSlow128 is mulSlow128 on UBD, except that coefficients of one word
-// each take the two-word path below like any others, where mulSlow128 sends
-// them to mulLong128: the ones that reach it, after ubdMulShort128, are
-// products of 112 bits or more, most of which round, and the two-word path
-// rounds them in one call where ubdMulLong128 was a second (w19 in
-// BenchmarkUBDKernel, 17- to 19-digit coefficients: 14.3 ns against 11.6).
-func ubdMulSlow128(x, y UBD128, mode Mode) UBD128 {
+// ubdMulTTE128, the multiply entry the compiler calls, is ubdMulShort128
+// and then mulSlow128 on UBD for ties to even, written into the entry so
+// that a multiply past the short path is one call with one frame, where it
+// was the entry and then a ubdMulSlow128 (BenchmarkUBDKernel: a 30- to
+// 34-digit quotient times an amount, q34, 11.49 ns against 9.35, BID's
+// mulSlow128 10.60; 17- to 19-digit coefficients, w19, 11.62 against
+// 10.71). It differs from mulSlow128
+// in that coefficients of one word each take the two-word path below like
+// any others, where mulSlow128 sends them to mulLong128: the ones that
+// reach it, after ubdMulShort128, are products of 112 bits or more, most of
+// which round, and the two-word path rounds them in one call where
+// ubdMulLong128 was a second (14.3 ns against 11.6). ubdMulRnd128, which
+// has no caller in compiled code, calls this for ToNearestEven and
+// ubdMulLong128 for every other mode.
+func ubdMulTTE128(x, y UBD128) UBD128 {
+	if r, ok := ubdMulShort128(x, y); ok {
+		return r
+	}
+	const mode = ToNearestEven
 	// A special has the 0x1F prefix in its coefficient's high word;
 	// addPair128's test for one becomes the tag test.
 	if x.Hi>>60 == UBDSpecialTag || y.Hi>>60 == UBDSpecialTag || mode > ToNearestAway {

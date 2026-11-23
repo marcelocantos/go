@@ -430,3 +430,24 @@ func TestUBDQuantizeWideAgrees(t *testing.T) {
 		}
 	}
 }
+
+// TestUBDMulAgrees checks the multiply entries, ties to even and the Rnd
+// entry in every mode, against the BID kernel on coefficients of 1 to 34
+// digits, so that products are exact, round, or pass the format.
+func TestUBDMulAgrees(t *testing.T) {
+	r := rand.New(rand.NewPCG(43, 47))
+	modes := []Mode{ToNearestEven, ToNearestAway, TowardZero, AwayFromZero, TowardNegative, TowardPositive}
+	for i := 0; i < 1000000; i++ {
+		bx, ux := ubdBenchVal(r.IntN(2) == 0, ubdBenchDigits(r, 1, 34), r.IntN(400)-200)
+		by, uy := ubdBenchVal(r.IntN(2) == 0, ubdBenchDigits(r, 1, 34), r.IntN(400)-200)
+		got := UBDKernelMul(ux, uy)
+		if g, want := BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}), BIDKernelMul(bx, by, ToNearestEven); g != want {
+			t.Fatalf("mul(%#x, %#x): got %#x, want %#x", bx, by, g, want)
+		}
+		m := modes[i%len(modes)]
+		g := UBDMulRnd128(Uint128{Hi: ux.Hi, Lo: ux.Lo}, Uint128{Hi: uy.Hi, Lo: uy.Lo}, m)
+		if g, want := BIDFromUBDAny128(g), Mul128(bx, by, m); g != want {
+			t.Fatalf("mul(%#x, %#x, %v): got %#x, want %#x", bx, by, m, g, want)
+		}
+	}
+}
