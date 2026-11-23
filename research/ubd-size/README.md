@@ -28,11 +28,9 @@ fast path in front of `*`:
 
 - **`x + y`:** decimal128-go's first-level path (`d128_add_rnd_ctxnull`),
   narrowed to one-word coefficients: one guard,
-  `((xh ^ yh) &^ sign) | xh<<15 == 0` (equal qExp, and no coefficient bits
-  in the high word, which also excludes the specials), then a branch on the
-  signs: `ADD; ADC $0` with x's qExp and sign riding along in its high word,
-  or, for opposite signs, `-`'s effective subtraction (since 2026-11-22;
-  before, opposite signs took the call). Every other pair,
+  `(xh ^ yh) | xh<<15 == 0` (equal qExp and sign, and no coefficient bits in
+  the high word, which also excludes the specials), then `ADD; ADC $0` with
+  x's qExp and sign riding along in its high word. Every other pair,
   including coefficients of 2^64 or more, calls `ubdAddTTE128`. (The
   two-word path it replaced, old level 9, took coefficients up to 2^112
   with a second test; deleted.)

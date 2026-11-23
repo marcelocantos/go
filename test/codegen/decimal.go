@@ -57,11 +57,11 @@ func Less64(x, y decimal64) bool {
 func Add128(x, y decimal128) decimal128 {
 	// ppc64le:"DADDQ" -"CALL"
 	// UBD (the default, ubdLevel 2): decimal128-go's first-level add path
-	// narrowed to one-word coefficients, one guard (((xh^yh) &^ sign) |
-	// xh<<15 == 0), in front of the kernel's ties-to-even entry; operands
-	// of opposite signs take the effective subtraction inline.
-	// amd64:"SHLQ [$]15" "BTRQ [$]49" "ADCQ [$]0" "SBBQ" "CALL internal/bid.ubdAddTTE128" -"NEGQ" -"CALL runtime.dadd128"
-	// arm64:"ORR R[0-9]+<<15" "TBZ [$]49" "ADC" "NGC" "CALL internal/bid.ubdAddTTE128" -"CSNEG" -"CALL runtime.dadd128"
+	// narrowed to one-word coefficients, one guard ((xh^yh) | xh<<15 == 0),
+	// in front of the kernel's ties-to-even entry; operands of opposite
+	// signs go to the kernel.
+	// amd64:"SHLQ [$]15" "ADCQ [$]0" "CALL internal/bid.ubdAddTTE128" -"NEGQ" -"CALL runtime.dadd128"
+	// arm64:"ORR R[0-9]+<<15" "ADC" "CALL internal/bid.ubdAddTTE128" -"CSNEG" -"CALL runtime.dadd128"
 	return x + y
 }
 
