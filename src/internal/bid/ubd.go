@@ -404,12 +404,18 @@ func ubdSubTTE128(x, y UBD128) UBD128 {
 //     branch there took 5.89 ns). A running balance that stays positive
 //     takes 2.39 ns a step.
 //   - Exponents up to maxWordGap apart: the operand with the larger exponent
-//     chosen by mask, scaled, and the other added or subtracted by mask; a
-//     difference that goes negative is negated, its magnitude then below
-//     2^64.
+//     scaled, and the other added or subtracted, each chosen by a branch, as
+//     in ubdAddLong128, and a difference that goes negative negated by a
+//     select, its magnitude then below 2^64. These are most of what reaches
+//     the kernel at -d=ubdlevel=2, whose inline path takes one exponent and
+//     one sign. With the operand and the operation chosen by masks instead,
+//     tax_preparation's FED program at level 2 was 3.5% slower than before
+//     this word path existed; with branches, 4.4% faster. (An amount and a
+//     rate, 2.52 ns against 3.52; a running total at either of two
+//     exponents at random, 3.49 against 4.50 a step.)
 //
-// (Apple M3 Pro, BenchmarkUBDKernel, rows money, cents10neg, Sub and the
-// AddChain and SubChain rows.) An exact zero is the operands' sign when they
+// (Apple M3 Pro, BenchmarkUBDKernel, rows money, cents10neg, gap2, mixexp,
+// Sub and the AddChain and SubChain rows.) An exact zero is the operands' sign when they
 // agree and +0 when they differ, as rounding to nearest gives (IEEE 754-2019
 // clause 6.3). The same one-exponent branch in ubdCmpWord was set aside: on
 // operands of one exponent or two apart at random a compare took 50%
@@ -431,33 +437,41 @@ func ubdAddWordTTE(x, y UBD128) (UBD128, bool) {
 		sign := (xh>>UBDSignShift ^ b) & b2u(d != 0)
 		return UBD128{Lo: d, Hi: xh&^UBDSignHi | sign<<UBDSignShift}, true
 	}
-	d := int64(xh)>>UBDExpShift - int64(yh)>>UBDExpShift
-	sw := uint64(d >> 63) // all ones when y has the larger exponent
-	th, tl := (xh^yh)&sw, (xl^yl)&sw
-	ah, al := xh^th, xl^tl // a: the larger exponent
-	bh, bl := yh^th, yl^tl // b: the smaller, the result's
-	gap := (uint64(d) ^ sw) - sw
+	// a is the operand with the larger exponent, b the other, whose
+	// exponent is the result's. Which it is goes with the data's kind
+	// (an amount and a rate), so it is a branch.
+	ah, al, bh, bl := xh, xl, yh, yl
+	if int64(xh) < int64(yh) { // qExp is the high word's top bits
+		ah, al, bh, bl = yh, yl, xh, xl
+	}
+	gap := uint64(int64(ah)>>UBDExpShift - int64(bh)>>UBDExpShift)
 	if gap > uint64(maxWordGap) {
 		return UBD128{}, false
 	}
 	hi, lo := bits.Mul64(al, pow10tab64[gap])
-	s := uint64(int64((ah^bh)<<(63-UBDSignShift)) >> 63) // all ones when the signs differ
-	var c uint64
-	lo, c = bits.Add64(lo, bl^s, s&1)
-	hi, c = bits.Add64(hi, s, c)
-	// A difference went negative, b's magnitude the larger, when the
-	// subtraction (an add of b's complement) carries nothing out. The top
-	// bit of hi cannot tell: a's coefficient scaled by 10^19 can pass 2^127.
-	m := s & (c - 1)
-	lo = (lo ^ m) - m
-	hi &^= m
+	sign := ah >> UBDSignShift & 1
+	if (ah^bh)&UBDSignHi == 0 {
+		var c uint64
+		lo, c = bits.Add64(lo, bl, 0)
+		hi += c
+	} else {
+		// a × 10^gap - b, negative only when a × 10^gap is below 2^64:
+		// both differences, and the one that did not borrow selected.
+		d, b := bits.Sub64(lo, bl, 0)
+		var bw uint64
+		hi, bw = bits.Sub64(hi, 0, b)
+		lo = d
+		if bw != 0 {
+			lo, hi, sign = -d, 0, sign^1 // b's magnitude, below 2^64, the larger
+		}
+		sign &= b2u(hi|lo != 0) // an exact zero is +0
+	}
 	_, bw := bits.Sub64(MaxCoeff128Lo, lo, 0)
 	_, bw = bits.Sub64(MaxCoeff128Hi, hi, bw)
 	if bw != 0 {
 		return UBD128{}, false
 	}
-	sign := (ah>>UBDSignShift ^ m) & (b2u(hi|lo != 0) | ^s) & 1
-	return UBD128{Lo: lo, Hi: bh&^UBDSignHi | sign<<UBDSignShift | hi}, true
+	return UBD128{Lo: lo, Hi: bh&^(UBDSignHi|UBDCoeffMaskHi) | sign<<UBDSignShift | hi}, true
 }
 
 func ubdSubRnd128(x, y UBD128, mode Mode) UBD128 { return ubdSubSlow128(x, y, mode) }
