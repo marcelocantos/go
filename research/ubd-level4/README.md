@@ -362,3 +362,44 @@ Site, arm64: 66 instructions (levels 2 and 3: 3). Banking calls `max`
 Levels 1 and 4 agree on 10M random pairs (arm64) and 3M (amd64), cohort
 members and zeros of either sign among them; the comparisons, which now
 share `ubdWordOrder`, are unchanged in size (`<` 54, `==` 38) and speed.
+
+## Dedicated kernel entries for level 4, evaluated and not made
+
+Level 4 settles at the call site nearly every pair the kernel entries'
+first tests look for, so what reaches them is mostly two-word
+coefficients, which pass those tests after one predictable branch each:
+
+| entry | first tests that level 4 shadows | not shadowed |
+|---|---|---|
+| `ubdAddTTE128`, `ubdSubTTE128` | the word path (`ubdAddWordTTE`); subtract tries it before calling the add entry | word pairs past 19 places or with a sum from 2^112 to 10^34 − 1 |
+| `ubdMulTTE128` | none: `ubdMulShort128` also takes small two-word factors | |
+| `ubdQuantizeTTE128`, `ubdQuantizeRnd128` | the same-exponent test, the word path | words past 19 places |
+| `ubdRoundToIntegralTTE128`, `Rnd128` | the word path | |
+| the predicates | the word test (`ubdCmpWord`) | words past 19 places |
+| `ubdEqual128` | the word test | the identical-encoding test, which two-word operands reach |
+
+Upper bound, measured by deleting the shadowed tests in a scratch build
+(BenchmarkUBDKernel, two-word rows: w25 22–25 digits, q34 34-digit
+quotients; d34 rows are bimodal from run to run):
+
+| row | change |
+|---|---|
+| Add, Sub | −2% to −9% |
+| running totals (AddChain, SubChain) | −4% to −22% |
+| Quantize, QuantizeTZ, RoundToIntegral | −2% to −12% |
+| Less, Compare | within noise |
+| Equal | +11% to +34% on w25 and d34 (the identical-encoding test answers pairs that are one pattern), −18% on q34 |
+
+Where that traffic is in the apps it is not where their time goes. At
+level 4, banking's kernel calls are mostly two-word (add 1,768, sub
+2,380, integral rounding 4,040 a run), but its compute loop reopens and
+reads its input files on every pass: in a level-4 profile 92% of the
+samples are `os.ReadFile`/`os.Open`, and decimal work a few percent,
+which is why banking moves by about 1% at most at every level. Risk's
+2,380 two-word quantizes a run gain at most about 0.4 ns each.
+
+So no dedicated entries: a second set of entries to keep in step with
+the first, for 0.1–0.6 ns on calls that are a negligible share of app
+time. If one were made, subtract is the case: a level-4 subtract entry
+could call the add entry with y's sign flipped at once (−5 to −9% on
+two-word rows).
