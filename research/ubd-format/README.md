@@ -422,3 +422,59 @@ by 2 KB:
 | `appendDecimalRest` | | 600 |
 | `PutShort128` | 124 | 124 |
 | `PutLong128` → `putLong128` | 456 | 480 |
+
+## Parsing
+
+Punch list 2 named parsing with formatting and allocation as 40–60% of
+the profiles. The apps barely parse: their records are binary BID
+(`FromBID128`), and `ParseDecimal` is reached only through the app
+library's `MustParse`, for constants at setup (banking also parses two
+constants in its penalty computation). Parse calls in one normal run
+(a temporary counter in strconv, since removed):
+
+| app | calls | 9 bytes or fewer |
+|---|---|---|
+| banking | 138 | 138 |
+| tax fed / nc / ca | 32 / 32 / 26 | all |
+| euro | 29 | 29 |
+| risk | 7 | all (1 to 6 bytes) |
+| telco | 5 | all |
+
+Every one takes the kernel's short path (`UBDParse128`, and BID's
+`parse128` alike): an optional sign and a body of at most eight bytes,
+loaded into one word, range-checked to '.'..'9' with two subtractions,
+the point found by a zero-byte test and squeezed out, the eight digits
+checked and converted in the register, and the fields packed as they
+are, exact, with no rounding. Parsing cannot move an app's time; the
+profiles' share was formatting and allocation.
+
+`ParseDecimal` against `ParseFloat` (M3 Pro, funcalign=4096, ns per
+call, median of 7):
+
+| input | example | decimal128 | decimal64 | float64 | d128 / f64 |
+|---|---|---|---|---|---|
+| integer below 1000 | 427 | 9.0 | 11.6 | 15.3 | 0.59 |
+| money, 8 bytes | 12345.67 | 8.8 | 11.2 | 21.2 | 0.42 |
+| negative money | -1234.56 | 8.1 | 10.7 | 19.5 | 0.41 |
+| money, 9 bytes | 123456.78 | 22.1 | 22.9 | 22.2 | 1.00 |
+| money, 11 bytes | 12345678.90 | 20.4 | 20.3 | 24.7 | 0.83 |
+| 16 digits | 1234567890.123456 | 25.5 | 25.4 | 35.2 | 0.72 |
+| 19 digits | 0.1234567890123456789 | 25.2 | 33.6 | 37.9 | 0.67 |
+| 34 digits | 1.(33 digits) | 26.6 | 35.4 | 59.4 | 0.45 |
+| exponent | 1.2345e-7 | 24.7 | 25.6 | 25.9 | 0.96 |
+
+- Decimal is at par with or faster than float64 everywhere, more so with
+  more digits (no change of base).
+- Past the short path the cost is flat, 20–27 ns at any length: a fixed
+  overhead of `scanDecimal` and the rounding routine of about 20 ns.
+  Money of 10^5 or more with cents (nine bytes) pays all of it, 2.5×
+  the cost of an eight-byte amount.
+- decimal64 short inputs cost about 2.5 ns more: parsed as BID64, then
+  widened into decimal128's words.
+
+Not done: a second word in the short path (to sixteen bytes) would bring
+nine- to sixteen-byte numerals from about 21 ns to perhaps 10–12, an
+estimate. It would show in no app, only in text input (JSON, CSV,
+databases), and it means changing both kernel copies of the short path
+(BID and UBD). Left as an option if text-input speed becomes part of the
+argument.
