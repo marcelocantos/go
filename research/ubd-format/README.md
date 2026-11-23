@@ -383,3 +383,42 @@ this session than the last, both builds alike.) No other app formats
 values with five places or more.
 
 arm64 instructions: `formatDecimal` 96 → 100, `appendDecimal` 200 → 204.
+
+## All apps: the branch against the original formatting
+
+The original is `src/strconv` and `src/internal/bid` as at c7abd819af
+(before this branch's formatting work); the branch is 9d2edbb746. Same
+compiler, level 2, funcalign=64, 11 rounds interleaved, outputs equal in
+every app:
+
+| app | original best (ns/record) | now best | change (best) | change (median) | separated |
+|---|---|---|---|---|---|
+| euro | 860.8 | 738.4 | −14.2% | −14.8% | yes |
+| telco | 27.5 | 24.9 | −9.3% | −8.7% | yes |
+| tax nc | 730.6 | 690.0 | −5.6% | −4.7% | yes |
+| risk | 5810.4 | 5700.0 | −1.9% | −1.8% | yes |
+| tax fed | 2298.1 | 2263.8 | −1.5% | −1.7% | no |
+| tax ca | 480.5 | 476.2 | −0.9% | −1.9% | no |
+| banking | 639.1 | 631.3 | −1.2% | −0.6% | no |
+
+"Separated": every run of one build faster than every run of the other.
+
+Risk formats nothing, so its −1.9% is code placement: differences of
+about 2% or less here are noise, which covers tax fed, tax ca and
+banking. Euro (mostly the long values in the fixed form), telco and tax
+nc (the short string formed in its own bytes) are well clear of it.
+
+arm64 instructions of the formatting code, 1,356 → 1,764 (+408), all in
+functions called out of line, none at call sites; each app's text grows
+by 2 KB:
+
+| function | original | now |
+|---|---|---|
+| `FormatDecimal` | 64 | 48 |
+| `formatDecimal` | (inlined) | 100 |
+| `shortString` | | 124 |
+| `ShortForm128` | | 84 |
+| `appendDecimal` | 712 | 204 |
+| `appendDecimalRest` | | 600 |
+| `PutShort128` | 124 | 124 |
+| `PutLong128` → `putLong128` | 456 | 480 |
