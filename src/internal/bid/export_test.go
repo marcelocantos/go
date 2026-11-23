@@ -309,6 +309,10 @@ var (
 	UBDKernelLess  = ubdLess128
 	UBDKernelEqual = ubdEqual128
 	UBDKernelCmp   = ubdCompare128
+	UBDKernelMin   = ubdMin128
+	UBDKernelMax   = ubdMax128
+	UBDKernelRTI   = ubdRoundToIntegralTTE128
+	UBDKernelInt64 = ubdInt64From128
 
 	BIDKernelAdd = addSlow128
 	BIDKernelSub = subSlow128
@@ -316,4 +320,10 @@ var (
 	BIDKernelDiv = div128
 	BIDKernelQnt = quantizeSlow128
 	BIDKernelCmp = quietCmpSlow128
+	BIDKernelMin = Min128
+	BIDKernelMax = Max128
+	BIDKernelRTI = roundToIntegral128
+	// The XOR-BID compiler converts to int64 through Int64From128 with
+	// TowardZero, which also returns a status.
+	BIDKernelInt64 = Int64From128
 )

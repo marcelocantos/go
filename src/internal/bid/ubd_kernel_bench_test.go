@@ -137,6 +137,31 @@ func BenchmarkUBDKernel(b *testing.B) {
 		b.Run("Div/"+cl.name+"/bid", func(b *testing.B) { bidBench2(b, ps, BIDKernelDiv) })
 		b.Run("Quantize/"+cl.name+"/ubd", func(b *testing.B) { ubdBench2(b, ps, UBDKernelQnt) })
 		b.Run("Quantize/"+cl.name+"/bid", func(b *testing.B) { bidBench2(b, ps, BIDKernelQnt) })
+		b.Run("Min/"+cl.name+"/ubd", func(b *testing.B) { ubdBench2(b, ps, UBDKernelMin) })
+		b.Run("Min/"+cl.name+"/bid", func(b *testing.B) {
+			bidBench2(b, ps, func(x, y Uint128, _ Mode) Uint128 { return BIDKernelMin(x, y) })
+		})
+		b.Run("RoundToIntegral/"+cl.name+"/ubd", func(b *testing.B) {
+			ubdBench2(b, ps, func(x, _ UBD128) UBD128 { return UBDKernelRTI(x) })
+		})
+		b.Run("RoundToIntegral/"+cl.name+"/bid", func(b *testing.B) {
+			bidBench2(b, ps, func(x, _ Uint128, m Mode) Uint128 { return BIDKernelRTI(x, m) })
+		})
+		b.Run("Int64/"+cl.name+"/ubd", func(b *testing.B) {
+			n := int64(0)
+			for i := 0; i < b.N; i++ {
+				n += UBDKernelInt64(ps[i&(ubdBenchN-1)].ux)
+			}
+			ubdSinkI = int(n)
+		})
+		b.Run("Int64/"+cl.name+"/bid", func(b *testing.B) {
+			n := int64(0)
+			for i := 0; i < b.N; i++ {
+				v, _ := BIDKernelInt64(ps[i&(ubdBenchN-1)].bx, TowardZero)
+				n += v
+			}
+			ubdSinkI = int(n)
+		})
 		b.Run("Less/"+cl.name+"/ubd", func(b *testing.B) {
 			n := 0
 			for i := 0; i < b.N; i++ {
@@ -196,6 +221,12 @@ func TestUBDKernelBenchAgrees(t *testing.T) {
 			check("Mul", UBDKernelMul(p.ux, p.uy), BIDKernelMul(p.bx, p.by, ToNearestEven))
 			check("Div", UBDKernelDiv(p.ux, p.uy), BIDKernelDiv(p.bx, p.by, ToNearestEven))
 			check("Quantize", UBDKernelQnt(p.ux, p.uy), BIDKernelQnt(p.bx, p.by, ToNearestEven))
+			check("Min", UBDKernelMin(p.ux, p.uy), BIDKernelMin(p.bx, p.by))
+			check("Max", UBDKernelMax(p.ux, p.uy), BIDKernelMax(p.bx, p.by))
+			check("RoundToIntegral", UBDKernelRTI(p.ux), BIDKernelRTI(p.bx, ToNearestEven))
+			if got, _ := BIDKernelInt64(p.bx, TowardZero); UBDKernelInt64(p.ux) != got {
+				t.Fatalf("Int64/%s pair %d: ubd %d, bid %d", cl.name, i, UBDKernelInt64(p.ux), got)
+			}
 			uc, uok := UBDKernelCmp(p.ux, p.uy)
 			bc, bok := BIDKernelCmp(p.bx, p.by)
 			if uc != bc || uok != bok {
@@ -275,6 +306,25 @@ func TestUBDCmpWordAgrees(t *testing.T) {
 		}
 		if got, want := UBDKernelEqual(ux, uy), wok && wc == 0; got != want {
 			t.Fatalf("equal %#x %#x: got %v, want %v", bx, by, got, want)
+		}
+	}
+}
+
+// TestUBDInt64WordAgrees checks the int64 conversion entry on word
+// operands, with fractions of up to 19 digits and integers of either sign,
+// against Int64From128 with TowardZero.
+func TestUBDInt64WordAgrees(t *testing.T) {
+	r := rand.New(rand.NewPCG(19, 23))
+	for i := 0; i < 2000000; i++ {
+		c := r.Uint64() >> uint(r.IntN(64))
+		if r.IntN(8) == 0 {
+			c = ^uint64(0) - uint64(r.IntN(3))
+		}
+		e := r.IntN(26) - 22
+		bx, ux := ubdBenchVal(r.IntN(2) == 0, Uint128{Lo: c}, e)
+		want, _ := BIDKernelInt64(bx, TowardZero)
+		if got := UBDKernelInt64(ux); got != want {
+			t.Fatalf("int64(%#x): got %d, want %d", bx, got, want)
 		}
 	}
 }
