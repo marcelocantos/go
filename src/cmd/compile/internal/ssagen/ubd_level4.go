@@ -303,49 +303,54 @@ func (s *state) ubdCmpWord4(op ir.Op, xh, yh, xl, yl *ssa.Value) *ssa.Value {
 	a, b := sel(yl, xl, yIsA), sel(xl, yl, yIsA)
 	prod := s.newValue2(ssaop.OpMul64uhilo, tup, a, power)
 	phi, plo := s.newValue1(ssaop.OpSelect0, u64, prod), s.newValue1(ssaop.OpSelect1, u64, prod)
-	borrow := func(xh, xl, yh, yl *ssa.Value) *ssa.Value { // (xh, xl) < (yh, yl)
+	// borrow is 1 when (xh, xl) < (yh, yl), else 0. The orders are kept
+	// as 0 or 1 in a word and chosen by CondSelect on words, which both
+	// targets lower to a conditional select; a bool is formed once, at
+	// the end (a CondSelect of bools has no lowering on amd64).
+	borrow := func(xh, xl, yh, yl *ssa.Value) *ssa.Value {
 		d := s.newValue3(ssaop.OpSub64borrow, tup, xl, yl, zero)
 		d = s.newValue3(ssaop.OpSub64borrow, tup, xh, yh, s.newValue1(ssaop.OpSelect1, u64, d))
-		return s.newValue2(ssaop.OpNeq64, boolT, s.newValue1(ssaop.OpSelect1, u64, d), zero)
+		return s.newValue1(ssaop.OpSelect1, u64, d)
 	}
 	negX := s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, xh, c(bid.UBDSignHi)), zero)
 	signsDiffer := s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, xor(xh, yh), c(bid.UBDSignHi)), zero)
-	bothZero := s.newValue2(ssaop.OpEq64, boolT, or(xl, yl), zero)
-	// x before y in magnitude order, adjusted for the sign: with one sign,
-	// x < y is |x| < |y| for a positive sign and |y| < |x| for a negative
-	// one, and |x| < |y| is P < b when x is a, P > b when y is.
+	notBothZero := s.newValue2(ssaop.OpNeq64, boolT, or(xl, yl), zero)
+	// x before y, 1 or 0, adjusted for the sign: with one sign, x < y is
+	// |x| < |y| for a positive sign and |y| < |x| for a negative one, and
+	// |x| < |y| is P < b when x is a, P > b when y is.
 	less := func(xFirst bool) *ssa.Value { // x < y, or y < x when !xFirst
 		pLess, pMore := borrow(phi, plo, zero, b), borrow(zero, b, phi, plo)
 		flip := s.newValue2(ssaop.OpNeqB, boolT, yIsA, negX)
 		if !xFirst {
 			flip = notB(flip)
 		}
-		same := s.newValue3(ssaop.OpCondSelect, boolT, pMore, pLess, flip)
+		same := sel(pMore, pLess, flip)
 		// Signs that differ: the negative one is less, unless both are 0.
 		first := negX
 		if !xFirst {
 			first = notB(negX)
 		}
-		diff := s.newValue2(ssaop.OpAndB, boolT, first, notB(bothZero))
-		return s.newValue3(ssaop.OpCondSelect, boolT, diff, same, signsDiffer)
+		diff := sel(s.newValue1(ssaop.OpZeroExt8to64, u64, s.newValue1(ssaop.OpCvtBoolToUint8, types.Types[types.TUINT8],
+			s.newValue2(ssaop.OpAndB, boolT, first, notBothZero))), same, signsDiffer)
+		return diff
 	}
 	var res *ssa.Value
 	switch op {
 	case ir.OEQ, ir.ONE:
 		// Equal: one sign and P == b, or both zero.
 		eqMag := s.newValue2(ssaop.OpEq64, boolT, or(phi, xor(plo, b)), zero)
-		res = s.newValue2(ssaop.OpOrB, boolT, s.newValue2(ssaop.OpAndB, boolT, notB(signsDiffer), eqMag), bothZero)
+		res = s.newValue2(ssaop.OpOrB, boolT, s.newValue2(ssaop.OpAndB, boolT, notB(signsDiffer), eqMag), notB(notBothZero))
 		if op == ir.ONE {
 			res = notB(res)
 		}
 	case ir.OLT:
-		res = less(true)
+		res = s.newValue2(ssaop.OpNeq64, boolT, less(true), zero)
 	case ir.OGT:
-		res = less(false)
+		res = s.newValue2(ssaop.OpNeq64, boolT, less(false), zero)
 	case ir.OLE:
-		res = notB(less(false))
+		res = s.newValue2(ssaop.OpEq64, boolT, less(false), zero)
 	case ir.OGE:
-		res = notB(less(true))
+		res = s.newValue2(ssaop.OpEq64, boolT, less(true), zero)
 	default:
 		s.Fatalf("ubdCmpWord4: %v", op)
 	}

@@ -207,3 +207,39 @@ roundings, quantize in eight forms) and on the 43 edge values.
 
 Apps, best of 7, against step 3: −1.0% (euro) to +1.4% (tax ca);
 against level 3: −0.9% to +2.1%, medians −0.9% to +1.4%.
+
+### Fix: comparisons crashed the compiler on amd64
+
+Step 3's comparison selected between bools with CondSelect, which arm64
+lowers and amd64 does not ("not lowered: CondSelect BOOL"); the
+differential test had run on arm64 only. The orders are now kept as 0 or
+1 in a word (the borrows already are) and chosen by CondSelect on words,
+with one bool formed at the end. That is also faster than the arm64
+version it replaces: `<` at exponents 2 apart 2.54 ns (was 2.60; level 3
+2.58), and 54 instructions on arm64 (was 56). The differential tests now
+run for amd64 too (under Rosetta): levels 1 and 4 agree on 3M pairs of
+all five operations and on the rounding test.
+
+## Call-site instructions, arm64 (2026-11-23, after step 4)
+
+| op | L2 | L3 | L4 |
+|---|---|---|---|
+| `x + y` | 8 | 80 | 86 |
+| `x - y` | 14 | 88 | 80 |
+| `x * y` | 20 | 20 | 33 |
+| `x / y` | 3 | 3 | 21 |
+| `x == y` | 7 | 64 | 38 |
+| `x != y` | 8 | 67 | 39 |
+| `x < y` | 10 | 77 | 54 |
+| `x <= y` | 10 | 78 | 57 |
+| `x == 0` | 4 | 4 | 4 |
+| `x > 0` | 10 | 10 | 10 |
+| `Quantize(x, y)` | 30 | 44 | 30 |
+| `Quantize(x, 0.01)` | 29 | 42 | 29 |
+| `QuantizeMode(x, y, ToZero)` | 22 | 36 | 22 |
+| `QuantizeMode`, variable mode | 55 | 68 | 55 |
+| `Round` | 7 | 22 | 22 |
+| `Trunc` | 7 | 15 | 15 |
+| `RoundToEven` | 6 | 24 | 24 |
+| `int64(x)` | 12 | 12 | 12 |
+| `uint64(x)` | 4 | 4 | 4 |
