@@ -647,6 +647,16 @@ func ubdRoundToIntegralTTE128(x UBD128) UBD128 {
 		if r, ok := ubdQuantizeWord(x, UBD128{Lo: 1}, ToNearestEven); ok {
 			return r
 		}
+	} else if x.Hi>>60 != UBDSpecialTag {
+		// Wider than a word, finite: the same, by ubdQuantizeWideTTE, one
+		// call where ubdRoundToIntegral128 made two (a 30- to 34-digit
+		// quotient: 6.51 ns against 4.51, BID's roundToIntegral128 6.18).
+		if int64(x.Hi) >= 0 {
+			return x
+		}
+		if r, ok := ubdQuantizeWideTTE(x, UBD128{Lo: 1}); ok {
+			return r
+		}
 	}
 	return ubdRoundToIntegral128(x, ToNearestEven)
 }

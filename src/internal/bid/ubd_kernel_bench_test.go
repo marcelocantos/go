@@ -478,3 +478,18 @@ func TestUBDDivAgrees(t *testing.T) {
 		}
 	}
 }
+
+// TestUBDRoundToIntegralWideAgrees checks the ties-to-even round-to-
+// integral entry on operands wider than a word against the BID kernel:
+// coefficients of 20 to 34 digits at exponents from -60 to 10, so that the
+// result rounds, is the operand, or is zero.
+func TestUBDRoundToIntegralWideAgrees(t *testing.T) {
+	r := rand.New(rand.NewPCG(61, 67))
+	for i := 0; i < 1000000; i++ {
+		bx, ux := ubdBenchVal(r.IntN(2) == 0, ubdBenchDigits(r, 20, 34), r.IntN(71)-60)
+		got := UBDKernelRTI(ux)
+		if g, want := BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}), BIDKernelRTI(bx, ToNearestEven); g != want {
+			t.Fatalf("roundToIntegral(%#x): got %#x, want %#x", bx, g, want)
+		}
+	}
+}
