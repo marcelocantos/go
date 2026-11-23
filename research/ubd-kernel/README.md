@@ -263,3 +263,42 @@ which telco's truncated taxes call (9% of its level-1 profile): word rows
 - Formatting (`PutShort128`, `writeWordDigits`, `PutLong128`) is 6–8% of
   the tax and telco profiles at every level and has frames for bounds
   checks; it is not a compiler-called entry, so outside this step.
+
+## What level 2 sends the kernel (2026-11-23)
+
+Counted by pointing the compiler's kernel symbols at counting wrappers
+(a scratch toolchain; only calls the compiler emits are counted), each
+app run once at level 2. Calls by operand class:
+
+| app | dominant kernel traffic at level 2 |
+|---|---|
+| telco | quantize only: 2.0M ties-to-even and 3.0M toward-zero, every one a one-word x made coarser by 2, 3 or 4 digits; 6 adds |
+| risk | add/sub same exponent, mixed sign (1.9k + 2.5k); add/sub exponents 1–19 apart (2.7k); div word (2.6k); quantize coarser by 4 (4.8k) and two-word x (2.4k) |
+| banking | add/sub exponents 1–19 apart (9.7k) and two-word (4.1k); div (7k, 60% two-word); `<` exponents apart (3.5k); round-to-integral (≈10k, 60% two-word fraction) |
+| euro | add/sub/`<` exponents apart; div; round-to-integral of fractions |
+| tax fed, ca, nc | tens of calls: add/sub/`<` exponents apart |
+
+Pairs with exponents more than 19 apart: none. Quantize already at the
+target exponent: 22 of risk's 12k, none elsewhere. Round-to-integral of
+an integer (exponent ≥ 0): 3–7% of those calls. int64(x): every call an
+integer at exponent 0, at most 200 a run.
+
+### The trivial first paths at the call site (b24b53112a)
+
+Level 2 tests three kernel first paths before the call: int64/uint64 of
+an integer at exponent 0, round-to-integral of a finite x at exponent
+≥ 0, and quantize of a one-word x already at y's exponent. Level 1 and
+level 2 agree on every pair of 43 edge values. Apps at level 2, best of
+7 against ubd-kernel-tune: all within ±1.6% (telco +1.6%, risk +1.4%,
+the rest ±0.5%; medians −1.6% to +1.8%): no measurable effect, as the
+counts predict. Kept at the user's direction for quantize.
+
+### Specialized level-2 entries, not made
+
+The inline paths settle same-exponent, same-sign word pairs, so a level-2
+add entry could skip the leaf's first test. Upper bound, measured by
+deleting that test: −2% on single different-exponent word adds and
+subtracts (about 0.05 ns), which is below what the apps can show.
+`ubdCmpWord` is branch-free, so there is no test to remove there; Equal's
+identical-encoding test is redundant at level 2, but Equal is at most 40
+calls a run in these apps.
