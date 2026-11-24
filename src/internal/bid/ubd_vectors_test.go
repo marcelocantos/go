@@ -134,3 +134,26 @@ func ubdTotal(im impl, f *format) bool {
 	_, ok := im.(ubdKernel)
 	return ok && !w64(f)
 }
+
+// The predicates of IEEE 754-2019 clause 5.7.2, on the UBD pattern. isNormal
+// and class are composed from these by the runner. isCanonical stays the
+// kernel's: UBD has no non-canonical patterns, so UBDIsCanonical128 is
+// true where the vectors test a BID encoding's canonicality.
+func (k ubdKernel) isFinite(f *format, x bits) bool {
+	if w64(f) {
+		return k.kernel.isFinite(f, x)
+	}
+	return bid.UBDIsFinite128(ubdWord(x))
+}
+func (k ubdKernel) isZero(f *format, x bits) bool {
+	if w64(f) {
+		return k.kernel.isZero(f, x)
+	}
+	return bid.UBDIsZero128(ubdWord(x))
+}
+func (k ubdKernel) isSubnormal(f *format, x bits) bool {
+	if w64(f) {
+		return k.kernel.isSubnormal(f, x)
+	}
+	return bid.UBDIsSubnormal128(ubdWord(x))
+}
