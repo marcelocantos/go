@@ -115,3 +115,62 @@ func TestIEEE754ClassString(t *testing.T) {
 		}
 	}
 }
+
+// TestIsCanonicalEncoding128 checks IsCanonicalBID128 and IsCanonicalDPD128
+// on canonical and non-canonical encodings of each kind (IEEE 754-2019
+// clause 3.5.2), each in its own encoding.
+func TestIsCanonicalEncoding128(t *testing.T) {
+	type enc struct {
+		name   string
+		hi, lo uint64
+		want   bool
+	}
+	bits := func(f func(decimal128) (uint64, uint64), x decimal128) (uint64, uint64) { return f(x) }
+	oneHi, oneLo := bits(decimal.BID128bits, 1)
+	nanHi, nanLo := bits(decimal.BID128bits, decimal.NaNWithPayload(decimal128(42)))
+	infHi, _ := bits(decimal.BID128bits, decimal.Inf[decimal128](1))
+	const (
+		p33Hi, p33Lo = 0x0000314dc6448d93, 0x38c15b0a00000000 // 10^33
+		p34Hi, p34Lo = 0x0001ed09bead87c0, 0x378d8e6400000000 // 10^34
+	)
+	for _, tt := range []enc{
+		{"one", oneHi, oneLo, true},
+		{"NaN payload 42", nanHi, nanLo, true},
+		{"infinity", infHi, 0, true},
+		{"infinity, trailing field set", infHi, 1, false},
+		{"infinity, G5 set", infHi | 1<<57, 0, false},
+		{"NaN, G6 set", nanHi | 1<<56, nanLo, false},
+		{"NaN payload 10^33 - 1", 0x7c00000000000000 | p33Hi, p33Lo - 1, true},
+		{"NaN payload 10^33", 0x7c00000000000000 | p33Hi, p33Lo, false},
+		{"significand 10^34 - 1", 0x3040000000000000 | p34Hi, p34Lo - 1, true},
+		{"significand 10^34", 0x3040000000000000 | p34Hi, p34Lo, false},
+		{"second form", 0x6000000000000000, 7, false},
+	} {
+		if got := decimal.IsCanonicalBID128(tt.hi, tt.lo); got != tt.want {
+			t.Errorf("BID %s: IsCanonicalBID128(%#x, %#x) = %v, want %v", tt.name, tt.hi, tt.lo, got, tt.want)
+		}
+	}
+
+	oneHi, oneLo = bits(decimal.DPD128bits, 1)
+	nanHi, nanLo = bits(decimal.DPD128bits, decimal.NaNWithPayload(decimal128(42)))
+	infHi, _ = bits(decimal.DPD128bits, decimal.Inf[decimal128](1))
+	maxHi, maxLo := bits(decimal.DPD128bits, decimal.MaxDecimal128)
+	for _, tt := range []enc{
+		{"one", oneHi, oneLo, true},
+		{"max", maxHi, maxLo, true},
+		{"NaN payload 42", nanHi, nanLo, true},
+		{"infinity", infHi, 0, true},
+		{"infinity, trailing field set", infHi, 1, false},
+		{"infinity, G5 set", infHi | 1<<57, 0, false},
+		{"NaN, G6 set", nanHi | 1<<56, nanLo, false},
+		{"declet 0x06e (canonical 00x11x111x)", oneHi, oneLo&^0x3ff | 0x06e, true},
+		{"declet 0x16e (01x11x111x)", oneHi, oneLo&^0x3ff | 0x16e, false},
+		{"declet 0x26e (10x11x111x)", oneHi, oneLo&^0x3ff | 0x26e, false},
+		{"declet 0x3ff (11x11x111x), the top one", oneHi | 0x3ff<<36, oneLo, false},
+		{"NaN payload declet 0x16e", nanHi, nanLo&^0x3ff | 0x16e, false},
+	} {
+		if got := decimal.IsCanonicalDPD128(tt.hi, tt.lo); got != tt.want {
+			t.Errorf("DPD %s: IsCanonicalDPD128(%#x, %#x) = %v, want %v", tt.name, tt.hi, tt.lo, got, tt.want)
+		}
+	}
+}

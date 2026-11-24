@@ -139,3 +139,5 @@ pkg math/decimal, func IsSubnormal[$0 Decimal]($0) bool #19787
 pkg math/decimal, func IsZero[$0 Decimal]($0) bool #19787
 pkg math/decimal, method (IEEE754Class) String() string #19787
 pkg math/decimal, type IEEE754Class int #19787
+pkg math/decimal, func IsCanonicalBID128(uint64, uint64) bool #19787
+pkg math/decimal, func IsCanonicalDPD128(uint64, uint64) bool #19787

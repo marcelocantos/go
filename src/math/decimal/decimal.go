@@ -194,7 +194,8 @@ func IsSubnormal[D Decimal](x D) bool { return impl.IsSubnormal[D](x) }
 // decimal64, or a decimal128 on ppc64le, is not canonical when it was made
 // from a non-canonical encoding by [BID64frombits], [BID128frombits],
 // [Native64frombits] or [Native128frombits], or copies one through a sign
-// operation.
+// operation. [IsCanonicalBID128] and [IsCanonicalDPD128] tell whether a
+// decimal128 encoding is canonical before it is converted.
 func IsCanonical[D Decimal](x D) bool { return impl.IsCanonical[D](x) }
 
 // An IEEE754Class is one of the ten classes of IEEE 754-2019 clause 5.7.2

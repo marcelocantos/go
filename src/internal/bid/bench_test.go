@@ -653,6 +653,7 @@ func benchRowList() benchRows {
 	rs.add("DPDFromBID", "128", "mixed", "DPDFromBID128", func(b *testing.B) { loop1(b, mixed.x128, bid.DPDFromBID128) })
 	rs.add("BIDFromDPD", "64", "mixed", "BIDFromDPD64", func(b *testing.B) { loop1(b, mixed.x64, bid.BIDFromDPD64) })
 	rs.add("BIDFromDPD", "128", "mixed", "BIDFromDPD128", func(b *testing.B) { loop1(b, mixed.x128, bid.BIDFromDPD128) })
+	rs.add("IsCanonicalDPD", "128", "mixed", "IsCanonicalDPD128", func(b *testing.B) { loop1(b, mixed.x128, bid.IsCanonicalDPD128) })
 	rs.add("ToNative", "64", "mixed", "ToNative64", func(b *testing.B) { loop1(b, mixed.x64, bid.ToNative64) })
 	rs.add("ToNative", "128", "mixed", "ToNative128", func(b *testing.B) { loop1(b, mixed.x128, bid.ToNative128) })
 	rs.add("FromNative", "64", "mixed", "FromNative64", func(b *testing.B) { loop1(b, mixed.x64, bid.FromNative64) })
