@@ -29,17 +29,17 @@ package bid_test
 // With a variable unset the corresponding part of TestPublishedVectors
 // skips, so this file does nothing in all.bash or in CI.
 //
-// # Licence of each set, and why the sets stay out of tree
+// # License of each set, and why the sets stay out of tree
 //
 // IBM decTest. Every *.decTest file begins with the notice "Copyright (c)
 // IBM Corporation, 1981, 2008. All rights reserved." (the years vary by
 // file). The header adds that the cases are experimental, offered as-is
 // and may contain errors, and asks readers to send corrections to the
-// author; it grants no licence to copy, modify or redistribute the files.
+// author; it grants no license to copy, modify or redistribute the files.
 // Source: the header comment (first twenty lines) of each file, as shipped
 // in version 2.59 of the test cases, for example ddAdd.decTest. "All
 // rights reserved" with no grant means the files cannot be committed to
-// this repository, which must contain only material under the Go licence
+// this repository, which must contain only material under the Go license
 // or a compatible grant.
 //
 // Intel readtest.in. The Intel Decimal Floating-Point Math Library
@@ -47,7 +47,7 @@ package bid_test
 // release IntelRDFPMathLib20U2 (version 2.0 update 2), downloaded from
 // https://netlib.org/misc/intel/IntelRDFPMathLib20U2.tar.gz, whose sha256
 // is 93c0c78e0989df88f8540bf38d6743734804cef1e40706fd8fe5c6a03f79e173.
-// The licence is the file eula.txt at the top of that release, which
+// The license is the file eula.txt at the top of that release, which
 // begins
 //
 //	Copyright (c) 2018, Intel Corp.
@@ -64,9 +64,9 @@ package bid_test
 // Corporation and the names of its contributors may not be used to endorse
 // or promote products derived from the software without specific prior
 // written permission. A disclaimer of warranties and of liability follows.
-// That is the three-clause BSD licence. readtest.in itself carries no
+// That is the three-clause BSD license. readtest.in itself carries no
 // notice; the one in eula.txt covers the release. Even so permissive a
-// licence obliges the tree to carry Intel's notice with a copy of the
+// license obliges the tree to carry Intel's notice with a copy of the
 // file, and readtest.in is 127,118 lines (9.6 MB) of generated data, which
 // is not wanted in the Go repository.
 //
@@ -80,7 +80,7 @@ package bid_test
 // gives the Wayback Machine snapshots it was taken from. The second line of
 // each decimal file is "Copyright of IBM Corp. 2007" (2005 for the binary
 // files), and neither the files, the archive nor the download page grants a
-// licence, so the files cannot be committed here, for the reason that
+// license, so the files cannot be committed here, for the reason that
 // applies to decTest.
 //
 // Cairo University. The decimal128 verification vectors of Amr
@@ -95,15 +95,15 @@ package bid_test
 // Sayed-Ahmed, "Verification of Decimal Floating-Point Operations", MSc
 // thesis (supervisor Hossam A. H. Fahmy), Faculty of Engineering, Cairo
 // University, 2011,
-// http://www.eece.cu.edu.eg/~hfahmy/thesis/2011_06_vdfp.pdf. The page grants
-// use, not redistribution, and the six decimal128 sets are 110 files of
-// about 1 GB.
+// http://www.eece.cu.edu.eg/~hfahmy/thesis/2011_06_vdfp.pdf. Use for any
+// purpose covers redistribution, but the six decimal128 sets are 110 files
+// of about 1 GB.
 //
 // So the four sets stay out of tree: decTest and FPgen because nothing
-// licenses their redistribution, Cairo because its grant is one of use and
-// not of redistribution, and Intel readtest.in because its notice would have
-// to travel with a very large generated file (the Cairo files are larger
-// still). The runner reads them in place.
+// licenses their redistribution, Cairo because of its size, and Intel
+// readtest.in because its notice would have to travel with a very large
+// generated file (the Cairo files are larger still). The runner reads them
+// in place.
 //
 // # What runs
 //
@@ -3438,7 +3438,7 @@ n012 add Inf -Inf -> NaN Invalid_operation
 // the kernel. The lines have the shapes of the real file, but their values
 // are the trivial ones that any set of decimal vectors starts with (zero,
 // infinities, NaNs, small integers) or ones worked out by hand from the
-// contract, not copied from the file, because the file's licence notice
+// contract, not copied from the file, because the file's license notice
 // must travel with any copy. It needs no vectors.
 func TestIntelLineParser(t *testing.T) {
 	const (
