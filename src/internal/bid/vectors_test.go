@@ -5,10 +5,11 @@
 package bid_test
 
 // This file is a local, throwaway smoke check of the kernel and of the
-// reference model against three published sets of decimal test vectors: the
+// reference model against four published sets of decimal test vectors: the
 // IBM decTest files (General Decimal Arithmetic test cases), the Intel
-// Decimal Floating-Point Math Library's readtest.in, and the decimal files
-// of IBM Haifa's FPgen test suite for IEEE 754R. It is not part of the
+// Decimal Floating-Point Math Library's readtest.in, the decimal files of
+// IBM Haifa's FPgen test suite for IEEE 754R, and Cairo University's
+// decimal128 verification vectors. It is not part of the
 // package's tests and nothing else depends on it: it is one self-contained
 // file, run by the developer, and it is deleted before the CL series is cut
 // (the ratchet that enforces this is target T1.6.2).
@@ -23,6 +24,7 @@ package bid_test
 //	BID_DECTEST_DIR     directory holding the *.decTest files
 //	BID_INTEL_READTEST  directory holding readtest.in, or the file itself
 //	BID_FPGEN_DIR       directory holding the *.fptest files
+//	BID_CAIRO_DIR       directory holding the Cairo *.txt files
 //
 // With a variable unset the corresponding part of TestPublishedVectors
 // skips, so this file does nothing in all.bash or in CI.
@@ -81,10 +83,27 @@ package bid_test
 // licence, so the files cannot be committed here, for the reason that
 // applies to decTest.
 //
-// So the three sets stay out of tree: decTest and FPgen because nothing
-// licenses their redistribution, Intel readtest.in because its notice would
-// have to travel with a very large generated file. The runner reads them in
-// place.
+// Cairo University. The decimal128 verification vectors of Amr
+// Sayed-Ahmed and Hossam A. H. Fahmy, from Fahmy's page
+// http://eece.cu.edu.eg/~hfahmy/arith_debug/ (plain HTTP). That page says
+// the files "are copyrighted to Amr Sayed-Ahmed and Hossam A. H. Fahmy",
+// are "provided as is without any implied warranties", and that "the
+// persons who download the files are free to use them for any purpose under
+// their own responsibilities", and it asks: "We would appreciate if you
+// reference our work and give us credit for it." The vectors and the
+// coverage models they are named after are described in Amr A.-F. R.
+// Sayed-Ahmed, "Verification of Decimal Floating-Point Operations", MSc
+// thesis (supervisor Hossam A. H. Fahmy), Faculty of Engineering, Cairo
+// University, 2011,
+// http://www.eece.cu.edu.eg/~hfahmy/thesis/2011_06_vdfp.pdf. The page grants
+// use, not redistribution, and the six decimal128 sets are 110 files of
+// about 1 GB.
+//
+// So the four sets stay out of tree: decTest and FPgen because nothing
+// licenses their redistribution, Cairo because its grant is one of use and
+// not of redistribution, and Intel readtest.in because its notice would have
+// to travel with a very large generated file (the Cairo files are larger
+// still). The runner reads them in place.
 //
 // # What runs
 //
@@ -309,17 +328,61 @@ package bid_test
 // or a zero divisor raises only invalid or division by zero, which no
 // Status reports, so it passes on the result alone, under a note.
 //
+// Cairo. The files are those of the page's six decimal128 sets
+// (2011_09_d128_add, 2011_10_d128_mul, 2011_09_d128_fma, 2011_04_d128_div,
+// 2011_11_d128_div and 2011_04_d128_sqrt), unpacked into one directory; each
+// file is named after its set and a coverage model, as in
+// 2011_04_d128_div_sticky.txt. They are in FPgen's syntax (the thesis's
+// Appendix A), with no header and no traps field, and run as FPgen's
+// vectors do, with three additions. The rounding code h> is nearest away,
+// FPgen's =^. The operation *+ is the kernel's FMA, a·b + c, and *- is FMA
+// with c negated (by the reference model, and not when c is a NaN, which
+// the files write without a sign), a·b − c. The operation V is the square
+// root, which is not the kernel's: it runs against math/decimal's Sqrt (see
+// the function elementary), which rounds to nearest even, so a square root
+// in another rounding mode is skipped. Flags are checked through Round64
+// and Round128 as for FPgen, with the exact value of a·b ± c at the smaller
+// of the exponents of a·b and c, and that of a square root as its integer
+// root to Precision+3 digits, or, for an exact root, at the floor of half
+// the operand's exponent; the square root of a negative number raises only
+// invalid and passes on its result. In 2011_09_d128_fma_type2.txt 6,325
+// fused multiply-adds have a zero operand (c in 6,144 of them, a in 181)
+// written with an exponent from 6112 to 6879, above the format's maximum of
+// 6111. The thesis's inputs types model asks for a zero "with all possible
+// exponents" and bounds exponents by qmax, which is 6111 for decimal128, so
+// these look like an error in generating the vectors. Their operands are
+// read as convertFromDecimalCharacter reads them (see fpgenDecimal): the
+// nearest exponent in range, 6111. All of them then pass, so the expected
+// results do not depend on the exponents beyond the range.
+//
+// The upstream files have three damaged lines (their md5 sums match the
+// published ones, so the damage is in the source): two in
+// 2011_09_d128_fma_type4.txt overwritten by a run of #, and one in
+// 2011_04_d128_sqrt_type1.txt, a square root with no operand. Read
+// unchanged, two of them are skipped as malformed and the third, which does
+// not begin with an operation, is not a vector.
+//
 // # Running it
 //
 //	BID_DECTEST_DIR=.../decimaltestdata go test -v -run PublishedVectors \
 //	    internal/bid -bid.vectors=reference
 //
-// -bid.vectors selects the implementation under test, kernel (the default)
-// or reference (the math/big model, to validate the model against the
-// published vectors). A kernel function that is not implemented counts as a
-// skip, never as a failure. -bid.vecshow and -bid.vecall control how many
-// failing vectors are printed per file and -bid.vecfiles selects decTest
-// and FPgen files by regular expression. BID_FPGEN_DIR may name the
+// -bid.vectors selects the implementation under test: kernel (the
+// default); reference (the math/big model, to validate the model against
+// the published vectors); ubd (the kernel with its UBD entries for
+// decimal128, see ubd_vectors_test.go); or operators, the path a program
+// takes (see operators_vectors_test.go): BID64frombits or BID128frombits,
+// Go's operators or math/decimal's FMA, then BID64bits or BID128bits. The
+// operators round to nearest even only, and on a UBD target they are
+// compiled at a ubdlevel, which the run reads from the test binary and puts
+// in its output; run them at each level with
+//
+//	go test -gcflags=all=-d=ubdlevel=N -run PublishedVectors internal/bid -bid.vectors=operators
+//
+// for N of 1, 2 and 3. A kernel function that is not implemented counts as
+// a skip, never as a failure. -bid.vecshow and -bid.vecall control how many
+// failing vectors are printed per file and -bid.vecfiles selects decTest,
+// FPgen and Cairo files by regular expression. BID_FPGEN_DIR may name the
 // directory the whole archive was unpacked into; its binary files then
 // contribute only skips.
 
@@ -347,13 +410,14 @@ const (
 	envDecTestDir = "BID_DECTEST_DIR"
 	envIntel      = "BID_INTEL_READTEST"
 	envFPgen      = "BID_FPGEN_DIR"
+	envCairo      = "BID_CAIRO_DIR"
 )
 
 var (
-	vecTarget = flag.String("bid.vectors", "kernel", "implementation the published vectors run against: kernel, reference, or ubd (the kernel with the UBD entries for decimal128)")
+	vecTarget = flag.String("bid.vectors", "kernel", "implementation the published vectors run against: kernel, reference, ubd (the kernel with the UBD entries for decimal128), or operators (add, subtract, multiply, divide and FMA through Go's operators and math/decimal, at ties to even; built with GOEXPERIMENT=decimal)")
 	vecShow   = flag.Int("bid.vecshow", 20, "print at most this many failing vectors per file")
 	vecAll    = flag.Bool("bid.vecall", false, "print every failing vector")
-	vecFiles  = flag.String("bid.vecfiles", "", "run only the decTest and FPgen files whose names match this regular expression")
+	vecFiles  = flag.String("bid.vecfiles", "", "run only the decTest, FPgen and Cairo files whose names match this regular expression")
 )
 
 // vecRef is the reference model's codec, used to convert operands and
@@ -461,28 +525,73 @@ func (t *vecTally) summary(name string) string {
 	return sb.String()
 }
 
+// vecTargets are the implementations -bid.vectors names. A file built only
+// with GOEXPERIMENT=decimal adds operators.
+var vecTargets = map[string]impl{
+	"kernel":    kernel{},
+	"reference": reference{},
+	"ubd":       ubdKernel{},
+}
+
+// vecTargetName is the target as the run's output names it: -bid.vectors,
+// with what the target's describe adds, such as the operators' ubdlevel.
+var vecTargetName string
+
+// vecDescriber is a target whose name alone does not say what ran.
+// describe returns the full name, or an error when it cannot tell.
+type vecDescriber interface {
+	describe() (string, error)
+}
+
+// vecTargetImpl returns the target -bid.vectors names and sets
+// vecTargetName.
 func vecTargetImpl(t *testing.T) impl {
-	switch *vecTarget {
-	case "kernel":
-		return kernel{}
-	case "reference":
-		return reference{}
-	case "ubd":
-		return ubdKernel{}
+	if im, ok := vecTargets[*vecTarget]; ok {
+		vecTargetName = *vecTarget
+		if d, ok := im.(vecDescriber); ok {
+			name, err := d.describe()
+			if err != nil {
+				t.Fatalf("-bid.vectors=%s: %v", *vecTarget, err)
+			}
+			vecTargetName = name
+		}
+		return im
 	}
-	t.Fatalf("-bid.vectors=%q: want kernel, reference or ubd", *vecTarget)
+	names := make([]string, 0, len(vecTargets))
+	for name := range vecTargets {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	t.Fatalf("-bid.vectors=%q: want one of %s", *vecTarget, strings.Join(names, ", "))
 	return nil
+}
+
+// implSkip is a panic value with which a target declines an operation it
+// cannot do as asked, such as the operators target in a mode other than
+// ties to even: try reports it as not implemented and implSkipReason gives
+// its reason.
+type implSkip string
+
+func (s implSkip) Error() string { return string(s) }
+
+// implSkipReason is the skip reason for an operation that try reports as
+// not implemented, given try's error.
+func implSkipReason(err error) string {
+	if s, ok := err.(implSkip); ok {
+		return string(s)
+	}
+	return "kernel: not implemented"
 }
 
 // TestPublishedVectors runs the published vectors named by the environment
 // variables against -bid.vectors. It skips when no variable is set.
 func TestPublishedVectors(t *testing.T) {
-	dir, intel, fpgen := os.Getenv(envDecTestDir), os.Getenv(envIntel), os.Getenv(envFPgen)
-	if dir == "" && intel == "" && fpgen == "" {
-		t.Skipf("published vectors not run: none of %s, %s and %s is set", envDecTestDir, envIntel, envFPgen)
+	dir, intel, fpgen, cairo := os.Getenv(envDecTestDir), os.Getenv(envIntel), os.Getenv(envFPgen), os.Getenv(envCairo)
+	if dir == "" && intel == "" && fpgen == "" && cairo == "" {
+		t.Skipf("published vectors not run: none of %s, %s, %s and %s is set", envDecTestDir, envIntel, envFPgen, envCairo)
 	}
 	im := vecTargetImpl(t)
-	t.Logf("running published vectors against the %s", *vecTarget)
+	t.Logf("running published vectors against the %s", vecTargetName)
 	total := newVecTally()
 	if dir == "" {
 		t.Logf("decTest vectors not run: %s is unset", envDecTestDir)
@@ -499,7 +608,12 @@ func TestPublishedVectors(t *testing.T) {
 	} else {
 		total.merge(runFPgenDir(t, im, fpgen))
 	}
-	t.Logf("TOTAL (%s)\n%s", *vecTarget, total.summary("all files"))
+	if cairo == "" {
+		t.Logf("Cairo vectors not run: %s is unset", envCairo)
+	} else {
+		total.merge(runCairoDir(t, im, cairo))
+	}
+	t.Logf("TOTAL (%s)\n%s", vecTargetName, total.summary("all files"))
 	if len(total.failByOp) != 0 {
 		ops := make([]string, 0, len(total.failByOp))
 		for op := range total.failByOp {
@@ -514,7 +628,7 @@ func TestPublishedVectors(t *testing.T) {
 		t.Log(sb.String())
 	}
 	if total.fail != 0 {
-		t.Errorf("%d published vectors failed against the %s", total.fail, *vecTarget)
+		t.Errorf("%d published vectors failed against the %s", total.fail, vecTargetName)
 	}
 }
 
@@ -704,7 +818,7 @@ func runDecTestDir(t *testing.T, im impl, dir string) *vecTally {
 		}
 		total.merge(tally)
 	}
-	t.Logf("decTest total (%s)\n%s", *vecTarget, total.summary("decTest"))
+	t.Logf("decTest total (%s)\n%s", vecTargetName, total.summary("decTest"))
 	return total
 }
 
@@ -1023,8 +1137,12 @@ func evalDec(im impl, v *decVector) vecOutcome {
 			return vecSkip("result: not representable in the format")
 		}
 	default:
+		// An operand outside the exponent range is read as parse reads it
+		// (a zero at the nearest exponent in range, IEEE 754-2019 clauses
+		// 5.4.2 and 5.2), but an expected result is the vector's claim about
+		// a result, and one written outside the range is an error in it.
 		var st bid.Status
-		if want, st = f.parse(v.result, bid.ToNearestEven); st != bid.Exact {
+		if want, st = f.parse(v.result, bid.ToNearestEven); st != bid.Exact || vecOutOfRange(f, v.result) {
 			return vecSkip("result: not representable in the format")
 		}
 	}
@@ -1033,7 +1151,7 @@ func evalDec(im impl, v *decVector) vecOutcome {
 	implemented, err := try(func() { got = spec.run(im, f, args, mode) })
 	switch {
 	case !implemented:
-		return vecSkip("kernel: not implemented")
+		return vecSkip(implSkipReason(err))
 	case err != nil:
 		return vecOutcome{got: err.Error()}
 	case got.skip != "":
@@ -1333,7 +1451,7 @@ func evalDecParse(im impl, f *format, v *decVector, apply bool) vecOutcome {
 	})
 	switch {
 	case !implemented:
-		return vecSkip("kernel: not implemented")
+		return vecSkip(implSkipReason(err))
 	case err != nil:
 		return vecOutcome{got: err.Error()}
 	}
@@ -1750,7 +1868,7 @@ func intelRun(fn func()) (o vecOutcome, ok bool) {
 	implemented, err := try(fn)
 	switch {
 	case !implemented:
-		return vecSkip("kernel: not implemented"), false
+		return vecSkip(implSkipReason(err)), false
 	case err != nil:
 		return vecOutcome{got: err.Error()}, false
 	}
@@ -2718,12 +2836,13 @@ func parseFPgenLine(text string, n int) (v *fpgenVector, ok bool) {
 	return v, true
 }
 
-// fpgenMode maps an FPgen rounding code to the kernel's modes.
+// fpgenMode maps an FPgen rounding code to the kernel's modes. h> is the
+// Cairo files' spelling of =^.
 func fpgenMode(code string) (bid.Mode, bool) {
 	switch code {
 	case "=0":
 		return bid.ToNearestEven, true
-	case "=^":
+	case "=^", "h>":
 		return bid.ToNearestAway, true
 	case "0":
 		return bid.TowardZero, true
@@ -2739,12 +2858,13 @@ func fpgenMode(code string) (bid.Mode, bool) {
 // numeral is encoded exactly, at the exponent it is written with, so that
 // the comparison includes the quantum; one that the format cannot hold
 // (a coefficient of more than Precision digits or an exponent outside
-// [MinExp, MaxExp]) is not representable. Q is the quiet NaN and S the
+// [MinExp, MaxExp]) is not representable, except a zero operand, which is
+// read at the nearest exponent in range. Q is the quiet NaN and S the
 // signaling NaN, both positive with a zero payload, the files giving
 // neither sign nor payload. The reason for a token it cannot read is
 // either a malformed line or one that the caller prefixes with the token's
 // role.
-func fpgenDecimal(f *format, tok string) (bits, string) {
+func fpgenDecimal(f *format, tok string, operand bool) (bits, string) {
 	switch strings.ToLower(tok) {
 	case "q":
 		return f.encode(nan), ""
@@ -2766,6 +2886,15 @@ func fpgenDecimal(f *format, tok string) (bits, string) {
 	}
 	coeff, _ := new(big.Int).SetString(m[2], 10)
 	exp, err := strconv.Atoi(m[3])
+	if operand && err == nil && coeff.Sign() == 0 {
+		// A zero's cohort has a member at every exponent of the format and
+		// none outside it, so a zero operand written with an exponent
+		// outside [MinExp, MaxExp] is read at the nearest one, as
+		// convertFromDecimalCharacter does (IEEE 754-2019 clauses 5.4.2 and
+		// 5.2), exactly and with no exception. An expected result written so
+		// is an error in the vector and stays not representable.
+		exp = min(max(exp, f.minExp), f.maxExp)
+	}
 	if err != nil || coeff.Cmp(f.maxCoeff) > 0 || exp < f.minExp || exp > f.maxExp {
 		return bits{}, "not representable in the format"
 	}
@@ -2785,19 +2914,40 @@ func fpgenTrapTaken(traps, flags string) string {
 	return string(taken)
 }
 
-// fpgenArith maps the FPgen operators of the decimal files to the kernel.
-var fpgenArith = map[string]func(im impl, f *format, x, y bits, m bid.Mode) bits{
-	"+": impl.add,
-	"-": impl.sub,
-	"*": impl.mul,
-	"/": impl.div,
+// fpgenOps maps the operators of the decimal FPgen and Cairo files to the
+// kernel: + - * / in both, and in the Cairo files *+ and *- (fused a·b + c
+// and a·b − c) and V (square root). *- negates c with the reference model,
+// so that the target's Neg is not on trial, and leaves a NaN alone, the
+// files giving a NaN no sign. V is math/decimal's Sqrt, through elementary,
+// which skips the modes other than nearest even and the reference model.
+var fpgenOps = map[string]decOp{
+	"+": {n: 2, run: func(im impl, f *format, a []bits, m bid.Mode) decRes { return resBits(im.add(f, a[0], a[1], m)) }},
+	"-": {n: 2, run: func(im impl, f *format, a []bits, m bid.Mode) decRes { return resBits(im.sub(f, a[0], a[1], m)) }},
+	"*": {n: 2, run: func(im impl, f *format, a []bits, m bid.Mode) decRes { return resBits(im.mul(f, a[0], a[1], m)) }},
+	"/": {n: 2, run: func(im impl, f *format, a []bits, m bid.Mode) decRes { return resBits(im.div(f, a[0], a[1], m)) }},
+	"*+": {n: 3, run: func(im impl, f *format, a []bits, m bid.Mode) decRes {
+		return resBits(im.fma(f, a[0], a[1], a[2], m))
+	}},
+	"*-": {n: 3, run: func(im impl, f *format, a []bits, m bid.Mode) decRes {
+		c := a[2]
+		if !vecRef.isNaN(f, c) {
+			c = vecRef.neg(f, c)
+		}
+		return resBits(im.fma(f, a[0], a[1], c, m))
+	}},
+	"V": {n: 1, run: func(im impl, f *format, a []bits, m bid.Mode) decRes {
+		return elementary(im, m, func() bits { return elemUnary(f, "Sqrt", a[0]) })
+	}},
 }
+
+// fpgenArity names an operator's number of operands in a skip reason.
+var fpgenArity = [...]string{1: "one operand", 2: "two operands", 3: "three operands"}
 
 // Notes on passes particular to FPgen.
 const (
 	noteFPgenFlags       = "result matches; flags x, o, u match the Status of Round64 or Round128 on the exact value"
 	noteFPgenInexactTrap = "result and flags match as above; the inexact trap is taken (IEEE 754-1985 clause 7.5: it gets the default result)"
-	noteFPgenSpecial     = "result matches; a NaN or infinite operand or a zero divisor: flags i and z not compared (no Status reports them)"
+	noteFPgenSpecial     = "result matches; a NaN or infinite operand, a zero divisor or the square root of a negative number: flags i and z not compared (no Status reports them)"
 )
 
 // fpgenSkipTrap gives the skip reason for each trap that changes the
@@ -2810,24 +2960,41 @@ var fpgenSkipTrap = map[byte]string{
 	'z': "trap: division-by-zero trap taken",
 }
 
-// fpgenExact returns the exact value of x op y, for finite x and y and a
-// non-zero divisor, in the parts that Round64 and Round128 take: the sign,
-// a coefficient that fits in the coefficient argument (19 digits for
-// decimal64, 38 for decimal128), its exponent, and whether a non-zero
-// fraction was folded into sticky. An exact value is given at the operation's
-// preferred exponent (the smaller operand exponent for addition, their sum
-// for multiplication, their difference for division) or, when that needs
-// more digits than fit, with only trailing zeros removed, so that Round
-// chooses the result's exponent as the operation does. An inexact value
-// keeps at least Precision+2 digits. zero reports an exact zero, whose sign
-// is the operation's own rule and is not computed here.
-func fpgenExact(f *format, op string, x, y value) (neg bool, c *big.Int, exp int, sticky, zero bool) {
-	fit := 19
-	if f.width == 128 {
-		fit = 38
+// fpgenExact returns the exact value of the operation op on the finite
+// operands xs (a non-zero divisor, a square root's operand not below zero),
+// in the parts that Round64 and Round128 take: the sign, a coefficient that
+// fits in the coefficient argument (19 digits for decimal64, 38 for
+// decimal128), its exponent, and whether a non-zero fraction was folded into
+// sticky. An exact value is given at the operation's preferred exponent
+// (the smaller operand exponent for addition, their sum for multiplication,
+// their difference for division, the smaller of a's and b's sum and c's for
+// a·b ± c, the floor of half the operand's for a square root) or, when that
+// needs more digits than fit, with only trailing zeros removed, so that
+// Round chooses the result's exponent as the operation does. An inexact
+// value keeps at least Precision+2 digits. zero reports an exact zero, whose
+// sign is the operation's own rule and is not computed here.
+func fpgenExact(f *format, op string, xs []value) (neg bool, c *big.Int, exp int, sticky, zero bool) {
+	if op == "V" {
+		return fpgenSqrt(f, xs[0])
 	}
+	x, y := xs[0], xs[1]
 	n, d := new(big.Int), big.NewInt(1)
 	switch op {
+	case "*+", "*-":
+		z, pe := xs[2], x.exp+y.exp
+		exp = min(pe, z.exp)
+		a := new(big.Int).Mul(x.coeff, y.coeff)
+		a.Mul(a, pow10(pe-exp))
+		b := new(big.Int).Mul(z.coeff, pow10(z.exp-exp))
+		if x.neg != y.neg {
+			a.Neg(a)
+		}
+		if z.neg != (op == "*-") {
+			b.Neg(b)
+		}
+		n.Add(a, b)
+		neg = n.Sign() < 0
+		n.Abs(n)
 	case "+", "-":
 		exp = min(x.exp, y.exp)
 		a := new(big.Int).Mul(x.coeff, pow10(x.exp-exp))
@@ -2866,7 +3033,45 @@ func fpgenExact(f *format, op string, x, y value) (neg bool, c *big.Int, exp int
 			}
 		}
 	}
-	sticky = r.Sign() != 0
+	q, exp, sticky = fpgenFit(f, q, exp, r.Sign() != 0)
+	return neg, q, exp, sticky, false
+}
+
+// fpgenSqrt is fpgenExact for a square root. The operand is scaled to an
+// even exponent with at least 2(Precision+3) digits, so that its integer
+// root has Precision+3; a root that is exact is then given at the preferred
+// exponent, the floor of half the operand's.
+func fpgenSqrt(f *format, x value) (neg bool, c *big.Int, exp int, sticky, zero bool) {
+	if x.coeff.Sign() == 0 {
+		return x.neg, new(big.Int), x.exp >> 1, false, true
+	}
+	pref := x.exp >> 1 // the floor of half
+	e := x.exp - max(0, 2*(f.prec+3)-digits(x.coeff))
+	if e&1 != 0 {
+		e--
+	}
+	n := new(big.Int).Mul(x.coeff, pow10(x.exp-e))
+	q := new(big.Int).Sqrt(n)
+	exp = e / 2
+	sticky = new(big.Int).Mul(q, q).Cmp(n) != 0
+	if !sticky {
+		for exp < pref && new(big.Int).Rem(q, big.NewInt(10)).Sign() == 0 {
+			q.Quo(q, big.NewInt(10))
+			exp++
+		}
+	}
+	q, exp, sticky = fpgenFit(f, q, exp, sticky)
+	return false, q, exp, sticky, false
+}
+
+// fpgenFit shortens the coefficient q of an exact value to the digits that
+// Round64 or Round128 take, removing trailing zeros first and then folding
+// the digits dropped into sticky.
+func fpgenFit(f *format, q *big.Int, exp int, sticky bool) (*big.Int, int, bool) {
+	fit := 19
+	if f.width == 128 {
+		fit = 38
+	}
 	if t := min(trailingZeros(q), digits(q)-fit); t > 0 {
 		q.Quo(q, pow10(t))
 		exp += t
@@ -2877,7 +3082,7 @@ func fpgenExact(f *format, op string, x, y value) (neg bool, c *big.Int, exp int
 		exp += t
 		sticky = sticky || rest.Sign() != 0
 	}
-	return neg, q, exp, sticky, false
+	return q, exp, sticky
 }
 
 // fpgenStatus is the Status that an FPgen flags field names: x Inexact, o
@@ -2926,7 +3131,7 @@ func evalFPgen(im impl, v *fpgenVector) vecOutcome {
 	default:
 		return vecSkip("format: decimal" + m[2])
 	}
-	run, ok := fpgenArith[m[3]]
+	op, ok := fpgenOps[m[3]]
 	if !ok {
 		return vecSkip("op: not mapped to the kernel API")
 	}
@@ -2934,8 +3139,8 @@ func evalFPgen(im impl, v *fpgenVector) vecOutcome {
 	if !ok {
 		return vecSkip("context: rounding code unknown")
 	}
-	if len(v.args) != 2 {
-		return vecSkip("malformed line: not two operands")
+	if len(v.args) != op.n {
+		return vecSkip("malformed line: not " + fpgenArity[op.n])
 	}
 	taken := fpgenTrapTaken(v.traps, v.flags)
 	for i := range len(taken) {
@@ -2943,22 +3148,26 @@ func evalFPgen(im impl, v *fpgenVector) vecOutcome {
 			return vecSkip(why)
 		}
 	}
-	var a [2]bits
+	a := make([]bits, op.n)
 	for i, s := range v.args {
-		x, why := fpgenDecimal(f, s)
+		x, why := fpgenDecimal(f, s, true)
 		if why != "" {
 			return vecSkip(fpgenReason("operand: ", why))
 		}
 		a[i] = x
 	}
-	want, why := fpgenDecimal(f, v.result)
+	want, why := fpgenDecimal(f, v.result, false)
 	if why != "" {
 		return vecSkip(fpgenReason("result: ", why))
 	}
-	var got bits
-	if o, ok := intelRun(func() { got = run(im, f, a[0], a[1], mode) }); !ok {
+	var res decRes
+	if o, ok := intelRun(func() { res = op.run(im, f, a, mode) }); !ok {
 		return o
 	}
+	if res.skip != "" {
+		return vecSkip(res.skip)
+	}
+	got := res.x
 	o := intelCompare(f, got, want)
 	if vecRef.isNaN(f, want) && vecRef.isSignaling(f, got) {
 		o.pass = false // Q is a quiet NaN
@@ -2970,8 +3179,14 @@ func evalFPgen(im impl, v *fpgenVector) vecOutcome {
 	// The flags. Arithmetic returns no Status, so the exact value is
 	// rounded again by Round64 or Round128, which do: they must give the
 	// result the operation gave, and their Status must be the flags.
-	x, y := f.decode(a[0]), f.decode(a[1])
-	if x.kind != finite || y.kind != finite || m[3] == "/" && y.coeff.Sign() == 0 {
+	xs := make([]value, len(a))
+	for i := range a {
+		xs[i] = f.decode(a[i])
+		if xs[i].kind != finite {
+			return o.noted(noteFPgenSpecial)
+		}
+	}
+	if m[3] == "/" && xs[1].coeff.Sign() == 0 || m[3] == "V" && xs[0].neg && xs[0].coeff.Sign() != 0 {
 		return o.noted(noteFPgenSpecial)
 	}
 	wantSt, ok := fpgenStatus(v.flags)
@@ -2979,7 +3194,7 @@ func evalFPgen(im impl, v *fpgenVector) vecOutcome {
 		o.pass, o.got = false, o.got+"; flags "+v.flags+" for finite operands"
 		return o
 	}
-	neg, c, exp, sticky, zero := fpgenExact(f, m[3], x, y)
+	neg, c, exp, sticky, zero := fpgenExact(f, m[3], xs)
 	var rx bits
 	var st bid.Status
 	if ro, ok := intelRun(func() { rx, st = im.round(f, neg, toUint128(c), exp, sticky, mode) }); !ok {
@@ -3000,9 +3215,19 @@ func evalFPgen(im impl, v *fpgenVector) vecOutcome {
 }
 
 func runFPgenDir(t *testing.T, im impl, dir string) *vecTally {
-	files, err := filepath.Glob(filepath.Join(dir, "*.fptest"))
+	return runFPgenFiles(t, im, "FPgen", envFPgen, dir, "*.fptest")
+}
+
+func runCairoDir(t *testing.T, im impl, dir string) *vecTally {
+	return runFPgenFiles(t, im, "Cairo", envCairo, dir, "*.txt")
+}
+
+// runFPgenFiles runs the files in dir that match pattern, each line read
+// as an FPgen vector, and reports them under label.
+func runFPgenFiles(t *testing.T, im impl, label, env, dir, pattern string) *vecTally {
+	files, err := filepath.Glob(filepath.Join(dir, pattern))
 	if err != nil || len(files) == 0 {
-		t.Fatalf("%s=%s: no *.fptest files", envFPgen, dir)
+		t.Fatalf("%s=%s: no %s files", env, dir, pattern)
 	}
 	sort.Strings(files)
 	var only *regexp.Regexp
@@ -3052,7 +3277,7 @@ func runFPgenDir(t *testing.T, im impl, dir string) *vecTally {
 		}
 		total.merge(tally)
 	}
-	t.Logf("FPgen total (%s)\n%s", *vecTarget, total.summary("FPgen"))
+	t.Logf("%s total (%s)\n%s", label, vecTargetName, total.summary(label))
 	return total
 }
 
@@ -3090,6 +3315,8 @@ rounding: half_even
 t013 add 1 2 -> 4
 t014 comparetotal -NaN NaN -> -1
 t015 copysign 7 -NaN -> -7
+t017 add 0E+400 1 -> 1
+t018 multiply 0E+400 1 -> 0E+370
 precision: 9
 t012 add 1 2 -> 3
 `
@@ -3097,8 +3324,8 @@ t012 add 1 2 -> 3
 	if err := parseDecTest(strings.NewReader(src), "self.decTest", func(v *decVector) { got = append(got, v) }); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 16 {
-		t.Fatalf("parsed %d vectors, want 16", len(got))
+	if len(got) != 18 {
+		t.Fatalf("parsed %d vectors, want 18", len(got))
 	}
 	if v := got[1]; v.id != "t002" || v.op != "add" || len(v.args) != 2 || v.args[0] != "1.50" || v.args[1] != "2.5" || v.result != "4.00" {
 		t.Errorf("t002 parsed as %+v", v)
@@ -3119,6 +3346,8 @@ t012 add 1 2 -> 3
 	want := map[string]string{ // id -> outcome: pass or the skip reason
 		"t001": "pass", "t002": "pass", "t003": "pass", "t004": "pass",
 		"t005": "pass", "t006": "pass",
+		"t017": "pass", // a zero operand outside the range, read at 0E+369
+		"t018": "result: not representable in the format",
 		"t007": "result: undefined (?)",
 		"t008": "op: non-IEEE operation",
 		"t009": "operand: outside the contract's numeral grammar",
@@ -3571,6 +3800,32 @@ func TestFPgenLineParser(t *testing.T) {
 		{"d64/ =0 +1e0 +0e0 -> +inf z", pass},
 		{"d64/ =0 -1e0 +0e0 -> +inf z", fail},
 		{"d64* =0 +0e0 +inf -> Q i", pass},
+		// The Cairo files: h>, the fused multiply-add and the square root.
+		{"d64+ h> +1000000000000000e0 +5e-1 -> +1000000000000001e0 x", pass},
+		{"d128*+ =0 +2E0 +3E0 +1E0 -> +7E0", pass},
+		{"d128*- =0 +2E0 +3E0 +1E0 -> +5E0", pass},
+		{"d128*- =0 +2E0 +3E0 +1E0 -> +7E0", fail},
+		{"d64*+ =0 +2e-1 +3e0 +1e0 -> +16e-1", pass},
+		{"d64*+ =0 +2e-1 +3e0 +1e0 -> +1600e-3", fail},
+		{"d64*+ =0 +1e0 +1e0 +1e-20 -> +1000000000000000e-15 x", pass},
+		{"d64*+ > +1e0 +1e0 +1e-20 -> +1000000000000001e-15 x", pass},
+		{"d64*+ > +1e0 +1e0 +1e-20 -> +1000000000000001e-15", fail},
+		{"d64*- =0 +3e0 +1e0 +3e0 -> +0e0", pass},
+		{"d64*- < +3e0 +1e0 +3e0 -> -0e0", pass},
+		{"d64*+ =0 +inf +0e0 +1e0 -> Q i", pass},
+		{"d64*- =0 +1e0 +1e0 Q -> Q", pass},
+		{"d64*- =0 +1e0 +1e0 -inf -> +inf", pass},
+		{"d64V =0 +4e0 -> +2e0", pass},
+		{"d64V =0 +400e-2 -> +20e-1", pass},
+		{"d64V =0 +400e-2 -> +2e0", fail},
+		{"d64V =0 +2e0 -> +1414213562373095e-15 x", pass},
+		{"d64V =0 +2e0 -> +1414213562373095e-15", fail},
+		{"d64V =0 +1e1 -> +3162277660168379e-15 x", pass},
+		{"d128V =0 +2E0 -> +1414213562373095048801688724209698E-33 x", pass},
+		{"d64V =0 -0e0 -> -0e0", pass},
+		{"d64V =0 -1e0 -> Q i", pass},
+		{"d64V =0 +inf -> +inf", pass},
+		{"d64V > +2e0 -> +1414213562373096e-15 x", "context: math/decimal's functions round to nearest even only"},
 		// Traps: one not taken changes nothing; the inexact trap runs.
 		{"d64+ =0 i Q +1e0 -> Q", pass},
 		{"d64+ =0 i +1e0 +2e0 -> +3e0", pass},
@@ -3582,10 +3837,16 @@ func TestFPgenLineParser(t *testing.T) {
 		// Skipped: formats, operations and fields outside the mapping.
 		{"b32* 0 +1.0P0 +1.0P1 -> +1.0P1", "format: binary32"},
 		{"d32+ =0 +1e0 +2e0 -> +3e0", "format: decimal32"},
-		{"d64V =0 +4e0 -> +2e0", "op: not mapped"},
+		{"d64% =0 +4e0 +3e0 -> +1e0", "op: not mapped"},
 		{"d64+ =? +1e0 +2e0 -> +3e0", "context: rounding code unknown"},
 		{"d64+ =0 +10000000000000000e0 +0e0 -> +1000000000000000e1", "operand: not representable"},
 		{"d64+ =0 +1e370 +0e0 -> +10e369", "operand: not representable"},
+		// A zero outside the exponent range is read at the nearest exponent.
+		{"d64+ =0 +0e400 +1e0 -> +1e0", pass},
+		{"d64* =0 +0e400 +1e0 -> +0e369", pass},
+		{"d64* =0 +0e400 +1e0 -> +0e370", "result: not representable"},
+		{"d64+ =0 -0e-500 +0e0 -> +0e-398", pass},
+		{"d128*+ =0 -0E6145 +0E-6176 -0E-6176 -> -0E-6176", pass},
 		{"d64+ =0 +1e0 +2e0 -> +3e-399", "result: not representable"},
 		{"d64+ =0 DPD_2238000000000001 +1e0 -> +2e0", "operand: DPD encoding"},
 		{"d64+ =0 +1e0 +2e0 -> #", "result: none written"},
@@ -3593,6 +3854,11 @@ func TestFPgenLineParser(t *testing.T) {
 		{"d64+ =0 +1e0 +2e0 +3e0", "malformed line: no ->"},
 		{"d64+ -> +3e0", "malformed line: no rounding code"},
 		{"d64+ =0 +1e0 -> +1e0", "malformed line: not two operands"},
+		{"d64*+ =0 +1e0 +2e0 -> +2e0", "malformed line: not three operands"},
+		// Two of the three damaged lines of the upstream Cairo files (the
+		// third does not begin with an operation and is not a vector).
+		{"d128V =0 -> Q i", "malformed line: not one operand"},
+		{"d128*+ > +135611477298866693835828130923706###", "malformed line: no ->"},
 		{"d64+ =0 +1e0 +2e0 -> +3e0 x junk", "malformed line: fields after"},
 		{"d64+ =0 +1e0 +2e0 -> +3e0 q", "malformed line: the flags field"},
 		{"d64+ =0 1e0 +2e0 -> +3e0", "malformed line: a decimal"},
@@ -3608,10 +3874,17 @@ func TestFPgenLineParser(t *testing.T) {
 		t.Errorf("parseFPgenLine with traps = %+v, %v", v, ok)
 	}
 
-	for _, im := range []struct {
+	targets := []struct {
 		name string
 		im   impl
-	}{{"reference", reference{}}, {"kernel", kernel{}}} {
+	}{{"reference", reference{}}, {"kernel", kernel{}}, {"ubd", ubdKernel{}}}
+	if im, ok := vecTargets["operators"]; ok {
+		targets = append(targets, struct {
+			name string
+			im   impl
+		}{"operators", im})
+	}
+	for _, im := range targets {
 		for i, c := range cases {
 			v, ok := parseFPgenLine(c.line, i+1)
 			if !ok {
@@ -3621,6 +3894,8 @@ func TestFPgenLineParser(t *testing.T) {
 			o := evalFPgen(im.im, v)
 			switch {
 			case o.skip == "kernel: not implemented":
+			case o.skip == "reference: the model has no elementary functions" && im.name == "reference":
+			case strings.HasPrefix(o.skip, "operators: ") && im.name == "operators":
 			case c.want == pass:
 				if o.skip != "" || !o.pass {
 					t.Errorf("%s: %q: want pass, got skip %q pass %v got %s", im.name, c.line, o.skip, o.pass, o.got)
