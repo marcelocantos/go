@@ -28,9 +28,9 @@ import (
 // -gcflags=all=-d=ubdlevel=N) as well as the kernel entries behind them.
 // -bid.vectors=operators runs the published vectors against it.
 //
-// The operators round to nearest, ties to even, and have no other mode,
-// so a vector in another mode is skipped. Every other operation is the
-// ubd target's.
+// The operators round to nearest, ties to even, and have no other rounding
+// direction, so a vector in another rounding direction is skipped. Every
+// other operation is the ubd target's.
 //
 // A result of this target means nothing without the level, so the run
 // names it ("operators at ubdlevel 3"), read from the -gcflags the test
@@ -91,9 +91,9 @@ func ubdLevelFromGcflags(v string) (int, error) {
 	return strconv.Atoi(m[1])
 }
 
-// skipOperatorsMode is the skip reason for a vector in a mode other than
-// ties to even.
-const skipOperatorsMode = implSkip("operators: Go's operators round to nearest even only")
+// skipOperatorsDirection is the skip reason for a vector in a rounding
+// direction other than ties to even.
+const skipOperatorsDirection = implSkip("operators: Go's operators round to nearest even only")
 
 // opAdd64 and the other operators are operators_test.go's.
 
@@ -114,7 +114,7 @@ func opOut128(d decimal128) bits {
 
 func opBinary(f *format, x, y bits, m bid.Mode, op64 func(x, y decimal64) decimal64, op128 func(x, y decimal128) decimal128) bits {
 	if m != bid.ToNearestEven {
-		panic(skipOperatorsMode)
+		panic(skipOperatorsDirection)
 	}
 	if w64(f) {
 		return opOut64(op64(opIn64(x), opIn64(y)))
@@ -136,7 +136,7 @@ func (operatorsImpl) div(f *format, x, y bits, m bid.Mode) bits {
 }
 func (operatorsImpl) fma(f *format, x, y, z bits, m bid.Mode) bits {
 	if m != bid.ToNearestEven {
-		panic(skipOperatorsMode)
+		panic(skipOperatorsDirection)
 	}
 	if w64(f) {
 		return opOut64(opFMA64(opIn64(x), opIn64(y), opIn64(z)))

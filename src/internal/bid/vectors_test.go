@@ -340,7 +340,7 @@ package bid_test
 // the files write without a sign), a·b − c. The operation V is the square
 // root, which is not the kernel's: it runs against math/decimal's Sqrt (see
 // the function elementary), which rounds to nearest even, so a square root
-// in another rounding mode is skipped. Flags are checked through Round64
+// in another rounding direction is skipped. Flags are checked through Round64
 // and Round128 as for FPgen, with the exact value of a·b ± c at the smaller
 // of the exponents of a·b and c, and that of a square root as its integer
 // root to Precision+3 digits, or, for an exact root, at the floor of half
@@ -567,9 +567,9 @@ func vecTargetImpl(t *testing.T) impl {
 }
 
 // implSkip is a panic value with which a target declines an operation it
-// cannot do as asked, such as the operators target in a mode other than
-// ties to even: try reports it as not implemented and implSkipReason gives
-// its reason.
+// cannot do as asked, such as the operators target in a rounding direction
+// other than ties to even: try reports it as not implemented and
+// implSkipReason gives its reason.
 type implSkip string
 
 func (s implSkip) Error() string { return string(s) }
@@ -2836,8 +2836,8 @@ func parseFPgenLine(text string, n int) (v *fpgenVector, ok bool) {
 	return v, true
 }
 
-// fpgenMode maps an FPgen rounding code to the kernel's modes. h> is the
-// Cairo files' spelling of =^.
+// fpgenMode maps an FPgen rounding code to the kernel's rounding direction.
+// h> is the Cairo files' spelling of =^.
 func fpgenMode(code string) (bid.Mode, bool) {
 	switch code {
 	case "=0":
@@ -2919,7 +2919,8 @@ func fpgenTrapTaken(traps, flags string) string {
 // and a·b − c) and V (square root). *- negates c with the reference model,
 // so that the target's Neg is not on trial, and leaves a NaN alone, the
 // files giving a NaN no sign. V is math/decimal's Sqrt, through elementary,
-// which skips the modes other than nearest even and the reference model.
+// which skips the rounding directions other than nearest even and the
+// reference model.
 var fpgenOps = map[string]decOp{
 	"+": {n: 2, run: func(im impl, f *format, a []bits, m bid.Mode) decRes { return resBits(im.add(f, a[0], a[1], m)) }},
 	"-": {n: 2, run: func(im impl, f *format, a []bits, m bid.Mode) decRes { return resBits(im.sub(f, a[0], a[1], m)) }},

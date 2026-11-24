@@ -50,7 +50,7 @@ func (k ubdKernel) div(f *format, x, y bits, m bid.Mode) bits {
 }
 
 // fma is UBDFMA128, the entry math/decimal's FMA calls, which takes the
-// mode itself rather than coming in a TTE and Rnd pair.
+// rounding direction itself rather than coming in a TTE and Rnd pair.
 func (k ubdKernel) fma(f *format, x, y, z bits, m bid.Mode) bits {
 	if w64(f) {
 		return k.kernel.fma(f, x, y, z, m)
