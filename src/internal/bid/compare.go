@@ -18,7 +18,7 @@ func Equal64(x, y uint64) bool {
 
 // Equal128 is Equal64 for decimal128.
 func Equal128(x, y Uint128) bool {
-	return equal128(x, y)
+	return ubdEqual128(toUBD(x), toUBD(y))
 }
 
 // Less64 reports whether x < y (IEEE 754-2019 clause 5.6.1 and 5.11,
@@ -29,7 +29,7 @@ func Less64(x, y uint64) bool {
 
 // Less128 is Less64 for decimal128.
 func Less128(x, y Uint128) bool {
-	return less128(x, y)
+	return ubdLess128(toUBD(x), toUBD(y))
 }
 
 // LessEqual64 reports whether x <= y (IEEE 754-2019 clause 5.6.1 and
@@ -40,27 +40,7 @@ func LessEqual64(x, y uint64) bool {
 
 // LessEqual128 is LessEqual64 for decimal128.
 func LessEqual128(x, y Uint128) bool {
-	return lessEqual128(x, y)
-}
-
-// EqualSlow128, LessSlow128 and LessEqualSlow128 are Equal128, Less128 and
-// LessEqual128 without the inline front of each: the general comparison,
-// which the compiler calls where it has already compared the operands that
-// sameQuantumKeys128 accepts (word operands of one sign and one exponent);
-// see AddSlow128.
-func EqualSlow128(x, y Uint128) bool {
-	c, ok := quietCmpSlow128(x, y)
-	return ok && c == 0
-}
-
-func LessSlow128(x, y Uint128) bool {
-	c, ok := quietCmpSlow128(x, y)
-	return ok && c < 0
-}
-
-func LessEqualSlow128(x, y Uint128) bool {
-	c, ok := quietCmpSlow128(x, y)
-	return ok && c <= 0
+	return ubdLessEqual128(toUBD(x), toUBD(y))
 }
 
 // Compare64 returns the ordering of x and y as -1, 0 or +1 with ok = true,
@@ -74,7 +54,7 @@ func Compare64(x, y uint64) (c int, ok bool) {
 
 // Compare128 is Compare64 for decimal128.
 func Compare128(x, y Uint128) (c int, ok bool) {
-	return quietCmpSlow128(x, y)
+	return ubdCompare128(toUBD(x), toUBD(y))
 }
 
 // TotalOrder64 reports whether x precedes or equals y in the total order of
@@ -94,7 +74,7 @@ func TotalOrder64(x, y uint64) bool {
 
 // TotalOrder128 is TotalOrder64 for decimal128.
 func TotalOrder128(x, y Uint128) bool {
-	return totalOrder128(x, y)
+	return ubdTotalOrder128(toUBD(x), toUBD(y))
 }
 
 // Key is the canonical hash key of a decimal value. Two values have equal
@@ -125,6 +105,5 @@ func Key64(x uint64) Key {
 // Key128 returns the hash key of x. Key128(Widen(x)) == Key64(x) for every
 // decimal64 bit pattern x.
 func Key128(x Uint128) Key {
-	kind, neg, c, exp := key128(x)
-	return Key{Coeff: c, Exp: int32(exp), Kind: kind, Neg: neg}
+	return UBDKey128(toUBD(x))
 }

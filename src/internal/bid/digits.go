@@ -174,3 +174,36 @@ func reduceClass64(p Uint128, k int) (q uint64, class digitClass) {
 // errQuotientOverflow is the panic value of a reduction whose quotient does
 // not fit the coefficient type, which is a bug in the caller.
 const errQuotientOverflow = "internal/bid: quotient overflow"
+
+// fives returns the number of times that 5 divides n, which is not zero,
+// and n without those factors. A multiple of 5 times the inverse of 5
+// modulo 2^64 is its quotient, at most ⌊(2^64-1)/5⌋, and every other
+// value lands above that. The loop runs once for most coefficients and a
+// few times for the rest.
+func fives(n uint64) (c int, rest uint64) {
+	const inv5, max5 = 0xCCCCCCCCCCCCCCCD, ^uint64(0) / 5
+	for {
+		m := n * inv5
+		if m > max5 {
+			return c, n
+		}
+		n, c = m, c+1
+	}
+}
+
+// pow10word is pow10tab64 in an array of 32, so that an index masked to
+// five bits needs no bound test; TestPow10Word compares the two.
+var pow10word = [32]uint64{
+	1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9,
+	1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19,
+}
+
+// wordDigits returns the number of decimal digits of c, which is not zero.
+// It is cDigits64 with the comparison as a borrow: whether c reaches the
+// power of ten that its bit length suggests is in its leading digits, as
+// good as random.
+func wordDigits(c uint64) int {
+	t := bits.Len64(c) * 1233 >> 12
+	_, b := bits.Sub64(c, pow10word[t&31], 0)
+	return t + 1 - int(b)
+}

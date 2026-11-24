@@ -93,8 +93,7 @@ func Float64To64(f float64, mode Mode) uint64 {
 
 // Float64To128 is Float64To64 with a decimal128 result.
 func Float64To128(f float64, mode Mode) Uint128 {
-	kind, neg, m, e := float64Parts(f)
-	return fromFloat128(kind, neg, m, e, mode)
+	return fromUBD(UBDFloat64To128(f, mode))
 }
 
 // Float32To64 is Float64To64 for a float32 operand. Because float64(f) is
@@ -110,8 +109,7 @@ func Float32To64(f float32, mode Mode) uint64 {
 
 // Float32To128 is Float32To64 with a decimal128 result.
 func Float32To128(f float32, mode Mode) Uint128 {
-	kind, neg, m, e := float32Parts(f)
-	return fromFloat128(kind, neg, m, e, mode)
+	return fromUBD(UBDFloat32To128(f, mode))
 }
 
 // The layout of the binary formats (IEEE 754-2019 clause 3.4) and the bits

@@ -510,3 +510,23 @@ func ubdAddTTE128(x, y UBD128) UBD128 {
 	}
 	return ubdAddLong128(x, y, mode)
 }
+
+// addCarry128 rounds to nearest a sum t of 35 digits, with below saying
+// whether anything non-zero lay under it, to the 34 digits that are left
+// when its last digit u goes: up when u is above five, or is five with
+// something below it, and on a tie (five, nothing below) to the even
+// neighbour or away from zero as mode says.
+func addCarry128(t Uint128, below bool, mode Mode) Uint128 {
+	q, u := divPow10Recip128(t, 1)
+	// The digit that goes is as good as random, so the decision is
+	// arithmetic: u + 3 reaches 8 when u is five or more and 9 when it
+	// is six or more, and a five counts as a six when the tie goes up.
+	tieUp := q.Lo & 1
+	if below || mode == ToNearestAway {
+		tieUp = 1
+	}
+	_, five := bits.Sub64(4, u.Lo, 0) // 1 when u >= 5
+	_, six := bits.Sub64(5, u.Lo, 0)  // 1 when u >= 6
+	q, _ = u128Add(q, Uint128{Lo: six | five&tieUp})
+	return q
+}

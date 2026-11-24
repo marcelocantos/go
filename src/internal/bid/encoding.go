@@ -805,7 +805,7 @@ func Payload64(x uint64) uint64 {
 // Payload128 is Payload64 for decimal128; a payload of 10^33 or more reads
 // as 0.
 func Payload128(x Uint128) Uint128 {
-	return payload128(x)
+	return fromUBD(UBDPayload128(toUBD(x)))
 }
 
 // NaNWithPayload64 returns the positive quiet NaN whose payload is the value
@@ -822,7 +822,7 @@ func NaNWithPayload64(p uint64) uint64 {
 // NaNWithPayload128 is NaNWithPayload64 for decimal128, whose canonical
 // payloads are the integers in [0, 10^33).
 func NaNWithPayload128(p Uint128) Uint128 {
-	return nanWithPayload128(p, false)
+	return fromUBD(UBDNaNWithPayload128(toUBD(p), false))
 }
 
 // SignalingNaNWithPayload64 is NaNWithPayload64 with a signaling NaN as its
@@ -835,7 +835,7 @@ func SignalingNaNWithPayload64(p uint64) uint64 {
 
 // SignalingNaNWithPayload128 is SignalingNaNWithPayload64 for decimal128.
 func SignalingNaNWithPayload128(p Uint128) Uint128 {
-	return nanWithPayload128(p, true)
+	return fromUBD(UBDNaNWithPayload128(toUBD(p), true))
 }
 
 // Neg64 returns x with its sign bit inverted (IEEE 754-2019 clause 5.5.1,

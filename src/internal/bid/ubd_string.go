@@ -175,12 +175,35 @@ func UBDAppend128(dst []byte, x UBD128) []byte {
 		var buf [LongLen128]byte
 		return append(dst, buf[:PutLong128(&buf, sign, exp, c)]...)
 	}
+	return ubdAppendRest128(dst, x, false)
+}
+
+// ubdAppendSci128 is UBDAppend128 for the to-scientific-string form of the
+// General Decimal Arithmetic specification (AppendSci128). The short values
+// have the same plain notation in both forms.
+func ubdAppendSci128(dst []byte, x UBD128) []byte {
+	if i := len(dst); UBDIsShort128(x) && cap(dst)-i >= ShortLen128 {
+		sign := uint(x.Hi >> UBDSignShift & 1)
+		return dst[:i+PutShort128((*[ShortLen128]byte)(dst[i:i+ShortLen128]), sign, uint(-(int64(x.Hi)>>UBDExpShift)), x.Lo)]
+	}
+	return ubdAppendRest128(dst, x, true)
+}
+
+// ubdAppendRest128 appends x in the general form: the specials by name, and
+// a finite value as its digits in plain or exponent notation, in the
+// to-scientific-string form when sci is set.
+func ubdAppendRest128(dst []byte, x UBD128, sci bool) []byte {
 	kind, neg, c, exp := UBDUnpack128(x)
 	switch kind {
 	case KindNaN:
 		return append(dst, "NaN"...)
 	case KindInf:
-		if neg {
+		switch {
+		case sci && neg:
+			return append(dst, "-Infinity"...)
+		case sci:
+			return append(dst, "Infinity"...)
+		case neg:
 			return append(dst, "-Inf"...)
 		}
 		return append(dst, "+Inf"...)
@@ -192,6 +215,9 @@ func UBDAppend128(dst []byte, x UBD128) []byte {
 		n = writeWordDigits(digs[:], lo)
 	} else {
 		n = writeDigits(digs[:], hi, lo)
+	}
+	if sci {
+		return appendSciDecimal(dst, neg, digs[len(digs)-n:], exp)
 	}
 	return appendDecimal(dst, neg, digs[len(digs)-n:], exp)
 }

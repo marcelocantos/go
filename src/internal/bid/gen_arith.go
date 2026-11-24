@@ -4,8 +4,8 @@
 
 //go:build ignore
 
-// Gen_arith writes the generated files of package bid: zNAME64.go and
-// zNAME128.go from each template NAME_tmpl.go, zpow10.go, the powers of
+// Gen_arith writes the generated files of package bid: zNAME64.go from each
+// template NAME_tmpl.go, zpow10.go, the powers of
 // ten that the coefficient vocabulary indexes and their reciprocals, and zdpd.go, the declet
 // tables of the DPD conversions. It is run by the
 // go:generate directive in arith.go from the package directory, and by
@@ -96,7 +96,7 @@ func main() {
 		body := text[:tag] + fmt.Sprintf(generatedFmt, name) + generatedTag + text[pkg:]
 
 		base := strings.TrimSuffix(name, templateSuffix)
-		for _, width := range []string{"64", "128"} {
+		for _, width := range []string{"64"} {
 			src := widthIdent.ReplaceAllStringFunc(body, func(id string) string {
 				return strings.TrimSuffix(id, "W") + width
 			})

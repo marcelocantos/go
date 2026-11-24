@@ -101,7 +101,7 @@ func Int64From64(x uint64, mode Mode) (int64, Status) {
 
 // Int64From128 is Int64From64 for decimal128.
 func Int64From128(x Uint128, mode Mode) (int64, Status) {
-	return int64From128(x, mode)
+	return int64Result(ubdIntParts128(toUBD(x), mode))
 }
 
 // Uint64From64 is Int64From64 with a uint64 result, whose range is
@@ -115,5 +115,5 @@ func Uint64From64(x uint64, mode Mode) (uint64, Status) {
 
 // Uint64From128 is Uint64From64 for decimal128.
 func Uint64From128(x Uint128, mode Mode) (uint64, Status) {
-	return uint64From128(x, mode)
+	return uint64Result(ubdIntParts128(toUBD(x), mode))
 }

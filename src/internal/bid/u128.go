@@ -192,3 +192,10 @@ func u128GePow10(c Uint128, n int) bool {
 	}
 	return !u128Lt(c, pow10tab128[n])
 }
+
+// u128MulLow returns the low 128 bits of a × b: the product, when the
+// caller knows that it fits.
+func u128MulLow(a, b Uint128) Uint128 {
+	hi, lo := bits.Mul64(a.Lo, b.Lo)
+	return Uint128{Hi: hi + a.Lo*b.Hi + a.Hi*b.Lo, Lo: lo}
+}

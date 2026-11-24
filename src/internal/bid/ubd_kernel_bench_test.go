@@ -12,17 +12,15 @@ import (
 )
 
 // BenchmarkUBDKernel times the UBD kernel entries the compiler calls at
-// -d=decimalinline=1 against the BID kernel entries the XOR-BID compiler calls
-// for the same operation, each on its own encoding of the same operands, so
-// neither side converts. Both sides are called through a function value, as
-// a call site calls the kernel: the compiler's call is never inlined, and a
-// direct call here would let the UBD entries' small wrappers inline into the
-// loop. Each row runs over 1024 operand pairs in a fixed pseudo-random order.
+// -d=decimalinline=1. Each is called through a function value, as a call
+// site calls the kernel: the compiler's call is never inlined, and a direct
+// call here would let the entries' small wrappers inline into the loop.
+// Each row runs over 1024 operand pairs in a fixed pseudo-random order.
 //
 //	go test internal/bid -run '^$' -bench 'UBDKernel' -count 10
 //
-// The rows are named Op/class/side, side ubd or bid, for benchstat's
-// -col /side.
+// The rows are named Op/class/ubd; until the BID 128-bit kernel was removed
+// each had a /bid twin.
 
 const ubdBenchN = 1024
 
@@ -98,7 +96,6 @@ func ubdBenchPairs(cl ubdBenchClass) []ubdBenchPair {
 
 var (
 	ubdSinkU UBD128
-	ubdSinkB Uint128
 	ubdSinkI int
 )
 
@@ -113,52 +110,26 @@ func ubdBench2(b *testing.B, ps []ubdBenchPair, f func(x, y UBD128) UBD128) {
 	ubdSinkU = acc
 }
 
-func bidBench2(b *testing.B, ps []ubdBenchPair, f func(x, y Uint128, mode Mode) Uint128) {
-	var acc Uint128
-	for i := 0; i < b.N; i++ {
-		p := &ps[i&(ubdBenchN-1)]
-		r := f(p.bx, p.by, ToNearestEven)
-		acc.Lo ^= r.Lo
-		acc.Hi ^= r.Hi
-	}
-	ubdSinkB = acc
-}
-
 // BenchmarkUBDKernelCompound times compounding, a chain of a multiply by
 // a rate near one and a quantize to cents, each step waiting for the one
 // before: acc = quantize(acc × rate, 0.01), restarted every 64 steps.
 func BenchmarkUBDKernelCompound(b *testing.B) {
 	r := rand.New(rand.NewPCG(29, 31))
-	type rate struct {
-		u UBD128
-		b Uint128
-	}
-	rates := make([]rate, ubdBenchN)
+	rates := make([]UBD128, ubdBenchN)
 	for i := range rates {
-		rb, ru := ubdBenchVal(false, Uint128{Lo: 10001 + uint64(r.IntN(500))}, -4)
-		rates[i] = rate{ru, rb}
+		_, rates[i] = ubdBenchVal(false, Uint128{Lo: 10001 + uint64(r.IntN(500))}, -4)
 	}
-	b0, u0 := ubdBenchVal(false, Uint128{Lo: 12345678}, -2)
-	bq, uq := ubdBenchVal(false, Uint128{Lo: 1}, -2)
+	_, u0 := ubdBenchVal(false, Uint128{Lo: 12345678}, -2)
+	_, uq := ubdBenchVal(false, Uint128{Lo: 1}, -2)
 	b.Run("ubd", func(b *testing.B) {
 		acc := u0
 		for i := 0; i < b.N; i++ {
-			acc = UBDKernelQnt(UBDKernelMul(acc, rates[i&(ubdBenchN-1)].u), uq)
+			acc = UBDKernelQnt(UBDKernelMul(acc, rates[i&(ubdBenchN-1)]), uq)
 			if i&63 == 63 {
 				acc = u0
 			}
 		}
 		ubdSinkU = acc
-	})
-	b.Run("bid", func(b *testing.B) {
-		acc := b0
-		for i := 0; i < b.N; i++ {
-			acc = BIDKernelQnt(BIDKernelMul(acc, rates[i&(ubdBenchN-1)].b, ToNearestEven), bq, ToNearestEven)
-			if i&63 == 63 {
-				acc = b0
-			}
-		}
-		ubdSinkB = acc
 	})
 }
 
@@ -166,15 +137,10 @@ func BenchmarkUBDKernel(b *testing.B) {
 	for _, cl := range ubdBenchClasses {
 		ps := ubdBenchPairs(cl)
 		b.Run("Add/"+cl.name+"/ubd", func(b *testing.B) { ubdBench2(b, ps, UBDKernelAdd) })
-		b.Run("Add/"+cl.name+"/bid", func(b *testing.B) { bidBench2(b, ps, BIDKernelAdd) })
 		b.Run("Sub/"+cl.name+"/ubd", func(b *testing.B) { ubdBench2(b, ps, UBDKernelSub) })
-		b.Run("Sub/"+cl.name+"/bid", func(b *testing.B) { bidBench2(b, ps, BIDKernelSub) })
 		b.Run("Mul/"+cl.name+"/ubd", func(b *testing.B) { ubdBench2(b, ps, UBDKernelMul) })
-		b.Run("Mul/"+cl.name+"/bid", func(b *testing.B) { bidBench2(b, ps, BIDKernelMul) })
 		b.Run("Div/"+cl.name+"/ubd", func(b *testing.B) { ubdBench2(b, ps, UBDKernelDiv) })
-		b.Run("Div/"+cl.name+"/bid", func(b *testing.B) { bidBench2(b, ps, BIDKernelDiv) })
 		b.Run("Quantize/"+cl.name+"/ubd", func(b *testing.B) { ubdBench2(b, ps, UBDKernelQnt) })
-		b.Run("Quantize/"+cl.name+"/bid", func(b *testing.B) { bidBench2(b, ps, BIDKernelQnt) })
 		// A running total: each sum waits for the one before, as a loop
 		// that accumulates amounts does, so these rows time the latency of
 		// a call where the others time its throughput.
@@ -188,16 +154,6 @@ func BenchmarkUBDKernel(b *testing.B) {
 			}
 			ubdSinkU = acc
 		})
-		b.Run("AddChain/"+cl.name+"/bid", func(b *testing.B) {
-			acc := ps[0].bx
-			for i := 0; i < b.N; i++ {
-				acc = BIDKernelAdd(acc, ps[i&(ubdBenchN-1)].by, ToNearestEven)
-				if i&(ubdBenchN-1) == ubdBenchN-1 {
-					acc = ps[0].bx
-				}
-			}
-			ubdSinkB = acc
-		})
 		// A running balance: each difference waits for the one before.
 		b.Run("SubChain/"+cl.name+"/ubd", func(b *testing.B) {
 			acc := ps[0].ux
@@ -209,46 +165,19 @@ func BenchmarkUBDKernel(b *testing.B) {
 			}
 			ubdSinkU = acc
 		})
-		b.Run("SubChain/"+cl.name+"/bid", func(b *testing.B) {
-			acc := ps[0].bx
-			for i := 0; i < b.N; i++ {
-				acc = BIDKernelSub(acc, ps[i&(ubdBenchN-1)].by, ToNearestEven)
-				if i&(ubdBenchN-1) == ubdBenchN-1 {
-					acc = ps[0].bx
-				}
-			}
-			ubdSinkB = acc
-		})
 		// The Rnd entry, which the compiler calls for a mode other than
 		// ties to even: telco truncates its taxes.
 		b.Run("QuantizeTZ/"+cl.name+"/ubd", func(b *testing.B) {
 			ubdBench2(b, ps, func(x, y UBD128) UBD128 { return UBDKernelQntR(x, y, TowardZero) })
 		})
-		b.Run("QuantizeTZ/"+cl.name+"/bid", func(b *testing.B) {
-			bidBench2(b, ps, func(x, y Uint128, _ Mode) Uint128 { return BIDKernelQnt(x, y, TowardZero) })
-		})
 		b.Run("Min/"+cl.name+"/ubd", func(b *testing.B) { ubdBench2(b, ps, UBDKernelMin) })
-		b.Run("Min/"+cl.name+"/bid", func(b *testing.B) {
-			bidBench2(b, ps, func(x, y Uint128, _ Mode) Uint128 { return BIDKernelMin(x, y) })
-		})
 		b.Run("RoundToIntegral/"+cl.name+"/ubd", func(b *testing.B) {
 			ubdBench2(b, ps, func(x, _ UBD128) UBD128 { return UBDKernelRTI(x) })
-		})
-		b.Run("RoundToIntegral/"+cl.name+"/bid", func(b *testing.B) {
-			bidBench2(b, ps, func(x, _ Uint128, m Mode) Uint128 { return BIDKernelRTI(x, m) })
 		})
 		b.Run("Int64/"+cl.name+"/ubd", func(b *testing.B) {
 			n := int64(0)
 			for i := 0; i < b.N; i++ {
 				n += UBDKernelInt64(ps[i&(ubdBenchN-1)].ux)
-			}
-			ubdSinkI = int(n)
-		})
-		b.Run("Int64/"+cl.name+"/bid", func(b *testing.B) {
-			n := int64(0)
-			for i := 0; i < b.N; i++ {
-				v, _ := BIDKernelInt64(ps[i&(ubdBenchN-1)].bx, TowardZero)
-				n += v
 			}
 			ubdSinkI = int(n)
 		})
@@ -259,29 +188,11 @@ func BenchmarkUBDKernel(b *testing.B) {
 			}
 			ubdSinkI = int(n)
 		})
-		b.Run("Uint64/"+cl.name+"/bid", func(b *testing.B) {
-			n := uint64(0)
-			for i := 0; i < b.N; i++ {
-				v, _ := BIDKernelUint64(ps[i&(ubdBenchN-1)].bx, TowardZero)
-				n += v
-			}
-			ubdSinkI = int(n)
-		})
 		b.Run("Less/"+cl.name+"/ubd", func(b *testing.B) {
 			n := 0
 			for i := 0; i < b.N; i++ {
 				p := &ps[i&(ubdBenchN-1)]
 				if UBDKernelLess(p.ux, p.uy) {
-					n++
-				}
-			}
-			ubdSinkI = n
-		})
-		b.Run("Less/"+cl.name+"/bid", func(b *testing.B) {
-			n := 0
-			for i := 0; i < b.N; i++ {
-				p := &ps[i&(ubdBenchN-1)]
-				if c, ok := BIDKernelCmp(p.bx, p.by); ok && c < 0 {
 					n++
 				}
 			}
@@ -310,32 +221,31 @@ func BenchmarkUBDKernel(b *testing.B) {
 	}
 }
 
-// TestUBDKernelBenchAgrees checks that every benchmarked UBD entry gives
-// the BID entry's result on the benchmark's operands, so that the rows time
-// the same work.
+// TestUBDKernelBenchAgrees checks every benchmarked UBD entry against the
+// math/big reference on the benchmark's operands.
 func TestUBDKernelBenchAgrees(t *testing.T) {
 	for _, cl := range ubdBenchClasses {
 		for i, p := range ubdBenchPairs(cl) {
 			check := func(op string, u UBD128, bv Uint128) {
 				if got := BIDFromUBDAny128(Uint128{Hi: u.Hi, Lo: u.Lo}); got != bv {
-					t.Fatalf("%s/%s pair %d: ubd %#x, bid %#x", op, cl.name, i, got, bv)
+					t.Fatalf("%s/%s pair %d: ubd %#x, reference %#x", op, cl.name, i, got, bv)
 				}
 			}
-			check("Add", UBDKernelAdd(p.ux, p.uy), BIDKernelAdd(p.bx, p.by, ToNearestEven))
-			check("Sub", UBDKernelSub(p.ux, p.uy), BIDKernelSub(p.bx, p.by, ToNearestEven))
-			check("Mul", UBDKernelMul(p.ux, p.uy), BIDKernelMul(p.bx, p.by, ToNearestEven))
-			check("Div", UBDKernelDiv(p.ux, p.uy), BIDKernelDiv(p.bx, p.by, ToNearestEven))
-			check("Quantize", UBDKernelQnt(p.ux, p.uy), BIDKernelQnt(p.bx, p.by, ToNearestEven))
-			check("Min", UBDKernelMin(p.ux, p.uy), BIDKernelMin(p.bx, p.by))
-			check("Max", UBDKernelMax(p.ux, p.uy), BIDKernelMax(p.bx, p.by))
-			check("RoundToIntegral", UBDKernelRTI(p.ux), BIDKernelRTI(p.bx, ToNearestEven))
-			if got, _ := BIDKernelInt64(p.bx, TowardZero); UBDKernelInt64(p.ux) != got {
-				t.Fatalf("Int64/%s pair %d: ubd %d, bid %d", cl.name, i, UBDKernelInt64(p.ux), got)
+			check("Add", UBDKernelAdd(p.ux, p.uy), ubdRef.add(dec128, p.bx, p.by, ToNearestEven))
+			check("Sub", UBDKernelSub(p.ux, p.uy), ubdRef.sub(dec128, p.bx, p.by, ToNearestEven))
+			check("Mul", UBDKernelMul(p.ux, p.uy), ubdRef.mul(dec128, p.bx, p.by, ToNearestEven))
+			check("Div", UBDKernelDiv(p.ux, p.uy), ubdRef.div(dec128, p.bx, p.by, ToNearestEven))
+			check("Quantize", UBDKernelQnt(p.ux, p.uy), ubdRef.quantize(dec128, p.bx, p.by, ToNearestEven))
+			check("Min", UBDKernelMin(p.ux, p.uy), ubdRef.min(dec128, p.bx, p.by))
+			check("Max", UBDKernelMax(p.ux, p.uy), ubdRef.max(dec128, p.bx, p.by))
+			check("RoundToIntegral", UBDKernelRTI(p.ux), ubdRef.roundToIntegral(dec128, p.bx, ToNearestEven))
+			if got, _ := ubdRef.int64From(dec128, p.bx, TowardZero); UBDKernelInt64(p.ux) != got {
+				t.Fatalf("Int64/%s pair %d: ubd %d, reference %d", cl.name, i, UBDKernelInt64(p.ux), got)
 			}
 			uc, uok := UBDKernelCmp(p.ux, p.uy)
-			bc, bok := BIDKernelCmp(p.bx, p.by)
+			bc, bok := ubdRef.compare(dec128, p.bx, p.by)
 			if uc != bc || uok != bok {
-				t.Fatalf("Compare/%s pair %d: ubd %d %v, bid %d %v", cl.name, i, uc, uok, bc, bok)
+				t.Fatalf("Compare/%s pair %d: ubd %d %v, reference %d %v", cl.name, i, uc, uok, bc, bok)
 			}
 		}
 	}
@@ -343,7 +253,7 @@ func TestUBDKernelBenchAgrees(t *testing.T) {
 
 // TestUBDAddWordAgrees checks the ties-to-even add and subtract entries on
 // word operands, which their word path (ubdAddWordTTE) decides, against the
-// BID kernel: exponent gaps of 0 to 20 either way, coefficients of every
+// math/big reference: exponent gaps of 0 to 20 either way, coefficients of every
 // size up to 2^64 - 1, zeros, and both signs.
 func TestUBDAddWordAgrees(t *testing.T) {
 	r := rand.New(rand.NewPCG(7, 11))
@@ -359,23 +269,23 @@ func TestUBDAddWordAgrees(t *testing.T) {
 			return r.Uint64() >> uint(r.IntN(64))
 		}
 	}
-	for i := 0; i < 2000000; i++ {
+	for range ubdAgreeN() {
 		xe := r.IntN(60) - 30
 		ye := xe + r.IntN(41) - 20
 		bx, ux := ubdBenchVal(r.IntN(2) == 0, Uint128{Lo: coeff()}, xe)
 		by, uy := ubdBenchVal(r.IntN(2) == 0, Uint128{Lo: coeff()}, ye)
-		if got, want := UBDKernelAdd(ux, uy), BIDKernelAdd(bx, by, ToNearestEven); BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}) != want {
+		if got, want := UBDKernelAdd(ux, uy), ubdRef.add(dec128, bx, by, ToNearestEven); BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}) != want {
 			t.Fatalf("add %#x %#x: got %#x, want %#x", bx, by, BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}), want)
 		}
-		if got, want := UBDKernelSub(ux, uy), BIDKernelSub(bx, by, ToNearestEven); BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}) != want {
+		if got, want := UBDKernelSub(ux, uy), ubdRef.sub(dec128, bx, by, ToNearestEven); BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}) != want {
 			t.Fatalf("sub %#x %#x: got %#x, want %#x", bx, by, BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}), want)
 		}
 	}
 }
 
 // TestUBDCmpWordAgrees checks the compare and predicate entries on word
-// operands, which their word path (ubdCmpWord) decides, against the BID
-// kernel: exponent gaps of 0 to 25 either way, zeros of both signs, and
+// operands, which their word path (ubdCmpWord) decides, against the
+// math/big reference: exponent gaps of 0 to 25 either way, zeros of both signs, and
 // coefficients of every size.
 func TestUBDCmpWordAgrees(t *testing.T) {
 	r := rand.New(rand.NewPCG(13, 17))
@@ -389,7 +299,7 @@ func TestUBDCmpWordAgrees(t *testing.T) {
 			return r.Uint64() >> uint(r.IntN(64))
 		}
 	}
-	for i := 0; i < 2000000; i++ {
+	for range ubdAgreeN() {
 		xe := r.IntN(60) - 30
 		ye := xe + r.IntN(51) - 25
 		xc := coeff()
@@ -402,7 +312,7 @@ func TestUBDCmpWordAgrees(t *testing.T) {
 		}
 		bx, ux := ubdBenchVal(r.IntN(2) == 0, Uint128{Lo: xc}, xe)
 		by, uy := ubdBenchVal(r.IntN(2) == 0, Uint128{Lo: yc}, ye)
-		wc, wok := BIDKernelCmp(bx, by)
+		wc, wok := ubdRef.compare(dec128, bx, by)
 		if c, ok := UBDKernelCmp(ux, uy); c != wc || ok != wok {
 			t.Fatalf("compare %#x %#x: got %d %v, want %d %v", bx, by, c, ok, wc, wok)
 		}
@@ -417,21 +327,21 @@ func TestUBDCmpWordAgrees(t *testing.T) {
 
 // TestUBDInt64WordAgrees checks the int64 and uint64 conversion entries on
 // word operands, with fractions of up to 19 digits and integers of either
-// sign, against Int64From128 and Uint64From128 with TowardZero.
+// sign, against the math/big reference with TowardZero.
 func TestUBDInt64WordAgrees(t *testing.T) {
 	r := rand.New(rand.NewPCG(19, 23))
-	for i := 0; i < 2000000; i++ {
+	for range ubdAgreeN() {
 		c := r.Uint64() >> uint(r.IntN(64))
 		if r.IntN(8) == 0 {
 			c = ^uint64(0) - uint64(r.IntN(3))
 		}
 		e := r.IntN(26) - 22
 		bx, ux := ubdBenchVal(r.IntN(2) == 0, Uint128{Lo: c}, e)
-		want, _ := BIDKernelInt64(bx, TowardZero)
+		want, _ := ubdRef.int64From(dec128, bx, TowardZero)
 		if got := UBDKernelInt64(ux); got != want {
 			t.Fatalf("int64(%#x): got %d, want %d", bx, got, want)
 		}
-		uwant, _ := BIDKernelUint64(bx, TowardZero)
+		uwant, _ := ubdRef.uint64From(dec128, bx, TowardZero)
 		if got := UBDKernelUint64(ux); got != uwant {
 			t.Fatalf("uint64(%#x): got %d, want %d", bx, got, uwant)
 		}
@@ -440,7 +350,7 @@ func TestUBDInt64WordAgrees(t *testing.T) {
 
 // TestUBDQuantizeWideAgrees checks the ties-to-even quantize entry on
 // operands wider than a word, which ubdQuantizeWideTTE decides, against
-// the BID kernel: coefficients of 20 to 34 digits, quantized to exponents
+// the math/big reference: coefficients of 20 to 34 digits, quantized to exponents
 // from 40 below to 40 above their own, so that the result rounds, scales,
 // is the same, is zero, or is invalid.
 func TestUBDQuantizeWideAgrees(t *testing.T) {
@@ -451,7 +361,7 @@ func TestUBDQuantizeWideAgrees(t *testing.T) {
 		bx, ux := ubdBenchVal(r.IntN(2) == 0, ubdBenchDigits(r, 20, 34), xe)
 		by, uy := ubdBenchVal(r.IntN(2) == 0, ubdBenchDigits(r, 1, 5), ye)
 		got := UBDKernelQnt(ux, uy)
-		want := BIDKernelQnt(bx, by, ToNearestEven)
+		want := ubdRef.quantize(dec128, bx, by, ToNearestEven)
 		if g := BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}); g != want {
 			t.Fatalf("quantize(%#x, %#x): got %#x, want %#x", bx, by, g, want)
 		}
@@ -459,7 +369,7 @@ func TestUBDQuantizeWideAgrees(t *testing.T) {
 }
 
 // TestUBDMulAgrees checks the multiply entries, ties to even and the Rnd
-// entry in every mode, against the BID kernel on coefficients of 1 to 34
+// entry in every mode, against the math/big reference on coefficients of 1 to 34
 // digits, so that products are exact, round, or pass the format.
 func TestUBDMulAgrees(t *testing.T) {
 	r := rand.New(rand.NewPCG(43, 47))
@@ -468,19 +378,19 @@ func TestUBDMulAgrees(t *testing.T) {
 		bx, ux := ubdBenchVal(r.IntN(2) == 0, ubdBenchDigits(r, 1, 34), r.IntN(400)-200)
 		by, uy := ubdBenchVal(r.IntN(2) == 0, ubdBenchDigits(r, 1, 34), r.IntN(400)-200)
 		got := UBDKernelMul(ux, uy)
-		if g, want := BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}), BIDKernelMul(bx, by, ToNearestEven); g != want {
+		if g, want := BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}), ubdRef.mul(dec128, bx, by, ToNearestEven); g != want {
 			t.Fatalf("mul(%#x, %#x): got %#x, want %#x", bx, by, g, want)
 		}
 		m := modes[i%len(modes)]
 		g := UBDMulRnd128(Uint128{Hi: ux.Hi, Lo: ux.Lo}, Uint128{Hi: uy.Hi, Lo: uy.Lo}, m)
-		if g, want := BIDFromUBDAny128(g), Mul128(bx, by, m); g != want {
+		if g, want := BIDFromUBDAny128(g), ubdRef.mul(dec128, bx, by, m); g != want {
 			t.Fatalf("mul(%#x, %#x, %v): got %#x, want %#x", bx, by, m, g, want)
 		}
 	}
 }
 
 // TestUBDDivAgrees checks the divide entries, ties to even and the Rnd
-// entry in every mode, against the BID kernel on coefficients of 1 to 34
+// entry in every mode, against the math/big reference on coefficients of 1 to 34
 // digits, zeros among them.
 func TestUBDDivAgrees(t *testing.T) {
 	r := rand.New(rand.NewPCG(53, 59))
@@ -495,19 +405,20 @@ func TestUBDDivAgrees(t *testing.T) {
 		bx, ux := ubdBenchVal(r.IntN(2) == 0, coeff(), r.IntN(400)-200)
 		by, uy := ubdBenchVal(r.IntN(2) == 0, coeff(), r.IntN(400)-200)
 		got := UBDKernelDiv(ux, uy)
-		if g, want := BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}), BIDKernelDiv(bx, by, ToNearestEven); g != want {
+		if g, want := BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}), ubdRef.div(dec128, bx, by, ToNearestEven); g != want {
 			t.Fatalf("div(%#x, %#x): got %#x, want %#x", bx, by, g, want)
 		}
 		m := modes[i%len(modes)]
 		g := UBDDivRnd128(Uint128{Hi: ux.Hi, Lo: ux.Lo}, Uint128{Hi: uy.Hi, Lo: uy.Lo}, m)
-		if g, want := BIDFromUBDAny128(g), Div128(bx, by, m); g != want {
+		if g, want := BIDFromUBDAny128(g), ubdRef.div(dec128, bx, by, m); g != want {
 			t.Fatalf("div(%#x, %#x, %v): got %#x, want %#x", bx, by, m, g, want)
 		}
 	}
 }
 
 // TestUBDRoundToIntegralWideAgrees checks the ties-to-even round-to-
-// integral entry on operands wider than a word against the BID kernel:
+// integral entry on operands wider than a word against the math/big
+// reference:
 // coefficients of 20 to 34 digits at exponents from -60 to 10, so that the
 // result rounds, is the operand, or is zero.
 func TestUBDRoundToIntegralWideAgrees(t *testing.T) {
@@ -515,8 +426,20 @@ func TestUBDRoundToIntegralWideAgrees(t *testing.T) {
 	for i := 0; i < 1000000; i++ {
 		bx, ux := ubdBenchVal(r.IntN(2) == 0, ubdBenchDigits(r, 20, 34), r.IntN(71)-60)
 		got := UBDKernelRTI(ux)
-		if g, want := BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}), BIDKernelRTI(bx, ToNearestEven); g != want {
+		if g, want := BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}), ubdRef.roundToIntegral(dec128, bx, ToNearestEven); g != want {
 			t.Fatalf("roundToIntegral(%#x): got %#x, want %#x", bx, g, want)
 		}
 	}
 }
+
+// ubdAgreeN is the number of random operand pairs each word-path agreement
+// test draws: the reference is math/big, so -short takes a tenth.
+func ubdAgreeN() int {
+	if testing.Short() {
+		return 200000
+	}
+	return 2000000
+}
+
+// ubdRef is the math/big reference the agreement tests check against.
+var ubdRef reference

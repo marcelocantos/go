@@ -74,11 +74,11 @@ func ubdSel128(m uint64, a, b UBD128) UBD128 {
 	return UBD128{Lo: a.Lo ^ (a.Lo^b.Lo)&m, Hi: a.Hi ^ (a.Hi^b.Hi)&m}
 }
 
-// ubdIntParts128 is intParts128 on UBD with TowardZero, the language's
-// rounding for a conversion to an integer, which never increments: x
-// truncated to an integer, as a class, a sign and a magnitude, with big for
-// a magnitude beyond a uint64 and inexact for a truncated one.
-func ubdIntParts128(x UBD128) (kind Kind, neg bool, m uint64, big, inexact bool) {
+// ubdIntParts128 returns x rounded to an integer in mode, as a class, a
+// sign and a magnitude, with big for a magnitude beyond a uint64 and
+// inexact for a rounded one. The language's conversion to an integer
+// rounds TowardZero, which never increments.
+func ubdIntParts128(x UBD128, mode Mode) (kind Kind, neg bool, m uint64, big, inexact bool) {
 	neg = x.Hi&UBDSignHi != 0
 	if x.Hi>>60 == UBDSpecialTag {
 		if x.Hi>>59 == UBDNaNTag {
@@ -97,7 +97,10 @@ func ubdIntParts128(x UBD128) (kind Kind, neg bool, m uint64, big, inexact bool)
 		return kind, neg, m, false, false
 	}
 	q, class := cShift128(c, -exp)
-	inexact = class != classZero
+	if class != classZero {
+		inexact = true
+		q = cAddU64128(q, roundInc(class, mode, neg, cOdd128(q)))
+	}
 	m, fits := cToU64128(q)
 	if !fits {
 		return kind, neg, 0, true, inexact
@@ -129,7 +132,7 @@ func ubdInt64From128(x UBD128) int64 {
 			return int64(q)
 		}
 	}
-	r, _ := int64Result(ubdIntParts128(x))
+	r, _ := int64Result(ubdIntParts128(x, TowardZero))
 	return r
 }
 
@@ -147,7 +150,7 @@ func ubdUint64From128(x UBD128) uint64 {
 			return q
 		}
 	}
-	r, _ := uint64Result(ubdIntParts128(x))
+	r, _ := uint64Result(ubdIntParts128(x, TowardZero))
 	return r
 }
 
@@ -256,3 +259,52 @@ func UBDEqual128(x, y UBD128) bool { return ubdEqual128(x, y) }
 // documentation). For one operand pass it twice. math/decimal's
 // elementary functions propagate NaNs with it.
 func UBDNaN128(x, y UBD128) UBD128 { return ubdNaN2(x, y) }
+
+// ubdTotalOrder128 reports whether x precedes or equals y in the total
+// order of IEEE 754-2019 clause 5.10 (TotalOrder128): by sign, then by
+// kind (finite, infinity, NaN) and magnitude, and within a cohort the
+// smaller exponent first for a positive value and the larger for a
+// negative one. NaNs of one sign are equal, whatever their payloads.
+func ubdTotalOrder128(x, y UBD128) bool {
+	xk, xneg, xc, xe := UBDUnpack128(x)
+	yk, yneg, yc, ye := UBDUnpack128(y)
+	if xneg != yneg {
+		return xneg
+	}
+	// c is -1, 0 or +1 as |x| precedes, equals or follows |y|, which for
+	// positive operands is the order of the values.
+	c := 0
+	switch {
+	case xk != yk:
+		c = -1
+		if xk > yk {
+			c = 1
+		}
+	case xk != KindFinite:
+		// Infinities of one sign are equal, as are NaNs.
+	default:
+		xz, yz := cIsZero128(xc), cIsZero128(yc)
+		switch {
+		case xz && yz:
+		case xz:
+			c = -1
+		case yz:
+			c = 1
+		default:
+			c = cCmpFinite128(false, xc, xe, false, yc, ye)
+		}
+		if c == 0 {
+			// One value, two quanta: the smaller exponent first.
+			switch {
+			case xe < ye:
+				c = -1
+			case xe > ye:
+				c = 1
+			}
+		}
+	}
+	if xneg {
+		return c >= 0
+	}
+	return c <= 0
+}

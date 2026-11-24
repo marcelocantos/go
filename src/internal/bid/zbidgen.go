@@ -35,28 +35,6 @@ func roundFace64(neg bool, q coef64, exp int, class digitClass, mode Mode) coef6
 	return *new(coef64)
 }
 
-const addDigits128 = len(pow10tab128) - 1
-
-func add128(x, y coef128, mode Mode) coef128 {
-	return *new(coef128)
-}
-
-func sub128(x, y coef128, mode Mode) coef128 {
-	return *new(coef128)
-}
-
-func subSlow128(x, y coef128, mode Mode) coef128 {
-	return *new(coef128)
-}
-
-func addLong128(x, y coef128, mode Mode) coef128 {
-	return *new(coef128)
-}
-
-func roundFace128(neg bool, q coef128, exp int, class digitClass, mode Mode) coef128 {
-	return *new(coef128)
-}
-
 func magCmp64(xc coef64, xe int, yc coef64, ye int) int {
 	return *new(int)
 }
@@ -113,62 +91,6 @@ func roundParts64(neg bool, p wide64, exp int, sticky bool, mode Mode) (coef64, 
 	return *new(coef64), *new(Status)
 }
 
-func magCmp128(xc coef128, xe int, yc coef128, ye int) int {
-	return *new(int)
-}
-
-func nan128(x, y, z coef128) coef128 {
-	return *new(coef128)
-}
-
-func quietCmpSlow128(x, y coef128) (c int, ok bool) {
-	return *new(int), *new(bool)
-}
-
-func quietCmpRest128(x, y coef128) (c int, ok bool) {
-	return *new(int), *new(bool)
-}
-
-func equal128(x, y coef128) bool {
-	return *new(bool)
-}
-
-func less128(x, y coef128) bool {
-	return *new(bool)
-}
-
-func lessEqual128(x, y coef128) bool {
-	return *new(bool)
-}
-
-func totalOrder128(x, y coef128) bool {
-	return *new(bool)
-}
-
-func key128(x coef128) (kind Kind, neg bool, c coef128, exp int) {
-	return *new(Kind), *new(bool), *new(coef128), *new(int)
-}
-
-func roundFinite128(neg bool, c coef128, exp int, mode Mode, floor int) (coef128, digitClass) {
-	return *new(coef128), *new(digitClass)
-}
-
-func round128(neg bool, p wide128, exp int, class digitClass, mode Mode, floor int) (coef128, Status) {
-	return *new(coef128), *new(Status)
-}
-
-func overflow128(neg bool, mode Mode) (coef128, Status) {
-	return *new(coef128), *new(Status)
-}
-
-func pack128(neg bool, c coef128, exp int) coef128 {
-	return *new(coef128)
-}
-
-func roundParts128(neg bool, p wide128, exp int, sticky bool, mode Mode) (coef128, Status) {
-	return *new(coef128), *new(Status)
-}
-
 func divLong64(x, y coef64, mode Mode) coef64 {
 	return *new(coef64)
 }
@@ -177,32 +99,14 @@ func strip64(q coef64, k, first int) (coef64, int) {
 	return *new(coef64), *new(int)
 }
 
-func divLong128(x, y coef128, mode Mode) coef128 {
-	return *new(coef128)
-}
-
-func strip128(q coef128, k, first int) (coef128, int) {
-	return *new(coef128), *new(int)
-}
-
 const fmaDigits64 = 2*Precision64 + 3
 
 func fmaLong64(x, y, z coef64, mode Mode) coef64 {
 	return *new(coef64)
 }
 
-const fmaDigits128 = 2*Precision128 + 3
-
-func fmaLong128(x, y, z coef128, mode Mode) coef128 {
-	return *new(coef128)
-}
-
 func fromFloat64(kind Kind, neg bool, m uint64, e int, mode Mode) coef64 {
 	return *new(coef64)
-}
-
-func fromFloat128(kind Kind, neg bool, m uint64, e int, mode Mode) coef128 {
-	return *new(coef128)
 }
 
 func intTo64(neg bool, m uint64, mode Mode) coef64 {
@@ -229,30 +133,6 @@ func uint64From64(x coef64, mode Mode) (uint64, Status) {
 	return *new(uint64), *new(Status)
 }
 
-func intTo128(neg bool, m uint64, mode Mode) coef128 {
-	return *new(coef128)
-}
-
-func int64To128(x int64, mode Mode) coef128 {
-	return *new(coef128)
-}
-
-func uint64To128(x uint64, mode Mode) coef128 {
-	return *new(coef128)
-}
-
-func intParts128(x coef128, mode Mode) (kind Kind, neg bool, m uint64, big, inexact bool) {
-	return *new(Kind), *new(bool), *new(uint64), *new(bool), *new(bool)
-}
-
-func int64From128(x coef128, mode Mode) (int64, Status) {
-	return *new(int64), *new(Status)
-}
-
-func uint64From128(x coef128, mode Mode) (uint64, Status) {
-	return *new(uint64), *new(Status)
-}
-
 func min64(x, y coef64) coef64 {
 	return *new(coef64)
 }
@@ -273,26 +153,6 @@ func result64(x coef64) coef64 {
 	return *new(coef64)
 }
 
-func min128(x, y coef128) coef128 {
-	return *new(coef128)
-}
-
-func max128(x, y coef128) coef128 {
-	return *new(coef128)
-}
-
-func totalBefore128(a, b coef128) bool {
-	return *new(bool)
-}
-
-func exponentOf128(x coef128) (int, bool) {
-	return *new(int), *new(bool)
-}
-
-func result128(x coef128) coef128 {
-	return *new(coef128)
-}
-
 func mul64(x, y coef64, mode Mode) coef64 {
 	return *new(coef64)
 }
@@ -301,28 +161,12 @@ func mulLong64(x, y coef64, mode Mode) coef64 {
 	return *new(coef64)
 }
 
-func mul128(x, y coef128, mode Mode) coef128 {
-	return *new(coef128)
-}
-
-func mulLong128(x, y coef128, mode Mode) coef128 {
-	return *new(coef128)
-}
-
 func payload64(x coef64) coef64 {
 	return *new(coef64)
 }
 
 func nanWithPayload64(p coef64, signaling bool) coef64 {
 	return *new(coef64)
-}
-
-func payload128(x coef128) coef128 {
-	return *new(coef128)
-}
-
-func nanWithPayload128(p coef128, signaling bool) coef128 {
-	return *new(coef128)
 }
 
 func roundToIntegral64(x coef64, mode Mode) coef64 {
@@ -353,34 +197,6 @@ func quantum64(x coef64) coef64 {
 	return *new(coef64)
 }
 
-func roundToIntegral128(x coef128, mode Mode) coef128 {
-	return *new(coef128)
-}
-
-func quantize128(x, y coef128, mode Mode) coef128 {
-	return *new(coef128)
-}
-
-func quantizeLong128(x, y coef128, mode Mode) coef128 {
-	return *new(coef128)
-}
-
-func quoQuantize128(x, y, q coef128, mode Mode) coef128 {
-	return *new(coef128)
-}
-
-func reduce128(x coef128) coef128 {
-	return *new(coef128)
-}
-
-func sameQuantum128(x, y coef128) bool {
-	return *new(bool)
-}
-
-func quantum128(x coef128) coef128 {
-	return *new(coef128)
-}
-
 const remStep64 = len(pow10tab64) - 1
 
 func rem64(x, y coef64) coef64 {
@@ -403,28 +219,6 @@ func remExact64(neg bool, c coef64, exp int) coef64 {
 	return *new(coef64)
 }
 
-const remStep128 = len(pow10tab128) - 1
-
-func rem128(x, y coef128) coef128 {
-	return *new(coef128)
-}
-
-func mod128(x, y coef128) coef128 {
-	return *new(coef128)
-}
-
-func remainder128(x, y coef128, nearest bool) coef128 {
-	return *new(coef128)
-}
-
-func remScaled128(c coef128, k int, m coef128) coef128 {
-	return *new(coef128)
-}
-
-func remExact128(neg bool, c coef128, exp int) coef128 {
-	return *new(coef128)
-}
-
 func UnpackDigits64(buf *[Precision64]byte, x coef64) (kind Kind, neg bool, n, exp int) {
 	return *new(Kind), *new(bool), *new(int), *new(int)
 }
@@ -435,16 +229,4 @@ func append64(dst []byte, x coef64, sci bool) []byte {
 
 func parse64(s string, mode Mode) (coef64, Status) {
 	return *new(coef64), *new(Status)
-}
-
-func UnpackDigits128(buf *[Precision128]byte, x coef128) (kind Kind, neg bool, n, exp int) {
-	return *new(Kind), *new(bool), *new(int), *new(int)
-}
-
-func append128(dst []byte, x coef128, sci bool) []byte {
-	return *new([]byte)
-}
-
-func parse128(s string, mode Mode) (coef128, Status) {
-	return *new(coef128), *new(Status)
 }

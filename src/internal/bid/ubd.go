@@ -344,6 +344,17 @@ func UBDNarrow128(x UBD128, mode Mode) uint64 { return ubdNarrow128(x, mode) }
 // it: its two words, low first, as decimal128 is laid out.
 type UBD128 struct{ Lo, Hi uint64 }
 
+// toUBD and fromUBD convert between BID-128 and UBD. The decimal128 entry
+// points that take and return BID-128 (Add128 and the rest), the interchange
+// encoding, are each a call of the UBD kernel between the two: the kernel
+// is the only 128-bit arithmetic in the package.
+func toUBD(x Uint128) UBD128 {
+	u := UBDFromBID128(x)
+	return UBD128{Lo: u.Lo, Hi: u.Hi}
+}
+
+func fromUBD(x UBD128) Uint128 { return BIDFromUBD128(Uint128{Hi: x.Hi, Lo: x.Lo}) }
+
 // The entries come in pairs: TTE rounds to nearest, ties to even, as the
 // language's operators and the functions without a mode do, and takes no
 // mode; Rnd takes the caller's.

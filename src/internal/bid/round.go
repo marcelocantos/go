@@ -102,7 +102,8 @@ func RoundWide64(neg bool, coeff Uint128, exp int, sticky bool, mode Mode) (uint
 
 // Round128 is Round64 for decimal128. The coefficient may be any Uint128.
 func Round128(neg bool, coeff Uint128, exp int, sticky bool, mode Mode) (Uint128, Status) {
-	return roundParts128(neg, wide128{Lo: coeff}, exp, sticky, mode)
+	r, st := UBDRound128(neg, coeff, exp, sticky, mode)
+	return fromUBD(r), st
 }
 
 // The width-independent half of the rounding routine (rule 7 of "Width

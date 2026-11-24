@@ -5,7 +5,6 @@
 package bid_test
 
 import (
-	"fmt"
 	"internal/bid"
 	"testing"
 )
@@ -16,9 +15,12 @@ import (
 // TestInlinePaths checks the first over every pair of a pool of encodings
 // placed on both sides of each bound, every mode, both through the helper and
 // through the exported function; TestInlineBounds checks the second, operand
-// pair by operand pair, at each bound.
+// pair by operand pair, at each bound. These are decimal64's fronts;
+// decimal128's are the UBD kernel's, which ubd_test.go and
+// operators_ubd_test.go check.
 
-// enc64 and enc128 are first-form encodings with a biased exponent.
+// enc64 and enc128 are first-form encodings with a biased exponent;
+// inlinePool128 is also the operand pool of the UBD tests.
 func enc64(neg bool, c uint64, biased uint64) uint64 {
 	x := biased<<bid.ExpShift64 | c
 	if neg {
@@ -143,77 +145,12 @@ func TestInlinePaths(t *testing.T) {
 		}
 		t.Logf("%d pairs; decided inline: %v", len(pool)*len(pool), decided)
 	})
-	t.Run("128", func(t *testing.T) {
-		pool := inlinePool128()
-		decided := map[string]int{}
-		check := func(op string, x, y, got, want bid.Uint128, m bid.Mode) {
-			t.Helper()
-			if got != want {
-				t.Fatalf("%s(%#x, %#x, %v) = %#x, general path %#x", op, x, y, m, got, want)
-			}
-		}
-		for _, x := range pool {
-			for _, y := range pool {
-				r1, ok1 := bid.AddSameQuantum128(x, y)
-				r2, ok2 := bid.SubSameQuantum128(x, y)
-				r3, ok3 := bid.MulShort128(x, y)
-				same := bid.QuantizeSame128(x, y)
-				for _, m := range inlineModes {
-					add, sub, mul, quant := bid.AddSlow128(x, y, m), bid.SubSlow128(x, y, m), bid.MulSlow128(x, y, m), bid.QuantizeSlow128(x, y, m)
-					check("Add128", x, y, bid.Add128(x, y, m), add, m)
-					check("Sub128", x, y, bid.Sub128(x, y, m), sub, m)
-					check("Mul128", x, y, bid.Mul128(x, y, m), mul, m)
-					check("Quantize128", x, y, bid.Quantize128(x, y, m), quant, m)
-					if ok1 {
-						check("addSameQuantum128", x, y, r1, add, m)
-					}
-					if ok2 {
-						check("subSameQuantum128", x, y, r2, sub, m)
-					}
-					if ok3 {
-						check("mulShort128", x, y, r3, mul, m)
-					}
-					if same {
-						check("quantizeSame128", x, y, x, quant, m)
-					}
-				}
-				c, ok := bid.QuietCmpSlow128(x, y)
-				if gc, gok := bid.Compare128(x, y); gc != c || gok != ok {
-					t.Fatalf("Compare128(%#x, %#x) = %d, %v, general path %d, %v", x, y, gc, gok, c, ok)
-				}
-				if bid.Equal128(x, y) != (ok && c == 0) || bid.Less128(x, y) != (ok && c < 0) || bid.LessEqual128(x, y) != (ok && c <= 0) {
-					t.Fatalf("Equal128, Less128 or LessEqual128(%#x, %#x) disagrees with the general path's %d, %v", x, y, c, ok)
-				}
-				if bid.EqualSlow128(x, y) != (ok && c == 0) || bid.LessSlow128(x, y) != (ok && c < 0) || bid.LessEqualSlow128(x, y) != (ok && c <= 0) {
-					t.Fatalf("EqualSlow128, LessSlow128 or LessEqualSlow128(%#x, %#x) disagrees with the general path's %d, %v", x, y, c, ok)
-				}
-				kx, ky, kok := bid.SameQuantumKeys128(x, y)
-				if kok {
-					kc := 0
-					if kx < ky {
-						kc = -1
-					} else if kx > ky {
-						kc = 1
-					}
-					if !ok || kc != c {
-						t.Fatalf("sameQuantumKeys128(%#x, %#x) orders %d, general path %d, %v", x, y, kc, c, ok)
-					}
-				}
-				for name, d := range map[string]bool{"add": ok1, "sub": ok2, "mul": ok3, "quantize": same, "keys": kok} {
-					if d {
-						decided[name]++
-					}
-				}
-			}
-		}
-		t.Logf("%d pairs; decided inline: %v", len(pool)*len(pool), decided)
-	})
 }
 
 // TestInlineBounds checks that each inline path decides the operands on the
 // inside of each of its bounds and refuses those just outside it.
 func TestInlineBounds(t *testing.T) {
-	const b64, b128 = bid.Bias64, bid.Bias128
+	const b64 = bid.Bias64
 	type case64 struct {
 		name string
 		x, y uint64
@@ -283,72 +220,4 @@ func TestInlineBounds(t *testing.T) {
 		}
 	}
 
-	type case128 struct {
-		name string
-		x, y bid.Uint128
-		want bool
-	}
-	ok128 := func(f func(x, y bid.Uint128) (bid.Uint128, bool)) func(x, y bid.Uint128) bool {
-		return func(x, y bid.Uint128) bool { _, ok := f(x, y); return ok }
-	}
-	keys128 := func(x, y bid.Uint128) bool { _, _, ok := bid.SameQuantumKeys128(x, y); return ok }
-	w := func(neg bool, lo uint64, e uint64) bid.Uint128 { return enc128(neg, 0, lo, e) }
-	for _, tc := range []struct {
-		op    string
-		f     func(x, y bid.Uint128) bool
-		cases []case128
-	}{
-		{"addSameQuantum128", ok128(bid.AddSameQuantum128), []case128{
-			{"carry into the high word", w(false, 1<<64-1, b128), w(false, 1, b128), true},
-			{"negative", w(true, 5, b128), w(true, 7, b128), true},
-			{"high coefficient", enc128(false, 1, 0, b128), enc128(false, 1, 0, b128), false},
-			{"opposite signs", w(false, 5, b128), w(true, 7, b128), false},
-			{"exponents apart", w(false, 5, b128), w(false, 7, b128+1), false},
-			{"biased exponent 8191", w(false, 5, 8191), w(false, 7, 8191), true},
-			{"biased exponent 8192", w(false, 5, 8192), w(false, 7, 8192), false},
-			{"infinities", bid.Uint128{Hi: bid.Inf128Hi}, bid.Uint128{Hi: bid.Inf128Hi}, false},
-		}},
-		{"subSameQuantum128", ok128(bid.SubSameQuantum128), []case128{
-			{"larger x", w(false, 9, b128), w(false, 2, b128), true},
-			{"larger y", w(true, 2, b128), w(true, 1<<64-1, b128), true},
-			{"equal", w(false, 9, b128), w(false, 9, b128), false},
-			{"opposite signs", w(false, 9, b128), w(true, 2, b128), false},
-			{"high coefficient", enc128(false, 1, 9, b128), enc128(false, 1, 2, b128), false},
-			{"biased exponent 8191", w(false, 9, 8191), w(false, 2, 8191), true},
-			{"biased exponent 8192", w(false, 9, 8192), w(false, 2, 8192), false},
-		}},
-		{"mulShort128", ok128(bid.MulShort128), []case128{
-			{"product below 2^96", w(false, 1<<48, b128), w(true, 1<<48-1, b128), true},
-			{"product 2^96", w(false, 1<<48, b128), w(false, 1<<48, b128), false},
-			{"high word 2^32-1", w(false, 1<<64-1, b128), w(false, 1<<32, b128), true},
-			{"high word 2^32", w(false, 1<<64-1, b128), w(false, 1<<32+1, b128), false},
-			{"biased exponent 0", w(false, 3, b128), w(false, 3, 0), true},
-			{"biased exponent -1", w(false, 3, b128-1), w(false, 3, 0), false},
-			{"biased exponent 8191", w(false, 3, 7184), w(false, 3, 7183), true},
-			{"biased exponent 8192", w(false, 3, 7184), w(false, 3, 7184), false},
-			{"operand exponent 8192", w(false, 3, 8192), w(false, 3, 0), false},
-			{"high coefficient", enc128(false, 1, 0, b128), w(false, 1, b128), false},
-		}},
-		{"quantizeSame128", bid.QuantizeSame128, []case128{
-			{"same exponent", w(true, 12345, b128-2), enc128(false, 1, 5, b128-2), true},
-			{"other exponent", w(true, 12345, b128-4), w(false, 1, b128-2), false},
-			{"high coefficient", enc128(false, 1, 0, b128), w(false, 1, b128), false},
-			{"biased exponent 8191", w(false, 1, 8191), w(false, 1, 8191), true},
-			{"biased exponent 8192", w(false, 1, 8192), w(false, 1, 8192), false},
-			{"y NaN", w(false, 1, b128), bid.Uint128{Hi: bid.NaN128Hi}, false},
-		}},
-		{"sameQuantumKeys128", keys128, []case128{
-			{"same quantum", w(true, 1, b128), w(true, 2, b128), true},
-			{"zeros of two signs", w(true, 0, b128), w(false, 0, b128), false},
-			{"high coefficient", enc128(false, 1, 0, b128), enc128(false, 1, 0, b128), false},
-			{"biased exponent 8191", w(false, 1, 8191), w(false, 2, 8191), true},
-			{"biased exponent 8192", w(false, 1, 8192), w(false, 2, 8192), false},
-		}},
-	} {
-		for _, c := range tc.cases {
-			if got := tc.f(c.x, c.y); got != c.want {
-				t.Errorf("%s, %s (%s, %s): decided = %v, want %v", tc.op, c.name, fmt.Sprintf("%#x", c.x), fmt.Sprintf("%#x", c.y), got, c.want)
-			}
-		}
-	}
 }
