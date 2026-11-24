@@ -28,9 +28,9 @@ import (
 // -gcflags=all=-d=ubdlevel=N) as well as the kernel entries behind them.
 // -bid.vectors=operators runs the published vectors against it.
 //
-// The operators round to nearest, ties to even, and have no other rounding
-// direction, so a vector in another rounding direction is skipped. Every
-// other operation is the ubd target's.
+// The operators round TiesToEven and have no other rounding direction, so a
+// vector in another rounding direction is skipped. Every other operation is
+// the ubd target's.
 //
 // A result of this target means nothing without the level, so the run
 // names it ("operators at ubdlevel 3"), read from the -gcflags the test
@@ -92,8 +92,8 @@ func ubdLevelFromGcflags(v string) (int, error) {
 }
 
 // skipOperatorsDirection is the skip reason for a vector in a rounding
-// direction other than ties to even.
-const skipOperatorsDirection = implSkip("operators: Go's operators round to nearest even only")
+// direction other than TiesToEven.
+const skipOperatorsDirection = implSkip("operators: Go's operators round TiesToEven only")
 
 // opAdd64 and the other operators are operators_test.go's.
 

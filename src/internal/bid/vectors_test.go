@@ -142,8 +142,8 @@ package bid_test
 // math/decimal's Sqrt, Exp, Log, Log10, Pow, Logb, Ldexp and Nextafter
 // (toward +Infinity, toward -Infinity and toward the second operand),
 // which internal/decimal implements above the kernel (see the function
-// elementary). Those round to nearest even, so a vector in another
-// rounding mode is skipped, and so is a scaleb whose count GDA rejects,
+// elementary). Those round TiesToEven, so a vector in another
+// rounding direction is skipped, and so is a scaleb whose count GDA rejects,
 // since Ldexp takes an int. A nexttoward of two equal operands is skipped
 // where it differs: Nextafter returns x, as math.Nextafter does, and GDA x
 // with the sign of y.
@@ -153,7 +153,7 @@ package bid_test
 // shift or rotate, and IEEE operations the API does not have),
 // operands or results that cannot be represented or are outside the
 // contract (hex encodings, Division impossible, NaN payloads in the
-// character form), and rounding modes the contract does not have
+// character form), and rounding directions the contract does not have
 // (half_down, up, 05up).
 //
 // Intel readtest.in. A line is
@@ -166,7 +166,7 @@ package bid_test
 // the name of a library function that is not an operation. A mixed-width
 // function, such as bid128dd_add or bid64qq_sub, has letters d (decimal64)
 // and q (decimal128) after the prefix, one for each operand, and the prefix
-// gives the result's format. The rounding code is 0 nearest even, 1 toward
+// gives the result's format. The rounding code is 0 TiesToEven, 1 toward
 // negative, 2 toward positive, 3 toward zero, 4 nearest away. A decimal
 // operand or result is a hex encoding in brackets (16 digits for
 // decimal64, 32 digits or two groups of 16 separated by a comma for
@@ -174,9 +174,10 @@ package bid_test
 // operand's format first: a numeral ("0", "-0", "+8898.E5") or one of the
 // words Inf, Infinity, NaN, QNaN and SNaN in any case, each with an
 // optional sign. The runner reads text with the reference codec, rounding
-// to nearest even whatever the line's code, which is what the harness does
+// TiesToEven whatever the line's code, which is what the harness does
 // (the code applies to the operation, not to reading its operands); only
-// from_string hands its text to the target's Parse, in the line's mode.
+// from_string hands its text to the target's Parse, in the line's rounding
+// direction.
 // A predicate's result is 0 or 1, an integer conversion's result a decimal
 // integer, a conversion to binary a hex bit pattern in brackets (8 or 16
 // digits; the operand of binaryNN_to_bidNN is one too, or text that the
@@ -194,14 +195,15 @@ package bid_test
 //
 // The mapping, by Intel function:
 //
-//	add, sub, mul, div, fma         Add, Sub, Mul, Div, FMA at the line's mode
+//	add, sub, mul, div, fma         Add, Sub, Mul, Div, FMA in the line's
+//	                                rounding direction
 //	bid128dd_add, bid128dqd_fma ... the decimal64 operands widened (exact),
 //	                                then the decimal128 operation: one rounding
 //	rem, fmod                       Rem (IEEE remainder), Mod (truncated)
 //	quantize                        Quantize
-//	round_integral_{nearest_even,   RoundToIntegral in the mode named; _exact
-//	  nearest_away,zero,positive,   and nearbyint in the line's mode
-//	  negative,exact}, nearbyint
+//	round_integral_{nearest_even,   RoundToIntegral in the rounding direction
+//	  nearest_away,zero,positive,   named; _exact and nearbyint in the line's
+//	  negative,exact}, nearbyint    rounding direction
 //	negate, abs, copySign           Neg, Abs, CopySign
 //	minnum, maxnum                  Min, Max, with the divergences of
 //	                                minMaxDivergence
@@ -229,8 +231,8 @@ package bid_test
 //	to_string                       Unpack, written in Intel's notation
 //	from_string                     Parse, with its Status
 //	sqrt, exp, log, log10, pow      math/decimal's Sqrt, Exp, Log, Log10, Pow,
-//	                                at rounding code 0 only: they round to
-//	                                nearest even
+//	                                at rounding code 0 only: they round
+//	                                TiesToEven
 //	cbrt, exp10, exp2               Rootn(x, 3), Pow(10, x), Pow(2, x), likewise
 //	scalbn, scalbln, ldexp          Ldexp, likewise
 //	logb, ilogb                     Logb, Ilogb
@@ -281,7 +283,7 @@ package bid_test
 //
 // separated by white space. The operation is a format, b32 (binary32) or
 // d64 and d128 (decimal64, decimal128), followed by the operation's symbol;
-// the decimal files use + - * / only. The rounding code is =0 nearest even,
+// the decimal files use + - * / only. The rounding code is =0 TiesToEven,
 // =^ nearest away, 0 toward zero, > toward positive, < toward negative.
 // traps is the set of enabled traps, written as letters: x inexact, u
 // underflow, o overflow, z division by zero, i invalid; absent, every trap
@@ -300,23 +302,23 @@ package bid_test
 // before rounding and for loss of accuracy detection as an inexact result",
 // the contract's definition.
 //
-// Each vector is the kernel's Add, Sub, Mul or Div at the line's mode (the
-// vectors of the binary files are skipped by format). A numeral is encoded
-// exactly with the reference model's codec, at the exponent it is written
-// with, and the result is compared bit for bit, so a wrong quantum fails (a
-// numeral the format cannot hold, a coefficient of more than Precision
-// digits or an exponent outside [MinExp, MaxExp], is skipped as not
-// representable); Q and S are the positive quiet and signaling NaNs with a
-// zero payload, and an expected Q passes on any quiet NaN (counted as "NaN
-// modulo payload" when the bits differ). The contract has no traps (it
-// delivers the default result of IEEE 754-2019 clause 7), so a vector that
-// takes an overflow, underflow or invalid trap (one whose flags include an
-// enabled trap) is skipped: those traps deliver the result scaled into the
-// exponent range, or none. An enabled trap that the operation does not take
-// changes nothing, and the vector runs. A vector that takes the inexact trap
-// runs too, because IEEE 754-1985 clause 7.5 delivers the default rounded
-// result to that trap handler, and its flags are compared; its pass is
-// counted under a note.
+// Each vector is the kernel's Add, Sub, Mul or Div in the line's rounding
+// direction (the vectors of the binary files are skipped by format). A
+// numeral is encoded exactly with the reference model's codec, at the
+// exponent it is written with, and the result is compared bit for bit, so a
+// wrong quantum fails (a numeral the format cannot hold, a coefficient of
+// more than Precision digits or an exponent outside [MinExp, MaxExp], is
+// skipped as not representable); Q and S are the positive quiet and
+// signaling NaNs with a zero payload, and an expected Q passes on any quiet
+// NaN (counted as "NaN modulo payload" when the bits differ). The contract
+// has no traps (it delivers the default result of IEEE 754-2019 clause 7),
+// so a vector that takes an overflow, underflow or invalid trap (one whose
+// flags include an enabled trap) is skipped: those traps deliver the result
+// scaled into the exponent range, or none. An enabled trap that the
+// operation does not take changes nothing, and the vector runs. A vector
+// that takes the inexact trap runs too, because IEEE 754-1985 clause 7.5
+// delivers the default rounded result to that trap handler, and its flags
+// are compared; its pass is counted under a note.
 //
 // Flags. Arithmetic returns no Status, so the flags are checked through the
 // kernel's rounding routine: for finite operands and a non-zero divisor the
@@ -339,7 +341,7 @@ package bid_test
 // with c negated (by the reference model, and not when c is a NaN, which
 // the files write without a sign), a·b − c. The operation V is the square
 // root, which is not the kernel's: it runs against math/decimal's Sqrt (see
-// the function elementary), which rounds to nearest even, so a square root
+// the function elementary), which rounds TiesToEven, so a square root
 // in another rounding direction is skipped. Flags are checked through Round64
 // and Round128 as for FPgen, with the exact value of a·b ± c at the smaller
 // of the exponents of a·b and c, and that of a square root as its integer
@@ -373,7 +375,7 @@ package bid_test
 // decimal128, see ubd_vectors_test.go); or operators, the path a program
 // takes (see operators_vectors_test.go): BID64frombits or BID128frombits,
 // Go's operators or math/decimal's FMA, then BID64bits or BID128bits. The
-// operators round to nearest even only, and on a UBD target they are
+// operators round TiesToEven only, and on a UBD target they are
 // compiled at a ubdlevel, which the run reads from the test binary and puts
 // in its output; run them at each level with
 //
@@ -414,7 +416,7 @@ const (
 )
 
 var (
-	vecTarget = flag.String("bid.vectors", "kernel", "implementation the published vectors run against: kernel, reference, ubd (the kernel with the UBD entries for decimal128), or operators (add, subtract, multiply, divide and FMA through Go's operators and math/decimal, at ties to even; built with GOEXPERIMENT=decimal)")
+	vecTarget = flag.String("bid.vectors", "kernel", "implementation the published vectors run against: kernel, reference, ubd (the kernel with the UBD entries for decimal128), or operators (add, subtract, multiply, divide and FMA through Go's operators and math/decimal, at TiesToEven; built with GOEXPERIMENT=decimal)")
 	vecShow   = flag.Int("bid.vecshow", 20, "print at most this many failing vectors per file")
 	vecAll    = flag.Bool("bid.vecall", false, "print every failing vector")
 	vecFiles  = flag.String("bid.vecfiles", "", "run only the decTest, FPgen and Cairo files whose names match this regular expression")
@@ -568,7 +570,7 @@ func vecTargetImpl(t *testing.T) impl {
 
 // implSkip is a panic value with which a target declines an operation it
 // cannot do as asked, such as the operators target in a rounding direction
-// other than ties to even: try reports it as not implemented and
+// other than TiesToEven: try reports it as not implemented and
 // implSkipReason gives its reason.
 type implSkip string
 
@@ -830,8 +832,9 @@ func quoteArgs(args []string) string {
 	return strings.Join(q, " ")
 }
 
-// vecMode maps a decTest rounding name to the kernel's modes.
-func vecMode(name string) (bid.Mode, bool) {
+// vecDirection maps a decTest rounding name to the kernel's rounding
+// direction.
+func vecDirection(name string) (bid.Mode, bool) {
 	switch name {
 	case "half_even":
 		return bid.ToNearestEven, true
@@ -941,7 +944,7 @@ type decRes struct {
 
 type decOp struct {
 	n     int  // operands
-	modal bool // takes the context's rounding mode
+	hasRD bool // takes the context's rounding direction
 	text  bool // the result is text rather than a decimal
 	run   func(im impl, f *format, a []bits, m bid.Mode) decRes
 }
@@ -1020,7 +1023,7 @@ var decOps = map[string]decOp{
 	"copyabs":    {1, false, false, func(im impl, f *format, a []bits, m bid.Mode) decRes { return resBits(im.abs(f, a[0])) }},
 	"copynegate": {1, false, false, func(im impl, f *format, a []bits, m bid.Mode) decRes { return resBits(im.neg(f, a[0])) }},
 	// The functions of math/decimal that are not the kernel's (see
-	// elementary). They round to nearest even only.
+	// elementary). They round TiesToEven only.
 	"squareroot": {1, true, false, func(im impl, f *format, a []bits, m bid.Mode) decRes {
 		return elementary(im, m, func() bits { return elemUnary(f, "Sqrt", a[0]) })
 	}},
@@ -1102,10 +1105,10 @@ func evalDec(im impl, v *decVector) vecOutcome {
 	if len(v.args) != spec.n {
 		return vecSkip("malformed line")
 	}
-	mode := bid.ToNearestEven
-	if spec.modal {
-		if mode, ok = vecMode(v.ctx.rounding); !ok {
-			return vecSkip("context: rounding mode outside the contract")
+	rd := bid.ToNearestEven
+	if spec.hasRD {
+		if rd, ok = vecDirection(v.ctx.rounding); !ok {
+			return vecSkip("context: rounding direction outside the contract")
 		}
 	}
 	if v.hasCond("division_impossible") {
@@ -1148,7 +1151,7 @@ func evalDec(im impl, v *decVector) vecOutcome {
 	}
 
 	var got decRes
-	implemented, err := try(func() { got = spec.run(im, f, args, mode) })
+	implemented, err := try(func() { got = spec.run(im, f, args, rd) })
 	switch {
 	case !implemented:
 		return vecSkip(implSkipReason(err))
@@ -1213,13 +1216,13 @@ const skipNextafterEqual = "contract: Nextafter(x, y) is x when x == y, as math.
 // reference model has no counterpart.
 
 // elementary runs fn, a call of one of those functions, for a vector whose
-// rounding mode is m.
+// rounding direction is m.
 func elementary(im impl, m bid.Mode, fn func() bits) decRes {
 	if _, ok := im.(reference); ok {
 		return decRes{skip: "reference: the model has no elementary functions"}
 	}
 	if m != bid.ToNearestEven {
-		return decRes{skip: "context: math/decimal's functions round to nearest even only"}
+		return decRes{skip: "context: math/decimal's functions round TiesToEven only"}
 	}
 	return resBits(fn())
 }
@@ -1431,14 +1434,14 @@ func evalDecParse(im impl, f *format, v *decVector, apply bool) vecOutcome {
 		return vecSkip("malformed line")
 	}
 	s := v.args[0]
-	mode, ok := vecMode(v.ctx.rounding)
+	rd, ok := vecDirection(v.ctx.rounding)
 	switch {
 	case strings.HasPrefix(s, "#"):
 		return vecSkip("operand: hex encoding")
 	case v.hasCond("invalid_operation"):
 		return vecSkip("contract: signaling NaN reports no Invalid")
 	case !ok:
-		return vecSkip("context: rounding mode outside the contract")
+		return vecSkip("context: rounding direction outside the contract")
 	case v.result == "?" || strings.HasPrefix(v.result, "#"):
 		return vecSkip("result: undefined or hex")
 	}
@@ -1446,7 +1449,7 @@ func evalDecParse(im impl, f *format, v *decVector, apply bool) vecOutcome {
 	var st bid.Status
 	var text string
 	implemented, err := try(func() {
-		x, st = im.parse(f, s, mode)
+		x, st = im.parse(f, s, rd)
 		text = im.appendTo(f, x)
 	})
 	switch {
@@ -1553,7 +1556,7 @@ func parseIntelLine(text string, n int) (*intelVector, bool) {
 	return v, true
 }
 
-func intelMode(code string) (bid.Mode, bool) {
+func intelDirection(code string) (bid.Mode, bool) {
 	switch code {
 	case "0":
 		return bid.ToNearestEven, true
@@ -1607,13 +1610,13 @@ func intelSignalingNaN(f *format) bits {
 
 // intelDecimal reads a decimal operand or expected result of format f. The
 // readtest file writes one either as a bracketed hex encoding, or as text
-// that the harness converts with the library's own string conversion, to
-// nearest even whatever the line's rounding code: a numeral, or one of the
+// that the harness converts with the library's own string conversion,
+// TiesToEven whatever the line's rounding code: a numeral, or one of the
 // words Inf, Infinity, NaN, QNaN and SNaN in either case, each with an
-// optional sign. The numeral is read with the reference model's codec.
-// (A directed mode here made the operand of a directed-mode vector differ
-// from the library's by one unit in the last place, and overflow where the
-// library gets an infinity.)
+// optional sign. The numeral is read with the reference model's codec. (A
+// directed rounding here made the operand of a directed-rounding vector
+// differ from the library's by one unit in the last place, and overflow
+// where the library gets an infinity.)
 func intelDecimal(f *format, tok string) (bits, string) {
 	if strings.HasPrefix(tok, "[") {
 		x, ok := intelHex(tok, f.width)
@@ -1713,9 +1716,9 @@ var (
 	intelToBinary = regexp.MustCompile(`^to_binary(32|64|80|128)$`)
 )
 
-// intelIntModes maps the rounding part of a conversion to integer's name to
-// the kernel's mode.
-var intelIntModes = map[string]bid.Mode{
+// intelIntDirections maps the rounding part of a conversion to integer's
+// name to the kernel's rounding direction.
+var intelIntDirections = map[string]bid.Mode{
 	"int":    bid.TowardZero,
 	"rnint":  bid.ToNearestEven,
 	"rninta": bid.ToNearestAway,
@@ -1793,7 +1796,7 @@ type intelCall struct {
 	op   string    // the function name after the format prefix
 	f    *format   // the format of the result (the prefix of the name)
 	args []*format // the format of each operand: f unless the name has d and q letters
-	mode bid.Mode
+	rd   bid.Mode
 	// rounded says that the function is correctly rounded, so that a
 	// vector whose expected result is within half a unit of the exact
 	// one can be run (see split).
@@ -1913,11 +1916,11 @@ func evalIntel(im impl, v *intelVector) vecOutcome {
 	if why, ok := intelSkipOps[op]; ok {
 		return vecSkip(why)
 	}
-	mode, ok := intelMode(v.round)
+	rd, ok := intelDirection(v.round)
 	if !ok {
 		return vecSkip("context: rounding code unknown")
 	}
-	c := &intelCall{im: im, v: v, op: op, f: dec64, mode: mode}
+	c := &intelCall{im: im, v: v, op: op, f: dec64, rd: rd}
 	if width == "128" {
 		c.f = dec128
 	}
@@ -1942,25 +1945,25 @@ func evalIntel(im impl, v *intelVector) vecOutcome {
 
 // eval dispatches on the function name.
 func (c *intelCall) eval() vecOutcome {
-	im, f, mode := c.im, c.f, c.mode
+	im, f, rd := c.im, c.f, c.rd
 	op := c.op
 	switch op {
 	case "add":
-		return c.arith(2, func(a []bits) bits { return im.add(f, a[0], a[1], mode) })
+		return c.arith(2, func(a []bits) bits { return im.add(f, a[0], a[1], rd) })
 	case "sub":
-		return c.arith(2, func(a []bits) bits { return im.sub(f, a[0], a[1], mode) })
+		return c.arith(2, func(a []bits) bits { return im.sub(f, a[0], a[1], rd) })
 	case "mul":
-		return c.arith(2, func(a []bits) bits { return im.mul(f, a[0], a[1], mode) })
+		return c.arith(2, func(a []bits) bits { return im.mul(f, a[0], a[1], rd) })
 	case "div":
-		return c.arith(2, func(a []bits) bits { return im.div(f, a[0], a[1], mode) })
+		return c.arith(2, func(a []bits) bits { return im.div(f, a[0], a[1], rd) })
 	case "fma":
-		return c.arith(3, func(a []bits) bits { return im.fma(f, a[0], a[1], a[2], mode) })
+		return c.arith(3, func(a []bits) bits { return im.fma(f, a[0], a[1], a[2], rd) })
 	case "rem":
 		return c.arith(2, func(a []bits) bits { return im.rem(f, a[0], a[1]) })
 	case "fmod":
 		return c.arith(2, func(a []bits) bits { return im.mod(f, a[0], a[1]) })
 	case "quantize":
-		return c.arith(2, func(a []bits) bits { return im.quantize(f, a[0], a[1], mode) })
+		return c.arith(2, func(a []bits) bits { return im.quantize(f, a[0], a[1], rd) })
 	case "negate":
 		return c.arith(1, func(a []bits) bits { return im.neg(f, a[0]) })
 	case "abs":
@@ -1968,7 +1971,7 @@ func (c *intelCall) eval() vecOutcome {
 	case "copySign":
 		return c.arith(2, func(a []bits) bits { return im.copySign(f, a[0], a[1]) })
 	case "round_integral_exact", "nearbyint":
-		return c.arith(1, func(a []bits) bits { return im.roundToIntegral(f, a[0], mode) })
+		return c.arith(1, func(a []bits) bits { return im.roundToIntegral(f, a[0], rd) })
 	case "round_integral_nearest_even":
 		return c.arith(1, func(a []bits) bits { return im.roundToIntegral(f, a[0], bid.ToNearestEven) })
 	case "round_integral_nearest_away":
@@ -2041,7 +2044,7 @@ func (c *intelCall) eval() vecOutcome {
 	case "scalbn", "scalbln", "ldexp":
 		return c.scale()
 	case "llrint":
-		return c.toInt(false, 64, true, mode)
+		return c.toInt(false, 64, true, rd)
 	case "llround":
 		return c.toInt(false, 64, false, bid.ToNearestAway)
 	}
@@ -2057,7 +2060,7 @@ func (c *intelCall) eval() vecOutcome {
 	}
 	if m := intelToInt.FindStringSubmatch(op); m != nil {
 		n, _ := strconv.Atoi(m[2])
-		return c.toInt(m[1] == "u", n, m[3] == "x", intelIntModes[m[4]])
+		return c.toInt(m[1] == "u", n, m[3] == "x", intelIntDirections[m[4]])
 	}
 	if m := intelFromInt.FindStringSubmatch(op); m != nil {
 		n, _ := strconv.Atoi(m[2])
@@ -2130,15 +2133,15 @@ func (c *intelCall) elementaryDivergence(res string, status uint64, want, got bi
 }
 
 // elementary runs one of math/decimal's functions above the kernel (see
-// the function elementary). modal says that the result depends on the
-// rounding mode, which those functions do not take: they round to nearest
+// the function elementary). hasRD says that the result depends on the
+// rounding direction, which those functions do not take: they round to nearest
 // even.
-func (c *intelCall) elementary(n int, modal bool, fn func(a []bits) bits) vecOutcome {
+func (c *intelCall) elementary(n int, hasRD bool, fn func(a []bits) bits) vecOutcome {
 	if _, ok := c.im.(reference); ok {
 		return vecSkip("reference: the model has no elementary functions")
 	}
-	if modal && c.mode != bid.ToNearestEven {
-		return vecSkip("mode: math/decimal's functions round to nearest even only")
+	if hasRD && c.rd != bid.ToNearestEven {
+		return vecSkip("rounding direction: math/decimal's functions round TiesToEven only")
 	}
 	c.rounded = true
 	return c.arith(n, fn)
@@ -2150,8 +2153,8 @@ func (c *intelCall) scale() vecOutcome {
 	if _, ok := c.im.(reference); ok {
 		return vecSkip("reference: the model has no elementary functions")
 	}
-	if c.mode != bid.ToNearestEven {
-		return vecSkip("mode: math/decimal's functions round to nearest even only")
+	if c.rd != bid.ToNearestEven {
+		return vecSkip("rounding direction: math/decimal's functions round TiesToEven only")
 	}
 	ops, res, _, skip := c.split(2)
 	if skip != "" {
@@ -2353,7 +2356,7 @@ func (c *intelCall) class() vecOutcome {
 }
 
 // convertWidth runs bid64_to_bid128 (Widen) and bid128_to_bid64 (Narrow in
-// the line's mode). The name's prefix is the operand's format.
+// the line's rounding direction). The name's prefix is the operand's format.
 func (c *intelCall) convertWidth() vecOutcome {
 	to := dec128
 	if c.op == "to_bid64" {
@@ -2379,7 +2382,7 @@ func (c *intelCall) convertWidth() vecOutcome {
 		if to == dec128 {
 			got = c.im.widen(x)
 		} else {
-			got = c.im.narrow(x, c.mode)
+			got = c.im.narrow(x, c.rd)
 		}
 	}); !ok {
 		return o
@@ -2396,7 +2399,7 @@ func (c *intelCall) convertWidth() vecOutcome {
 // toInt runs the conversions to an integer of the given width, signedness
 // and rounding. A conversion whose name has an x raises inexact; the others
 // do not, so their inexact flag is not expected.
-func (c *intelCall) toInt(unsigned bool, n int, inexact bool, mode bid.Mode) vecOutcome {
+func (c *intelCall) toInt(unsigned bool, n int, inexact bool, rd bid.Mode) vecOutcome {
 	ops, res, want, skip := c.split(1)
 	if skip != "" {
 		return vecSkip(skip)
@@ -2413,10 +2416,10 @@ func (c *intelCall) toInt(unsigned bool, n int, inexact bool, mode bid.Mode) vec
 	)
 	if o, ok := intelRun(func() {
 		if unsigned {
-			uv, st = c.im.uint64From(c.f, x, mode)
+			uv, st = c.im.uint64From(c.f, x, rd)
 			out = st&(bid.Invalid|bid.Overflow) != 0 || n < 64 && uv>>n != 0
 		} else {
-			sv, st = c.im.int64From(c.f, x, mode)
+			sv, st = c.im.int64From(c.f, x, rd)
 			out = st&(bid.Invalid|bid.Overflow) != 0 || n < 64 && (sv < -1<<(n-1) || sv > 1<<(n-1)-1)
 		}
 	}); !ok {
@@ -2501,15 +2504,15 @@ func (c *intelCall) fromInt(unsigned bool, n int) vecOutcome {
 	if o, ok := intelRun(func() {
 		switch {
 		case unsigned:
-			got = c.im.uint64To(c.f, mag, c.mode)
+			got = c.im.uint64To(c.f, mag, c.rd)
 		default:
 			i := int64(mag)
 			if neg {
 				i = -int64(mag)
 			}
-			got = c.im.int64To(c.f, i, c.mode)
+			got = c.im.int64To(c.f, i, c.rd)
 		}
-		_, st = c.im.round(c.f, neg, bid.Uint128{Lo: mag}, 0, false, c.mode)
+		_, st = c.im.round(c.f, neg, bid.Uint128{Lo: mag}, 0, false, c.rd)
 	}); !ok {
 		return o
 	}
@@ -2541,9 +2544,9 @@ func (c *intelCall) toBinary(width string) vecOutcome {
 	var got uint64
 	if o, ok := intelRun(func() {
 		if n == 32 {
-			got = uint64(math.Float32bits(c.im.float32From(c.f, x, c.mode)))
+			got = uint64(math.Float32bits(c.im.float32From(c.f, x, c.rd)))
 		} else {
-			got = math.Float64bits(c.im.float64From(c.f, x, c.mode))
+			got = math.Float64bits(c.im.float64From(c.f, x, c.rd))
 		}
 	}); !ok {
 		return o
@@ -2580,7 +2583,7 @@ func evalIntelFromBinary(im impl, v *intelVector, from, to string) vecOutcome {
 	case to == "32":
 		return vecSkip("format: bid32 (not decimal64 or decimal128)")
 	}
-	mode, ok := intelMode(v.round)
+	rd, ok := intelDirection(v.round)
 	if !ok {
 		return vecSkip("context: rounding code unknown")
 	}
@@ -2588,7 +2591,7 @@ func evalIntelFromBinary(im impl, v *intelVector, from, to string) vecOutcome {
 	if to == "128" {
 		f = dec128
 	}
-	c := &intelCall{im: im, v: v, op: v.name, f: f, mode: mode}
+	c := &intelCall{im: im, v: v, op: v.name, f: f, rd: rd}
 	ops, res, _, skip := c.split(1)
 	if skip != "" {
 		return vecSkip(skip)
@@ -2598,7 +2601,7 @@ func evalIntelFromBinary(im impl, v *intelVector, from, to string) vecOutcome {
 		n = 32
 	}
 	// The operand is the bit pattern, or text that the harness converts to
-	// the binary format first, to nearest even.
+	// the binary format first, TiesToEven.
 	var x float64
 	if strings.HasPrefix(ops[0], "[") {
 		b, ok := intelBinaryBits(ops[0], n)
@@ -2622,9 +2625,9 @@ func evalIntelFromBinary(im impl, v *intelVector, from, to string) vecOutcome {
 	var got bits
 	if o, ok := intelRun(func() {
 		if n == 32 {
-			got = im.float32To(f, float32(x), mode)
+			got = im.float32To(f, float32(x), rd)
 		} else {
-			got = im.float64To(f, x, mode)
+			got = im.float64To(f, x, rd)
 		}
 	}); !ok {
 		return o
@@ -2675,9 +2678,10 @@ func (c *intelCall) toString() vecOutcome {
 }
 
 // fromString runs from_string through the target's Parse in the line's
-// mode. Intel reports nothing for a malformed numeral, which the contract
-// reports as Syntax, and returns NaN for it; bid128 also accepts a numeral
-// with a trailing letter E, which bid64 and the contract refuse.
+// rounding direction. Intel reports nothing for a malformed numeral, which
+// the contract reports as Syntax, and returns NaN for it; bid128 also
+// accepts a numeral with a trailing letter E, which bid64 and the contract
+// refuse.
 func (c *intelCall) fromString() vecOutcome {
 	ops, res, want, skip := c.split(1)
 	if skip != "" {
@@ -2694,7 +2698,7 @@ func (c *intelCall) fromString() vecOutcome {
 		got bits
 		st  bid.Status
 	)
-	if o, ok := intelRun(func() { got, st = c.im.parse(c.f, ops[0], c.mode) }); !ok {
+	if o, ok := intelRun(func() { got, st = c.im.parse(c.f, ops[0], c.rd) }); !ok {
 		return o
 	}
 	out := intelCompare(c.f, got, wantBits)
@@ -2836,9 +2840,9 @@ func parseFPgenLine(text string, n int) (v *fpgenVector, ok bool) {
 	return v, true
 }
 
-// fpgenMode maps an FPgen rounding code to the kernel's rounding direction.
-// h> is the Cairo files' spelling of =^.
-func fpgenMode(code string) (bid.Mode, bool) {
+// fpgenDirection maps an FPgen rounding code to the kernel's rounding
+// direction. h> is the Cairo files' spelling of =^.
+func fpgenDirection(code string) (bid.Mode, bool) {
 	switch code {
 	case "=0":
 		return bid.ToNearestEven, true
@@ -2919,7 +2923,7 @@ func fpgenTrapTaken(traps, flags string) string {
 // and a·b − c) and V (square root). *- negates c with the reference model,
 // so that the target's Neg is not on trial, and leaves a NaN alone, the
 // files giving a NaN no sign. V is math/decimal's Sqrt, through elementary,
-// which skips the rounding directions other than nearest even and the
+// which skips the rounding directions other than TiesToEven and the
 // reference model.
 var fpgenOps = map[string]decOp{
 	"+": {n: 2, run: func(im impl, f *format, a []bits, m bid.Mode) decRes { return resBits(im.add(f, a[0], a[1], m)) }},
@@ -3136,7 +3140,7 @@ func evalFPgen(im impl, v *fpgenVector) vecOutcome {
 	if !ok {
 		return vecSkip("op: not mapped to the kernel API")
 	}
-	mode, ok := fpgenMode(v.round)
+	rd, ok := fpgenDirection(v.round)
 	if !ok {
 		return vecSkip("context: rounding code unknown")
 	}
@@ -3162,7 +3166,7 @@ func evalFPgen(im impl, v *fpgenVector) vecOutcome {
 		return vecSkip(fpgenReason("result: ", why))
 	}
 	var res decRes
-	if o, ok := intelRun(func() { res = op.run(im, f, a, mode) }); !ok {
+	if o, ok := intelRun(func() { res = op.run(im, f, a, rd) }); !ok {
 		return o
 	}
 	if res.skip != "" {
@@ -3198,7 +3202,7 @@ func evalFPgen(im impl, v *fpgenVector) vecOutcome {
 	neg, c, exp, sticky, zero := fpgenExact(f, m[3], xs)
 	var rx bits
 	var st bid.Status
-	if ro, ok := intelRun(func() { rx, st = im.round(f, neg, toUint128(c), exp, sticky, mode) }); !ok {
+	if ro, ok := intelRun(func() { rx, st = im.round(f, neg, toUint128(c), exp, sticky, rd) }); !ok {
 		return ro
 	}
 	if !zero && rx != got {
@@ -3354,7 +3358,7 @@ t012 add 1 2 -> 3
 		"t009": "operand: outside the contract's numeral grammar",
 		"t010": "pass",
 		"t011": "pass", // decTest's up is AwayFromZero
-		"t016": "context: rounding mode outside the contract",
+		"t016": "context: rounding direction outside the contract",
 		"t012": "context: precision not 16 or 34",
 		"t013": "fail", // a wrong expectation must fail, not skip
 		"t014": "pass", "t015": "pass",
@@ -3665,7 +3669,7 @@ func TestIntelLineParser(t *testing.T) {
 		{"bid64_sqrt 0 [31c0000000000004] [31c0000000000002] 00", pass},
 		{"bid64_sqrt 0 [31c0000000000002] [2fe50638410593e7] 20 ulp=4.9e-01", pass}, // the nearest: run
 		{"bid64_sqrt 0 [31c0000000000002] [2fe50638410593e8] 20 ulp=5.1e-01", "field: ulp column of half a unit or more"},
-		{"bid64_sqrt 1 [31c0000000000002] [2fe50638410593e7] 20 ulp=4.9e-01", "mode: math/decimal's functions round to nearest even only"},
+		{"bid64_sqrt 1 [31c0000000000002] [2fe50638410593e7] 20 ulp=4.9e-01", "rounding direction: math/decimal's functions round TiesToEven only"},
 		{"bid64_cbrt 0 [0000000000000000] [0000000000000000] 00", "contract: Rootn of a zero"},
 		{"bid64_atan2 0 1 1 [2fe1cd1f7ceee7ab] 20 ulp=3.2e-01", "op: atan2"},
 		{"bid64_sin 0 1 [2fe1cd1f7ceee7ab] 20 ulp=3.2e-01", "op: transcendental"},
@@ -3826,7 +3830,7 @@ func TestFPgenLineParser(t *testing.T) {
 		{"d64V =0 -0e0 -> -0e0", pass},
 		{"d64V =0 -1e0 -> Q i", pass},
 		{"d64V =0 +inf -> +inf", pass},
-		{"d64V > +2e0 -> +1414213562373096e-15 x", "context: math/decimal's functions round to nearest even only"},
+		{"d64V > +2e0 -> +1414213562373096e-15 x", "context: math/decimal's functions round TiesToEven only"},
 		// Traps: one not taken changes nothing; the inexact trap runs.
 		{"d64+ =0 i Q +1e0 -> Q", pass},
 		{"d64+ =0 i +1e0 +2e0 -> +3e0", pass},

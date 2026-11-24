@@ -6,12 +6,13 @@ package bid_test
 
 import "internal/bid"
 
-// ubdKernel is the kernel with the decimal128 operations the compiler
-// calls replaced by its UBD entries: each operand converted to UBD, the
-// ties-to-even entry called for ToNearestEven and the Rnd entry for every
-// other mode, and the result converted back. -bid.vectors=ubd runs the
-// published vectors against it, so that they exercise the UBD kernel and
-// not only the BID functions. Every other operation is the kernel's.
+// ubdKernel is the kernel with the decimal128 operations the compiler calls
+// replaced by its UBD entries: each operand converted to UBD, the
+// TiesToEven entry called for ToNearestEven and the Rnd entry for every
+// other rounding direction, and the result converted back. -bid.vectors=ubd
+// runs the published vectors against it, so that they exercise the UBD
+// kernel and not only the BID functions. Every other operation is the
+// kernel's.
 type ubdKernel struct{ kernel }
 
 func ubdIn(x bits) bits  { return bid.UBDFromBID128(x) }
