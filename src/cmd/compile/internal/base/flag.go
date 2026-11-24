@@ -181,6 +181,7 @@ func ParseFlags() {
 
 	Debug.ConcurrentOk = true
 	Debug.CompressInstructions = 1
+	Debug.DecimalInline = DecimalInlineCompact
 	Debug.MaxShapeLen = 500
 	Debug.AlignHot = 1
 	Debug.InlFuncsWithClosures = 1
@@ -287,8 +288,8 @@ func ParseFlags() {
 	if Debug.MergeLocalsHash != "" {
 		MergeLocalsHash = NewHashDebug("mergelocals", Debug.MergeLocalsHash, nil)
 	}
-	if l := Debug.UBDLevel; l < 0 || l > 3 {
-		log.Fatalf("-d=ubdlevel=%d: want 1, 2 or 3 (0 is the default, 2)", l)
+	if l := Debug.DecimalInline; l < DecimalInlineNone || l > DecimalInlineFull {
+		log.Fatalf("-d=decimalinline=%d: want %d, %d or %d", l, DecimalInlineNone, DecimalInlineCompact, DecimalInlineFull)
 	}
 	if Debug.VariableMakeHash != "" {
 		VariableMakeHash = NewHashDebug("variablemake", Debug.VariableMakeHash, nil)

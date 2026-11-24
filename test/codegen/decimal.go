@@ -28,8 +28,8 @@ func MulAdd64(x, y, z decimal64) decimal64 {
 
 func Sub64(x, y decimal64) decimal64 {
 	// ppc64le:"DSUB" -"CALL"
-	// amd64:"CALL internal/bid.addSlow64" -"CALL runtime.dsub64"
-	// arm64:"CALL internal/bid.addSlow64" -"CALL runtime.dsub64"
+	// amd64:"CALL internal/bid.subSlow64" -"CALL runtime.dsub64"
+	// arm64:"CALL internal/bid.subSlow64" -"CALL runtime.dsub64"
 	return x - y
 }
 
@@ -49,8 +49,8 @@ func Div64(x, y decimal64) decimal64 {
 
 func Less64(x, y decimal64) bool {
 	// ppc64le:"DCMPU" -"CALL"
-	// arm64:"UMULH" -"CALL runtime.dlt64"
-	// amd64:"MULX?Q" -"CALL runtime.dlt64"
+	// arm64:"CALL internal/bid.quietCmpSlow64" -"UMULH" -"CALL runtime.dlt64"
+	// amd64:"CALL internal/bid.quietCmpSlow64" -"MULX?Q" -"CALL runtime.dlt64"
 	return x < y
 }
 

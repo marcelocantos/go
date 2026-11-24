@@ -17,8 +17,7 @@ import (
 // ubdLevel 3: the kernel's own first paths, promoted inline one at a time
 // behind level 2's, for 64-bit coefficients. Each is the kernel leaf's
 // code for the operand pairs it settles, so that it gives the kernel's
-// result by construction, and every other pair is the kernel call
-// (research/ubd-level4/README.md).
+// result by construction, and every other pair is the kernel call.
 
 // ubd3 holds the blocks of one level-3 lowering: the kernel call that
 // every refused pair reaches, and the join where the result is read.

@@ -12,7 +12,7 @@ import (
 )
 
 // BenchmarkUBDKernel times the UBD kernel entries the compiler calls at
-// -d=ubdlevel=1 against the BID kernel entries the XOR-BID compiler calls
+// -d=decimalinline=1 against the BID kernel entries the XOR-BID compiler calls
 // for the same operation, each on its own encoding of the same operands, so
 // neither side converts. Both sides are called through a function value, as
 // a call site calls the kernel: the compiler's call is never inlined, and a

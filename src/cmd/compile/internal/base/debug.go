@@ -6,6 +6,15 @@
 
 package base
 
+// The settings of -d=decimalinline: how much of each decimal operation the
+// compiler writes at the call site on the targets with integer fast paths.
+// Results are the same at every setting; only code size and speed differ.
+const (
+	DecimalInlineNone    = 1 // a kernel call
+	DecimalInlineCompact = 2 // the common exact case, then a kernel call
+	DecimalInlineFull    = 3 // every case that word arithmetic decides, then a kernel call
+)
+
 // Debug holds the parsed debugging configuration values.
 var Debug DebugFlags
 
@@ -25,6 +34,7 @@ type DebugFlags struct {
 	Closure               int    `help:"print information about closure compilation"`
 	CompressInstructions  int    `help:"use compressed instructions when possible (if supported by architecture)" concurrent:"ok"`
 	Converthash           string `help:"hash value for use in debugging changes to platform-dependent float-to-[u]int conversion" concurrent:"ok"`
+	DecimalInline         int    `help:"decimal operations on amd64 and arm64\n1: kernel calls only\n2: compact fast paths (default)\n3: full fast paths" concurrent:"ok"`
 	Defer                 int    `help:"print information about defer compilation"`
 	DisableNil            int    `help:"disable nil checks" concurrent:"ok"`
 	DumpInlFuncProps      string `help:"dump function properties from inl heuristics to specified file"`
@@ -77,7 +87,6 @@ type DebugFlags struct {
 	SyncFrames            int    `help:"how many writer stack frames to include at sync points in unified export data" concurrent:"ok"`
 	TailCall              int    `help:"print information about tail calls"`
 	TypeAssert            int    `help:"print information about type assertion inlining"`
-	UBDLevel              int    `help:"decimal128 operations on UBD targets\n0: the default, level 2\n1: every operation is its kernel call, nothing inline\n2: the narrowed inline paths in front of the calls (add, subtract, multiply, comparisons)\n3: level 2's paths, then the kernel's first paths promoted inline" concurrent:"ok"`
 	WB                    int    `help:"print information about write barriers"`
 	ABIWrap               int    `help:"print information about ABI wrapper generation"`
 	MayMoreStack          string `help:"call named function before all stack growth checks" concurrent:"ok"`

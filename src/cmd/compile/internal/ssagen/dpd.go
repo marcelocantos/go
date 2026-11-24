@@ -7,6 +7,7 @@ package ssagen
 import (
 	"internal/bid"
 
+	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/ssa"
 	"cmd/compile/internal/ssa/block"
@@ -143,6 +144,12 @@ func (s *state) decimalOp(op ir.Op, rt *types.Type, args ...*ssa.Value) *ssa.Val
 		return s.softDecimalOp(op, rt, args...)
 	}
 	if !ir.DecimalDPD() {
+		if args[0].Type.Kind() == types.TDECIMAL64 && bidKernelDirect() &&
+			base.Debug.DecimalInline != base.DecimalInlineFull && op != ir.OMIN && op != ir.OMAX {
+			if r := s.bid64BelowFull(op, rt, args[0], args[1]); r != nil {
+				return r
+			}
+		}
 		if rt.IsBoolean() && (Arch.LinkArch.Family == sys.ARM64 || Arch.LinkArch.Family == sys.AMD64) {
 			return s.bidCompare(op, args[0], args[1])
 		}

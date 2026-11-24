@@ -410,7 +410,7 @@ func ubdSubTTE128(x, y UBD128) UBD128 {
 //     scaled, and the other added or subtracted, each chosen by a branch, as
 //     in ubdAddLong128, and a difference that goes negative negated by a
 //     select, its magnitude then below 2^64. These are most of what reaches
-//     the kernel at -d=ubdlevel=2, whose inline path takes one exponent and
+//     the kernel at -d=decimalinline=2, whose inline path takes one exponent and
 //     one sign. With the operand and the operation chosen by masks instead,
 //     tax_preparation's FED program at level 2 was 3.5% slower than before
 //     this word path existed; with branches, 4.4% faster. (An amount and a

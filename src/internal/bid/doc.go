@@ -1901,6 +1901,17 @@
 // is the general path itself: each has a straight path in front of
 // addLong64, mulLong64 or divLong64 ("Straight paths").
 //
+// How much the compiler writes at an operator's call site on amd64 and
+// arm64 is set by -d=decimalinline, for both widths. For decimal64, at 3,
+// full, it is the fronts and comparisons of the paragraph above. At 2,
+// compact and the default, a comparison has only the case of one quantum
+// (cmd/compile/internal/ssagen's bid64_inline.go) in front of a call to
+// quietCmpSlow64, and a difference calls subSlow64, which negates y itself;
+// the sum, the product and rounding keep the full paths. At 1 every
+// operation is a call. So the parameters of subSlow64 and quietCmpSlow64 are
+// part of the contract as well. decimal128's settings are those of the UBD
+// lowering (ssagen's bid.go).
+//
 // FMA128 has a front of another kind: a test that the three coefficients
 // fit a word each, which sends them to fmaLong128 and its word paths, and
 // everything else to fmaSlow128 ("Straight paths"). It calls fmaLong128

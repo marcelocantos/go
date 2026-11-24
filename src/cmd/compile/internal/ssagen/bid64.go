@@ -25,10 +25,12 @@ import (
 // exact results only, encoded as the general path encodes them; the kernel
 // documents and tests their bounds ("Inline fast paths").
 
-var bidKernelAdd64, bidKernelMul64, bidKernelDiv64 *obj.LSym
+var bidKernelAdd64, bidKernelSub64, bidKernelMul64, bidKernelDiv64, bidKernelCmp64 *obj.LSym
 
 func initBIDKernelSyms64() {
 	bidKernelAdd64 = base.PkgLinksym("internal/bid", "addSlow64", obj.ABIInternal)
+	bidKernelSub64 = base.PkgLinksym("internal/bid", "subSlow64", obj.ABIInternal)
+	bidKernelCmp64 = base.PkgLinksym("internal/bid", "quietCmpSlow64", obj.ABIInternal)
 	bidKernelMul64 = base.PkgLinksym("internal/bid", "mulSlow64", obj.ABIInternal)
 	bidKernelDiv64 = base.PkgLinksym("internal/bid", "div64", obj.ABIInternal)
 }
@@ -58,6 +60,12 @@ func (s *state) bidKernelOp64(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Va
 	case ir.OADD:
 		fn = bidKernelAdd64
 	case ir.OSUB:
+		if base.Debug.DecimalInline != base.DecimalInlineFull {
+			// The kernel's difference does the negation of y that each
+			// call site would otherwise carry.
+			fn = bidKernelSub64
+			break
+		}
 		// x - y is x + (-y), except that a NaN y keeps its sign (see
 		// ubdKernelOp).
 		fn = bidKernelAdd64

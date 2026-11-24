@@ -7,6 +7,7 @@ package ssagen
 import (
 	"internal/bid"
 
+	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/ssa"
 	"cmd/compile/internal/ssa/block"
@@ -49,6 +50,9 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 		}
 		res := s.rtcall(fn, true, []*types.Type{u64, u64}, kargs...)
 		return s.newValue2(ssaop.OpDecimal128Make, n.Type(), res[0], res[1])
+	}
+	if is64 && bidKernelDirect() && base.Debug.DecimalInline == base.DecimalInlineNone {
+		return s.rtcall(fallback, true, []*types.Type{n.Type()}, args...)[0]
 	}
 	// level2Quantize: quantize at ubdLevel 2 takes the inline paths below
 	// for a one-word x at y's exponent (x itself) and for one 1 to 19
