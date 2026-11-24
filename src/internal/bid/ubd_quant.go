@@ -6,14 +6,15 @@ package bid
 
 import "math/bits"
 
-// This package's quantize on UBD operands. ubdQuantize128 is the
-// template's quantizeW with the word path ubdQuantizeWord (ubd.go) after its
-// first test, and ubdQuantizeLong128 is the template's quantizeLongW, with
+// This package's quantize on UBD operands. ubdQuantize128
+// follows decimal64's quantize64 with the word path ubdQuantizeWord
+// (ubd.go) after its first test, and ubdQuantizeLong128 follows
+// quantizeLong64, with
 // UBD's decoding, the specials decided on UBD, and the packing and rounding
 // by ubdPackWord and ubdRoundFinite128; the arithmetic is unchanged.
 // Nothing converts.
 
-// ubdQuantize128 is quantizeW on UBD, written out in the entries
+// ubdQuantize128 follows quantize64 on UBD, written out in the entries
 // (ubdQuantizeTTE128, ubdQuantizeRnd128) so that a quantize is one call:
 // ubdQuantizeSame128 inline; an x wider than a word, or special, straight to
 // ubdQuantizeSlow128; a word x to ubdQuantizeWord, then
@@ -93,7 +94,7 @@ func ubdQuantizeSlow128(x, y UBD128, mode Mode) UBD128 {
 	return ubdQuantizeLong128(x, y, mode)
 }
 
-// ubdQuantizeLong128 is quantizeLongW (quant_tmpl.go) on UBD: a word x
+// ubdQuantizeLong128 follows quantizeLong64 (quant64.go) on UBD: a word x
 // quantized to a finite y's exponent at or below its own is scaled and
 // packed at once;
 // specials are decided on UBD (a NaN gives that NaN, two infinities the
@@ -136,7 +137,7 @@ func ubdQuantizeLong128(x, y UBD128, mode Mode) UBD128 {
 	if gap := xe - ye; gap > 0 {
 		// The scaled coefficient has Precision128 digits or fewer exactly
 		// when the coefficient is below 10^(Precision128-gap) (see
-		// quantizeLongW).
+		// quantizeLong64).
 		if gap >= Precision128 {
 			if !cIsZero128(xc) {
 				return UBD128{Hi: UBDNaNHi}
@@ -153,9 +154,9 @@ func ubdQuantizeLong128(x, y UBD128, mode Mode) UBD128 {
 	return r
 }
 
-// ubdRoundToIntegral128 is roundToIntegralW on UBD: a NaN quieted (in UBD,
-// qExp's signaling bit 58 cleared), an infinity as it is, and a finite x
-// rounded to exponent zero by ubdRoundFinite128; an x at exponent zero or
+// ubdRoundToIntegral128 follows roundToIntegral64 on UBD: a NaN quieted (in
+// UBD, qExp's signaling bit 58 cleared), an infinity as it is, and a finite
+// x rounded to exponent zero by ubdRoundFinite128; an x at exponent zero or
 // above is an integer already and comes back as it is.
 func ubdRoundToIntegral128(x UBD128, mode Mode) UBD128 {
 	if x.Hi>>60 == UBDSpecialTag {

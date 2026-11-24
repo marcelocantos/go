@@ -6,7 +6,7 @@ package bid
 
 import "math/bits"
 
-//go:generate go run -tags bidgen gen_arith.go
+//go:generate go run gen_arith.go
 
 // The arithmetic operations of IEEE 754-2019 clause 5.4.1 and the
 // homogeneous operations of clause 5.3, for both widths. Each computes its
@@ -237,7 +237,7 @@ func Max128(x, y Uint128) Uint128 {
 // uint64; it is taken as the last power of the table and counted with the
 // high word. Exponents come from the bounded fields of unpackWord64/128.
 // No digit count, general division or rounding is needed, and nothing is
-// a branch: see magCmpW, whose word form this is.
+// a branch: see magCmp64, whose word form this is.
 func compareWords(xneg bool, xc uint64, xe int, yneg bool, yc uint64, ye int) int {
 	// The sign that counts: a zero is not negative.
 	xs := int(b2u(xneg) & ((xc | -xc) >> 63))

@@ -10,8 +10,8 @@ import "math/bits"
 // operations, Quantum, SameQuantum, Reduce, QuoQuantize, Rem and Mod, and
 // FMA. Each is the operation of the BID-128 function of the same name
 // without the UBD prefix, which converts to UBD and calls it; the
-// arithmetic is the template's (payloadW, quantumW, reduceW, quoQuantizeW,
-// remainderW, fmaLongW) with UBD's decoding and packing, and none converts
+// arithmetic is decimal64's (payload64, quantum64, reduce64, quoQuantize64,
+// remainder64, fmaLong64) with UBD's decoding and packing, and none converts
 // to BID. internal/decimal calls them where decimal128 is stored as UBD
 // (NativeUBD128).
 
@@ -21,8 +21,9 @@ var ubdQNaN = UBD128{Hi: UBDNaNHi}
 // ubdQuiet returns the NaN x made quiet: its signaling bit cleared.
 func ubdQuiet(x UBD128) UBD128 { return UBD128{Lo: x.Lo, Hi: x.Hi &^ (1 << 58)} }
 
-// ubdNaN3 is nanW on UBD: the NaN result of an operation on x, y and z, at
-// least one a NaN: the first signaling NaN, else the first NaN, made quiet.
+// ubdNaN3 follows nan64 on UBD: the NaN result of an operation on x, y and
+// z, at least one a NaN: the first signaling NaN, else the first NaN, made
+// quiet.
 func ubdNaN3(x, y, z UBD128) UBD128 {
 	sig := func(v UBD128) bool { return v.Hi>>58 == UBDSNaNTag }
 	nan := func(v UBD128) bool { return v.Hi>>59 == UBDNaNTag }
@@ -35,8 +36,8 @@ func ubdNaN3(x, y, z UBD128) UBD128 {
 	return ubdQuiet(z)
 }
 
-// ubdKindExp is kindExpW on UBD: the class of x and, for a finite x, its
-// exponent.
+// ubdKindExp follows kindExp64 on UBD: the class of x and, for a finite x,
+// its exponent.
 func ubdKindExp(x UBD128) (Kind, int) {
 	if x.Hi>>60 == UBDSpecialTag {
 		if x.Hi>>59 == UBDNaNTag {
@@ -149,7 +150,7 @@ func UBDReduce128(x UBD128) UBD128 {
 	if cIsZero128(c) {
 		exp = 0
 	} else if q, ok := cDivExactPow10128(c, 1); ok && exp < MaxExp128 {
-		// reduceW's binary search on the number of trailing zeros,
+		// reduce64's binary search on the number of trailing zeros,
 		// never past MaxExp128.
 		c, exp = q, exp+1
 		step := 1
@@ -232,9 +233,10 @@ func UBDQuoQuantize128(x, y, q UBD128, mode Mode) UBD128 {
 func UBDRem128(x, y UBD128) UBD128 { return ubdRemainder128(x, y, true) }
 func UBDMod128(x, y UBD128) UBD128 { return ubdRemainder128(x, y, false) }
 
-// ubdRemainder128 is remainderW (rem_tmpl.go) on UBD: x - y × n exactly, n
-// the quotient |x| / |y| truncated, or rounded to nearest with ties to even
-// if nearest is set. See remainderW for the method, which is unchanged.
+// ubdRemainder128 follows remainder64 (rem64.go) on UBD: x - y × n exactly,
+// n the quotient |x| / |y| truncated, or rounded to nearest with ties to
+// even if nearest is set. See remainder64 for the method, which is
+// unchanged.
 func ubdRemainder128(x, y UBD128, nearest bool) UBD128 {
 	if xneg, X, xe, ok := ubdUnpackWord(x); ok {
 		if _, Y, ye, ok := ubdUnpackWord(y); ok && Y != 0 {
@@ -301,7 +303,7 @@ func ubdRemainder128(x, y UBD128, nearest bool) UBD128 {
 	return ubdRemExact128(neg, r, min(xe, ye))
 }
 
-// ubdRemExact128 is remExactW on UBD: an exact result, which
+// ubdRemExact128 follows remExact64 on UBD: an exact result, which
 // ubdRemainder128 has shown fits.
 func ubdRemExact128(neg bool, c coef128, exp int) UBD128 {
 	z, _ := ubdRoundFloor128(neg, cMulFull128(c, cPow10128(0)), exp, classZero, ToNearestEven, MinExp128)
@@ -455,7 +457,7 @@ func ubdFMASlow128(x, y, z UBD128, mode Mode) UBD128 {
 	return ubdFMALong128(x, y, z, mode)
 }
 
-// ubdFMALong128 is fmaLongW (fma_tmpl.go) on UBD: the word paths for three
+// ubdFMALong128 follows fmaLong64 (fma64.go) on UBD: the word paths for three
 // one-word coefficients, the specials, and the exact sum of the product
 // and z rounded once.
 func ubdFMALong128(x, y, z UBD128, mode Mode) UBD128 {

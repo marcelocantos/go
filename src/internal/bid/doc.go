@@ -91,17 +91,18 @@
 //     rounds an intermediate and then rounds again, and no two operations
 //     carry their own rounding logic. The exported [Round64] and
 //     [Round128] are that routine's entry points for callers that already
-//     hold an exact value in parts. The implementation has three parts
-//     that this rule covers and one copy outside the package that it does
-//     not: roundW, the general routine; roundFiniteW, the part of it for a
+//     hold an exact value in parts. The implementation has three parts that
+//     this rule covers and one copy outside the package that it does not:
+//     round64, the general routine; roundFinite64, the part of it for a
 //     coefficient already within the format, which Quantize and
-//     RoundToIntegral enter directly; roundFaceW, the one named exception
-//     (see "Face-value rounding"); and, in cmd/compile, the rounding
-//     decision that ssagen's bid_round.go writes out in integer SSA for
-//     quantizing and integral rounding of word coefficients on arm64 and
-//     amd64. The first three take the increment from roundInc; the
-//     compiler's copy is the same decision in integers, and
-//     TestCompiledRounding checks its results against the reference
+//     RoundToIntegral enter directly; roundFace64, the one named exception
+//     (see "Face-value rounding"), each with its UBD form for decimal128
+//     (ubdRound128, ubdRoundFinite128, ubdRoundFace128); and, in
+//     cmd/compile, the rounding decision that ssagen's bid_round.go writes
+//     out in integer SSA for quantizing and integral rounding of word
+//     coefficients on arm64 and amd64. The first three take the increment
+//     from roundInc; the compiler's copy is the same decision in integers,
+//     and TestCompiledRounding checks its results against the reference
 //     model's.
 //   - Non-canonical encodings read as their canonical value. An encoding
 //     whose coefficient field exceeds [MaxCoeff64] or 10^34 - 1
@@ -1636,19 +1637,24 @@
 // coefficients. A Uint128 is a value, not a memory image: it has no
 // defined relationship to the byte order of a decimal128 in memory.
 //
-// # Width parameterisation
+// # Width-specific code
 //
-// Each width-dependent algorithm of decimal64 is written once, in a
-// template, and a generator instantiates it. The templates are written in
-// a width-neutral vocabulary and once served both widths; decimal128's
-// arithmetic is the UBD kernel ("The UBD kernel"), which follows the
-// templates' algorithms by hand, and the generator writes the decimal64
-// files alone. The alternatives to generation, generics over a width type
+// decimal64's arithmetic is plain Go written in a width-neutral
+// coefficient vocabulary (coef64.go): a fixed set of functions over the
+// coefficient and double-width types that carry the width in their names.
+// decimal128's arithmetic is the UBD kernel ("The UBD kernel"), which
+// follows decimal64's algorithms in the same vocabulary at 128 bits
+// (coef128.go). Neither is generated. Until 2026-11-24 the BID arithmetic
+// of both widths was generated from templates, one source per family of
+// operations in which every width-dependent identifier ended in a capital
+// W; once decimal128 moved to the UBD kernel, the templates had one width,
+// and their decimal64 output became the source. The alternatives to
+// writing each width over a shared vocabulary, generics over a width type
 // and one core over a 128-bit intermediate with the format parameters as
-// run-time values, were rejected on measurement. This section records the spike
-// that decided it (2026-10-30, target T1.1.2) and the rules that the
-// shared core must follow. The spike code was discarded; the numbers and
-// the decision are what remain.
+// run-time values, were rejected on measurement. This section records the
+// spike that decided it (2026-10-30, target T1.1.2) and the rules that
+// width-specific code follows. The spike code was discarded; the numbers
+// and the decision are what remain.
 //
 // The spike implemented addition and multiplication for both widths four
 // times over one algorithm: unpack; align exponents by scaling the
@@ -1709,7 +1715,7 @@
 // linux/amd64 timings. The 10% gap between generated and hand-written Add64
 // under Rosetta, absent natively, is unexplained. The kernel itself has
 // since been measured on linux/amd64, on a shared CI runner (AMD EPYC 7763,
-// testdata/bench_baseline_linux_amd64.txt), where generated Add64 takes
+// testdata/bench_baseline_linux_amd64.txt), where decimal64's Add64 takes
 // 21.6 ns and Mul64 20.4 ns against 1.9 ns for float64 in the same run. The
 // spike's hand-written code no longer exists, so those rows have no
 // width-specific comparison on this platform.
@@ -1766,88 +1772,77 @@
 //     ABI on arm64 and amd64 in every candidate, including the
 //     go.shape.struct instantiation; the two-word struct costs nothing over
 //     (hi, lo) pairs, as "Representation of decimal128" assumes.
-//   - The generated files are ordinary Go that the minimum bootstrap
-//     toolchain compiles. The template and the generator carry
-//     //go:build ignore, which the bootstrap build honours; no go:generate
-//     step runs in any build.
+//   - The decimal64 files are ordinary Go that the minimum bootstrap
+//     toolchain compiles. The generators carry //go:build ignore, which
+//     the bootstrap build honours; no go:generate step runs in any build.
 //   - No candidate allocates (0 B/op in every benchmark).
 //
-// Rules for the shared core. These bind the 128/256-bit arithmetic target
-// (T1.3.1) and every operation implemented after it.
+// The generated form was chosen and served both widths until the UBD
+// kernel replaced the 128-bit instance. The decimal64 source is the last
+// generated output, moved unchanged, so the compiled code is what it was;
+// the reasons against generics and a wide core stand.
 //
-//  1. Source of truth. Every width-dependent algorithm lives in a template
-//     NAME_tmpl.go (//go:build ignore), written once in the template
-//     vocabulary below, one template per family of operations. gen_arith.go
-//     (//go:build ignore, run by "//go:generate go run -tags bidgen
-//     gen_arith.go" in arith.go) writes zNAME64.go from each template,
-//     which are committed, and zpow10.go, the tables of powers of ten that
-//     the helpers below index. The generator links this package
-//     (the runtime imports it), so it is built with the tag bidgen, under
-//     which the files generated from templates are replaced by zbidgen.go,
-//     their declarations with bodies that return zero values: generated code
-//     that does not compile never stops the generator from building. Nobody
-//     edits a z*.go file. A test,
-//     TestGenerated, guarded by testenv.MustHaveGoRun, regenerates into a
-//     scratch directory and fails on any difference from the committed
-//     files.
-//  2. The width suffix rule. In the template every width-dependent
-//     identifier ends in a capital W and no other identifier does. The
-//     generator replaces that final W with 64 and does nothing else:
-//     PrecisionW, MaxExpW, MinExpW, BiasW, UnpackW, digitsW, addW, roundW.
-//     The package's existing width-suffixed names (Precision64, Unpack64,
-//     digits64, ...) are therefore usable from the template as they are,
-//     and the template reads as Go. No text/template syntax, no
-//     other substitution.
-//  3. Types. coefW is the coefficient type, declared as the aliases
-//     "type coef64 = uint64" in coef64.go and "type coef128 = Uint128" in
-//     coef128.go, so generated signatures are the API's own types. wideW
-//     is the double-width product: "type wide64 = Uint128" and
-//     "type wide128 = Uint256", where Uint256 is {Hi, Lo Uint128} and
-//     belongs to T1.3.1. Bit patterns and coefficients share coefW, as
-//     uint64 and Uint128 already do in the API.
-//  4. Helpers. The width-specific arithmetic is a fixed vocabulary of
-//     functions over coefW and wideW, defined with identical signatures in
-//     coef64.go and coef128.go (one file per width, nothing else in them):
-//     cIsZeroW, cCmpW, cAddW, cSubW, cOddW, cDigitsW, cMulPow10W(c, k),
-//     cDivPow10W(c, k) (q, r coefW), cGtMaxW,
-//     cPow10W(k), cMulFullW(a, b) wideW, cReduceW(p wideW, k) (q coefW,
-//     sticky bool) and cLenFullW(p wideW) int, with the decimal-digit
-//     primitives cShiftW, cShiftFullW, cReduceClassW, cScaleW, cScaleTabW and
-//     cScaleFullW (digits.go says what a caller may assume of them) and the rounding
-//     routine's cLoW(p wideW) coefW, cIncW, cMaxW() and cInfW(neg), the
-//     division's cMulPow10FullW(c, k) wideW (a coefficient scaled into the
-//     double width), cDivFullW(n wideW, d coefW) (q, r coefW) (the 128-by-64
-//     or 256-by-128 division whose quotient fits a coefficient), cNaNW()
-//     (the canonical quiet NaN) and cQuietW(x) (the NaN x made quiet, as
-//     "NaN results" says), the remainder's cModFullW, the character
-//     conversions' cSplitW(c) (hi, lo uint64) and cWideW(m Uint128) wideW,
-//     and FMA's cAddFullW, cSubFullW and cIncFullW, extended as the other
-//     operations need. Every coef64.go helper must inline;
-//     check with -gcflags=-m=2 after changing one (no "cannot inline
-//     c…64"; plain -m does not print "cannot inline" lines).
-//     coef128.go is where T1.3.1's 128- and 256-bit arithmetic goes, and
-//     the UBD kernel's coefficient arithmetic with it; it may call
-//     unexported Uint128 and Uint256 functions freely.
-//  5. The generated functions are unexported (add64, round64, ...). The
-//     exported, documented functions in arith.go, round.go and the other
-//     API files stay where they are and become one-line wrappers, which
-//     the inliner removes; the API files do not change shape as operations
-//     are implemented. The decimal128 ones are wrappers too: each converts
-//     its operands with toUBD, calls the UBD kernel and converts the
-//     result with fromUBD.
-//  6. Width constants are compile-time constants in each instantiation
-//     (PrecisionW becomes Precision64), never fields of a format value
-//     passed at run time, and the package has no generic code. The two
-//     rejected forms are not to be reintroduced piecemeal.
-//  7. Width-independent code (the rounding-direction decision, the digit
-//     estimate from a bit length, the Mode and Status types) is ordinary Go
-//     in ordinary files. The template holds only what mentions a
-//     coefficient, a product or a format constant.
-//  8. The numbers above are the ratchet. A decimal64 operation whose
-//     generated form falls more than noise behind the hand-written row on
-//     the same machine has a helper that stopped inlining or an algorithm
-//     that grew a width-independent cost; fix that, do not special-case the
-//     width.
+// Rules for width-specific code. These bind decimal64's arithmetic, the
+// UBD kernel's coefficient arithmetic and every operation added to either.
+//
+//  1. Types. coef64 is the coefficient type, declared as the alias
+//     "type coef64 = uint64" in coef64.go, so signatures are the API's own
+//     types; wide64 is the double-width product, "type wide64 = Uint128".
+//     coef128.go declares "type coef128 = Uint128" and
+//     "type wide128 = Uint256". Bit patterns and coefficients share a
+//     type, as uint64 and Uint128 do in the API.
+//  2. Helpers. The width-specific arithmetic is a fixed vocabulary of
+//     functions over the coefficient and wide types, defined with matching
+//     signatures in coef64.go and coef128.go. Each name is the
+//     width-independent name with the width appended: at 64 bits cIsZero64,
+//     cCmp64, cAdd64, cSub64, cOdd64, cDigits64, cMulPow1064(c, k),
+//     cDivPow1064(c, k) (q, r coef64), cGtMax64, cPow1064(k),
+//     cMulFull64(a, b) wide64, cReduce64(p wide64, k) (q coef64, sticky
+//     bool) and cLenFull64(p wide64) int, with the decimal-digit primitives
+//     cShift64, cShiftFull64, cReduceClass64, cScale64, cScaleTab64 and
+//     cScaleFull64 (digits.go says what a caller may assume of them), the
+//     rounding routine's cLo64(p wide64) coef64, cInc64, cMax64() and
+//     cInf64(neg), the division's cMulPow10Full64(c, k) wide64 (a
+//     coefficient scaled into the double width) and cDivFull64(n wide64,
+//     d coef64) (q, r coef64) (the 128-by-64 division whose quotient fits
+//     a coefficient), cNaN64() (the canonical quiet NaN) and cQuiet64(x)
+//     (the NaN x made quiet, as "NaN results" says), the remainder's
+//     cModFull64, the character conversions' cSplit64(c) (hi, lo uint64)
+//     and cWide64(m Uint128) wide64, and FMA's cAddFull64, cSubFull64 and
+//     cIncFull64, extended as the operations need. coef64.go holds nothing
+//     else, and every function in it must inline; check with
+//     -gcflags=-m=2 after changing one (no "cannot inline c…64"; plain -m
+//     does not print "cannot inline" lines). coef128.go holds the 128- and
+//     256-bit arithmetic of the UBD kernel and the layout-free helpers it
+//     shares with nothing else; it may call unexported Uint128 and Uint256
+//     functions freely.
+//  3. The width-specific functions are unexported (add64, round64, ...).
+//     The exported, documented functions in arith.go, round.go and the
+//     other API files are one-line wrappers, which the inliner removes; the
+//     API files do not change shape as operations are implemented. The
+//     decimal128 ones are wrappers too: each converts its operands with
+//     toUBD, calls the UBD kernel and converts the result with fromUBD.
+//  4. Width constants are compile-time constants (Precision64,
+//     Precision128), never fields of a format value passed at run time,
+//     and the package has no generic code. The two rejected forms are not
+//     to be reintroduced piecemeal.
+//  5. Width-independent code (the rounding-direction decision, the digit
+//     estimate from a bit length, the Mode and Status types, the exact
+//     arithmetic of the binary conversion) is ordinary Go in ordinary
+//     files, written once. The width-specific files hold only what mentions
+//     a coefficient, a product or a format constant.
+//  6. Generated code is tables only. gen_arith.go (//go:build ignore, run
+//     by "//go:generate go run gen_arith.go" in arith.go) writes zpow10.go,
+//     the powers of ten that the helpers index and their reciprocals, and
+//     zdpd.go, the declet tables of the DPD conversions; gen_recip.go
+//     writes reciptab.go. Nobody edits a generated file. TestGenerated,
+//     guarded by testenv.MustHaveGoRun, regenerates zpow10.go and zdpd.go
+//     into a scratch directory and fails on any difference from the
+//     committed files.
+//  7. The numbers above are the ratchet. A decimal64 operation that falls
+//     more than noise behind the hand-written row on the same machine has
+//     a helper that stopped inlining or an algorithm that grew a
+//     width-independent cost; fix that, do not special-case the width.
 //
 // # The UBD kernel
 //
@@ -1859,12 +1854,12 @@
 // compiler's decimal128 fast paths are migueldecimal128's work
 // (https://migueldecimal128.github.io/decimal128-www/whitepapers/ubd.html).
 //
-// The kernel's general paths are the templates' algorithms written at 128
-// bits over coef128.go's vocabulary, with UBD's decoding and packing, and
-// are named after them: ubdAddLong128 is addLongW, ubdRound128 roundW,
-// ubdRoundFace128 roundFaceW, ubdDivLong128 divLongW, ubdMulLong128
-// mulLongW, ubdQuantizeLong128 quantizeLongW, ubdFMALong128 fmaLongW. In
-// front of them stand paths of the kernel's own ("Straight paths"):
+// The kernel's general paths are decimal64's algorithms written at 128 bits
+// over coef128.go's vocabulary, with UBD's decoding and packing, and are
+// named after them: ubdAddLong128 follows addLong64, ubdRound128 round64,
+// ubdRoundFace128 roundFace64, ubdDivLong128 divLong64, ubdMulLong128
+// mulLong64, ubdQuantizeLong128 quantizeLong64 and ubdFMALong128 fmaLong64.
+// In front of them stand paths of the kernel's own ("Straight paths"):
 // ubdAddTTE128, ubdMulTTE128, ubdDivTTE128 and ubdDivWide128,
 // ubdQuantizeSlow128 and ubdFMASlow128. The compiler calls the kernel's
 // entries directly, and ubd.go states their contract ("The UBD kernel
@@ -1880,22 +1875,23 @@
 // the BID-128 codec (Pack128, Unpack128) is in encoding.go.
 //
 // Measurements below that name decimal128 and are dated before 2026-11-24
-// were taken on the BID-128 kernel that the templates generated, with
-// hand-written entries in front of it, which the UBD kernel replaced on
-// that date. The UBD kernel's entries keep those entries' arithmetic, so
-// the reasoning stands; the numbers are the BID-128 kernel's.
+// were taken on the BID-128 kernel that the templates generated (see
+// "Width-specific code"), with hand-written entries in front of it, which
+// the UBD kernel replaced on that date. The UBD kernel's entries keep those
+// entries' arithmetic, so the reasoning stands; the numbers are the BID-128
+// kernel's.
 //
 // # Inline fast paths
 //
 // The money cases of addition, subtraction, multiplication, quantize and the
 // comparisons, word operands of one quantum, cost little more than the call
 // that reaches them, so they are decided in front of the call. For
-// decimal64 each such operation is generated as a small function, addW,
-// subW, mulW, quantizeW, equalW, lessW and lessEqualW, that asks an
-// encoding-level helper in encoding.go (addSameQuantumW, subSameQuantumW,
-// mulShortW, quantizeSameW and sameQuantumKeysW) whether it can decide the
+// decimal64 each such operation is a small function, add64, sub64, mul64,
+// quantize64, equal64, less64 and lessEqual64, that asks an encoding-level
+// helper in encoding.go (addSameQuantum64, subSameQuantum64, mulShort64,
+// quantizeSame64 and sameQuantumKeys64) whether it can decide the
 // operands from their bits, and otherwise calls the general path, named
-// with the suffix Slow (addSlowW, ...). The helpers decide only exact
+// with the suffix Slow (addSlow64, ...). The helpers decide only exact
 // results, which they encode exactly as the general path does; each states
 // its bounds and why the general path gives the same bits, TestInlineBounds
 // checks each bound from both sides and TestInlinePaths compares every
@@ -1917,7 +1913,7 @@
 // operation whose front does not fit has none. Compare64 with a front would
 // cost 88; out of line, the front costs every operand it refuses a second
 // call, 11 to 16 percent on the mixed rows, so it, Min64 and Max64 call
-// quietCmpSlowW directly.
+// quietCmpSlow64 directly.
 //
 // The decimal128 operators on every target whose memory form is UBD have
 // their fronts in the compiler, which decides the money cases on the
@@ -1975,47 +1971,46 @@
 //
 // # Face-value rounding
 //
-// Every rounded result passes through roundW, with one named exception:
-// roundFaceW, which rounds the swamped and the aligned addend of addLongW
-// and the inexact quotient of divLongW, and for decimal64 the swamped
+// Every rounded decimal64 result passes through round64, with one named
+// exception: roundFace64, which rounds the swamped and the aligned addend
+// of addLong64 and the inexact quotient of divLong64, and the swamped
 // addend of addSlow64, which is addLong64's word path for far operands
-// taken in front of it, and has no other caller. Its input is a
-// coefficient q of exactly PrecisionW digits at an exponent inside the
-// format and not tiny, plus a fraction below one unit, not zero, whose
-// class the caller knows exactly: below a half or above it for a swamped
-// addend; for an aligned addend, from the digits its one shift discards,
-// and for a quotient, from the remainder against the divisor, a half as
-// well. On such an
-// input roundW pads nothing, discards no digit and keeps the exponent, so
-// its whole decision is one row of the six-mode table, roundInc(class,
+// taken in front of it, and has no other caller. Its input is a coefficient
+// q of exactly Precision64 digits at an exponent inside the format and not
+// tiny, plus a fraction below one unit, not zero, whose class the caller
+// knows exactly: below a half or above it for a swamped addend; for an
+// aligned addend, from the digits its one shift discards, and for a
+// quotient, from the remainder against the divisor, a half as well. On such
+// an input round64 pads nothing, discards no digit and keeps the exponent,
+// so its whole decision is one row of the six-mode table, roundInc(class,
 // mode, sign, odd(q)), and an increment of the largest coefficient carries
-// to 10^(PrecisionW-1) one place up, overflowing above MaxExpW. roundFaceW
-// is those steps and nothing else; it adds roundInc and calls packW and
-// overflowW as roundW does, so the table, the encoding and the overflow
-// results are shared, not copied. Its comment proves the bounds of its
-// input from addLongW's. It exists because roundW's clamp, digit count and
-// shift, all of which leave such an input unchanged, cost more than the
-// rounding itself on far additions, and a test for this input inside
-// roundW measured 2 to 7 percent on the other inexact roundings (Round and
-// the binary conversions, 2026-11-10).
+// to 10^(Precision64-1) one place up, overflowing above MaxExp64.
+// roundFace64 is those steps and nothing else; it adds roundInc and calls
+// pack64 and overflow64 as round64 does, so the table, the encoding and the
+// overflow results are shared, not copied. Its comment proves the bounds of
+// its input from addLong64's. It exists because round64's clamp, digit
+// count and shift, all of which leave such an input unchanged, cost more
+// than the rounding itself on far additions, and a test for this input
+// inside round64 measured 2 to 7 percent on the other inexact roundings
+// (Round and the binary conversions, 2026-11-10).
 // TestRoundFaceValue drives it at every bound (the carry, the overflow of
-// the carry at MaxExpW, the padded power of ten of a difference) in every
+// the carry at MaxExp64, the padded power of ten of a difference) in every
 // mode against the reference, TestSwampedAdd at the classes around the
 // swamping gap, and the oracle's operand generator reaches it in every
 // mode and both classes. An addend that is not swamped but lies wholly or
-// partly below x's PrecisionW digits is aligned by one shift of y to the
+// partly below x's Precision64 digits is aligned by one shift of y to the
 // place of x scaled to full precision: the sum or difference of the two
 // coefficients has the class of the digits that shift discarded (its
 // complement for a difference, taken from one more unit), and rounds at
-// face value whenever it still has exactly PrecisionW digits. A sum that
-// carries goes to roundW with that class, an exact one to roundW's exact
+// face value whenever it still has exactly Precision64 digits. A sum that
+// carries goes to round64 with that class, an exact one to round64's exact
 // prologue, and a difference that loses its leading digit, which needs
 // digits the shift discarded, takes the general alignment
 // (TestAlignedAdd). Before this path the general alignment scaled x past
-// PrecisionW digits and roundW divided a second time to bring the sum
+// Precision64 digits and round64 divided a second time to bring the sum
 // back; the one shift measured 16 percent on additions and subtractions
 // of full-precision operands (2026-11-10). Division scales its dividend so
-// that the quotient has exactly PrecisionW digits (the leading ratio of
+// that the quotient has exactly Precision64 digits (the leading ratio of
 // the coefficients decides between two scale counts). In the two nearest
 // modes it then rounds without a class at all: the dividend is biased by
 // half the divisor, ⌊yc/2⌋, and the quotient of the biased dividend is the
@@ -2025,21 +2020,24 @@
 // exactly when the division is exact, which goes on to the preferred
 // exponent, and it is zero under an even divisor exactly on a tie, where
 // ties to even takes the neighbour below. Both tests are rare, and the
-// result is encoded by roundFaceW with no class, which adds nothing in a
+// result is encoded by roundFace64 with no class, which adds nothing in a
 // nearest mode; its carry no quotient of two coefficients reaches
 // (TestDivNearest shows why and checks it). A
 // directed mode takes the class of the remainder against the divisor and
-// roundFaceW; results near the exponent limits, which may be subnormal,
+// roundFace64; results near the exponent limits, which may be subnormal,
 // clamped or overflowing, take one more division step and go through
-// roundW with a round digit as before (divLongW's comment). The oracle's
+// round64 with a round digit as before (divLong64's comment). The oracle's
 // division regimes and the published suites' division cases cover the
 // routes, and TestDivNearest the ties, the fractions next to them, the
 // zero biased remainder of an odd divisor, and the exact quotients, in
 // every mode. A swamped addend needs no decision at all in a nearest
 // mode: x + f rounds down to x and (x - 1) + (1 - f) up to it, so
-// addLongW passes x scaled to full precision to roundFaceW with no class.
-// TestRoundIsTheOnlyPacker allows roundFaceW to call packW and allows
-// only addLongW, divLongW and addSlow64 to call it.
+// addLong64 passes x scaled to full precision to roundFace64 with no class.
+// TestRoundIsTheOnlyPacker allows roundFace64 to call pack64 and allows
+// only addLong64, divLong64 and addSlow64 to call it. The UBD kernel makes
+// the same exception for decimal128: ubdRoundFace128 follows roundFace64,
+// and ubdAddLong128 and ubdDivLong128 call it as addLong64 and divLong64
+// do.
 //
 // # Operands without a pattern
 //
@@ -2074,14 +2072,14 @@
 // not predictable and is computed, not branched on:
 //
 //   - The direction of a rounding. roundInc returns the increment as a
-//     number, which roundW, roundFiniteW, roundFaceW and the integer
-//     conversions add; the carry out of the largest coefficient is the
-//     branch, and it is rare.
+//     number, which round64, roundFinite64, roundFace64, their UBD forms
+//     and the integer conversions add; the carry out of the largest
+//     coefficient is the branch, and it is rare.
 //   - The class of a remainder against a half (class64, class128): two
 //     borrows and a mask.
 //   - Whether a coefficient reaches the next power of ten, the second half
 //     of a digit count (cDigits128): the borrow of c - 10^t.
-//   - An order of two coefficients (u128Lt, u128Cmp, cLtW): borrows.
+//   - An order of two coefficients (u128Lt, u128Cmp, cLt64): borrows.
 //   - The corrections of the division's quotient words and of its
 //     reciprocal ("Division").
 //   - A comparison of two values (cCmpFinite128, compareWords, and the
@@ -2257,9 +2255,9 @@
 // Rem and Mod had the general route only: 1234.56 rem 0.05 was a 256-bit
 // product, a division by reciprocals and the rounding routine, 409
 // instructions and 48 cycles. Operands of one word each whose scaled
-// coefficient still fits a word take one division instruction and
-// packWordW: 99 instructions and 9.6 cycles (decimal64: 228 and 28 to 104
-// and 12.6).
+// coefficient still fits a word take one division instruction and the word
+// packer: 99 instructions and 9.6 cycles (decimal64: 228 and 28 to 104 and
+// 12.6).
 //
 // Operands more than a stride of 38 places apart reduce by repeated
 // squaring modulo twice the divisor, and the squarings are a chain, each
@@ -2379,14 +2377,14 @@
 //
 // Two more operations have such an entry since (2026-11-11).
 //
-// Addition of word operands far apart. The exact word path of addLongW
-// aligns across 19 places; beyond it word operands took the general
-// addition, 247 instructions and 26.7 cycles through the operator for
-// 1.23456789E+30 + 9.87654321E-30, whose result is the larger operand
-// scaled to 34 digits. Across farWordGap places beyond that scale a word
-// y is below a twentieth of a unit of the scaled x, so to nearest the sum
-// is that x, which packWordW encodes, and in a directed mode y is the
-// fraction of a swamped addend, which roundFaceW rounds at face value
+// Addition of word operands far apart. The exact word path of addLong64 and
+// ubdAddLong128 aligns across 19 places; beyond it word operands took the
+// general addition, 247 instructions and 26.7 cycles through the operator
+// for 1.23456789E+30 + 9.87654321E-30, whose result is the larger operand
+// scaled to 34 digits. Across farWordGap places beyond that scale a word y
+// is below a twentieth of a unit of the scaled x, so to nearest the sum is
+// that x, which the word packer encodes, and in a directed mode y is the
+// fraction of a swamped addend, which the face-value rounding rounds
 // ("Face-value rounding"): 161 instructions and 15.9 cycles.
 //
 // The fused multiply-add. ubdFMASlow128 takes operands of which one has two
@@ -2474,39 +2472,39 @@
 //
 // A numeral of at most eight characters after its sign, digits and at most
 // one point (money and quantity literals as they are usually written), is
-// parsed whole by parseW: the bytes are loaded into one word, a point is
-// found by the zero-byte test and removed by a shift, and the eight digits
-// are proved and read by the same lane arithmetic the digit-run scanner
-// uses (eightDigits, eightDigitsValue). The result still reaches roundW as
-// the general scanner's would, so no new encoder is involved. The path is
-// written out in parseW rather than called: its pieces exceed the
-// inliner's budget, and as a call it cost the strings it turns away (an
-// exponent form of nine bytes) two nanoseconds. TestParseShort checks it
-// against the general scanner alone, bit for bit, on every string of up to
-// six characters over a small alphabet and on random longer ones.
-// Measured 2026-11-10 (Apple M4 Max, interleaved, n=8): Parse/128/short
-// 12.2 → 4.9 ns, Parse/64/short 11.5 → 4.6; a word and a long numeral pay
-// a length and first-byte check, a short exponent form the loads and the
-// digit test.
+// parsed whole by parse64 and UBDParse128: the bytes are loaded into one
+// word, a point is found by the zero-byte test and removed by a shift, and
+// the eight digits are proved and read by the same lane arithmetic the
+// digit-run scanner uses (eightDigits, eightDigitsValue). The result still
+// reaches the rounding routine as the general scanner's would, so no new
+// encoder is involved. The path is written out in parse64 and UBDParse128
+// rather than called: its pieces exceed the inliner's budget, and as a call
+// it cost the strings it turns away (an exponent form of nine bytes) two
+// nanoseconds. TestParseShort checks it against the general scanner alone,
+// bit for bit, on every string of up to six characters over a small
+// alphabet and on random longer ones. Measured 2026-11-10 (Apple M4 Max,
+// interleaved, n=8): Parse/128/short 12.2 → 4.9 ns, Parse/64/short 11.5 →
+// 4.6; a word and a long numeral pay a length and first-byte check, a short
+// exponent form the loads and the digit test.
 //
 // # Digit conversion
 //
-// A two-word coefficient's low word, which cSplitW fixes at exactly nineteen
-// digits, is converted to text in chunks of eight digits (writeDigits,
-// eightASCII): each chunk is three multiplications over lanes of one word
-// instead of a chain of divisions, the chunks convert independently, and
-// the high word converts beside them. The same conversion for every word
-// was measured and kept out (2026-11-10, Apple M4 Max, interleaved, n=8):
-// on its own the chunked writer is faster from about sixteen digits
-// (16 digits 9.3 → 6.4 ns, 19 digits 11.6 → 7.8) and no faster below eight,
-// but end to end it cost Append/64/mixed 24% and Append128Word/small 36%,
-// because the three multiplications are paid whatever the length and the
-// branch on the length is mispredicted on mixed operands. Restricted to the
-// fixed-length low word there is no such branch: Append/128/mixed 16.9 →
-// 15.1 ns, UnpackDigits/128/mixed 10.3 → 9.1, Append128Word/large 16.9 →
-// 13.4, and the decimal64 rows unchanged. Replacing the layout's small
-// appends with fixed-size copies was measured in the same pass and did not
-// pay either.
+// A two-word coefficient's low word, which cSplit128 fixes at exactly
+// nineteen digits, is converted to text in chunks of eight digits
+// (writeDigits, eightASCII): each chunk is three multiplications over lanes
+// of one word instead of a chain of divisions, the chunks convert
+// independently, and the high word converts beside them. The same
+// conversion for every word was measured and kept out (2026-11-10, Apple M4
+// Max, interleaved, n=8): on its own the chunked writer is faster from
+// about sixteen digits (16 digits 9.3 → 6.4 ns, 19 digits 11.6 → 7.8) and
+// no faster below eight, but end to end it cost Append/64/mixed 24% and
+// Append128Word/small 36%, because the three multiplications are paid
+// whatever the length and the branch on the length is mispredicted on mixed
+// operands. Restricted to the fixed-length low word there is no such
+// branch: Append/128/mixed 16.9 → 15.1 ns, UnpackDigits/128/mixed 10.3 →
+// 9.1, Append128Word/large 16.9 → 13.4, and the decimal64 rows unchanged.
+// Replacing the layout's small appends with fixed-size copies was measured
+// in the same pass and did not pay either.
 //
 // The short values, a decimal128 coefficient below 10^8 at an exponent
 // from -4 to 0 and a magnitude below 10^6, where the canonical form turns
@@ -2739,6 +2737,6 @@
 // internal/strconv's exact machinery, which the minimum bootstrap toolchain
 // does not provide, and because the compiler never needs it: constants are
 // exact and are encoded through [Round64] and [Round128]. Conversion from
-// binary to decimal (fromfloat.go and its generated files) needs only
+// binary to decimal (fromfloat.go and fromfloat64.go) needs only
 // math/bits and is compiled everywhere.
 package bid

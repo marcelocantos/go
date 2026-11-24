@@ -51,7 +51,7 @@ func TestPow5Approx(t *testing.T) {
 
 // fromFloatFastCase is one call of the fast path that a conversion makes:
 // the quotient of the significand m with the binary exponent e at the
-// precision prec, with the arguments fromFloatW passes.
+// precision prec, with the arguments fromFloat64 and ubdFromFloat128 pass.
 func fromFloatFastCheck(t *testing.T, prec int, m uint64, e int) (refused, called bool) {
 	t.Helper()
 	tz := mbits.TrailingZeros64(m)

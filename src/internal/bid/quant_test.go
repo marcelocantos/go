@@ -5,7 +5,7 @@
 package bid_test
 
 // Tests of the operations that fix or inspect the exponent of a result:
-// RoundToIntegral, Quantize, Reduce and SameQuantum (quant_tmpl.go). The
+// RoundToIntegral, Quantize, Reduce and SameQuantum (quant64.go). The
 // differential tests and the conformance suite cover them; these are the
 // fuzz targets, which drive the kernel and the reference model on arbitrary
 // bit patterns (non-canonical encodings and signaling NaNs included) in

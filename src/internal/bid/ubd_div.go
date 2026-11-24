@@ -6,8 +6,8 @@ package bid
 
 import "math/bits"
 
-// This package's divide on UBD operands. ubdDivLong128 is the template's
-// divLongW (div_tmpl.go) on UBD, for every operand and mode: the specials
+// This package's divide on UBD operands. ubdDivLong128 follows decimal64's
+// divLong64 (div64.go) on UBD, for every operand and mode: the specials
 // are decided on UBD and the rounding is ubdRoundFace128 and ubdRound128.
 // ubdDivTTE128 and ubdDivWide128 divide finite operands to nearest in the
 // arithmetic that such operands need, decoded by ubdDivPair128 and packed
@@ -33,7 +33,7 @@ func ubdDivPair128(x, y UBD128) (xhi, yhi uint64, exp int, neg, ok bool) {
 // the start. ubdDivRnd128, which no compiled code calls, calls it for
 // ToNearestEven and ubdDivLong128, which takes every mode, otherwise.
 //
-// The method is divLongW's in the arithmetic that such operands need, and
+// The method is divLong64's in the arithmetic that such operands need, and
 // nothing is decoded twice, called or kept in memory on the way. The
 // leading ratio compares the coefficients scaled to one length: for a
 // dividend of one word as two products of two words, and for a dividend of
@@ -51,7 +51,7 @@ func ubdDivPair128(x, y UBD128) (xhi, yhi uint64, exp int, neg, ok bool) {
 // money are that small. A larger divisor takes its reciprocal
 // (reciprocalNewton) and two steps by it (div2by1).
 //
-// As in divLongW the dividend is biased by half the divisor, so that the
+// As in divLong64 the dividend is biased by half the divisor, so that the
 // quotient is rounded half up and the remainder says the rest: equal to
 // the half exactly when the division is exact, when the quotient goes to
 // strip128 for its preferred exponent, and zero under an even divisor
@@ -473,7 +473,7 @@ func ubdDivLong128(x, y UBD128, mode Mode) UBD128 {
 		face := MinExp128 < exp && exp <= MaxExp128 && exp+Precision128-1 >= Emin128
 		var rem coef128
 		if face && (mode <= ToNearestAway || mode > TowardPositive) {
-			// To nearest, inside the exponent range of roundFaceW's proof:
+			// To nearest, inside the exponent range of roundFace64's proof:
 			// the dividend is biased by half the divisor, and the quotient
 			// of n + ⌊yc/2⌋ by yc is the quotient of n by yc rounded to
 			// nearest with ties up, because the bias carries into the next
@@ -503,7 +503,7 @@ func ubdDivLong128(x, y UBD128, mode Mode) UBD128 {
 			// An inexact quotient in a directed mode or near the exponent
 			// limits: the remainder places the true value between q and
 			// q + 1 at exponent xe - ye - k, and its class is exact: rem
-			// against yc - rem. Within the exponent range that roundFaceW's
+			// against yc - rem. Within the exponent range that roundFace64's
 			// proof names, that is the whole rounding decision, taken at
 			// face value; nearer the limits ubdRound128 takes the usual round
 			// digit and sticky bit, found by one more division step.

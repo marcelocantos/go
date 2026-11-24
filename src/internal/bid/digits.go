@@ -17,14 +17,15 @@ import "math/bits"
 // removed, cannot be written in terms of these primitives.
 //
 // The primitives are in the coefficient vocabulary, in coef64.go and
-// coef128.go, so that the template can reach them:
+// coef128.go, so that the width-specific code can reach them. At 64 bits
+// they are:
 //
-//	cShiftW(c coefW, k int) (q coefW, class digitClass)
-//	cShiftFullW(p wideW, k int) (q wideW, class digitClass)
-//	cReduceClassW(p wideW, k int) (q coefW, class digitClass)
-//	cScaleW(c coefW, k int) (r coefW, overflow bool)
-//	cScaleTabW(c coefW, k int) (r coefW, overflow bool)
-//	cScaleFullW(p wideW, k int) (r wideW, overflow bool)
+//	cShift64(c coef64, k int) (q coef64, class digitClass)
+//	cShiftFull64(p wide64, k int) (q wide64, class digitClass)
+//	cReduceClass64(p wide64, k int) (q coef64, class digitClass)
+//	cScale64(c coef64, k int) (r coef64, overflow bool)
+//	cScaleTab64(c coef64, k int) (r coef64, overflow bool)
+//	cScaleFull64(p wide64, k int) (r wide64, overflow bool)
 //
 // cShift64, cShift128 and cShiftFull128 are the 64-, 128- and 256-bit forms
 // of the shift (cShiftFull64 is cShift128), and likewise for cScale. The
@@ -59,12 +60,13 @@ import "math/bits"
 // acts as a sticky bit. A fused multiply-add is the same addition over the wide
 // type, which it scales to no more than 10^71.
 //
-// cScaleW multiplies by 10^k and reports overflow instead of wrapping. On
-// overflow r is zero, so no wrapped value can be mistaken for a result. Zero
-// scales to zero for every k >= 0; any other value overflows for every k
-// beyond the table. cScaleTabW is cScaleW for a k within the table, 0 <= k
-// < len(pow10tabW), and inlines at both widths, which cScaleW does not at
-// 128 bits; a caller on a hot path tests the bound itself and calls it.
+// cScale64 and cScale128 multiply by 10^k and report overflow instead of
+// wrapping. On overflow r is zero, so no wrapped value can be mistaken for
+// a result. Zero scales to zero for every k >= 0; any other value overflows
+// for every k beyond the table. cScaleTab64 and cScaleTab128 are cScale64
+// and cScale128 for a k within the table, 0 <= k < len(pow10tab64) or
+// len(pow10tab128), and inline at both widths, which cScale128 does not; a
+// caller on a hot path tests the bound itself and calls them.
 
 // A digitClass classifies the part of a value discarded by a shift: the
 // remainder r of a division by 10^k, compared with 10^k / 2.

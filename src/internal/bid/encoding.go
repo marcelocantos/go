@@ -395,7 +395,7 @@ func packSign64(sign, c uint64, exp int) (uint64, bool) {
 // lo) × 10^exp, which a word fast path computed at its preferred exponent,
 // if it fits the format, and reports ok = false otherwise, when the caller
 // takes its general path. They are the exact packing exception of the word
-// fast paths (see roundW in arith_tmpl.go): the rounding routine would
+// fast paths (see round64 in arith64.go): the rounding routine would
 // encode the value unchanged, and nothing is rounded here.
 // TestRoundIsTheOnlyPacker lists its callers.
 func packWord64(neg bool, hi, lo uint64, exp int) (uint64, bool) {
@@ -431,7 +431,7 @@ func packQuotient64(q uint64, exp int, sign uint64) (uint64, bool) {
 // The inline paths. The functions below decide, from the bits alone, the
 // operations of money arithmetic whose result is exact and needs no
 // decoding: operands of one quantum whose coefficients fit a word. The
-// arithmetic templates call them in front of the general paths, and they are
+// decimal64 arithmetic calls them in front of the general paths, and they are
 // small enough that the front and its call to the general path inline into
 // every caller (see "Inline fast paths" in the package documentation). Each
 // reports ok = false for every operand it does not decide, and then the

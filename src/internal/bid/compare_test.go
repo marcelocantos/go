@@ -787,7 +787,7 @@ func BenchmarkCompareWords(b *testing.B) {
 }
 
 // TestKeyUnpackSplit checks Key64 and Key128 on both sides of the bound
-// between the inline first-form decode and unpackRest, which keyW calls
+// between the inline first-form decode and unpackRest, which key64 calls
 // itself: the largest first-form coefficients, the second form (canonical
 // and not), the largest decimal128 first-form coefficients from
 // MaxCoeff128Hi × 2^64 up, zeros and the special values. The key must be
@@ -849,15 +849,15 @@ func TestKeyUnpackSplit(t *testing.T) {
 	}
 }
 
-// TestMagnitudeCompareBounds drives magCmpW, the magnitude comparison of
-// two finite values at different exponents, at its bound: the coefficient
-// with the larger exponent is scaled by the gap and compared, and a scaled
-// coefficient that overflows the coefficient type is the larger. The gaps
-// put the scaled coefficient on both sides of 2^64 and 2^128 and of the
-// table of powers of ten, against coefficients of the other operand that
-// are smaller, equal and larger than the scaled one where it fits, in both
-// orders, both signs, through the comparisons, Compare and TotalOrder,
-// against the reference.
+// TestMagnitudeCompareBounds drives the magnitude comparison of two finite
+// values at different exponents (magCmp64, and the UBD kernel's comparison
+// at decimal128) at its bound: the coefficient with the larger exponent is
+// scaled by the gap and compared, and a scaled coefficient that overflows
+// the coefficient type is the larger. The gaps put the scaled coefficient
+// on both sides of 2^64 and 2^128 and of the table of powers of ten,
+// against coefficients of the other operand that are smaller, equal and
+// larger than the scaled one where it fits, in both orders, both signs,
+// through the comparisons, Compare and TotalOrder, against the reference.
 func TestMagnitudeCompareBounds(t *testing.T) {
 	var k kernel
 	for _, f := range []*format{dec64, dec128} {

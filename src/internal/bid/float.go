@@ -55,23 +55,21 @@ import (
 // float32 rounds once on both paths: scaling and the decimal each extract 24
 // bits from the exact value directly.
 //
-// None of the decimal-to-binary direction is in the code-generation template
-// (see "Width parameterisation" in the package documentation). The core
+// None of the decimal-to-binary direction is width-specific code (see
+// "Width-specific code" in the package documentation). The core
 // mentions no constant of a decimal format and lives in internal/strconv; a
 // decimal64 passes a zero high word, which costs it one test. What depends
 // on the width is the call to Unpack, in each wrapper below.
 //
 // Binary to decimal: the exact value m × 2^e is scaled to an integer of
-// PrecisionW+1 or more digits with an exact sticky bit by bounded-stack
+// Precision+1 or more digits with an exact sticky bit by bounded-stack
 // integer arithmetic, and handed to the rounding routine with preferred
 // exponent 0. The arithmetic and the argument for its exactness are in
-// fromfloat.go; the width-dependent driver is fromFloatW in
-// fromfloat_tmpl.go, generated into zfromfloat64.go, and decimal128's is
-// ubdFromFloat128 in ubd_float.go.
-// The wrappers below only take the float apart. That direction needs
-// nothing from internal/strconv and its generated files are compiled in
-// the bootstrap build like every other generated file; only the exported
-// functions below are excluded with this file.
+// fromfloat.go; decimal64's driver is fromFloat64 in fromfloat64.go, and
+// decimal128's is ubdFromFloat128 in ubd_float.go. The wrappers below only
+// take the float apart. That direction needs nothing from internal/strconv,
+// and fromfloat.go and fromfloat64.go are compiled in the bootstrap build;
+// only the exported functions below are excluded with this file.
 //
 // This file is excluded from the compiler bootstrap build. The compiler
 // never converts between binary and decimal at run time: constants are
@@ -143,7 +141,7 @@ func float32frombits(b uint32) float32 { return *(*float32)(unsafe.Pointer(&b)) 
 // integer m and exponent e with |f| = m × 2^e exactly. The significand's
 // implicit bit is restored for a normal f; a subnormal has none and the
 // exponent of the smallest one, so m may have trailing zero bits, which
-// fromFloatW moves into e. A zero has m = 0.
+// fromFloat64 and ubdFromFloat128 move into e. A zero has m = 0.
 func float64Parts(f float64) (kind Kind, neg bool, m uint64, e int) {
 	b := float64bits(f)
 	neg = b&float64Sign != 0

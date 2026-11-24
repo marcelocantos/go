@@ -27,7 +27,7 @@ func Widen(x uint64) Uint128 {
 	case KindInf:
 		return cInf128(neg)
 	}
-	// Exact fast path (named in roundW's comment and in the allowlist of
+	// Exact fast path (named in round64's comment and in the allowlist of
 	// TestRoundIsTheOnlyPacker): the coefficient and exponent came from
 	// Unpack64, and every decimal64 pair is a decimal128 pair, so nothing
 	// is rounded and Pack128 cannot refuse. Going through the rounding for a

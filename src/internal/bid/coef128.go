@@ -6,15 +6,14 @@ package bid
 
 import "math/bits"
 
-// The coefficient vocabulary of the shared core (see "Width
-// parameterisation" in the package documentation, rule 4) at 128 bits,
-// with the signatures of the decimal64 instantiation in coef64.go. The
-// templates are instantiated for decimal64 alone; the UBD kernel
-// (ubd_*.go) writes their algorithms at 128 bits in these functions, and
-// the layout-free helpers it shares with nothing else (strip128,
-// remScaled128, addDigits128, fmaDigits128) are here too. These functions
-// may call any of the unexported Uint128 and Uint256 arithmetic freely;
-// unlike their decimal64 counterparts they are not required to inline.
+// The coefficient vocabulary (see "Width-specific code" in the package
+// documentation, rule 2) at 128 bits, with the signatures of coef64.go.
+// The UBD kernel (ubd_*.go) writes decimal64's algorithms at 128 bits in
+// these functions, and the layout-free helpers it shares with nothing else
+// (strip128, remScaled128, addDigits128, fmaDigits128) are here too. These
+// functions may call any of the unexported Uint128 and Uint256 arithmetic
+// freely; unlike their decimal64 counterparts they are not required to
+// inline.
 //
 // Preconditions are as in coef64.go: stated, and a cheap one is checked by
 // a panic rather than answered wrongly.
@@ -213,7 +212,7 @@ func cMulFull128(a, b coef128) wide128 {
 // (the sticky bit of the discarded digits). Precondition: k >= 0 and the
 // quotient fits 128 bits; a quotient that does not panics rather than
 // truncate. Both hold for the product of two decimal128 coefficients
-// reduced to PrecisionW+1 digits.
+// reduced to Precision128+1 digits.
 func cReduce128(p wide128, k int) (q coef128, sticky bool) {
 	q, class := cReduceClass128(p, k)
 	return q, class != classZero

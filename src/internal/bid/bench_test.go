@@ -14,7 +14,7 @@ package bid_test
 // float64 row exists wherever the language has a counterpart, so a reader can
 // see what a decimal operation costs beside the binary one. The strawman of
 // the proposal is not a row: its kernel is gone from this tree, and its
-// figures are cited in the package documentation ("Width parameterisation")
+// figures are cited in the package documentation ("Width-specific code")
 // and in the proposal's README, not re-measured.
 //
 // Rows over a "mixed" class run over a pool of operands of random

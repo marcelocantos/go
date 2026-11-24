@@ -232,11 +232,12 @@ var (
 	CDivExactPow1064  = cDivExactPow1064
 )
 
-// ParseLong64 and ParseLong128 are the general path of parseW alone: the
-// scanner and the rounding routine, as parseW's tail has them, without the
-// short-numeral path. TestParseShort compares Parse64 and Parse128 with
-// them. Kept in step with parseW's tail by hand; the comparison on words,
-// syntax errors and long numerals would show a drift.
+// ParseLong64 and ParseLong128 are the general paths of parse64 and
+// UBDParse128 alone: the scanner and the rounding routine, as their tails
+// have them, without the short-numeral path. TestParseShort compares
+// Parse64 and Parse128 with them. Kept in step with those tails by hand;
+// the comparison on words, syntax errors and long numerals would show a
+// drift.
 func ParseLong64(s string, mode Mode) (uint64, Status) {
 	n := scanDecimal(s, Precision64+1)
 	switch n.kind {

@@ -16,7 +16,7 @@ package bid_test
 //
 // Completeness is enforced by parsing the package source: exportedAPI lists
 // every exported function and method declared in a non-test file of the
-// package (skipping the //go:build ignore templates and generator), and
+// package (skipping the //go:build ignore generators), and
 // TestAllocs fails for an exported name with no entry and for an entry
 // with no exported name. A new exported function therefore fails the test
 // until it is given an entry here. The benchmark table in bench_test.go is
@@ -117,13 +117,12 @@ func exportedAPI(t testing.TB) []string {
 	return names
 }
 
-// ignoredByBuildTag reports whether src has a "//go:build ignore" or
-// "//go:build bidgen" line before its package clause: the generator, the
-// templates and the generator's stand-in for the generated files.
+// ignoredByBuildTag reports whether src has a "//go:build ignore" line
+// before its package clause: the generators gen_arith.go and gen_recip.go.
 func ignoredByBuildTag(src string) bool {
 	for _, line := range strings.Split(src, "\n") {
 		line = strings.TrimSpace(line)
-		if line == "//go:build ignore" || line == "//go:build bidgen" {
+		if line == "//go:build ignore" {
 			return true
 		}
 		if strings.HasPrefix(line, "package ") {

@@ -2,25 +2,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build ignore
-
-// This file is the template for zfromfloat64.go, the conversion of a
-// binary floating-point value to decimal64. It is
-// written in the vocabulary of "Width parameterisation" in the package
-// documentation: every identifier that depends on the width ends in a
-// capital W, and the generator (gen_arith.go) replaces that W with 64.
-// Nothing else is substituted. This file is not compiled; the build
-// ignores it, and only the generated files are compiled. Everything from
-// the build constraint to the package clause is commentary on the template
-// and is dropped from the generated files, which nobody edits.
-//
-// Nothing below the package clause, in code or in a comment, may end an
-// identifier with that capital letter unless it is meant to be replaced.
 package bid
 
 import "math/bits"
 
-// fromFloatW converts the binary floating-point value of kind kind and, when
+// The conversion of a binary floating-point value to decimal64. The
+// arithmetic that produces the digits is width-independent and lives in
+// fromfloat.go.
+
+// fromFloat64 converts the binary floating-point value of kind kind and, when
 // finite, (-1)^neg × m × 2^e, to the decimal format, rounded once in mode
 // from that exact value with clause 5.4.2's preferred exponent, 0 for an
 // exact result and the least possible for an inexact one ("Binary floating-point
@@ -33,16 +23,16 @@ import "math/bits"
 // Precondition: m < 2^53 and e is a float64 exponent, in [-1074, 1023]
 // before the trailing zeros of m are moved into it; a float32 satisfies
 // both. The bounds of floatNat and of log10Pow2 rest on these.
-func fromFloatW(kind Kind, neg bool, m uint64, e int, mode Mode) coefW {
+func fromFloat64(kind Kind, neg bool, m uint64, e int, mode Mode) coef64 {
 	switch kind {
 	case KindNaN:
-		return cNaNW()
+		return cNaN64()
 	case KindInf:
-		return cInfW(neg)
+		return cInf64(neg)
 	}
 	if m == 0 {
 		// A zero keeps its sign and takes the preferred exponent.
-		c, _ := roundW(neg, wideW{}, 0, classZero, mode, MinExpW)
+		c, _ := round64(neg, wide64{}, 0, classZero, mode, MinExp64)
 		return c
 	}
 	// Make m odd, so that m × 5^s is odd for every s: the value m × 5^s / 2^r
@@ -53,12 +43,12 @@ func fromFloatW(kind Kind, neg bool, m uint64, e int, mode Mode) coefW {
 
 	// With n the exponent of the leading bit of v, 10^t <= 2^n <= v < 2^(n+1)
 	// < 2 × 10^(t+1), so the adjusted exponent of v is t or t+1. Choosing
-	// s = PrecisionW - t makes q = ⌊v × 10^s⌋ a number of PrecisionW+1 or
-	// PrecisionW+2 digits: more than the precision, as roundW requires of
+	// s = Precision64 - t makes q = ⌊v × 10^s⌋ a number of Precision64+1 or
+	// Precision64+2 digits: more than the precision, as round64 requires of
 	// a value whose sticky bit stands for an unknown fraction, and below
-	// 10^(PrecisionW+2) < 2^120, so it fits a Uint128 at either width.
+	// 10^(Precision64+2) < 2^120, so it fits a Uint128.
 	t := log10Pow2(bits.Len64(m) + e - 1)
-	s := PrecisionW - t
+	s := Precision64 - t
 	var q Uint128
 	exp := 0
 	class := classZero
@@ -71,9 +61,9 @@ func fromFloatW(kind Kind, neg bool, m uint64, e int, mode Mode) coefW {
 		// v is a larger integer, and q = ⌊v / 10^k⌋ = ⌊m × 2^(e-k) / 5^k⌋
 		// with the sticky bit the exact remainder of that division (the two
 		// quotients are of one rational). k < e holds: this branch needs
-		// bits.Len64(m) + e > 128, so e >= 76, and k = t - PrecisionW with
+		// bits.Len64(m) + e > 128, so e >= 76, and k = t - Precision64 with
 		// t <= log10(2^(53+e)) < 0.302 × (53 + e), which is below e + 16
-		// for every e >= 0 and so below e + PrecisionW.
+		// for every e >= 0 and so below e + Precision64.
 		// divPow5Fast (fromfloat_fast.go) proves the quotient or refuses it.
 		k := -s
 		if fq, sticky, ok := divPow5Fast(m, e-k, k); ok {
@@ -94,8 +84,8 @@ func fromFloatW(kind Kind, neg bool, m uint64, e int, mode Mode) coefW {
 		// v = m × 5^(-e) × 10^e exactly, and m × 5^(-e) <= v × 10^s fits a
 		// Uint128. Its last digit is not zero (the product is odd), so the
 		// exponent e is the one closest to the preferred exponent 0 among
-		// the exact value's encodings, and roundW drops digits only when
-		// there are more than PrecisionW of them.
+		// the exact value's encodings, and round64 drops digits only when
+		// there are more than Precision64 of them.
 		q = mulPow5Exact(m, -e)
 		exp = e
 	default:
@@ -112,11 +102,11 @@ func fromFloatW(kind Kind, neg bool, m uint64, e int, mode Mode) coefW {
 		exp = -s
 		class = classBelowHalf
 	}
-	if class != classZero && !u128GePow10(q, PrecisionW) {
-		// The digit estimate is exact, so q has at least PrecisionW+1 digits
-		// whenever it is inexact; fewer would break roundW's contract.
+	if class != classZero && !u128GePow10(q, Precision64) {
+		// The digit estimate is exact, so q has at least Precision64+1 digits
+		// whenever it is inexact; fewer would break round64's contract.
 		panic(errFromFloatDigits)
 	}
-	c, _ := roundW(neg, cFromU128W(q), exp, class, mode, MinExpW)
+	c, _ := round64(neg, cFromU12864(q), exp, class, mode, MinExp64)
 	return c
 }

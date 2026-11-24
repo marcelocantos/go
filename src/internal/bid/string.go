@@ -299,11 +299,11 @@ func Parse128(s string, mode Mode) (Uint128, Status) {
 	return fromUBD(r), st
 }
 
-// The width-independent half of the conversions (rule 7 of "Width
-// parameterisation" in the package documentation). string_tmpl.go
-// instantiates the part that mentions a coefficient: it unpacks an operand
-// and hands the digits to appendDecimal, and it hands the output of
-// scanDecimal to the rounding routine. Everything about the character form
+// The width-independent half of the conversions (rule 5 of "Width-specific
+// code" in the package documentation). string64.go and ubd_string.go hold
+// the part that mentions a coefficient: each unpacks an operand and hands
+// the digits to appendDecimal, and hands the output of scanDecimal to the
+// rounding routine. Everything about the character form
 // itself is here, once, for both widths.
 
 const (
@@ -365,14 +365,14 @@ func writeDigits(buf []byte, hi, lo uint64) int {
 	return u64Digits + writeWordDigits(buf[:i], hi)
 }
 
-// writeWordDigits writes a word backwards into the end of buf without
-// a temporary buffer or a digit-counting pass. It returns the digit count.
-// cSplitW establishes lo < 10^19, so u64Digits bytes suffice even for zero.
-// A digit at a time is the right shape here: the word is usually short
-// (money has six digits), and a conversion in chunks of eight costs its
-// three multiplications whatever the length and a branch on the length
-// that mixed operands mispredict (see "Digit conversion" in the package
-// documentation).
+// writeWordDigits writes a word backwards into the end of buf without a
+// temporary buffer or a digit-counting pass. It returns the digit count.
+// cSplit64 and cSplit128 establish lo < 10^19, so u64Digits bytes suffice
+// even for zero. A digit at a time is the right shape here: the word is
+// usually short (money has six digits), and a conversion in chunks of eight
+// costs its three multiplications whatever the length and a branch on the
+// length that mixed operands mispredict (see "Digit conversion" in the
+// package documentation).
 func writeWordDigits(buf []byte, lo uint64) int {
 	i := len(buf)
 	for {

@@ -76,10 +76,10 @@ func UBDUnpackDigits128(buf *[Precision128]byte, x UBD128) (kind Kind, neg bool,
 // rounded to the exponent of y.
 func UBDQuantizeMode128(x, y UBD128, mode Mode) UBD128 { return ubdQuantizeRnd128(x, y, mode) }
 
-// UBDParse128 is the template's parseW on UBD, and Parse128 converts its
-// result to BID: the short path written out here as in parseW (see parseW
-// for why it is not a call), the short numeral packed as UBD fields, since
-// it is exact and inside the format, and every other numeral scanned by
+// UBDParse128 follows parse64 on UBD, and Parse128 converts its result to
+// BID: the short path written out here as in parse64 (see parse64 for why
+// it is not a call), the short numeral packed as UBD fields, since it is
+// exact and inside the format, and every other numeral scanned by
 // scanDecimal and rounded by ubdRoundStatus128. TestParseShort checks it,
 // through Parse128, against the general path alone (ParseLong128).
 func UBDParse128(s string, mode Mode) (UBD128, Status) {
@@ -161,7 +161,7 @@ func UBDParse128(s string, mode Mode) (UBD128, Status) {
 // UBDAppend128 is Append128 on UBD: the character form of x appended to
 // dst, the short and long layouts on the parts of x (PutShort128,
 // PutLong128), and every other value written out from its digits as
-// appendW writes it. It needs MaxLen128 bytes of spare capacity to avoid
+// append64 writes it. It needs MaxLen128 bytes of spare capacity to avoid
 // allocating. The runtime prints decimal128 with it, where decimal128 is
 // stored as UBD.
 func UBDAppend128(dst []byte, x UBD128) []byte {

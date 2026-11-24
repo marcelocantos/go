@@ -361,7 +361,7 @@ func fromUBD(x UBD128) Uint128 { return BIDFromUBD128(Uint128{Hi: x.Hi, Lo: x.Lo
 
 // Add, subtract, multiply, divide and quantize are this package's
 // arithmetic on UBD itself (ubd_add.go, ubd_mul.go, ubd_div.go,
-// ubd_quant.go): the template's general paths with UBD's decoding and
+// ubd_quant.go): decimal64's general paths with UBD's decoding and
 // packing, and paths of their own in front, nothing converted. Quantize and
 // round-to-integral have word paths in front (ubdQuantizeWord, called by
 // the quantize and round-to-integral entries).

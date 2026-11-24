@@ -7,12 +7,12 @@ package bid
 import "math/bits"
 
 // Conversion of a binary floating-point value to decimal: the exact
-// arithmetic behind fromFloatW (fromfloat_tmpl.go), which is Float64To64,
-// Float64To128, Float32To64 and Float32To128 (float.go). This file is
-// width-independent (rule 7 of "Width parameterisation" in the package
-// documentation): it mentions no format constant. The template chooses the
-// digit count and calls the rounding routine; the arithmetic that produces
-// the digits is here.
+// arithmetic behind fromFloat64 (fromfloat64.go) and ubdFromFloat128
+// (ubd_float.go), which are Float64To64, Float64To128, Float32To64 and
+// Float32To128 (float.go). This file is width-independent (rule 5 of
+// "Width-specific code" in the package documentation): it mentions no
+// format constant. The drivers choose the digit count and call the
+// rounding routine; the arithmetic that produces the digits is here.
 //
 // # The problem
 //
@@ -21,12 +21,12 @@ import "math/bits"
 // [-1074, 1023]. The contract asks for v rounded once, in the mode, from
 // its exact value, with clause 5.4.2's preferred exponent: 0 for an exact
 // result and the least possible for an inexact one ("Binary floating-point
-// conversions"). The rounding routine roundW does the rounding, the
-// exponent rule and the sign of zero once it is handed the exact value in
-// parts: an integer q with more than PrecisionW digits and a sticky bit
-// that is set exactly when v is not q × 10^exp, or, for an exact value, q
-// and exp themselves with the sticky bit clear. So the conversion is the
-// problem of producing q = ⌊v × 10^s⌋ for a chosen s, and knowing whether
+// conversions"). The rounding routine does the rounding, the exponent
+// rule and the sign of zero once it is handed the exact value in parts: an
+// integer q with more than Precision digits and a sticky bit that is set
+// exactly when v is not q × 10^exp, or, for an exact value, q and exp
+// themselves with the sticky bit clear. So the conversion is the problem
+// of producing q = ⌊v × 10^s⌋ for a chosen s, and knowing whether
 // v × 10^s is an integer, both exactly.
 //
 // # Why exact integer arithmetic, and why it is cheap
@@ -39,9 +39,9 @@ import "math/bits"
 // path behind it for the cases it cannot decide. The exact path is the
 // whole method here, because the structure of v makes it cheap:
 //
-//   - For e < 0 and s chosen so that v × 10^s has PrecisionW+1 or
-//     PrecisionW+2 digits, v × 10^s = m × 5^s / 2^r with r = -e - s. When
-//     r <= 0 this is an integer below 10^(PrecisionW+2) < 2^120 and v
+//   - For e < 0 and s chosen so that v × 10^s has Precision+1 or
+//     Precision+2 digits, v × 10^s = m × 5^s / 2^r with r = -e - s. When
+//     r <= 0 this is an integer below 10^(Precision+2) < 2^120 and v
 //     itself is the integer m × 5^(-e) at exponent e, computed in 128 bits.
 //     When r > 0, m × 5^s is odd (m is odd and so is every power of five),
 //     so v × 10^s is not an integer: the sticky bit is set by this fact
@@ -52,15 +52,16 @@ import "math/bits"
 //     five in a word, a word at a time, s/27 passes over at most 14 words.
 //     There is no division on this path.
 //   - For e >= 0, v is the integer m × 2^e of at most 1024 bits. If it
-//     fits a Uint128 it is handed to roundW as it is, with exponent 0 and
-//     the sticky bit clear; roundW reduces it exactly. Otherwise
-//     v / 10^k = m × 2^(e-k) / 5^k, the same rational, so q = ⌊v / 10^k⌋
-//     and whether 10^k divides v are the quotient and the remainder of the
-//     multiword integer m × 2^(e-k) divided by 5^k: a division by 5^27, the
-//     largest power of five in a word, one word at a time, k/27 passes over
-//     at most 12 words, each remainder exact and the sticky bit their OR.
-//     Because v is an integer, every digit roundW discards after that is
-//     exact too.
+//     fits a Uint128 it is handed to the rounding routine as it is, with
+//     exponent 0 and the sticky bit clear; the routine reduces it exactly.
+//     Otherwise v / 10^k = m × 2^(e-k) / 5^k, the same rational, so
+//     q = ⌊v / 10^k⌋ and whether 10^k divides v are the quotient and the
+//     remainder of the multiword integer m × 2^(e-k) divided by 5^k: a
+//     division by 5^27, the largest power of five in a word, one word at a
+//     time, k/27 passes over at most 12 words, each remainder exact and the
+//     sticky bit their OR.
+//     Because v is an integer, every digit the rounding routine discards
+//     after that is exact too.
 //
 // Both are bounded-stack computations on a [floatNatWords]uint64 that is
 // never heap-allocated. Typical operands (|e| below 64 or so) multiply a
@@ -78,12 +79,13 @@ import "math/bits"
 // # Why the tie and sticky decisions are exact
 //
 // Every quantity above is an integer computed in full: no value is
-// truncated or approximated before roundW sees it. The only estimate in
-// the algorithm is the adjusted exponent of v, from log10Pow2, and that is
-// exact too (see its comment); even if it were not, it would change which
-// s is used and hence how many digits q has, never the value of q or the
-// sticky bit, and roundW accepts any count of PrecisionW+1 or more. The
-// template checks the count. The decisions are therefore:
+// truncated or approximated before the rounding routine sees it. The only
+// estimate in the algorithm is the adjusted exponent of v, from log10Pow2,
+// and that is exact too (see its comment); even if it were not, it would
+// change which s is used and hence how many digits q has, never the value
+// of q or the sticky bit, and the rounding routine accepts any count of
+// Precision+1 or more. The drivers check the count. The decisions are
+// therefore:
 //
 //   - A tie at the destination precision is q ending in the digit 5 with
 //     the sticky bit clear. The sticky bit is clear only on the paths that

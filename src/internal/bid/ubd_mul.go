@@ -8,8 +8,8 @@ import "math/bits"
 
 // This package's multiply on UBD operands. The ties-to-even entry
 // (ubdMulTTE128) is ubdMulShort128 and then a two-word path written into
-// the entry, so that a multiply is one call. ubdMulLong128 is the
-// template's mulLongW with UBD's decoding and packing (signs at bit 49,
+// the entry, so that a multiply is one call. ubdMulLong128 follows
+// decimal64's mulLong64 with UBD's decoding and packing (signs at bit 49,
 // exponents unbiased) and the rounding by ubdRound128. Nothing converts.
 
 // ubdMulShort128 returns x × y, and true, for coefficients of one word each
@@ -141,7 +141,7 @@ func ubdMulTTE128(x, y UBD128) UBD128 {
 	return ubdMulLong128(x, y, mode)
 }
 
-// ubdMulLong128 is mulLongW (mul_tmpl.go) on UBD: a word product that fits
+// ubdMulLong128 follows mulLong64 (mul64.go) on UBD: a word product that fits
 // packs at once; specials are decided on UBD (a NaN gives that NaN, an infinity
 // times a zero the canonical NaN, an infinity times anything else the
 // infinity of the product's sign); every other product is rounded by

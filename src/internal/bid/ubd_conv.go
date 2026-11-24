@@ -8,17 +8,17 @@ package bid
 // between decimal128 and the 64-bit integers, the rounding behind
 // math/decimal's Compose, and the runtime's map hash and equality, on UBD.
 // Each computes the operation of the BID-128 function of the same stem
-// (Min128 for ubdMin128, Round128 for UBDRound128) and follows the
-// template's function of that stem (minW) where there is one; none
+// (Min128 for ubdMin128, Round128 for UBDRound128) and follows
+// decimal64's function of that stem (min64) where there is one; none
 // converts to BID. A conversion from an integer needs no entry: the
 // integer is the coefficient at exponent 0, which the compiler builds
 // inline.
 
-// ubdMin128 is minW on UBD: the IEEE 754-2019 minimum, which is Go's min.
-// A NaN operand gives a NaN, made quiet, as ubdNaN2 chooses it; otherwise
-// the lesser operand, -0 below +0, and of two members of one cohort the one
-// totalOrder puts first. A well-formed operand is canonical, so the result
-// is the operand itself, where minW repacks it.
+// ubdMin128 follows min64 on UBD: the IEEE 754-2019 minimum, which is Go's
+// min. A NaN operand gives a NaN, made quiet, as ubdNaN2 chooses it;
+// otherwise the lesser operand, -0 below +0, and of two members of one
+// cohort the one totalOrder puts first. A well-formed operand is canonical,
+// so the result is the operand itself, where min64 repacks it.
 func ubdMin128(x, y UBD128) UBD128 {
 	var c int
 	ok := true
@@ -39,7 +39,7 @@ func ubdMin128(x, y UBD128) UBD128 {
 	return ubdSel128(-takeY, x, y)
 }
 
-// ubdMax128 is maxW on UBD: ubdMin128 with the order reversed.
+// ubdMax128 follows max64 on UBD: ubdMin128 with the order reversed.
 func ubdMax128(x, y UBD128) UBD128 {
 	var c int
 	ok := true
@@ -59,7 +59,7 @@ func ubdMax128(x, y UBD128) UBD128 {
 	return ubdSel128(-takeY, x, y)
 }
 
-// ubdTotalBefore128 is totalBeforeW on UBD, for two equal values of one
+// ubdTotalBefore128 follows totalBefore64 on UBD, for two equal values of one
 // sign that are not the same pattern: members of one cohort, which are
 // finite (equal infinities of one sign are one pattern). totalOrder puts
 // the smaller exponent first for a positive value, the larger for a
@@ -258,7 +258,7 @@ func UBDEqual128(x, y UBD128) bool { return ubdEqual128(x, y) }
 
 // UBDNaN128 is the NaN result of an operation on x and y, at least one of
 // them a NaN, on UBD: the first signaling NaN, else the first NaN, made
-// quiet, as nanW(x, y, y) chooses it ("NaN results" in the package
+// quiet, as nan64(x, y, y) chooses it ("NaN results" in the package
 // documentation). For one operand pass it twice. math/decimal's
 // elementary functions propagate NaNs with it.
 func UBDNaN128(x, y UBD128) UBD128 { return ubdNaN2(x, y) }

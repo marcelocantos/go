@@ -110,9 +110,9 @@ func TestDivReproducers(t *testing.T) {
 	}
 }
 
-// TestDivNearest drives the quotient that divLongW rounds to nearest by biasing
-// its dividend with half the divisor, at the places where that can go
-// wrong, in every mode against the reference:
+// TestDivNearest drives the quotient that divLong64 rounds to nearest by
+// biasing its dividend with half the divisor, at the places where that can
+// go wrong, in every mode against the reference:
 //
 //   - ties, a fraction of exactly a half, with odd and even quotients below
 //     them: an odd dividend over a power of two whose exact quotient has

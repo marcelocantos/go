@@ -81,13 +81,14 @@ func BenchmarkQuantizeCases(b *testing.B) {
 	}
 }
 
-// TestQuantizeWordScale drives the word fast path of quantizeLongW at its
-// bounds against the reference: word coefficients of x up to the largest
-// word and one past it, scaled to the exponent of y across gaps on both
-// sides of the word table (19, 20), of the format's precision, of the
-// coefficient table (38, 39) and far beyond it, including the gaps at which
-// the scaled coefficient first exceeds the precision (the NaN), both signs,
-// a zero x at every gap, y a NaN and an infinity, and every mode.
+// TestQuantizeWordScale drives the word fast path of quantizeLong64 and
+// ubdQuantizeLong128 at its bounds against the reference: word coefficients
+// of x up to the largest word and one past it, scaled to the exponent of y
+// across gaps on both sides of the word table (19, 20), of the format's
+// precision, of the coefficient table (38, 39) and far beyond it, including
+// the gaps at which the scaled coefficient first exceeds the precision (the
+// NaN), both signs, a zero x at every gap, y a NaN and an infinity, and
+// every mode.
 func TestQuantizeWordScale(t *testing.T) {
 	var k kernel
 	for _, f := range []*format{dec64, dec128} {

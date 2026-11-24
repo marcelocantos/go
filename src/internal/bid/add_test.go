@@ -62,8 +62,9 @@ var addTests = []struct {
 	{"range/128 up", dec128, "1E+6111", "1E-6176", bid.TowardPositive, "1.000000000000000000000000000000001E+6111"},
 	{"range/128 zero", dec128, "1E+6111", "-1E-6176", bid.TowardZero, "9.999999999999999999999999999999999E+6110"},
 
-	// At the edges of alignMaxW. The first exact case keeps its digits; the
-	// first shifted ones decide the same way.
+	// At the edges of addDigits64 and addDigits128, the digits that the
+	// general paths scale an operand up to. The first exact case keeps its
+	// digits; the first shifted ones decide the same way.
 	{"edge/64 scaled", dec64, "1E+19", "1", bid.TowardPositive, "1.000000000000001E+19"},
 	{"edge/64 shifted", dec64, "1E+20", "1", bid.TowardPositive, "1.000000000000001E+20"},
 	{"edge/128 scaled", dec128, "1E+38", "1", bid.TowardPositive, "1.000000000000000000000000000000001E+38"},

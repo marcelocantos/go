@@ -6,9 +6,9 @@ package bid
 
 import "math/bits"
 
-// The decimal64 instantiation of the coefficient vocabulary used by the
-// shared core (see "Width parameterisation" in the package documentation,
-// rule 4). The decimal128 instantiation, with identical signatures, is in
+// The coefficient vocabulary at 64 bits, in which decimal64's arithmetic
+// is written (see "Width-specific code" in the package documentation, rule
+// 2). The same vocabulary at 128 bits, with matching signatures, is in
 // coef128.go. Every function here must inline: the decimal64 operations
 // stay within noise of hand-written code only if they do. After changing
 // one, check that
@@ -19,15 +19,14 @@ import "math/bits"
 // "cannot inline" lines at all, so the same command with -m is empty
 // whatever the helpers do.
 //
-// The template names are the width-independent names with a final W
-// replaced by the width, so cMulPow10W becomes cMulPow1064 and cPow10W
-// becomes cPow1064. The names read badly; the rule that makes them is worth
-// more.
+// Each name is the width-independent name with the width appended, so
+// cMulPow10 at 64 bits is cMulPow1064 and cPow10 is cPow1064. The names
+// read badly; one rule for every name is worth more.
 //
 // Where a function has a precondition it says so. A precondition that is
 // cheap to test is tested and violated by a panic, never by a silently
-// wrong answer; the callers in the template establish each one from the
-// format's precision.
+// wrong answer; the callers establish each one from the format's
+// precision.
 
 type coef64 = uint64
 type wide64 = Uint128
@@ -150,7 +149,7 @@ func cMulFull64(a, b coef64) wide64 {
 // (the sticky bit of the discarded digits). Precondition: 0 <= k <= 19 and
 // the quotient fits 64 bits; a quotient that does not panics rather than
 // truncate. Both hold for the product of two decimal64 coefficients
-// reduced to PrecisionW+1 digits.
+// reduced to Precision64+1 digits.
 func cReduce64(p wide64, k int) (q coef64, sticky bool) {
 	q, r := bits.Div64(p.Hi, p.Lo, pow10tab64[k])
 	return q, r != 0
@@ -433,7 +432,7 @@ func cToU6464(c coef64) (m uint64, ok bool) {
 
 // cFromU12864 returns a 128-bit value as a wide64, which is the value
 // itself: the binary-to-decimal conversion generates its digits into a
-// Uint128 at both widths and hands them to the rounding routine through
+// Uint128 and hands them to the rounding routine through
 // this function.
 func cFromU12864(q Uint128) wide64 {
 	return q
@@ -447,8 +446,7 @@ func cSplit64(c coef64) (hi, lo uint64) {
 	return 0, c
 }
 
-// cWide64 returns the 128-bit value m as a wide64, which it is. The
-// precondition of the other width, that m fits it, is vacuous here.
+// cWide64 returns the 128-bit value m as a wide64, which it is.
 func cWide64(m Uint128) wide64 {
 	return m
 }
