@@ -4,7 +4,7 @@
 
 //go:build ignore
 
-// This file is the template for zpayload64.go and zpayload128.go: the
+// This file is the template for zpayload64.go: the
 // payload operations of IEEE 754-2019 clause 9.7, getPayload, setPayload and
 // setPayloadSignaling ("NaN results" in the package documentation). It is
 // written in the vocabulary of "Width parameterisation" (see arith_tmpl.go

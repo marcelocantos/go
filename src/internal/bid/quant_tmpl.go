@@ -4,7 +4,7 @@
 
 //go:build ignore
 
-// This file is the template for zquant64.go and zquant128.go: the
+// This file is the template for zquant64.go: the
 // operations that fix or inspect the exponent of a result rather than
 // compute a new value, namely RoundToIntegral, Quantize, QuoQuantize, Reduce,
 // SameQuantum and Quantum. It is written in the vocabulary of "Width parameterisation"
@@ -44,15 +44,13 @@ func roundToIntegralW(x coefW, mode Mode) coefW {
 
 // quantizeW returns x with the exponent of y, rounded in mode. A word x
 // with the exponent of y is x itself, decided inline by quantizeSameW, and
-// every other operand takes quantizeSlowW, which for decimal128 decides
-// the coefficients of two words itself and hands the rest to
-// quantizeLongW (quant128.go); see "Inline fast paths" in the
-// package documentation.
+// every other operand takes quantizeSlowW (quant64.go), which hands it to
+// quantizeLongW; see "Inline fast paths" in the package documentation.
 func quantizeW(x, y coefW, mode Mode) coefW {
 	if quantizeSameW(x, y) {
 		return x
 	}
-	return quantizeSlowW(x, y, mode) // quant128.go
+	return quantizeSlowW(x, y, mode) // quant64.go
 }
 
 // quantizeLongW returns x with the exponent of y, rounded in mode, or the

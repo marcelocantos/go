@@ -304,7 +304,7 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 		"mulSlow64": true,
 	}
 	// packSign64 and packWordSign64 are packWord64 with the sign as a bit.
-	wordEncoder := map[string]bool{"packWord64": true, "packWord128": true, "packWordW": true, "packQuotient64": true, "packSign64": true, "packWordSign64": true}
+	wordEncoder := map[string]bool{"packWord64": true, "packWordW": true, "packQuotient64": true, "packSign64": true, "packWordSign64": true}
 	// Callers of the inline encoders, which encode the exact results of the
 	// inline paths of addition, subtraction and multiplication in front of
 	// the general paths: see "Inline fast paths" in the package
@@ -315,9 +315,9 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 		"mulW": true, "mul64": true, "mul128": true,
 	}
 	inlineEncoder := map[string]bool{
-		"addSameQuantum64": true, "addSameQuantum128": true, "addSameQuantumW": true,
-		"subSameQuantum64": true, "subSameQuantum128": true, "subSameQuantumW": true,
-		"mulShort64": true, "mulShort128": true, "mulShortW": true,
+		"addSameQuantum64": true, "addSameQuantumW": true,
+		"subSameQuantum64": true, "subSameQuantumW": true,
+		"mulShort64": true, "mulShortW": true,
 	}
 	rawEncoder := map[string]bool{"Pack64": true, "Pack128": true, "PackW": true}
 	checkedEncoder := map[string]bool{"packW": true, "pack64": true, "pack128": true}

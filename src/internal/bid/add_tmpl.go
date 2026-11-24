@@ -4,7 +4,7 @@
 
 //go:build ignore
 
-// This file is the template for zadd64.go and zadd128.go: addition and, by
+// This file is the template for zadd64.go: addition and, by
 // negating the second operand, subtraction. See arith_tmpl.go for what a
 // template is and "Width parameterisation" in the package documentation for
 // its rules.
@@ -60,9 +60,8 @@ func subSlowW(x, y coefW, mode Mode) coefW {
 
 // addLongW returns x + y rounded in mode, for every operand: addSlowW,
 // which the callers above and the compiler call, takes most sums of word
-// coefficients to nearest itself for decimal64 (add64.go) and most sums of
-// two-word coefficients for decimal128 (add128.go), and hands the rest to
-// this function.
+// coefficients to nearest itself (add64.go), and hands the rest to this
+// function.
 //
 // The operand with the larger exponent is scaled up to the exponent of the
 // other if that takes it to addDigitsW digits or fewer, and then the sum is
@@ -97,10 +96,6 @@ func subSlowW(x, y coefW, mode Mode) coefW {
 // agree, that of the larger magnitude when they differ, and for an exact
 // cancellation the zero of "Sign of a result", negative only in
 // TowardNegative.
-//
-// The compiler calls the decimal128 instantiation of this function
-// directly, so its parameters and results are a contract with it: see the
-// end of "Inline fast paths" in the package documentation.
 func addLongW(x, y coefW, mode Mode) coefW {
 	var yneg, yok bool
 	var yw uint64

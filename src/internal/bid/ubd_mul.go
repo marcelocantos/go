@@ -7,24 +7,20 @@ package bid
 import "math/bits"
 
 // This package's multiply on UBD operands. The ties-to-even entry
-// (ubdMulTTE128) is mul128 on UBD, ubdMulShort128 and then mulSlow128's
-// paths written into the entry, so that a multiply is one call;
-// ubdMulShort128, ubdMulTTE128 and ubdMulLong128 are mulShort128,
-// mulSlow128 and mulLong128 with the BID decoding and
-// packing replaced by UBD's (signs at bit 49, exponents unbiased) and the
-// rounding by ubdRound128; the arithmetic is unchanged. Nothing converts.
+// (ubdMulTTE128) is ubdMulShort128 and then a two-word path written into
+// the entry, so that a multiply is one call. ubdMulLong128 is the
+// template's mulLongW with UBD's decoding and packing (signs at bit 49,
+// exponents unbiased) and the rounding by ubdRound128. Nothing converts.
 
-// ubdMulShort128 is mulShort128 on UBD, for more products: coefficients of
-// one word each whose product has under 113 bits, below 2^112 < 10^34 and so
-// exact, at an exponent sum in [-4096, 4095], inside the format. (BID's
-// mulShort128 stops at 97 bits; UBD's high word holds a product's top 48
-// bits below the sign at once. Products of 97 to 112 bits, of two 15-digit
-// coefficients for instance, took mulSlow128's path and ubdMulLong128, two calls
-// with frames: 3.96 ns against 2.04.) As in mulShort128 the three tests are
-// one, without a branch: a special has the 0x1F prefix in its coefficient's
-// high word, so the one-word test excludes it, and the exponent sum is in
-// that range exactly when adding 4096 leaves it below 2^13 (mulShort128
-// narrows the range with inlineWordBit in the same way). It inlines.
+// ubdMulShort128 returns x × y, and true, for coefficients of one word each
+// whose product has under 113 bits, below 2^112 < 10^34 and so exact, at an
+// exponent sum in [-4096, 4095], inside the format. UBD's high word holds a
+// product's top 48 bits below the sign at once, so products of up to 112
+// bits, of two 15-digit coefficients for instance, are decided here. The
+// three tests are one, without a branch: a special has the 0x1F prefix in
+// its coefficient's high word, so the one-word test excludes it, and the
+// exponent sum is in that range exactly when adding 4096 leaves it below
+// 2^13. It inlines.
 func ubdMulShort128(x, y UBD128) (UBD128, bool) {
 	hi, lo := bits.Mul64(x.Lo, y.Lo)
 	e := int64(x.Hi)>>UBDExpShift + int64(y.Hi)>>UBDExpShift
@@ -33,26 +29,32 @@ func ubdMulShort128(x, y UBD128) (UBD128, bool) {
 }
 
 // ubdMulTTE128, the multiply entry the compiler calls, is ubdMulShort128
-// and then mulSlow128 on UBD for ties to even, written into the entry so
-// that a multiply past the short path is one call with one frame, where it
-// was the entry and then a ubdMulSlow128 (BenchmarkUBDKernel: a 30- to
-// 34-digit quotient times an amount, q34, 11.49 ns against 9.35, BID's
-// mulSlow128 10.60; 17- to 19-digit coefficients, w19, 11.62 against
-// 10.71). It differs from mulSlow128
-// in that coefficients of one word each take the two-word path below like
-// any others, where mulSlow128 sends them to mulLong128: the ones that
-// reach it, after ubdMulShort128, are products of 112 bits or more, most of
-// which round, and the two-word path rounds them in one call where
-// ubdMulLong128 was a second (14.3 ns against 11.6). ubdMulRnd128, which
-// has no caller in compiled code, calls this for ToNearestEven and
+// and then, for ties to even, a two-word path written into the entry, so
+// that a multiply past the short path is one call with one frame. Finite
+// canonical operands are multiplied there, and every other operand, and a
+// result the path does not encode, goes to ubdMulLong128.
+//
+// The product of the coefficients has up to 68 digits in four words. With
+// 34 or fewer it is the result, at the sum of the exponents. With more, the
+// j digits beyond 34 go as in mulSlow64: the product is biased by half of
+// 10^j, so that the quotient is the product rounded half up, and a zero
+// remainder is the tie, which takes the even neighbour by clearing the low
+// bit. The division is by the reciprocal of 10^j, and it and the digit
+// count are written out here, so the path calls nothing.
+//
+// Coefficients of one word each take the two-word path like any others:
+// the ones that reach it, after ubdMulShort128, are products of 112 bits or
+// more, most of which round, and the two-word path rounds them in one call
+// where ubdMulLong128 was a second (14.3 ns against 11.6). ubdMulRnd128,
+// which has no caller in compiled code, calls this for ToNearestEven and
 // ubdMulLong128 for every other mode.
 func ubdMulTTE128(x, y UBD128) UBD128 {
 	if r, ok := ubdMulShort128(x, y); ok {
 		return r
 	}
 	const mode = ToNearestEven
-	// A special has the 0x1F prefix in its coefficient's high word;
-	// addPair128's test for one becomes the tag test.
+	// A special has the 0x1F prefix in its coefficient's high word, which
+	// the tag test finds.
 	if x.Hi>>60 == UBDSpecialTag || y.Hi>>60 == UBDSpecialTag || mode > ToNearestAway {
 		return ubdMulLong128(x, y, mode)
 	}
@@ -74,7 +76,8 @@ func ubdMulTTE128(x, y UBD128) UBD128 {
 	exp := xe + ye
 	s := Uint128{Hi: p1, Lo: p0}
 
-	// The digits of the product (see mulSlow128).
+	// The digits of the product: t from its bit length, and one more when
+	// the product is at least 10^t.
 	n := bits.Len64(p0)
 	switch {
 	case p3 != 0:
@@ -91,7 +94,8 @@ func ubdMulTTE128(x, y UBD128) UBD128 {
 	_, bw = bits.Sub64(p2, pt.Hi.Lo, bw)
 	_, bw = bits.Sub64(p3, pt.Hi.Hi, bw)
 	if j := t + 1 - int(bw) - Precision128; j > 0 {
-		// Biased by half of 10^j and divided by it (see mulSlow128).
+		// Biased by half of 10^j and divided by it through its reciprocal,
+		// the quotient then corrected by at most one.
 		d := &pow10tab128[j]
 		var c uint64
 		p0, c = bits.Add64(p0, d.Lo>>1|d.Hi<<63, 0)
@@ -137,8 +141,8 @@ func ubdMulTTE128(x, y UBD128) UBD128 {
 	return ubdMulLong128(x, y, mode)
 }
 
-// ubdMulLong128 is mulLong128 on UBD: a word product that fits packs at
-// once; specials are decided on UBD (a NaN gives that NaN, an infinity
+// ubdMulLong128 is mulLongW (mul_tmpl.go) on UBD: a word product that fits
+// packs at once; specials are decided on UBD (a NaN gives that NaN, an infinity
 // times a zero the canonical NaN, an infinity times anything else the
 // infinity of the product's sign); every other product is rounded by
 // ubdRound128.

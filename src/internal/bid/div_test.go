@@ -389,9 +389,10 @@ func FuzzDiv128(f *testing.F) {
 	})
 }
 
-// TestDivWords drives div128's own paths, for a divisor of one word and of
-// two, against the reference in every mode (the directed modes take the
-// general path, which the same operands then test): every pair of digit
+// TestDivWords drives ubdDivTTE128 and ubdDivWide128, through Div128, for
+// a divisor of one word and of two, against the reference in every mode
+// (the modes other than ToNearestEven take the general path, which the
+// same operands then test): every pair of digit
 // counts, so that each coefficient is of one word and of two, the
 // dividend's scale crosses the last power of ten of each table and the
 // leading ratio falls on both sides of one;
@@ -583,9 +584,9 @@ func TestPow10Word(t *testing.T) {
 	}
 }
 
-// TestDivZeroOperands checks the quotients that div128 decides without a
-// division, a zero dividend over a divisor of one word and a dividend
-// over zero, and the neighbours it leaves to divLong128: 0 / 0, a
+// TestDivZeroOperands checks the quotients that ubdDivTTE128 decides
+// without a division, a zero dividend over a divisor of one word and a
+// dividend over zero, and the neighbours it leaves to ubdDivLong128: 0 / 0, a
 // dividend of two words, a zero whose exponent takes the quotient's
 // outside the format, and a dividend whose coefficient is not canonical,
 // which reads as zero and so over zero is invalid. The reference decides,

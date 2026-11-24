@@ -6,20 +6,18 @@ package bid
 
 import "math/bits"
 
-// This package's quantize on UBD operands. ubdQuantize128 is
-// quantize128 with the word path ubdQuantizeWord (ubd.go) after its first
-// test; ubdQuantizeSame128, ubdQuantizeSlow128 and ubdQuantizeLong128 are
-// quantizeSame128, quantizeSlow128 and quantizeLong128 with the BID decoding
-// (addPair128, unpackWordCanon128, kindExp128, unpackFirst128,
-// unpackRest128) replaced by UBD's, the specials decided on UBD, and the
-// packing and rounding by ubdPackWord and ubdRoundFinite128; the arithmetic
-// is unchanged. Nothing converts.
+// This package's quantize on UBD operands. ubdQuantize128 is the
+// template's quantizeW with the word path ubdQuantizeWord (ubd.go) after its
+// first test, and ubdQuantizeLong128 is the template's quantizeLongW, with
+// UBD's decoding, the specials decided on UBD, and the packing and rounding
+// by ubdPackWord and ubdRoundFinite128; the arithmetic is unchanged.
+// Nothing converts.
 
-// ubdQuantize128 is quantize128 on UBD, written out in the entries
+// ubdQuantize128 is quantizeW on UBD, written out in the entries
 // (ubdQuantizeTTE128, ubdQuantizeRnd128) so that a quantize is one call:
 // ubdQuantizeSame128 inline; an x wider than a word, or special, straight to
-// ubdQuantizeSlow128 as quantize128 sends it; a word x to ubdQuantizeWord,
-// then ubdQuantizeSlow128.
+// ubdQuantizeSlow128; a word x to ubdQuantizeWord, then
+// ubdQuantizeSlow128.
 func ubdQuantize128(x, y UBD128, mode Mode) UBD128 {
 	if ubdQuantizeSame128(x, y) {
 		return x
@@ -32,15 +30,32 @@ func ubdQuantize128(x, y UBD128, mode Mode) UBD128 {
 	return ubdQuantizeSlow128(x, y, mode)
 }
 
-// ubdQuantizeSame128 is quantizeSame128 on UBD: x already at y's exponent,
-// with a coefficient of one word, so that x is the result. A special has
+// ubdQuantizeSame128 reports whether x is already at y's exponent, with a
+// coefficient of one word, so that x is the result. A special has
 // the 0x1F prefix in its coefficient's high word, so the one-word test
 // excludes it; the sign is not compared, as quantize keeps x's.
 func ubdQuantizeSame128(x, y UBD128) bool {
 	return (x.Hi^y.Hi)>>UBDExpShift|x.Hi&UBDCoeffMaskHi == 0
 }
 
-// ubdQuantizeSlow128 is quantizeSlow128 on UBD.
+// ubdQuantizeSlow128 returns x with the exponent of y, rounded in mode. A
+// finite x whose coefficient has two words, with a finite y, is decided
+// here, and every other operand, and a result that ubdPackWord does not
+// encode, goes to ubdQuantizeLong128, which has the word paths and decides
+// the rest from the start. That is the rounding of a computed value to its
+// unit: what a division or a long product left, brought to two places.
+//
+// With the exponent of x below that of y by d places, the coefficient
+// loses its d lowest digits. It is biased by half of 10^d before it is
+// divided, so that the quotient is the coefficient rounded half up and a
+// zero remainder is the tie, which takes the even neighbour by clearing the
+// low bit. More than 34 places leave nothing: half of 10^35 exceeds every
+// coefficient. That is to nearest; a directed mode is ubdQuantizeLong128's.
+//
+// With the exponent of x above that of y the coefficient is scaled up, and
+// fits only if it is below 10^(34-gap): a coefficient of two words is
+// above 10^19, so most such requests are refused, by one comparison, with
+// the NaN that ubdQuantizeLong128 returns for them.
 func ubdQuantizeSlow128(x, y UBD128, mode Mode) UBD128 {
 	xhi := x.Hi & UBDCoeffMaskHi
 	xe, ye := int(int64(x.Hi)>>UBDExpShift), int(int64(y.Hi)>>UBDExpShift)
@@ -78,8 +93,9 @@ func ubdQuantizeSlow128(x, y UBD128, mode Mode) UBD128 {
 	return ubdQuantizeLong128(x, y, mode)
 }
 
-// ubdQuantizeLong128 is quantizeLong128 on UBD: a word x quantized to a
-// finite y's exponent at or below its own is scaled and packed at once;
+// ubdQuantizeLong128 is quantizeLongW (quant_tmpl.go) on UBD: a word x
+// quantized to a finite y's exponent at or below its own is scaled and
+// packed at once;
 // specials are decided on UBD (a NaN gives that NaN, two infinities the
 // infinity of x's sign, one infinity the canonical NaN); every other x is
 // rounded to y's exponent by ubdRoundFinite128.
@@ -120,7 +136,7 @@ func ubdQuantizeLong128(x, y UBD128, mode Mode) UBD128 {
 	if gap := xe - ye; gap > 0 {
 		// The scaled coefficient has Precision128 digits or fewer exactly
 		// when the coefficient is below 10^(Precision128-gap) (see
-		// quantizeLong128).
+		// quantizeLongW).
 		if gap >= Precision128 {
 			if !cIsZero128(xc) {
 				return UBD128{Hi: UBDNaNHi}
@@ -137,7 +153,7 @@ func ubdQuantizeLong128(x, y UBD128, mode Mode) UBD128 {
 	return r
 }
 
-// ubdRoundToIntegral128 is roundToIntegral128 on UBD: a NaN quieted (in UBD,
+// ubdRoundToIntegral128 is roundToIntegralW on UBD: a NaN quieted (in UBD,
 // qExp's signaling bit 58 cleared), an infinity as it is, and a finite x
 // rounded to exponent zero by ubdRoundFinite128; an x at exponent zero or
 // above is an integer already and comes back as it is.

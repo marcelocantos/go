@@ -10,10 +10,11 @@ import (
 	"testing"
 )
 
-// TestMulWide drives mulSlow128's own path, the product of finite operands
-// of which one has a coefficient of two words, against the reference in
-// every mode (the directed modes take the general path, which the same
-// operands then test) and with every pair of signs:
+// TestMulWide drives ubdMulTTE128's two-word path, through Mul128, the
+// product of finite operands of which one has a coefficient of two words,
+// against the reference in every mode (the modes other than ToNearestEven
+// take the general path, which the same operands then test) and with every
+// pair of signs:
 //
 //   - every pair of digit counts, so that the product has from 20 to 68
 //     digits in two, three and four words and loses from none to 34 of

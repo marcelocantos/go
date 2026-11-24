@@ -7,21 +7,22 @@ package bid
 import "math/bits"
 
 // This package's compare on UBD operands. ubdQuietCmp128 and
-// ubdQuietCmpRest128 are quietCmpSlow128 and quietCmpRest128 with the BID
-// decoding (unpackWord128, unpackFirst128, unpackRest128) replaced by UBD's
-// and the specials found by their tag. compareWords and cCmpFinite128, which
-// do the comparing, take the sign, coefficient and exponent apart and are
-// used as they are: they only subtract the exponents, so it does not matter
-// that UBD's are unbiased. Nothing converts.
+// ubdQuietCmpRest128 are the template's quietCmpSlowW and quietCmpRestW
+// (arith_tmpl.go) with UBD's decoding and the specials found by their
+// tag.
+// compareWords and cCmpFinite128, which do the comparing, take the sign,
+// coefficient and exponent apart and are used as they are: they only
+// subtract the exponents, so it does not matter that UBD's are unbiased.
+// Nothing converts.
 
-// ubdQuietCmp128 is quietCmpSlow128 on UBD: the order of x and y, and false
+// ubdQuietCmp128 is quietCmpSlowW on UBD: the order of x and y, and false
 // when they are unordered (a NaN among them).
 func ubdQuietCmp128(x, y UBD128) (c int, ok bool) {
 	if (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {
 		return ubdCmpWord(x, y), true
 	}
 	// Two finite values that are not word operands: one call that makes none
-	// decides them (see quietCmpSlow128).
+	// decides them (see quietCmpSlowW).
 	if x.Hi>>60 != UBDSpecialTag && y.Hi>>60 != UBDSpecialTag {
 		return cCmpFinite128(x.Hi&UBDSignHi != 0, coef128{Hi: x.Hi & UBDCoeffMaskHi, Lo: x.Lo}, int(int64(x.Hi)>>UBDExpShift),
 			y.Hi&UBDSignHi != 0, coef128{Hi: y.Hi & UBDCoeffMaskHi, Lo: y.Lo}, int(int64(y.Hi)>>UBDExpShift)), true
@@ -29,7 +30,7 @@ func ubdQuietCmp128(x, y UBD128) (c int, ok bool) {
 	return ubdQuietCmpRest128(x, y)
 }
 
-// ubdQuietCmpRest128 is quietCmpRest128 on UBD, for a pair with a special
+// ubdQuietCmpRest128 is quietCmpRestW on UBD, for a pair with a special
 // among it: a NaN is unordered; two infinities are equal if of one sign,
 // else the negative is the lesser; an infinity is beyond every finite value.
 func ubdQuietCmpRest128(x, y UBD128) (c int, ok bool) {

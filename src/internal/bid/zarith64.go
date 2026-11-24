@@ -36,13 +36,13 @@ func nan64(x, y, z coef64) coef64 {
 // equal64, less64 and lessEqual64, which compare word operands of one sign and
 // one exponent inline by their keys from sameQuantumKeys64 (see "Inline fast
 // paths" in the package documentation), and the whole of Compare64, min64 and
-// max64, where such a front would not pay: Compare64 and Compare128 miss the
-// inlining budget with it, and out of line it costs every operand it refuses
-// a second call.
+// max64, where such a front would not pay: Compare64 misses the inlining
+// budget with it, and out of line it costs every operand it refuses a
+// second call.
 //
-// The compiler calls the decimal128 instantiation of this function
-// directly, so its parameters and results are a contract with it: see the
-// end of "Inline fast paths" in the package documentation.
+// The compiler calls this function directly, so its parameters and results
+// are a contract with it: see the end of "Inline fast paths" in the package
+// documentation.
 func quietCmpSlow64(x, y coef64) (c int, ok bool) {
 	if xn, xc, xe, ok := unpackWord64(x); ok {
 		if yn, yc, ye, ok := unpackWord64(y); ok {
@@ -340,7 +340,7 @@ func roundFinite64(neg bool, c coef64, exp int, mode Mode, floor int) (coef64, d
 // between encodings, not operations, and round nothing. Int64To128 and
 // Uint64To128 encode an exponent-zero magnitude below 2^64, which has at
 // most 20 digits and therefore always fits Precision128's 34 digits.
-// packWord64 and packWord128, in encoding.go, encode the exact results of
+// packWord64, in encoding.go, encodes the exact results of
 // the word fast paths of add64, mul64, fmaLong64, quantize64 and remainder64,
 // operands whose coefficients fit a uint64: an exact sum, product, fused
 // sum, rescaled coefficient or remainder at its preferred exponent, which

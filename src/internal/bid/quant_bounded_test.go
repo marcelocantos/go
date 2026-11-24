@@ -128,8 +128,9 @@ func TestQuantizeWordScale(t *testing.T) {
 	}
 }
 
-// TestQuantizeWide drives quantizeSlow128, the quantize of a coefficient
-// of two words, against the reference in every mode and for both signs:
+// TestQuantizeWide drives ubdQuantizeSlow128, through Quantize128, the
+// quantize of a coefficient of two words, against the reference in every
+// mode and for both signs:
 // coefficients of every length from 20 digits, the least and the greatest
 // of each length and the first value above a word; the exponent of y from
 // 40 places below that of x to 40 above, so that the coefficient is

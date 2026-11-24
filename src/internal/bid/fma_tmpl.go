@@ -4,7 +4,7 @@
 
 //go:build ignore
 
-// This file is the template for zfma64.go and zfma128.go: the fused
+// This file is the template for zfma64.go: the fused
 // multiply-add. See arith_tmpl.go for what a template is and "Width
 // parameterisation" in the package documentation for its rules.
 package bid
@@ -30,8 +30,7 @@ import "math/bits"
 // non-zero difference; the two digits above it are the margin addW also keeps.
 const fmaDigitsW = 2*PrecisionW + 3
 
-// fmaLongW returns x × y + z rounded once in mode, for every operand
-// (fmaSlow128 takes the usual operands of two words first: see fma128.go).
+// fmaLongW returns x × y + z rounded once in mode, for every operand.
 //
 // Three finite operands whose coefficients fit a word, and whose product
 // fits a word too, take a fast path first, and if it refuses them the

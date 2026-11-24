@@ -455,10 +455,10 @@ func TestFMAWordPath(t *testing.T) {
 	}
 }
 
-// TestFMAWide drives fmaSlow128, the fused multiply-add of operands of
-// which one at least has two words, with z at the exponent of the product
-// or above it, against the reference in every mode and for every
-// combination of signs:
+// TestFMAWide drives ubdFMASlow128, through FMA128, the fused multiply-add
+// of operands of which one at least has two words, with z at the exponent
+// of the product or above it, against the reference in every mode and for
+// every combination of signs:
 //
 //   - x, y and z of every pairing of short, word-sized and full lengths;
 //   - z from two places below the product, which the path refuses, through

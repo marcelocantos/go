@@ -30,7 +30,7 @@ func Widen(x uint64) Uint128 {
 	// Exact fast path (named in roundW's comment and in the allowlist of
 	// TestRoundIsTheOnlyPacker): the coefficient and exponent came from
 	// Unpack64, and every decimal64 pair is a decimal128 pair, so nothing
-	// is rounded and Pack128 cannot refuse. Going through round128 for a
+	// is rounded and Pack128 cannot refuse. Going through the rounding for a
 	// 256-bit wide value costs two to three times as much (measured, 2026-10-30,
 	// under load) for a result that is never anything but this one.
 	z, _ := Pack128(neg, Uint128{Lo: coeff}, exp)

@@ -6,12 +6,15 @@ package bid
 
 import "math/bits"
 
-// The decimal128 instantiation of the coefficient vocabulary used by the
-// shared core (see "Width parameterisation" in the package documentation,
-// rule 4). The decimal64 instantiation, with identical signatures, is in
-// coef64.go. These functions may call any of the unexported Uint128 and
-// Uint256 arithmetic freely; unlike their decimal64 counterparts they are
-// not required to inline.
+// The coefficient vocabulary of the shared core (see "Width
+// parameterisation" in the package documentation, rule 4) at 128 bits,
+// with the signatures of the decimal64 instantiation in coef64.go. The
+// templates are instantiated for decimal64 alone; the UBD kernel
+// (ubd_*.go) writes their algorithms at 128 bits in these functions, and
+// the layout-free helpers it shares with nothing else (strip128,
+// remScaled128, addDigits128, fmaDigits128) are here too. These functions
+// may call any of the unexported Uint128 and Uint256 arithmetic freely;
+// unlike their decimal64 counterparts they are not required to inline.
 //
 // Preconditions are as in coef64.go: stated, and a cheap one is checked by
 // a panic rather than answered wrongly.
@@ -531,7 +534,7 @@ func cFromU64128(m uint64) coef128 {
 	return Uint128{Lo: m}
 }
 
-// cWords128 returns c as the two words that packWord128 encodes, most
+// cWords128 returns c as its two words, most
 // significant first.
 func cWords128(c coef128) (hi, lo uint64) {
 	return c.Hi, c.Lo

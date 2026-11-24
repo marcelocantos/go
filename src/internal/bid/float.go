@@ -66,7 +66,8 @@ import (
 // integer arithmetic, and handed to the rounding routine with preferred
 // exponent 0. The arithmetic and the argument for its exactness are in
 // fromfloat.go; the width-dependent driver is fromFloatW in
-// fromfloat_tmpl.go, generated into zfromfloat64.go and zfromfloat128.go.
+// fromfloat_tmpl.go, generated into zfromfloat64.go, and decimal128's is
+// ubdFromFloat128 in ubd_float.go.
 // The wrappers below only take the float apart. That direction needs
 // nothing from internal/strconv and its generated files are compiled in
 // the bootstrap build like every other generated file; only the exported

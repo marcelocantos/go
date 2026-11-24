@@ -9,4 +9,3 @@ package bid
 func quantizeSlow64(x, y uint64, mode Mode) uint64 {
 	return quantizeLong64(x, y, mode)
 }
-

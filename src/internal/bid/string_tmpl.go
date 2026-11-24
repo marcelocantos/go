@@ -4,10 +4,10 @@
 
 //go:build ignore
 
-// This file is the template for zstring64.go and zstring128.go, written in
+// This file is the template for zstring64.go, written in
 // the vocabulary of "Width parameterisation" in the package documentation:
 // every identifier that depends on the width ends in a capital W, which the
-// generator (gen_arith.go) replaces with 64 or 128. This file is not
+// generator (gen_arith.go) replaces with 64. This file is not
 // compiled. Everything from the build constraint to the package clause is
 // commentary on the template and is dropped from the generated files, which
 // nobody edits.
@@ -60,13 +60,13 @@ func UnpackDigitsW(buf *[PrecisionW]byte, x coefW) (kind Kind, neg bool, n, exp 
 	return
 }
 
-// appendW is Append64 and Append128, and with sci set AppendSci64 and
-// AppendSci128: it appends Go's canonical form of x to dst, or the
-// to-scientific-string form. A NaN of any kind is "NaN"; an infinity is
-// "+Inf" or "-Inf", or "Infinity" with its sign; a finite value is its
-// coefficient digits, rendered into a local buffer, and its exponent, which
-// appendDecimal or appendSciDecimal places. UnpackW reads a non-canonical
-// encoding as the zero it denotes, so every bit pattern has a form.
+// appendW is AppendW, and with sci set AppendSciW: it appends Go's
+// canonical form of x to dst, or the to-scientific-string form. A NaN of
+// any kind is "NaN"; an infinity is "+Inf" or "-Inf", or "Infinity" with
+// its sign; a finite value is its coefficient digits, rendered into a
+// local buffer, and its exponent, which appendDecimal or appendSciDecimal
+// places. UnpackW reads a non-canonical encoding as the zero it denotes, so
+// every bit pattern has a form.
 func appendW(dst []byte, x coefW, sci bool) []byte {
 	neg, c, exp, xok := unpackFirstW(x)
 	kind := KindFinite
@@ -101,7 +101,7 @@ func appendW(dst []byte, x coefW, sci bool) []byte {
 	return appendDecimal(dst, neg, digs[len(digs)-n:], exp)
 }
 
-// parseW is Parse64 and Parse128. A numeral of at most eight characters
+// parseW is ParseW. A numeral of at most eight characters
 // after its sign, digits with at most one point (money and quantity
 // literals as they are usually written), is read whole here, in the word
 // arithmetic of the digit-run scanner. The short path is written out

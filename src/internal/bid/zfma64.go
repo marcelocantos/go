@@ -29,8 +29,7 @@ import "math/bits"
 // non-zero difference; the two digits above it are the margin add64 also keeps.
 const fmaDigits64 = 2*Precision64 + 3
 
-// fmaLong64 returns x × y + z rounded once in mode, for every operand
-// (fmaSlow128 takes the usual operands of two words first: see fma128.go).
+// fmaLong64 returns x × y + z rounded once in mode, for every operand.
 //
 // Three finite operands whose coefficients fit a word, and whose product
 // fits a word too, take a fast path first, and if it refuses them the

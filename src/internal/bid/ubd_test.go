@@ -18,9 +18,11 @@ import (
 // checks the two conversions against the BID decoding; TestUBDKernel checks
 // every rule of the contract for every entry, over every pair of a pool of
 // UBD operands, in every mode. The reference is the exported BID function on
-// the operands' BID encodings, so the test holds whatever the entries are
-// built on: today the BID kernel behind a conversion, later a kernel that
-// works on UBD itself.
+// the operands' BID encodings. Those functions are conversions around the
+// same kernel, so the comparison checks the conversions, the agreement of
+// the entries with one another and the form of every result; the
+// arithmetic is checked against the math/big reference and the published
+// vectors.
 
 // ubd128 returns the UBD pattern with qExp e (its low 14 bits), the sign and
 // the coefficient words (the high word's low 49 bits).
@@ -84,11 +86,12 @@ func mustWellFormed128(t *testing.T, what string, x bid.Uint128) {
 }
 
 // ubdPool128 returns the UBD operands of TestUBDKernel: the conversions of
-// inlinePool128, which straddles the BID kernel's bounds; finite patterns at
-// the ends of the format's exponents and of the coefficient field; specials,
-// NaN payloads up to the largest; and random values. All are well-formed: a malformed
-// pattern can only come from a bug, and the contract leaves its results
-// unspecified (see "The UBD kernel contract" in ubd.go).
+// inlinePool128, which straddles the inline paths' word bounds; finite
+// patterns at the ends of the format's exponents and of the coefficient
+// field; specials, NaN payloads up to the largest; and random values. All
+// are well-formed: a malformed pattern can only come from a bug, and the
+// contract leaves its results unspecified (see "The UBD kernel contract"
+// in ubd.go).
 func ubdPool128(t *testing.T) []bid.Uint128 {
 	var pool []bid.Uint128
 	for _, x := range inlinePool128() {
@@ -257,6 +260,11 @@ func TestUBDConversion(t *testing.T) {
 	}
 }
 
+// TestUBDKernel checks the entries the compiler calls, ties to even (TTE)
+// and in every mode (Rnd), against the BID functions on every pair of the
+// pool. The BID functions are the general Rnd entries between two
+// conversions, which TestKernel checks against the math/big reference, so
+// this checks the TTE entries' word paths against the general paths.
 func TestUBDKernel(t *testing.T) {
 	pool := ubdPool128(t)
 	// The six modes and two outside them, which behave as ToNearestEven.
@@ -311,10 +319,10 @@ func TestUBDKernel(t *testing.T) {
 		if got, want := bid.UBDKey128(bid.UBD128{Lo: x.Lo, Hi: x.Hi}), bid.Key128(bx); got != want {
 			fail("UBDKey128(%#x) = %+v, want %+v", x, got, want)
 		}
-		if got, want := bid.UBDInt64From128(x), first(bid.Int64From128(bx, bid.TowardZero)); got != want {
+		if got, want := bid.UBDInt64From128(ubdValue(x)), first(bid.Int64From128(bx, bid.TowardZero)); got != want {
 			fail("ubdInt64From128(%#x) = %d, want %d", x, got, want)
 		}
-		if got, want := bid.UBDUint64From128(x), first(bid.Uint64From128(bx, bid.TowardZero)); got != want {
+		if got, want := bid.UBDUint64From128(ubdValue(x)), first(bid.Uint64From128(bx, bid.TowardZero)); got != want {
 			fail("ubdUint64From128(%#x) = %d, want %d", x, got, want)
 		}
 		for _, y := range pool {
@@ -327,8 +335,8 @@ func TestUBDKernel(t *testing.T) {
 			if got, want := bid.UBDPredicates128(x, y), [5]bool{wok && wc == 0, wok && wc < 0, wok && wc <= 0, wok && wc > 0, wok && wc >= 0}; got != want {
 				fail("predicate entries (==, <, <=, >, >=) on %#x, %#x = %v, want %v", x, y, got, want)
 			}
-			check("ubdMin128", x, y, bid.ToNearestEven, bid.UBDMin128(x, y), bid.UBDFromBID128(bid.Min128(bx, by)))
-			check("ubdMax128", x, y, bid.ToNearestEven, bid.UBDMax128(x, y), bid.UBDFromBID128(bid.Max128(bx, by)))
+			check("ubdMin128", x, y, bid.ToNearestEven, ubdWords(bid.UBDMin128(ubdValue(x), ubdValue(y))), bid.UBDFromBID128(bid.Min128(bx, by)))
+			check("ubdMax128", x, y, bid.ToNearestEven, ubdWords(bid.UBDMax128(ubdValue(x), ubdValue(y))), bid.UBDFromBID128(bid.Max128(bx, by)))
 			for _, op := range ops {
 				check("ubd"+op.name+"TTE128", x, y, bid.ToNearestEven, op.tte(x, y), bid.UBDFromBID128(op.ref(bx, by, bid.ToNearestEven)))
 				for _, mode := range modes {
@@ -346,10 +354,12 @@ func TestUBDKernel(t *testing.T) {
 func first[A, B any](a A, _ B) A { return a }
 
 // TestUBDMathDecimal checks math/decimal's remaining operations on UBD
-// (ubd_misc.go) against this package's BID functions on the same values,
-// as TestUBDKernel checks the kernel entries: every operand of the pool,
-// every pair, and for the three-operand ones a third from a short list of
-// quanta, addends and specials.
+// (ubd_misc.go) against this package's BID functions on the same values:
+// every operand of the pool, every pair, and for the three-operand ones a
+// third from a short list of quanta, addends and specials. The BID
+// functions are these entries between two conversions, so this checks the
+// conversions and that every result is well-formed; TestKernel checks the
+// results against the math/big reference.
 func TestUBDMathDecimal(t *testing.T) {
 	pool := ubdPool128(t)
 	u := func(x bid.Uint128) bid.UBD128 { return bid.UBD128{Lo: x.Lo, Hi: x.Hi} }
@@ -420,10 +430,11 @@ func TestUBDMathDecimal(t *testing.T) {
 }
 
 // TestUBDFloat checks the conversions between decimal128 and the binary
-// formats on UBD (ubd_float.go) against the BID ones: floats of every kind
-// (random bit patterns, which include subnormals and NaN payloads, the
-// specials and exact integers and fractions) to decimal128 in every mode,
-// and the UBD operand pool and random decimals to both binary formats.
+// formats on UBD (ubd_float.go) against the math/big reference: floats of
+// every kind (random bit patterns, which include subnormals and NaN
+// payloads, the specials and exact integers and fractions) to decimal128 in
+// every mode, and the UBD operand pool and random decimals to both binary
+// formats.
 func TestUBDFloat(t *testing.T) {
 	modes := append(append([]bid.Mode{}, inlineModes...), 6)
 	n := 200_000
@@ -446,11 +457,11 @@ func TestUBDFloat(t *testing.T) {
 	}
 	for _, f := range f64s {
 		for _, m := range modes {
-			if got, want := u(bid.UBDFloat64To128(f, m)), bid.UBDFromBID128(bid.Float64To128(f, m)); got != want {
+			if got, want := u(bid.UBDFloat64To128(f, m)), bid.UBDFromBID128(ubdRef.float64To(dec128, f, m)); got != want {
 				fail("UBDFloat64To128(%#x, %d) = %#x, want %#x", math.Float64bits(f), m, got, want)
 			}
 			f32 := math.Float32frombits(uint32(math.Float64bits(f)))
-			if got, want := u(bid.UBDFloat32To128(f32, m)), bid.UBDFromBID128(bid.Float32To128(f32, m)); got != want {
+			if got, want := u(bid.UBDFloat32To128(f32, m)), bid.UBDFromBID128(ubdRef.float32To(dec128, f32, m)); got != want {
 				fail("UBDFloat32To128(%#x, %d) = %#x, want %#x", math.Float32bits(f32), m, got, want)
 			}
 		}
@@ -471,10 +482,10 @@ func TestUBDFloat(t *testing.T) {
 	for _, x := range decs {
 		ux, bx := bid.UBD128{Lo: x.Lo, Hi: x.Hi}, bid.BIDFromUBD128(x)
 		for _, m := range modes {
-			if got, want := math.Float64bits(bid.UBDFloat64From128(ux, m)), math.Float64bits(bid.Float64From128(bx, m)); got != want {
+			if got, want := math.Float64bits(bid.UBDFloat64From128(ux, m)), math.Float64bits(ubdRef.float64From(dec128, bx, m)); got != want {
 				fail("UBDFloat64From128(%#x, %d) = %#x, want %#x", x, m, got, want)
 			}
-			if got, want := math.Float32bits(bid.UBDFloat32From128(ux, m)), math.Float32bits(bid.Float32From128(bx, m)); got != want {
+			if got, want := math.Float32bits(bid.UBDFloat32From128(ux, m)), math.Float32bits(ubdRef.float32From(dec128, bx, m)); got != want {
 				fail("UBDFloat32From128(%#x, %d) = %#x, want %#x", x, m, got, want)
 			}
 		}
@@ -484,7 +495,7 @@ func TestUBDFloat(t *testing.T) {
 	}
 }
 
-// TestUBDAppend checks UBDAppend128 against Append128 on the same values:
+// TestUBDAppend checks UBDAppend128 against the reference model's Go form:
 // the UBD pool and random values of every layout, into a buffer with the
 // spare capacity the contract asks and into one without.
 func TestUBDAppend(t *testing.T) {
@@ -502,7 +513,7 @@ func TestUBDAppend(t *testing.T) {
 	}
 	errs := 0
 	for _, x := range xs {
-		want := string(bid.Append128(nil, bid.BIDFromUBD128(x)))
+		want := ubdRef.appendGo(dec128, bid.BIDFromUBD128(x))
 		u := bid.UBD128{Lo: x.Lo, Hi: x.Hi}
 		roomy := string(bid.UBDAppend128(make([]byte, 0, bid.MaxLen128), u))
 		tight := string(bid.UBDAppend128(nil, u))

@@ -8,8 +8,8 @@
 
 package bid
 
-// divLong64 is Div64 for every operand (div128 takes operands of one word
-// each by itself first; see divwords.go): x / y rounded once in mode, with the special cases of
+// divLong64 is Div64 for every operand (div64 takes most operands by itself
+// first; see div64.go): x / y rounded once in mode, with the special cases of
 // "NaN and infinity operands" and the zero and infinity results of
 // "Exponent of a result" and "Sign of a result" in the package
 // documentation.
@@ -77,10 +77,6 @@ package bid
 // Precision64 trailing zeros, and the attempt and the steps stay within the
 // smaller of k and Precision64+1, which keeps every power of ten within the
 // coefficient table.
-//
-// The compiler calls the decimal128 instantiation of this function
-// directly, so its parameters and results are a contract with it: see the
-// end of "Inline fast paths" in the package documentation.
 func divLong64(x, y coef64, mode Mode) coef64 {
 	xneg, xc, xe, xok := unpackFirst64(x)
 	xk := KindFinite
@@ -209,8 +205,9 @@ func divLong64(x, y coef64, mode Mode) coef64 {
 		// strip64's steps, written here and not called: as a call they
 		// cost a decimal64 division with an exact quotient a sixth more,
 		// and one that is not exact a twentieth, for what the call does
-		// to this function's registers. div128's own paths, which reach
-		// an exact quotient more rarely, call strip64.
+		// to this function's registers. The straight path in front of this
+		// function (div64.go), which reaches an exact quotient more rarely,
+		// calls strip64.
 		search := true
 		if first > 0 {
 			if sq, ok := cDivExactPow1064(q, first); ok {

@@ -4,11 +4,11 @@
 
 //go:build ignore
 
-// This file is the template for zarith64.go and zarith128.go, written once
-// in the vocabulary of "Width parameterisation" in the package
-// documentation: every identifier that depends on the width ends in a
-// capital W, and the generator (gen_arith.go) replaces that W with 64 or
-// 128. Nothing else is substituted. This file is not compiled; the build
+// This file is the template for zarith64.go, written once in the
+// vocabulary of "Width parameterisation" in the package documentation:
+// every identifier that depends on the width ends in a capital W, and the
+// generator (gen_arith.go) replaces that W with 64. Nothing else is
+// substituted. This file is not compiled; the build
 // ignores it, and only the generated files are compiled. Everything from
 // the build constraint to the package clause is commentary on the template
 // and is dropped from the generated files, which nobody edits.
@@ -45,13 +45,13 @@ func nanW(x, y, z coefW) coefW {
 // equalW, lessW and lessEqualW, which compare word operands of one sign and
 // one exponent inline by their keys from sameQuantumKeysW (see "Inline fast
 // paths" in the package documentation), and the whole of CompareW, minW and
-// maxW, where such a front would not pay: Compare64 and Compare128 miss the
-// inlining budget with it, and out of line it costs every operand it refuses
-// a second call.
+// maxW, where such a front would not pay: Compare64 misses the inlining
+// budget with it, and out of line it costs every operand it refuses a
+// second call.
 //
-// The compiler calls the decimal128 instantiation of this function
-// directly, so its parameters and results are a contract with it: see the
-// end of "Inline fast paths" in the package documentation.
+// The compiler calls this function directly, so its parameters and results
+// are a contract with it: see the end of "Inline fast paths" in the package
+// documentation.
 func quietCmpSlowW(x, y coefW) (c int, ok bool) {
 	if xn, xc, xe, ok := unpackWordW(x); ok {
 		if yn, yc, ye, ok := unpackWordW(y); ok {
@@ -349,7 +349,7 @@ func roundFiniteW(neg bool, c coefW, exp int, mode Mode, floor int) (coefW, digi
 // between encodings, not operations, and round nothing. Int64To128 and
 // Uint64To128 encode an exponent-zero magnitude below 2^64, which has at
 // most 20 digits and therefore always fits Precision128's 34 digits.
-// packWord64 and packWord128, in encoding.go, encode the exact results of
+// packWordW, in encoding.go, encodes the exact results of
 // the word fast paths of addW, mulW, fmaLongW, quantizeW and remainderW,
 // operands whose coefficients fit a uint64: an exact sum, product, fused
 // sum, rescaled coefficient or remainder at its preferred exponent, which

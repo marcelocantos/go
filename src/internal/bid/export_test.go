@@ -130,17 +130,17 @@ var (
 
 // The inline fast paths and the general paths behind them.
 var (
-	AddSameQuantum64   = addSameQuantum64
-	AddLong64          = addLong64
-	AddSlow64          = addSlow64
-	MulShort64         = mulShort64
-	MulSlow64          = mulSlow64
-	QuantizeSame64     = quantizeSame64
-	QuantizeSlow64     = quantizeSlow64
-	QuietCmpSlow64     = quietCmpSlow64
-	SameQuantumKeys64  = sameQuantumKeys64
-	SubSameQuantum64   = subSameQuantum64
-	SubSlow64          = subSlow64
+	AddSameQuantum64  = addSameQuantum64
+	AddLong64         = addLong64
+	AddSlow64         = addSlow64
+	MulShort64        = mulShort64
+	MulSlow64         = mulSlow64
+	QuantizeSame64    = quantizeSame64
+	QuantizeSlow64    = quantizeSlow64
+	QuietCmpSlow64    = quietCmpSlow64
+	SameQuantumKeys64 = sameQuantumKeys64
+	SubSameQuantum64  = subSameQuantum64
+	SubSlow64         = subSlow64
 )
 
 // The UBD kernel entries the compiler calls (ubd.go), with the operands and
@@ -169,11 +169,6 @@ func UBDRoundToIntegralRnd128(x Uint128, m Mode) Uint128 {
 }
 
 func UBDCompare128(x, y Uint128) (c int, ok bool) { return ubdCompare128(ubdIn(x), ubdIn(y)) }
-
-func UBDMin128(x, y Uint128) Uint128    { return ubdOut(ubdMin128(ubdIn(x), ubdIn(y))) }
-func UBDMax128(x, y Uint128) Uint128    { return ubdOut(ubdMax128(ubdIn(x), ubdIn(y))) }
-func UBDInt64From128(x Uint128) int64   { return ubdInt64From128(ubdIn(x)) }
-func UBDUint64From128(x Uint128) uint64 { return ubdUint64From128(ubdIn(x)) }
 
 // UBDPredicates128 returns the predicate entries' results on x and y: ==,
 // <, <=, >, >=.

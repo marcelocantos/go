@@ -4,7 +4,7 @@
 
 //go:build ignore
 
-// This file is the template for zminmax64.go and zminmax128.go; see the
+// This file is the template for zminmax64.go; see the
 // comment in arith_tmpl.go and "Width parameterisation" in the package
 // documentation.
 package bid

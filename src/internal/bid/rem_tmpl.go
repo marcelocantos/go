@@ -4,9 +4,9 @@
 
 //go:build ignore
 
-// This file is the template for zrem64.go and zrem128.go: the remainder
-// family, Rem and Mod. See arith_tmpl.go for what the template form means;
-// gen_arith.go generates both files from it.
+// This file is the template for zrem64.go: the remainder family, Rem and
+// Mod. See arith_tmpl.go for what the template form means; gen_arith.go
+// generates that file from it.
 package bid
 
 import "math/bits"

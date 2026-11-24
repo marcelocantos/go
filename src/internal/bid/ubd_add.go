@@ -6,13 +6,14 @@ package bid
 
 import "math/bits"
 
-// This package's add on UBD operands. ubdAddTTE128 (after its word path),
-// ubdAddLong128 and the rounding they end in (ubdRound128, ubdRoundFace128,
-// ubdOverflow128, ubdPack128) are addSlow128 for ties to even, addLong128,
-// round128, roundFace128, overflow128 and pack128 with the BID decoding and
-// packing replaced by UBD's; the arithmetic is unchanged. Nothing converts.
+// This package's add on UBD operands. ubdAddLong128 and the rounding it
+// ends in (ubdRound128, ubdRoundFace128, ubdOverflow128, ubdPack128) are
+// the template's addLongW, roundW, roundFaceW, overflowW and packW
+// (add_tmpl.go, arith_tmpl.go) written at 128 bits, decoding and packing
+// UBD; ubdAddTTE128 puts a two-word path for ties to even in front of them.
+// Nothing converts.
 
-// ubdSubSlow128 is subSlow128: y negated unless it is a NaN, then added.
+// ubdSubSlow128 is subSlowW on UBD: y negated unless it is a NaN, then added.
 // Only ubdSubRnd128 calls it.
 func ubdSubSlow128(x, y UBD128, mode Mode) UBD128 {
 	if y.Hi>>59 != UBDNaNTag {
@@ -21,11 +22,11 @@ func ubdSubSlow128(x, y UBD128, mode Mode) UBD128 {
 	return ubdAddRnd128(x, y, mode)
 }
 
-// ubdAddLong128 is addLong128 on UBD operands: the operands are decoded on
-// UBD (exponents unbiased, so the word path's subtractions of Bias128 go),
-// specials are decided on UBD, an exact result that fits packs into UBD, and
-// face-value rounding is ubdRoundFace128. The arithmetic is addLong128's,
-// unchanged.
+// ubdAddLong128 is addLongW (add_tmpl.go) on UBD operands: the operands are
+// decoded on UBD (exponents unbiased, so the word path's subtractions of
+// BiasW go), specials are decided on UBD, an exact result that fits packs
+// into UBD, and face-value rounding is ubdRoundFace128. The arithmetic is
+// addLongW's, unchanged.
 func ubdAddLong128(x, y UBD128, mode Mode) UBD128 {
 	var yneg, yok bool
 	var yw uint64
@@ -61,7 +62,7 @@ func ubdAddLong128(x, y UBD128, mode Mode) UBD128 {
 			}
 		} else if xw != 0 {
 			// A y so far below x that it only says which way the sum lies
-			// from x scaled to its Precision128 digits (see addLong128).
+			// from x scaled to its Precision128 digits (see addLongW).
 			if m := Precision128 - wordDigits(xw); gap >= uint(m+farWordGap) {
 				p := cMulPow10128(cFromU64128(xw), m)
 				if mode <= ToNearestAway || yw == 0 {
@@ -104,7 +105,7 @@ func ubdAddLong128(x, y UBD128, mode Mode) UBD128 {
 
 	exp, class := ye, classZero
 	if gap := xe - ye; gap > 0 && !cIsZero128(xc) {
-		// A swamped y (see addLong128).
+		// A swamped y (see addLongW).
 		dx := cDigits128(xc)
 		m := Precision128 - dx
 		if s := gap - m - 1; s > 0 && !cIsZero128(yc) && (s >= Precision128 || cLt128(yc, cPow10128(s))) {
@@ -126,7 +127,7 @@ func ubdAddLong128(x, y UBD128, mode Mode) UBD128 {
 				return ubdRoundFace128(xneg, p, xe-m, class, mode)
 			}
 		}
-		// An aligned y (see addLong128).
+		// An aligned y (see addLongW).
 		if m := Precision128 - dx; gap > m {
 			p := cMulPow10128(xc, m)
 			q, c := cShift128(yc, gap-m)
@@ -187,7 +188,7 @@ func ubdUnpackWord(x UBD128) (neg bool, coeff uint64, exp int, ok bool) {
 	return x.Hi&UBDSignHi != 0, x.Lo, int(int64(x.Hi) >> UBDExpShift), true
 }
 
-// ubdRoundFace128 is roundFace128 on UBD: the increment of the class at
+// ubdRoundFace128 is roundFaceW on UBD: the increment of the class at
 // face value, the carry out of the largest coefficient, and the result
 // packed into UBD.
 func ubdRoundFace128(neg bool, q coef128, exp int, class digitClass, mode Mode) UBD128 {
@@ -201,9 +202,9 @@ func ubdRoundFace128(neg bool, q coef128, exp int, class digitClass, mode Mode) 
 	return ubdPack128(neg, q, exp)
 }
 
-// ubdPack128 is pack128 on UBD: the encoding of a coefficient and exponent
+// ubdPack128 is packW on UBD: the encoding of a coefficient and exponent
 // that the rounding has put inside the format, and a panic otherwise, as
-// pack128's.
+// packW's.
 func ubdPack128(neg bool, c coef128, exp int) UBD128 {
 	if r, ok := ubdPackWord(neg, c.Hi, c.Lo, exp); ok {
 		return r
@@ -211,7 +212,7 @@ func ubdPack128(neg bool, c coef128, exp int) UBD128 {
 	panic(errRoundRange)
 }
 
-// ubdOverflow128 is overflow128 on UBD: an infinity, or the largest finite
+// ubdOverflow128 is overflowW on UBD: an infinity, or the largest finite
 // value in a mode that rounds the overflow toward zero.
 func ubdOverflow128(neg bool, mode Mode) UBD128 {
 	if overflowsToInf(mode, neg) {
@@ -220,7 +221,7 @@ func ubdOverflow128(neg bool, mode Mode) UBD128 {
 	return ubdPack128(neg, cMax128(), MaxExp128)
 }
 
-// ubdRoundFinite128 is roundFinite128 on UBD.
+// ubdRoundFinite128 is roundFiniteW on UBD.
 func ubdRoundFinite128(neg bool, c coef128, exp int, mode Mode, floor int) (UBD128, digitClass) {
 	class := classZero
 	if exp < floor {
@@ -250,7 +251,7 @@ func ubdRoundStatus128(neg bool, p wide128, exp int, class digitClass, mode Mode
 	return ubdRoundFloor128(neg, p, exp, class, mode, MinExp128)
 }
 
-// ubdRoundFloor128 is round128 on UBD with its floor, the least exponent of
+// ubdRoundFloor128 is roundW on UBD with its floor, the least exponent of
 // the result: MinExp128 for arithmetic, a quantum's exponent for
 // QuoQuantize. The result is packed by ubdPack128 and an overflow by
 // ubdOverflow128.
@@ -331,7 +332,7 @@ func ubdRoundFloor128(neg bool, p wide128, exp int, class digitClass, mode Mode,
 	return ubdPack128(neg, q, x), st
 }
 
-// ubdNaN2 is nan128(x, y, y) on UBD: a signaling NaN first, else x's NaN,
+// ubdNaN2 is nanW(x, y, y) on UBD: a signaling NaN first, else x's NaN,
 // else y's, quieted. In UBD a NaN is quieted by clearing qExp's signaling
 // bit, bit 58.
 func ubdNaN2(x, y UBD128) UBD128 {
@@ -351,8 +352,9 @@ func ubdInf(neg bool) UBD128 {
 	return UBD128{Hi: UBDInfHi}
 }
 
-// ubdPackWord packs a finite result, as packWord128 does for BID: false when
-// the coefficient passes MaxCoeff128 or the exponent leaves the format.
+// ubdPackWord packs a finite result, as packWord64 does for decimal64:
+// false when the coefficient passes MaxCoeff128 or the exponent leaves the
+// format.
 func ubdPackWord(neg bool, hi, lo uint64, exp int) (UBD128, bool) {
 	if hi > MaxCoeff128Hi || hi == MaxCoeff128Hi && lo > MaxCoeff128Lo || exp < MinExp128 || exp > MaxExp128 {
 		return UBD128{}, false
@@ -365,21 +367,35 @@ func ubdPackWord(neg bool, hi, lo uint64, exp int) (UBD128, bool) {
 }
 
 // ubdAddTTE128, the add entry the compiler calls, tries ubdAddWordTTE and
-// is then addSlow128 on UBD for ties to even, written into the entry so that
-// an add past the word path is one call with one frame, where it was the
-// entry and then a ubdAddSlow128. The operands' signs are bit 49 and their
-// exponents unbiased, and the result packs into UBD. A special has the 0x1F
-// prefix in its coefficient's high word, so it is never a word pair;
-// addPair128's test for one becomes the tag test. Where addSlow128 calls
-// addLong128 it calls ubdAddLong128.
+// then adds, to nearest with ties to even, finite operands of which one at
+// least has a coefficient of two words. The path is written into the entry
+// so that an add past the word path is one call with one frame. Every other
+// operand, and a result the path does not encode, goes to ubdAddLong128.
+// The operands' signs are bit 49 and their exponents unbiased, and the
+// result packs into UBD. A special has the 0x1F prefix in its coefficient's
+// high word, so it is never a word pair, and the tag test sends it on.
+//
+// The method is addSlow64's in two words. The operand with the larger
+// exponent, a, is chosen by a mask and scaled up by the m places that its
+// digit count leaves, at most to the exponent of the other, b. If that
+// reaches the exponent of b the sum is exact, p ± b at that exponent.
+// Otherwise b loses its d lowest digits and the sum has the 34 digits of p:
+// b is biased by half of 10^d before it is divided, so the quotient is
+// b / 10^d rounded half up and the remainder is zero exactly on a tie, which
+// an adjustment of one sends to the even neighbour. A sum that carries into
+// a 35th digit loses one more place (addCarry128). A rounded difference at
+// or below 10^33 has lost its leading digit and needs the digits of b that
+// the division dropped: with at most four of them the exact difference fits
+// two words and is rounded to its own length, and ubdAddLong128 takes the
+// rest.
 func ubdAddTTE128(x, y UBD128) UBD128 {
 	const mode = ToNearestEven
 	if (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {
 		if r, ok := ubdAddWordTTE(x, y); ok {
 			return r
 		}
-		// Exponents too far apart, or a sum that rounds: as in
-		// addSlow128, ubdAddLong128 decides coefficients of one word each.
+		// Exponents too far apart, or a sum that rounds: ubdAddLong128
+		// decides coefficients of one word each.
 		return ubdAddLong128(x, y, mode)
 	}
 	if x.Hi>>60 == UBDSpecialTag || y.Hi>>60 == UBDSpecialTag || mode > ToNearestAway {
@@ -390,8 +406,7 @@ func ubdAddTTE128(x, y UBD128) UBD128 {
 		// One exponent and one sign, the running total of amounts past
 		// 2^64: the sum of the coefficients, exact if it does not pass
 		// MaxCoeff128, under the operands' exponent and sign (17- to
-		// 19-digit amounts at one exponent, a running total: 6.25 ns
-		// against BID's 5.33 through the general path below).
+		// 19-digit amounts at one exponent, a running total).
 		lo, c := bits.Add64(x.Lo, y.Lo, 0)
 		hi := xhi + yhi + c
 		_, bw := bits.Sub64(MaxCoeff128Lo, lo, 0)

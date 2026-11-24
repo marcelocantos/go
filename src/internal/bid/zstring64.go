@@ -50,13 +50,13 @@ func UnpackDigits64(buf *[Precision64]byte, x coef64) (kind Kind, neg bool, n, e
 	return
 }
 
-// append64 is Append64 and Append128, and with sci set AppendSci64 and
-// AppendSci128: it appends Go's canonical form of x to dst, or the
-// to-scientific-string form. A NaN of any kind is "NaN"; an infinity is
-// "+Inf" or "-Inf", or "Infinity" with its sign; a finite value is its
-// coefficient digits, rendered into a local buffer, and its exponent, which
-// appendDecimal or appendSciDecimal places. Unpack64 reads a non-canonical
-// encoding as the zero it denotes, so every bit pattern has a form.
+// append64 is Append64, and with sci set AppendSci64: it appends Go's
+// canonical form of x to dst, or the to-scientific-string form. A NaN of
+// any kind is "NaN"; an infinity is "+Inf" or "-Inf", or "Infinity" with
+// its sign; a finite value is its coefficient digits, rendered into a
+// local buffer, and its exponent, which appendDecimal or appendSciDecimal
+// places. Unpack64 reads a non-canonical encoding as the zero it denotes, so
+// every bit pattern has a form.
 func append64(dst []byte, x coef64, sci bool) []byte {
 	neg, c, exp, xok := unpackFirst64(x)
 	kind := KindFinite
@@ -91,7 +91,7 @@ func append64(dst []byte, x coef64, sci bool) []byte {
 	return appendDecimal(dst, neg, digs[len(digs)-n:], exp)
 }
 
-// parse64 is Parse64 and Parse128. A numeral of at most eight characters
+// parse64 is Parse64. A numeral of at most eight characters
 // after its sign, digits with at most one point (money and quantity
 // literals as they are usually written), is read whole here, in the word
 // arithmetic of the digit-run scanner. The short path is written out

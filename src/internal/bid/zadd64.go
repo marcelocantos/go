@@ -58,9 +58,8 @@ func subSlow64(x, y coef64, mode Mode) coef64 {
 
 // addLong64 returns x + y rounded in mode, for every operand: addSlow64,
 // which the callers above and the compiler call, takes most sums of word
-// coefficients to nearest itself for decimal64 (add64.go) and most sums of
-// two-word coefficients for decimal128 (add128.go), and hands the rest to
-// this function.
+// coefficients to nearest itself (add64.go), and hands the rest to this
+// function.
 //
 // The operand with the larger exponent is scaled up to the exponent of the
 // other if that takes it to addDigits64 digits or fewer, and then the sum is
@@ -95,10 +94,6 @@ func subSlow64(x, y coef64, mode Mode) coef64 {
 // agree, that of the larger magnitude when they differ, and for an exact
 // cancellation the zero of "Sign of a result", negative only in
 // TowardNegative.
-//
-// The compiler calls the decimal128 instantiation of this function
-// directly, so its parameters and results are a contract with it: see the
-// end of "Inline fast paths" in the package documentation.
 func addLong64(x, y coef64, mode Mode) coef64 {
 	var yneg, yok bool
 	var yw uint64

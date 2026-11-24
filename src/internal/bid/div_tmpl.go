@@ -4,10 +4,10 @@
 
 //go:build ignore
 
-// This file is the template for zdiv64.go and zdiv128.go, written once in
+// This file is the template for zdiv64.go, written once in
 // the vocabulary of "Width parameterisation" in the package documentation:
 // every identifier that depends on the width ends in a capital W, and the
-// generator (gen_arith.go) replaces that W with 64 or 128. Nothing else is
+// generator (gen_arith.go) replaces that W with 64. Nothing else is
 // substituted. This file is not compiled; the build ignores it, and only
 // the generated files are compiled. Everything from the build constraint
 // to the package clause is commentary on the template and is dropped from
@@ -17,8 +17,8 @@
 // identifier with that capital letter unless it is meant to be replaced.
 package bid
 
-// divLongW is DivW for every operand (div128 takes operands of one word
-// each by itself first; see divwords.go): x / y rounded once in mode, with the special cases of
+// divLongW is DivW for every operand (div64 takes most operands by itself
+// first; see div64.go): x / y rounded once in mode, with the special cases of
 // "NaN and infinity operands" and the zero and infinity results of
 // "Exponent of a result" and "Sign of a result" in the package
 // documentation.
@@ -86,10 +86,6 @@ package bid
 // PrecisionW trailing zeros, and the attempt and the steps stay within the
 // smaller of k and PrecisionW+1, which keeps every power of ten within the
 // coefficient table.
-//
-// The compiler calls the decimal128 instantiation of this function
-// directly, so its parameters and results are a contract with it: see the
-// end of "Inline fast paths" in the package documentation.
 func divLongW(x, y coefW, mode Mode) coefW {
 	xneg, xc, xe, xok := unpackFirstW(x)
 	xk := KindFinite
@@ -218,8 +214,9 @@ func divLongW(x, y coefW, mode Mode) coefW {
 		// stripW's steps, written here and not called: as a call they
 		// cost a decimal64 division with an exact quotient a sixth more,
 		// and one that is not exact a twentieth, for what the call does
-		// to this function's registers. div128's own paths, which reach
-		// an exact quotient more rarely, call stripW.
+		// to this function's registers. The straight path in front of this
+		// function (div64.go), which reaches an exact quotient more rarely,
+		// calls stripW.
 		search := true
 		if first > 0 {
 			if sq, ok := cDivExactPow10W(q, first); ok {

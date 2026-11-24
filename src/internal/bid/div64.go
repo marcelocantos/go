@@ -70,7 +70,7 @@ const (
 // the size of the correction depends on the floating point: a worse
 // estimate would fail the bound, not round differently.
 //
-// As in div128 the dividend is biased by half the divisor, so that the
+// As in divLongW the dividend is biased by half the divisor, so that the
 // quotient is rounded half up and the remainder says the rest: equal to
 // the half exactly when the division is exact, when div64Exact strips the
 // zeros that the scale put in, and zero under an even divisor exactly on a

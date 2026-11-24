@@ -6,29 +6,64 @@ package bid
 
 import "math/bits"
 
-// This package's divide on UBD operands. ubdDivTTE128, ubdDivWide128 and
-// ubdDivLong128 are div128 (for ties to even), divWide128 and divLong128
-// (their comments explain the method) with the BID decoding (divPair128,
-// unpackFirst128, unpackRest128) replaced by UBD's, the specials decided on
-// UBD, and the packing and rounding by ubdPackWord, ubdRoundFace128 and
-// ubdRound128; the arithmetic is unchanged. Nothing converts.
+// This package's divide on UBD operands. ubdDivLong128 is the template's
+// divLongW (div_tmpl.go) on UBD, for every operand and mode: the specials
+// are decided on UBD and the rounding is ubdRoundFace128 and ubdRound128.
+// ubdDivTTE128 and ubdDivWide128 divide finite operands to nearest in the
+// arithmetic that such operands need, decoded by ubdDivPair128 and packed
+// by ubdPackWord, and hand every other case to ubdDivLong128. Nothing
+// converts.
 
-// ubdDivPair128 is divPair128 on UBD: the coefficients' high words, the
-// exponent difference (the same biased or not), the quotient's sign, and
-// whether both operands are finite.
+// ubdDivPair128 decodes what ubdDivTTE128 and ubdDivWide128 need: the
+// coefficients' high words, the exponent difference, the quotient's sign,
+// and whether both operands are finite.
 func ubdDivPair128(x, y UBD128) (xhi, yhi uint64, exp int, neg, ok bool) {
 	ok = x.Hi>>60 != UBDSpecialTag && y.Hi>>60 != UBDSpecialTag
 	exp = int(int64(x.Hi)>>UBDExpShift) - int(int64(y.Hi)>>UBDExpShift)
 	return x.Hi & UBDCoeffMaskHi, y.Hi & UBDCoeffMaskHi, exp, (x.Hi^y.Hi)&UBDSignHi != 0, ok
 }
 
-// ubdDivTTE128, the divide entry the compiler calls, is div128 on UBD for
-// ties to even, written into the entry so that a divide is one call with
-// one frame, where it was the entry and then a ubdDiv128 (-6 to -8% on
-// word operands in BenchmarkUBDKernel; money 12.59 ns against 11.86, BID's
-// div128 15.58). ubdDivRnd128,
-// which no compiled code calls, calls it for ToNearestEven and
-// ubdDivLong128, which takes every mode, otherwise.
+// ubdDivTTE128, the divide entry the compiler calls, divides to nearest,
+// ties to even, a finite dividend by a finite divisor whose coefficient
+// fits a word, neither of them zero (amounts, rates and counts as they are
+// usually held, and what a division left, divided again). It is written
+// into the entry so that a divide is one call with one frame. A divisor of
+// two words goes to ubdDivWide128, and every other operand, and a result
+// that ubdPackWord does not encode, to ubdDivLong128, which decides it from
+// the start. ubdDivRnd128, which no compiled code calls, calls it for
+// ToNearestEven and ubdDivLong128, which takes every mode, otherwise.
+//
+// The method is divLongW's in the arithmetic that such operands need, and
+// nothing is decoded twice, called or kept in memory on the way. The
+// leading ratio compares the coefficients scaled to one length: for a
+// dividend of one word as two products of two words, and for a dividend of
+// two words, which is the longer, against the divisor times a power of
+// ten. The dividend x × 10^k is three words, because the quotient is below
+// 10^34 and the divisor below 2^64: a word times a power of two words
+// (beyond the last 128-bit power the coefficient takes the excess first and
+// is still a word), or two words times a power of one.
+//
+// Three words are divided by one in the way the processor makes cheapest.
+// With an instruction that divides two words by one, that is two of them.
+// Without it, a divisor below 2^32 divides half a word at a time by the
+// instruction that divides a word by a word, four times: a chain of
+// divisions, but a tenth of the work of the reciprocal, and the divisors of
+// money are that small. A larger divisor takes its reciprocal
+// (reciprocalNewton) and two steps by it (div2by1).
+//
+// As in divLongW the dividend is biased by half the divisor, so that the
+// quotient is rounded half up and the remainder says the rest: equal to
+// the half exactly when the division is exact, when the quotient goes to
+// strip128 for its preferred exponent, and zero under an even divisor
+// exactly on a tie. The rounded quotient cannot reach 10^34: it would need
+// b × 10^34 - x × 10^k, a positive multiple of 10^min(k, 34), to be at most
+// b / 2. A power of ten above b / 2 rules that out, and k is below the
+// digits of b only for a dividend of 34 digits whose leading ratio reaches
+// one, when the difference is at least 10^34 times b less the power of ten
+// below it, and b is not that power. ubdPackWord checks the coefficient all
+// the same, and the exponent, which is the only thing that can send a
+// quotient of 34 digits elsewhere: at an exponent in range it is normal,
+// and rounding it once is the whole result.
 func ubdDivTTE128(x, y UBD128) UBD128 {
 	const mode = ToNearestEven
 	xhi, yhi, exp, neg, ok := ubdDivPair128(x, y)
@@ -44,7 +79,7 @@ func ubdDivTTE128(x, y UBD128) UBD128 {
 		// are the two that data holds: a zero amount divided, which is
 		// a zero at the preferred exponent, and a division by zero,
 		// which is an infinity. Both have the sign of the quotient.
-		// The rest are divLong128's: 0 / 0, an exponent outside the
+		// The rest are ubdDivLong128's: 0 / 0, an exponent outside the
 		// format, and a dividend that only reads as zero, because its
 		// coefficient is not canonical.
 		if b != 0 {
@@ -119,7 +154,7 @@ func ubdDivTTE128(x, y UBD128) UBD128 {
 		// A dividend of two words is the longer coefficient, by e
 		// digits, and the divisor scaled to its length still fits two
 		// words. The scale of the dividend is then at most the digits of
-		// the divisor; one beyond the word powers is left to divLong128,
+		// the divisor; one beyond the word powers is left to ubdDivLong128,
 		// as is a coefficient that is not canonical.
 		xc := Uint128{Hi: xhi, Lo: a}
 		e := cDigits128(xc) - db
@@ -216,6 +251,31 @@ func ubdDivTTE128(x, y UBD128) UBD128 {
 	return ubdDivLong128(x, y, mode)
 }
 
+// ubdDivWide128 is ubdDivTTE128 for a divisor whose coefficient has two
+// words: both operands finite, in a mode that rounds to nearest, which
+// ubdDivTTE128 has established. It is the same method with a divisor of
+// two words, and it hands the same cases on to ubdDivLong128. A divisor
+// that is a power of ten is divided like any other: its quotient is exact
+// and is stripped.
+//
+// Both coefficients are scaled to one length for the leading ratio, one of
+// them by 10^0, each product within two words. The dividend x × 10^k has up
+// to four words and k up to 67 places: the coefficient takes the places
+// beyond the last 128-bit power first, staying within two words, and then
+// that power. The divisor is normalised and the dividend shifted with it,
+// which loses nothing because the quotient is below 2^113, and the
+// quotient's two words are two steps of div3by2 by the reciprocal of the
+// divisor.
+//
+// What bounds this function is the chain from the operands to the
+// quotient more than the count of its instructions, so the chain is kept
+// short: the scale starts from the digit counts and takes the place that
+// the leading ratio decides at the end, on two words; and both steps use
+// the reciprocal of both words, which costs more to prepare than that of
+// the high word but is prepared beside the scale, and makes each step half
+// as long. (Asking for the reciprocal before the digit counts, which
+// leaves less to save across the calls, measured a tenth slower: the
+// chain that matters then starts ninety instructions late.)
 func ubdDivWide128(x, y UBD128, mode Mode) UBD128 {
 	xhi, yhi, exp, neg, _ := ubdDivPair128(x, y)
 	xc, yc := Uint128{Hi: xhi, Lo: x.Lo}, Uint128{Hi: yhi, Lo: y.Lo}
@@ -413,7 +473,7 @@ func ubdDivLong128(x, y UBD128, mode Mode) UBD128 {
 		face := MinExp128 < exp && exp <= MaxExp128 && exp+Precision128-1 >= Emin128
 		var rem coef128
 		if face && (mode <= ToNearestAway || mode > TowardPositive) {
-			// To nearest, inside the exponent range of roundFace128's proof:
+			// To nearest, inside the exponent range of roundFaceW's proof:
 			// the dividend is biased by half the divisor, and the quotient
 			// of n + ⌊yc/2⌋ by yc is the quotient of n by yc rounded to
 			// nearest with ties up, because the bias carries into the next
@@ -424,7 +484,7 @@ func ubdDivLong128(x, y UBD128, mode Mode) UBD128 {
 			// tie, where ties to even takes the even neighbour, the one
 			// below. Nothing here waits for a comparison of the remainder
 			// with the half or branches on the direction, which is as good
-			// as random: the two tests are rare, and roundFace128, given no
+			// as random: the two tests are rare, and ubdRoundFace128, given no
 			// class, only encodes.
 			half := cHalf128(yc)
 			nb, _ := cAddFull128(n, wide128{Lo: half})
@@ -443,9 +503,9 @@ func ubdDivLong128(x, y UBD128, mode Mode) UBD128 {
 			// An inexact quotient in a directed mode or near the exponent
 			// limits: the remainder places the true value between q and
 			// q + 1 at exponent xe - ye - k, and its class is exact: rem
-			// against yc - rem. Within the exponent range that roundFace128's
+			// against yc - rem. Within the exponent range that roundFaceW's
 			// proof names, that is the whole rounding decision, taken at
-			// face value; nearer the limits round128 takes the usual round
+			// face value; nearer the limits ubdRound128 takes the usual round
 			// digit and sticky bit, found by one more division step.
 			other, _ := cSub128(yc, rem)
 			class = cClass128(rem, other)
@@ -473,8 +533,8 @@ func ubdDivLong128(x, y UBD128, mode Mode) UBD128 {
 		// strip128's steps, written here and not called: as a call they
 		// cost a decimal64 division with an exact quotient a sixth more,
 		// and one that is not exact a twentieth, for what the call does
-		// to this function's registers. div128's own paths, which reach
-		// an exact quotient more rarely, call strip128.
+		// to this function's registers. ubdDivTTE128 and ubdDivWide128,
+		// which reach an exact quotient more rarely, call strip128.
 		search := true
 		if first > 0 {
 			if sq, ok := cDivExactPow10128(q, first); ok {

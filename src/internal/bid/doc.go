@@ -19,20 +19,23 @@
 // what lets the runtime, cmd/compile (through the cmd/dist bootstrap) and
 // the standard library all import one implementation.
 //
-// The bit patterns here are always BID encodings. A value of a decimal type
-// in memory is not: it is its encoding XORed with [Zero64], or with
-// [Zero128Hi] in the high word, so that all bits clear is the zero value 0E+0,
-// the result of converting the integer 0. Callers convert at the boundary:
-// cmd/compile for operators and constants, the runtime for hashing and
-// printing, and math/decimal's BID and DPD codecs for everyone else. Math's
-// bits functions do not convert: they return the stored words as they are.
+// The bit patterns here are BID encodings, except where a function says it
+// takes the UBD layout of decimal128 ("The UBD kernel"). A value of a
+// decimal type in memory is not a BID encoding. A decimal64 is its encoding
+// XORed with [Zero64], so that all bits clear is the zero value 0E+0, the
+// result of converting the integer 0. A decimal128 is held in the UBD
+// layout, whose all bits clear is already +0E+0. Callers convert at the
+// boundary: cmd/compile for operators and constants, the runtime for
+// hashing and printing, and math/decimal's BID and DPD codecs for everyone
+// else. Math's bits functions do not convert: they return the stored words
+// as they are.
 //
 // On linux/ppc64le, whose decimal floating-point unit works on the densely
 // packed decimal (DPD) encoding, the memory form is the DPD encoding XORed
 // with [DPDZero64] or [DPDZero128Hi] instead, and the compiler lowers the
 // operators to the hardware's instructions. [DPDFromBID64], [BIDFromDPD64]
-// and their decimal128 forms convert at the boundary there: the kernel
-// and every wire format stay BID on every target.
+// and their decimal128 forms convert at the boundary there: the exported
+// functions and every wire format stay BID on every target.
 //
 // Every exported function that works at one width is width-suffixed:
 // Add64 operates on decimal64 bit patterns and Add128 on decimal128 bit
@@ -1635,12 +1638,14 @@
 //
 // # Width parameterisation
 //
-// The two widths share one implementation of every algorithm through code
-// generation: each width-dependent algorithm is written once, in a
-// template, and a generator instantiates it for decimal64 and for
-// decimal128. The alternatives, generics over a width type and one core
-// over a 128-bit intermediate with the format parameters as run-time
-// values, were rejected on measurement. This section records the spike
+// Each width-dependent algorithm of decimal64 is written once, in a
+// template, and a generator instantiates it. The templates are written in
+// a width-neutral vocabulary and once served both widths; decimal128's
+// arithmetic is the UBD kernel ("The UBD kernel"), which follows the
+// templates' algorithms by hand, and the generator writes the decimal64
+// files alone. The alternatives to generation, generics over a width type
+// and one core over a 128-bit intermediate with the format parameters as
+// run-time values, were rejected on measurement. This section records the spike
 // that decided it (2026-10-30, target T1.1.2) and the rules that the
 // shared core must follow. The spike code was discarded; the numbers and
 // the decision are what remain.
@@ -1774,9 +1779,9 @@
 //     NAME_tmpl.go (//go:build ignore), written once in the template
 //     vocabulary below, one template per family of operations. gen_arith.go
 //     (//go:build ignore, run by "//go:generate go run -tags bidgen
-//     gen_arith.go" in arith.go) writes zNAME64.go and zNAME128.go from each
-//     template, which are committed, and zpow10.go, the tables of powers of
-//     ten that the helpers below index. The generator links this package
+//     gen_arith.go" in arith.go) writes zNAME64.go from each template,
+//     which are committed, and zpow10.go, the tables of powers of ten that
+//     the helpers below index. The generator links this package
 //     (the runtime imports it), so it is built with the tag bidgen, under
 //     which the files generated from templates are replaced by zbidgen.go,
 //     their declarations with bodies that return zero values: generated code
@@ -1787,11 +1792,11 @@
 //     files.
 //  2. The width suffix rule. In the template every width-dependent
 //     identifier ends in a capital W and no other identifier does. The
-//     generator replaces that final W with 64 or 128 and does nothing
-//     else: PrecisionW, MaxExpW, MinExpW, BiasW, UnpackW, digitsW, addW,
-//     roundW. The package's existing width-suffixed names (Precision64,
-//     Unpack64, digits64, ...) are therefore usable from the template as
-//     they are, and the template reads as Go. No text/template syntax, no
+//     generator replaces that final W with 64 and does nothing else:
+//     PrecisionW, MaxExpW, MinExpW, BiasW, UnpackW, digitsW, addW, roundW.
+//     The package's existing width-suffixed names (Precision64, Unpack64,
+//     digits64, ...) are therefore usable from the template as they are,
+//     and the template reads as Go. No text/template syntax, no
 //     other substitution.
 //  3. Types. coefW is the coefficient type, declared as the aliases
 //     "type coef64 = uint64" in coef64.go and "type coef128 = Uint128" in
@@ -1820,13 +1825,16 @@
 //     operations need. Every coef64.go helper must inline;
 //     check with -gcflags=-m=2 after changing one (no "cannot inline
 //     c…64"; plain -m does not print "cannot inline" lines).
-//     coef128.go is where T1.3.1's 128- and 256-bit arithmetic goes; it
-//     may call unexported Uint128 and Uint256 functions freely.
-//  5. The generated functions are unexported (add64, add128, round64,
-//     round128, ...). The exported, documented functions in arith.go,
-//     round.go and the other API files stay where they are and become
-//     one-line wrappers, which the inliner removes; the API files do not
-//     change shape as operations are implemented.
+//     coef128.go is where T1.3.1's 128- and 256-bit arithmetic goes, and
+//     the UBD kernel's coefficient arithmetic with it; it may call
+//     unexported Uint128 and Uint256 functions freely.
+//  5. The generated functions are unexported (add64, round64, ...). The
+//     exported, documented functions in arith.go, round.go and the other
+//     API files stay where they are and become one-line wrappers, which
+//     the inliner removes; the API files do not change shape as operations
+//     are implemented. The decimal128 ones are wrappers too: each converts
+//     its operands with toUBD, calls the UBD kernel and converts the
+//     result with fromUBD.
 //  6. Width constants are compile-time constants in each instantiation
 //     (PrecisionW becomes Precision64), never fields of a format value
 //     passed at run time, and the package has no generic code. The two
@@ -1841,55 +1849,87 @@
 //     that grew a width-independent cost; fix that, do not special-case the
 //     width.
 //
+// # The UBD kernel
+//
+// decimal128's arithmetic is the UBD kernel (ubd.go and ubd_*.go), written
+// by hand. UBD (unpacked binary decimal) lays a decimal128 out so that its
+// coefficient comes out with one mask and its signed exponent with one
+// shift, and all bits clear is +0E+0; it is decimal128's memory form on
+// every target but linux/ppc64le. The UBD layout, the kernel and the
+// compiler's decimal128 fast paths are migueldecimal128's work
+// (https://migueldecimal128.github.io/decimal128-www/whitepapers/ubd.html).
+//
+// The kernel's general paths are the templates' algorithms written at 128
+// bits over coef128.go's vocabulary, with UBD's decoding and packing, and
+// are named after them: ubdAddLong128 is addLongW, ubdRound128 roundW,
+// ubdRoundFace128 roundFaceW, ubdDivLong128 divLongW, ubdMulLong128
+// mulLongW, ubdQuantizeLong128 quantizeLongW, ubdFMALong128 fmaLongW. In
+// front of them stand paths of the kernel's own ("Straight paths"):
+// ubdAddTTE128, ubdMulTTE128, ubdDivTTE128 and ubdDivWide128,
+// ubdQuantizeSlow128 and ubdFMASlow128. The compiler calls the kernel's
+// entries directly, and ubd.go states their contract ("The UBD kernel
+// contract").
+//
+// The exported functions that take and return BID-128 (Add128,
+// Quantize128, Parse128, Append128, Compare128 and the rest) are
+// conversions around the kernel: each converts its operands with toUBD,
+// calls the kernel and converts the result back with fromUBD. They serve
+// linux/ppc64le's software paths, constant folding and every user of the
+// BID interchange encoding. The 128-bit helpers that know no layout stay
+// in their own files: coef128.go, u128.go, u256.go and recip128.go, and
+// the BID-128 codec (Pack128, Unpack128) is in encoding.go.
+//
+// Measurements below that name decimal128 and are dated before 2026-11-24
+// were taken on the BID-128 kernel that the templates generated, with
+// hand-written entries in front of it, which the UBD kernel replaced on
+// that date. The UBD kernel's entries keep those entries' arithmetic, so
+// the reasoning stands; the numbers are the BID-128 kernel's.
+//
 // # Inline fast paths
 //
 // The money cases of addition, subtraction, multiplication, quantize and the
 // comparisons, word operands of one quantum, cost little more than the call
-// that reaches them, so they are decided in front of the call. Each such
-// operation is generated as a small function, addW, subW, mulW, quantizeW,
-// equalW, lessW and lessEqualW, that asks an encoding-level
-// helper in encoding.go (addSameQuantumW, subSameQuantumW, mulShortW,
-// quantizeSameW and sameQuantumKeysW) whether it can decide the operands
-// from their bits, and otherwise calls the general path, named with the
-// suffix Slow (addSlowW, ...). The helpers decide only exact results, which
-// they encode exactly as the general path does; each states its bounds and
-// why the general path gives the same bits, TestInlineBounds checks each
-// bound from both sides and TestInlinePaths compares every decided result
-// with the general path's over a pool of operands around the bounds.
+// that reaches them, so they are decided in front of the call. For
+// decimal64 each such operation is generated as a small function, addW,
+// subW, mulW, quantizeW, equalW, lessW and lessEqualW, that asks an
+// encoding-level helper in encoding.go (addSameQuantumW, subSameQuantumW,
+// mulShortW, quantizeSameW and sameQuantumKeysW) whether it can decide the
+// operands from their bits, and otherwise calls the general path, named
+// with the suffix Slow (addSlowW, ...). The helpers decide only exact
+// results, which they encode exactly as the general path does; each states
+// its bounds and why the general path gives the same bits, TestInlineBounds
+// checks each bound from both sides and TestInlinePaths compares every
+// decided result with the general path's over a pool of operands around
+// the bounds.
 //
 // The compiler charges a call to a function of this package whose name ends
 // in Slow64 or Slow128 as a cheap call, as it does runtime.heapBits.next's
 // call to nextArena, so that the front, and the one-line exported wrapper
 // around it, fit the inlining budget: a full call would cost 57 of its 80.
-// The exported Add, Sub, Mul, Quantize, Equal, Less and LessEqual functions
-// of both widths inline into their callers; their inline costs, under
-// -gcflags=-m=2, are between 33 (Quantize64) and 78 (Mul128), and
+// The exported Add64, Sub64, Mul64, Quantize64, Equal64, Less64 and
+// LessEqual64 inline into their callers; their inline costs, under
+// -gcflags=-m=2, are between 33 (Quantize64) and 77 (Sub64), and
 // cmd/compile's TestIntendedInlining fails if one of them stops inlining.
 // The general paths keep their own word fast paths, so an operand pair the
 // front refuses costs the front's test and nothing else. A front must stay
 // small: what does not fit beside the call, such as the word fast path of
 // addition at another exponent (cost 316), stays on the general path, and an
-// operation whose front does not fit has none. Compare64 and Compare128 with
-// a front would cost 88 and 92; out of line, the front costs every operand it
-// refuses a second call, 11 to 16 percent on the mixed rows, so they, Min and
-// Max call quietCmpSlowW directly.
+// operation whose front does not fit has none. Compare64 with a front would
+// cost 88; out of line, the front costs every operand it refuses a second
+// call, 11 to 16 percent on the mixed rows, so it, Min64 and Max64 call
+// quietCmpSlowW directly.
 //
-// The compiler's own integer fast paths for the decimal128 operators on
-// amd64 and arm64 accept every operand pair that these fronts accept, so
-// the compiler there calls the general paths without the front and does
-// not test the operands a second time: addSlow128, mulSlow128 and div128
-// with the rounding mode as an argument (and, for a sum or a product of
-// coefficients of one word each, addLong128 and mulLong128 directly, which
-// take those first), quietCmpSlow128 for the
-// comparisons, and for two finite operands it has decoded itself,
-// cCmpFinite128 (cmd/compile/internal/ssagen.ubdKernelOp, and bidCompare for decimal64).
-// No runtime function stands between the operator and the kernel there:
-// one cost a frame and a second call on every such operand pair, 0.6 to
-// 0.8 ns of an addition's 9. Those functions' parameters are therefore a
-// contract with the compiler, which passes a decimal128 as its two words,
-// high first, as Uint128 lays them out. AddSlow128 and its relatives export
-// the same paths for the tests and the benchmark rows. The general paths
-// take every operand, so no result depends on any of this.
+// The decimal128 operators on every target whose memory form is UBD have
+// their fronts in the compiler, which decides the money cases on the
+// stored words and calls the UBD kernel's entries for every other operand
+// pair: ubdAddTTE128, ubdMulTTE128, ubdDivTTE128, the comparison entries
+// and the rest (cmd/compile/internal/ssagen's ubdKernelOp; "The UBD kernel
+// contract" in ubd.go). No runtime function stands between the operator
+// and the kernel there: one cost a frame and a second call on every such
+// operand pair, 0.6 to 0.8 ns of an addition's 9. Those entries' names and
+// parameters are therefore a contract with the compiler, which passes a
+// decimal128 as its two stored words, low first, as UBD128 lays them out.
+// The entries take every operand, so no result depends on any of this.
 //
 // The decimal64 operators have the same arrangement on amd64 and arm64:
 // the compiler writes the fronts addSameQuantum64, subSameQuantum64 and
@@ -1912,12 +1952,10 @@
 // part of the contract as well. decimal128's settings are those of the UBD
 // lowering (ssagen's bid.go).
 //
-// FMA128 has a front of another kind: a test that the three coefficients
-// fit a word each, which sends them to fmaLong128 and its word paths, and
-// everything else to fmaSlow128 ("Straight paths"). It calls fmaLong128
-// through fmaWordSlow128, a one-line function, so that both of its calls
-// have the ending the compiler charges as cheap and it inlines; the test
-// then costs the word operands no call.
+// The fused multiply-add of decimal128 has a front of another kind:
+// UBDFMA128 tests whether the three coefficients fit a word each, which
+// sends them to ubdFMALong128 and its word paths, and sends everything
+// else to ubdFMASlow128 ("Straight paths").
 //
 // The functions of math/decimal reach these entries through
 // internal/decimal, where each generic function is a test of the width and
@@ -2163,16 +2201,16 @@
 // loop of at most one trip.
 //
 // Measured and not adopted in the same pass: the leading quotient word of
-// divWide128 from the reciprocal of the divisor's high word alone
+// ubdDivWide128 from the reciprocal of the divisor's high word alone
 // (div3by2Lead written out), so that it need not wait for the two-word
 // reciprocal: 75.5 cycles against 71.7 on the fixed pair, level on drawn
 // operands.
 //
-// A zero operand is decided where div128 sees it: a zero dividend over a
-// non-zero word is the zero at the preferred exponent, and a non-zero
-// dividend over zero the infinity (18.2 cycles to 6.8 and 13.8 to 6.7
-// through the operator). 0 / 0 and a dividend that only reads as zero go
-// on to divLong128.
+// A zero operand is decided where the division's entry (ubdDivTTE128)
+// sees it: a zero dividend over a non-zero word is the zero at the
+// preferred exponent, and a non-zero dividend over zero the infinity (18.2
+// cycles to 6.8 and 13.8 to 6.7 through the operator). 0 / 0 and a
+// dividend that only reads as zero go on to ubdDivLong128.
 //
 // A decimal64 division has an entry of its own, div64 (2026-11-14). Its
 // quotient has 16 digits, under 54 bits, and its divisor one word, so the
@@ -2194,8 +2232,8 @@
 // TestDiv64Estimate measures it, at most 4 on operands drawn to make it
 // large. On amd64 bits.Div64 is the instruction, and div64 divides by it
 // once. Operands of the second form are decoded and divided here too, and
-// zeros and a divisor that is a power of ten are decided as div128 decides
-// them; the directed modes, which the compiler never passes, and every
+// zeros and a divisor that is a power of ten are decided as ubdDivTTE128
+// decides them; the directed modes, which the compiler never passes, and every
 // special value are divLong64's.
 //
 // Through the operator, on the side-by-side harness's sets (Apple M4 Max,
@@ -2267,16 +2305,16 @@
 // knew.
 //
 // So the three operators have, for decimal128, an entry written by hand in
-// front of the routine that the template generates, which keeps every
-// operand and is renamed for it: div128 and divWide128 in front of
-// divLong128, addSlow128 in front of addLong128, mulSlow128 in front of
-// mulLong128 (div128.go, add128.go, mul128.go). Each takes finite operands
-// of the first form in a mode that rounds to nearest, computes one result
-// in one pass with as few calls as its arithmetic allows, and hands
-// everything else to the general routine by calling it with the original
-// operands: the special values, the directed modes, and any result that
-// packWord128 refuses, which covers the subnormal range, overflow, a
-// clamped exponent and a coefficient that a rounding carried to 10^34. A
+// front of the general routine, which keeps every operand: ubdDivTTE128
+// and ubdDivWide128 in front of ubdDivLong128, ubdAddTTE128 in front of
+// ubdAddLong128, ubdMulTTE128 in front of ubdMulLong128 (ubd_div.go,
+// ubd_add.go, ubd_mul.go). Each takes finite operands in a mode that
+// rounds to nearest, computes one result in one pass with as few calls as
+// its arithmetic allows, and hands everything else to the general routine
+// by calling it with the original operands: the special values, the
+// directed modes, and any result that ubdPackWord refuses, which covers
+// the subnormal range, overflow, a clamped exponent and a coefficient that
+// a rounding carried to 10^34. A
 // decimal64 operation is word arithmetic throughout; its three operations
 // have such entries, addSlow64 in front of addLong64 (add64.go), mulSlow64
 // in front of mulLong64 (below) and div64 in front of divLong64 (div64.go;
@@ -2305,14 +2343,14 @@
 // A function that calls nothing spills nothing. Where a helper was too
 // large to inline and the path is hot, its body is written out in the
 // caller (the digit count and the division by a power of ten in
-// mulSlow128 and addSlow128): the same instructions without the call, the
+// ubdMulTTE128 and ubdAddTTE128): the same instructions without the call, the
 // frame and the stores and loads either side.
 //
 // The order of the text is the order of the work. The processor starts
 // what it reads first, and these paths are long enough that what is
 // written last waits for room. The longest chain is therefore written
 // first: asking for a divisor's reciprocal before the digit counts, which
-// left less to save across its calls, made divWide128 a tenth slower,
+// left less to save across its calls, made ubdDivWide128 a tenth slower,
 // because the chain that ends in the quotient then started ninety
 // instructions late.
 //
@@ -2324,14 +2362,14 @@
 //
 // An exact quotient needs no long division. A divisor b divides a × 10^j
 // for some j exactly when its part prime to ten divides a, and the least
-// such j is the twos or fives of b in excess of those of a. div128 tests
+// such j is the twos or fives of b in excess of those of a. ubdDivTTE128 tests
 // that first for one-word operands, at the cost of a shift, a multiply and
 // a division instruction, and an exact quotient (an amount over a count,
 // 1234.56 / 3.00) is then one more division: 44 cycles became 14, where
 // the long division found the quotient to 34 digits and searched it for
 // its zeros. Divisions that are not exact pay about a tenth for the test.
 //
-// Not everything computed is better than a branch. In addSlow128 the exact
+// Not everything computed is better than a branch. In ubdAddTTE128 the exact
 // sum and the rounded one, and the sum and the difference, stay separate
 // branches: dividing always (by one when nothing is dropped) and adding
 // under a mask of the signs made the function indifferent to operands
@@ -2351,16 +2389,16 @@
 // fraction of a swamped addend, which roundFaceW rounds at face value
 // ("Face-value rounding"): 161 instructions and 15.9 cycles.
 //
-// The fused multiply-add. fmaSlow128 takes operands of which one has two
+// The fused multiply-add. ubdFMASlow128 takes operands of which one has two
 // words, with z at the exponent of the product or up to 38 places above
 // it, which is the step of a sum of products or of a polynomial at full
 // precision. The product is exact in four words, z scaled to its exponent
 // is four more, their sum or difference is the exact value at the
-// preferred exponent, and it is rounded once as mulSlow128 rounds its
+// preferred exponent, and it is rounded once as ubdMulTTE128 rounds its
 // product. On operands of 34 digits drawn at random: 787 instructions and
 // 101.6 cycles to 287 and 47.7.
 //
-// Quantize. quantizeSlow128 takes a coefficient of two words, which is
+// Quantize. ubdQuantizeSlow128 takes a coefficient of two words, which is
 // what a division or a long product leaves and what is then brought to
 // two places. With digits to drop it biases the coefficient by half of
 // the power of ten and divides once, the zero remainder the tie; with
@@ -2409,7 +2447,7 @@
 // Addition of decimal64 values (2026-11-14). addSlow64 (add64.go) takes
 // finite canonical operands at most 19 places apart in a mode that rounds
 // to nearest, and the sums among them that round to 16 digits, by
-// addSlow128's method in one word: the operand with the larger exponent,
+// ubdAddTTE128's method in one word: the operand with the larger exponent,
 // chosen by a mask, is scaled to 16 digits, the other is biased by half of
 // the power of ten and divided once by the processor's division
 // instruction, the zero remainder is the tie, and the sign of a
@@ -2649,7 +2687,7 @@
 // of which has an operand of that form, from 35.4 to 31.6, and cost money
 // amounts 2 (31.1 to 33.1) and the fixed pair 4 (19.7 to 24.0); and the
 // first form of the entry, which found the digit counts and the leading
-// ratio as div128 does, scaled the dividend to two words and divided it
+// ratio as ubdDivTTE128 does, scaled the dividend to two words and divided it
 // half a word at a time below a divisor of 2^32 and by the estimate above,
 // took 42.1 cycles on money amounts, 41.2 on 16-digit operands and 28.9 on
 // the fixed pair, against 24.8, 34.0 and 18.2 now.

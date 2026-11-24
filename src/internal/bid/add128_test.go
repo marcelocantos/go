@@ -10,10 +10,11 @@ import (
 	"testing"
 )
 
-// TestAddWide drives addSlow128's own path, the sum of finite operands of
-// which one has a coefficient of two words, against the reference in every
-// mode (the directed modes take the general path, which the same operands
-// then test), in both orders and with every pair of signs:
+// TestAddWide drives ubdAddTTE128's two-word path, through Add128, the sum
+// of finite operands of which one has a coefficient of two words, against
+// the reference in every mode (the modes other than ToNearestEven take the
+// general path, which the same operands then test), in both orders and
+// with every pair of signs:
 //
 //   - every digit count of the operand with the larger exponent against
 //     gaps that leave its scale short of the other exponent by none, by one

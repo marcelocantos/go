@@ -12,7 +12,7 @@ import "math/bits"
 // so are those far enough apart that one is swamped, in any mode; every
 // other operand goes to addLong64, which decides it from the start.
 //
-// The method is addSlow128's, in one word. The operand with the larger
+// The method is ubdAddTTE128's, in one word. The operand with the larger
 // exponent, a, is chosen by a mask, since which it is depends on the data
 // as much as on the program, and is scaled up by the m places that its
 // digit count leaves, to 16 digits or to the exponent of the other, b. If

@@ -4,12 +4,12 @@
 
 //go:build ignore
 
-// This file is the template for zfromfloat64.go and zfromfloat128.go, the
-// conversion of a binary floating-point value to each decimal width. It is
+// This file is the template for zfromfloat64.go, the conversion of a
+// binary floating-point value to decimal64. It is
 // written in the vocabulary of "Width parameterisation" in the package
 // documentation: every identifier that depends on the width ends in a
-// capital W, and the generator (gen_arith.go) replaces that W with 64 or
-// 128. Nothing else is substituted. This file is not compiled; the build
+// capital W, and the generator (gen_arith.go) replaces that W with 64.
+// Nothing else is substituted. This file is not compiled; the build
 // ignores it, and only the generated files are compiled. Everything from
 // the build constraint to the package clause is commentary on the template
 // and is dropped from the generated files, which nobody edits.

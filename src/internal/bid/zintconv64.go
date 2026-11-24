@@ -9,9 +9,7 @@
 package bid
 
 // intTo64 is convertFromInt for a magnitude m of sign neg: m rounded once to
-// Precision64 digits in mode, with preferred exponent 0, by round64. A
-// decimal128 holds every 64-bit magnitude, so mode is moot at that width;
-// round64 is still the only packer.
+// Precision64 digits in mode, with preferred exponent 0, by round64.
 func intTo64(neg bool, m uint64, mode Mode) coef64 {
 	x, _ := round64(neg, wide64{Lo: cFromU6464(m)}, 0, classZero, mode, MinExp64)
 	return x

@@ -22,12 +22,11 @@ func mul64(x, y coef64, mode Mode) coef64 {
 
 // mulLong64 returns x × y rounded in mode, for every operand: mulSlow64,
 // which mul64 above and the compiler call, takes most products of finite
-// operands in a nearest mode itself for decimal64, and most products of a
-// two-word coefficient for decimal128 (mul128.go), and hands the rest
-// here. The special values follow "NaN and
-// infinity operands" and "Sign of a result"; a finite product is computed
-// exactly in the double-width type, whose digits round64 reduces with a sticky
-// class of everything it drops, so the product is rounded once and nothing
+// operands in a nearest mode itself (mul64.go), and hands the rest here.
+// The special values follow "NaN and infinity operands" and "Sign of a
+// result"; a finite product is computed exactly in the double-width type,
+// whose digits round64 reduces with a sticky class of everything it drops,
+// so the product is rounded once and nothing
 // is lost to a narrower intermediate. The preferred exponent is the sum of
 // the exponents, which can lie far outside the format (the extremes are
 // 2×MinExp64 and 2×MaxExp64); round64 is specified for any exponent, clamps it
@@ -43,10 +42,6 @@ func mul64(x, y coef64, mode Mode) coef64 {
 // an exponent within the format is exact there, and the sign of a zero
 // product is the exclusive or of the signs either way. A product or
 // exponent outside the format falls through.
-//
-// The compiler calls the decimal128 instantiation of this function
-// directly, so its parameters and results are a contract with it: see the
-// end of "Inline fast paths" in the package documentation.
 func mulLong64(x, y coef64, mode Mode) coef64 {
 	var yneg, yok bool
 	var yw uint64

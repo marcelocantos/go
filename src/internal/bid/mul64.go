@@ -14,7 +14,7 @@ import "math/bits"
 // The product of the coefficients is exact in two words and below 10^32.
 // With 16 or fewer digits it is the result, at the sum of the exponents,
 // as in mulLong64's word path. With more, the j digits beyond 16 go, as
-// in mulSlow128: the product is biased by half of 10^j, so that the
+// in ubdMulTTE128: the product is biased by half of 10^j, so that the
 // quotient is the product rounded half up, and a zero remainder is the
 // tie, which takes the even neighbour by clearing the low bit. The
 // quotient has 16 digits, or is 10^16 after a carry, and its exponent is
@@ -117,4 +117,3 @@ type prodRound64 struct {
 	u      uint8     // (64 - s) mod 64, the shift of the high word
 	_      [13]uint8 // to 64 bytes, so that an index is one shift
 }
-

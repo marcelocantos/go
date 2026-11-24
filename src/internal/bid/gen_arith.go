@@ -291,7 +291,7 @@ package bid
 	})
 
 	// The rounding of a decimal64 product, by the number of leading zeros
-	// of the product in two words (see prodRound64 in mul128.go). A
+	// of the product in two words (see prodRound64 in mul64.go). A
 	// product that rounds has from 17 to 32 digits, 54 to 107 bits, and so
 	// from 21 to 74 leading zeros; the entries below 21 are never read and
 	// stay zero. For n bits the digit count is t or t + 1 with

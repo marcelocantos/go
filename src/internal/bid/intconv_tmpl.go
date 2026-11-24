@@ -4,7 +4,7 @@
 
 //go:build ignore
 
-// This file is the template for zintconv64.go and zintconv128.go: the
+// This file is the template for zintconv64.go: the
 // integer conversions of "Integer conversions" in the package
 // documentation, written once in the vocabulary of "Width
 // parameterisation". The width-independent halves, the split of an integer
@@ -15,9 +15,7 @@
 package bid
 
 // intToW is convertFromInt for a magnitude m of sign neg: m rounded once to
-// PrecisionW digits in mode, with preferred exponent 0, by roundW. A
-// decimal128 holds every 64-bit magnitude, so mode is moot at that width;
-// roundW is still the only packer.
+// PrecisionW digits in mode, with preferred exponent 0, by roundW.
 func intToW(neg bool, m uint64, mode Mode) coefW {
 	x, _ := roundW(neg, wideW{Lo: cFromU64W(m)}, 0, classZero, mode, MinExpW)
 	return x
