@@ -275,7 +275,8 @@ for line in sys.stdin:
 `
 
 // TestGdbDecimalDecoder checks the decoder of runtime-gdb.py against
-// internal/bid's character form, on BID and DPD encodings of both widths:
+// internal/bid's character form, on BID and DPD encodings of both widths
+// and on decimal128 stored as UBD:
 // special values, canonical values of many quanta and arbitrary bit
 // patterns, which include non-canonical encodings. It needs python3 but
 // not gdb, so it covers the DPD path on every host.
@@ -306,8 +307,12 @@ func TestGdbDecimalDecoder(t *testing.T) {
 			want:  string(bid.AppendSci64(nil, b)),
 		})
 	}
+	var bid128s []bid.Uint128 // the BID decimal128 encodings, for the UBD vectors
 	add128 := func(name string, dpd bool, enc bid.Uint128) {
 		zero, zeroHi, b := bid.Zero64, bid.Zero128Hi, enc
+		if !dpd {
+			bid128s = append(bid128s, enc)
+		}
 		if dpd {
 			zero, zeroHi, b = bid.DPDZero64, bid.DPDZero128Hi, bid.BIDFromDPD128(enc)
 		}
@@ -389,6 +394,46 @@ func TestGdbDecimalDecoder(t *testing.T) {
 		add64("declet", true, bid.DPDZero64|d<<20|d)
 	}
 
+	// decimal128 stored as UBD, which the zero encodings say by an
+	// all-clear decimal128 0E+0 beside BID's decimal64 one: every pattern
+	// reads as BIDFromUBDAny128 reads it, and decimal64 is still BID.
+	addUBD := func(name string, x bid.Uint128) {
+		vectors = append(vectors, vector{
+			name:  fmt.Sprintf("%s decimal128 ubd %#016x%016x", name, x.Hi, x.Lo),
+			input: fmt.Sprintf("%x %x %x %x", bid.Zero64, 0, x.Lo, x.Hi),
+			want:  string(bid.AppendSci128(nil, bid.BIDFromUBDAny128(x))),
+		})
+	}
+	for _, b := range bid128s {
+		addUBD("from BID", bid.UBDFromBID128(b))
+	}
+	for _, hi := range []uint64{bid.UBDInfHi, bid.UBDInfHi | bid.UBDSignHi, bid.UBDNaNHi, bid.UBDSNaNHi | bid.UBDSignHi, bid.UBDSignHi, 0} {
+		addUBD("special or zero", bid.Uint128{Hi: hi})
+	}
+	addUBD("max", bid.Uint128{Hi: uint64(bid.MaxExp128)<<bid.UBDExpShift | bid.MaxCoeff128Hi, Lo: bid.MaxCoeff128Lo})
+	// The edges of a well-formed pattern: the exponent range and the
+	// largest coefficient, and one beyond each.
+	for _, e := range []int64{bid.MinExp128 - 1, bid.MinExp128, bid.MaxExp128, bid.MaxExp128 + 1, 7167} {
+		addUBD("exponent edge", bid.Uint128{Hi: uint64(e) << bid.UBDExpShift, Lo: 1})
+	}
+	addUBD("coefficient 10^34", bid.Uint128{Hi: bid.MaxCoeff128Hi, Lo: bid.MaxCoeff128Lo + 1})
+	addUBD("negative max coefficient", bid.Uint128{Hi: bid.UBDSignHi | bid.MaxCoeff128Hi, Lo: bid.MaxCoeff128Lo})
+	for range 2000 {
+		// Arbitrary patterns, malformed ones among them, and well-formed
+		// finite values across the exponent range.
+		addUBD("random", bid.Uint128{Hi: r.Uint64(), Lo: r.Uint64()})
+		e := int64(bid.MinExp128 + r.IntN(bid.MaxExp128-bid.MinExp128+1))
+		hi := uint64(e)<<bid.UBDExpShift | r.Uint64N(bid.MaxCoeff128Hi) | uint64(r.IntN(2))<<49
+		addUBD("random finite", bid.Uint128{Hi: hi, Lo: r.Uint64()})
+	}
+	for _, x := range []uint64{bid.Zero64, bid.Inf64, bid.NaN64, r.Uint64(), r.Uint64()} {
+		vectors = append(vectors, vector{
+			name:  fmt.Sprintf("decimal64 beside ubd %#016x", x),
+			input: fmt.Sprintf("%x %x %x", bid.Zero64, 0, x^bid.Zero64),
+			want:  string(bid.AppendSci64(nil, x)),
+		})
+	}
+
 	var input strings.Builder
 	for _, v := range vectors {
 		input.WriteString(v.input + "\n")
@@ -419,7 +464,9 @@ func TestGdbDecimalDecoder(t *testing.T) {
 
 // TestGdbDecimalZeroConsts checks that the DWARF of a linux binary records
 // the encodings of 0E+0 that runtime-gdb.py reads, and that they are the
-// DPD ones on ppc64le and the BID ones elsewhere.
+// ones the memory forms are XORed with: DPD's on ppc64le; elsewhere BID's
+// for decimal64 and, for decimal128, which is stored as UBD there, UBD's,
+// which is all bits clear (bid.NativeZero128Hi).
 func TestGdbDecimalZeroConsts(t *testing.T) {
 	testenv.MustHaveGoBuild(t)
 	if testing.Short() {
@@ -435,8 +482,8 @@ func TestGdbDecimalZeroConsts(t *testing.T) {
 		goarch         string
 		zero64, zeroHi uint64
 	}{
-		{"amd64", bid.Zero64, bid.Zero128Hi},
-		{"arm64", bid.Zero64, bid.Zero128Hi},
+		{"amd64", bid.Zero64, 0},
+		{"arm64", bid.Zero64, 0},
 		{"ppc64le", bid.DPDZero64, bid.DPDZero128Hi},
 	} {
 		t.Run(tc.goarch, func(t *testing.T) {

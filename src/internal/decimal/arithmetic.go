@@ -115,7 +115,8 @@ const (
 
 var (
 	_ [0 - int((bid.NativeZero64|bid.NativeZero128Hi)>>63)]struct{}
-	_ [0 - int((bid.NativeZero64^bid.NativeZero128Hi)&classMask>>58)]struct{}
+	// With UBD decimal128 (bid.NativeUBD128) the decimal128 word has its
+	// own layout, and the functions below read it separately.
 )
 
 // NaN returns an IEEE 754 "not-a-number" value of type D.
@@ -127,8 +128,13 @@ func NaN[D Decimal]() D {
 	return D(nan128())
 }
 
-func nan64() decimal64   { return BID64frombits(bid.NaN64) }
-func nan128() decimal128 { return BID128frombits(bid.NaN128Hi, 0) }
+func nan64() decimal64 { return BID64frombits(bid.NaN64) }
+func nan128() decimal128 {
+	if bid.NativeUBD128 {
+		return FromBits128(bid.UBDNaNHi, 0) // UBD's canonical quiet NaN
+	}
+	return BID128frombits(bid.NaN128Hi, 0)
+}
 
 // Inf returns positive infinity if sign >= 0, negative infinity if sign < 0.
 func Inf[D Decimal](sign int) D {
@@ -148,6 +154,13 @@ func inf64(sign int) decimal64 {
 }
 
 func inf128(sign int) decimal128 {
+	if bid.NativeUBD128 {
+		hi := bid.UBDInfHi
+		if sign < 0 {
+			hi |= bid.UBDSignHi
+		}
+		return FromBits128(hi, 0)
+	}
 	inf := bid.Uint128{Hi: bid.Inf128Hi}
 	if sign < 0 {
 		inf = bid.Neg128(inf)
@@ -157,6 +170,9 @@ func inf128(sign int) decimal128 {
 
 // IsNaN reports whether x is an IEEE 754 "not-a-number" value.
 func IsNaN[D Decimal](x D) bool {
+	if bid.NativeUBD128 && !is64(x) {
+		return *signWord(&x)>>59 == bid.UBDNaNTag
+	}
 	return (*signWord(&x)^classZero)&classMask == classMask
 }
 
@@ -166,6 +182,9 @@ func IsNaN[D Decimal](x D) bool {
 // If sign == 0, IsInf reports whether x is either infinity.
 func IsInf[D Decimal](x D, sign int) bool {
 	t := *signWord(&x)
+	if bid.NativeUBD128 && !is64(x) {
+		return t>>59 == bid.UBDInfTag && (sign == 0 || (sign > 0) != (t&bid.UBDSignHi != 0))
+	}
 	return (t^classZero)&classMask == bid.SpecialMask64 && (sign == 0 || (sign > 0) != (t&bid.SignMask64 != 0))
 }
 
@@ -184,8 +203,13 @@ func Payload[D Decimal](x D) D {
 	return D(payload128(decimal128(x)))
 }
 
-func payload64(x decimal64) decimal64    { return BID64frombits(bid.Payload64(BID64bits(x))) }
-func payload128(x decimal128) decimal128 { return d128(bid.Payload128(b128(x))) }
+func payload64(x decimal64) decimal64 { return BID64frombits(bid.Payload64(BID64bits(x))) }
+func payload128(x decimal128) decimal128 {
+	if bid.NativeUBD128 {
+		return fromUBD(bid.UBDPayload128(ubdWords(x)))
+	}
+	return d128(bid.Payload128(b128(x)))
+}
 
 // NaNWithPayload returns a quiet NaN of type D whose payload is payload (the
 // setPayload operation of IEEE 754-2019 clause 9.7). The payload must be an
@@ -205,7 +229,12 @@ func NaNWithPayload[D Decimal](payload D) D {
 func naNWithPayload64(x decimal64) decimal64 {
 	return BID64frombits(bid.NaNWithPayload64(BID64bits(x)))
 }
-func naNWithPayload128(x decimal128) decimal128 { return d128(bid.NaNWithPayload128(b128(x))) }
+func naNWithPayload128(x decimal128) decimal128 {
+	if bid.NativeUBD128 {
+		return fromUBD(bid.UBDNaNWithPayload128(ubdWords(x), false))
+	}
+	return d128(bid.NaNWithPayload128(b128(x)))
+}
 
 // SignalingNaNWithPayload is NaNWithPayload, but returns a signaling NaN (the
 // setPayloadSignaling operation of IEEE 754-2019 clause 9.7). Arithmetic on
@@ -221,11 +250,22 @@ func signalingNaNWithPayload64(x decimal64) decimal64 {
 	return BID64frombits(bid.SignalingNaNWithPayload64(BID64bits(x)))
 }
 func signalingNaNWithPayload128(x decimal128) decimal128 {
+	if bid.NativeUBD128 {
+		return fromUBD(bid.UBDNaNWithPayload128(ubdWords(x), true))
+	}
 	return d128(bid.SignalingNaNWithPayload128(b128(x)))
 }
 
 // Signbit reports whether x is negative or negative zero.
-func Signbit[D Decimal](x D) bool { return *signWord(&x)&bid.SignMask64 != 0 }
+func Signbit[D Decimal](x D) bool { return *signWord(&x)&signMask(x) != 0 }
+
+// signMask returns the sign bit of D's stored sign word.
+func signMask[D Decimal](x D) uint64 {
+	if bid.NativeUBD128 && !is64(x) {
+		return bid.UBDSignHi
+	}
+	return bid.SignMask64
+}
 
 // Abs returns the absolute value of x, keeping its quantum.
 //
@@ -234,15 +274,15 @@ func Signbit[D Decimal](x D) bool { return *signWord(&x)&bid.SignMask64 != 0 }
 //	Abs(±Inf) = +Inf
 //	Abs(NaN) = NaN
 func Abs[D Decimal](x D) D {
-	*signWord(&x) &^= bid.SignMask64
+	*signWord(&x) &^= signMask(x)
 	return x
 }
 
 // Copysign returns a value with the magnitude and quantum of f and the sign
 // of sign.
 func Copysign[D Decimal](f, sign D) D {
-	p := signWord(&f)
-	*p = *p&^bid.SignMask64 | *signWord(&sign)&bid.SignMask64
+	p, m := signWord(&f), signMask(f)
+	*p = *p&^m | *signWord(&sign)&m
 	return f
 }
 
@@ -306,7 +346,12 @@ func mod64(x, y decimal64) decimal64 {
 	return BID64frombits(bid.Mod64(BID64bits(x), BID64bits(y)))
 }
 
-func mod128(x, y decimal128) decimal128 { return d128(bid.Mod128(b128(x), b128(y))) }
+func mod128(x, y decimal128) decimal128 {
+	if bid.NativeUBD128 {
+		return fromUBD(bid.UBDMod128(ubdWords(x), ubdWords(y)))
+	}
+	return d128(bid.Mod128(b128(x), b128(y)))
+}
 
 // Remainder returns the IEEE 754 floating-point remainder of x/y. The result
 // is exact whatever the magnitude of the quotient.
@@ -329,7 +374,12 @@ func remainder64(x, y decimal64) decimal64 {
 	return BID64frombits(bid.Rem64(BID64bits(x), BID64bits(y)))
 }
 
-func remainder128(x, y decimal128) decimal128 { return d128(bid.Rem128(b128(x), b128(y))) }
+func remainder128(x, y decimal128) decimal128 {
+	if bid.NativeUBD128 {
+		return fromUBD(bid.UBDRem128(ubdWords(x), ubdWords(y)))
+	}
+	return d128(bid.Rem128(b128(x), b128(y)))
+}
 
 // FMA returns x * y + z, computed with only one rounding.
 func FMA[D Decimal](x, y, z D) D {
@@ -344,6 +394,9 @@ func fma64(x, y, z decimal64) decimal64 {
 }
 
 func fma128(x, y, z decimal128) decimal128 {
+	if bid.NativeUBD128 {
+		return fromUBD(bid.UBDFMA128(ubdWords(x), ubdWords(y), ubdWords(z), bid.ToNearestEven))
+	}
 	return d128(bid.FMA128(b128(x), b128(y), b128(z), bid.ToNearestEven))
 }
 
@@ -379,8 +432,13 @@ func SameQuantum[D Decimal](x, y D) bool {
 	return sameQuantum128(decimal128(x), decimal128(y))
 }
 
-func sameQuantum64(x, y decimal64) bool   { return bid.SameQuantum64(BID64bits(x), BID64bits(y)) }
-func sameQuantum128(x, y decimal128) bool { return bid.SameQuantum128(b128(x), b128(y)) }
+func sameQuantum64(x, y decimal64) bool { return bid.SameQuantum64(BID64bits(x), BID64bits(y)) }
+func sameQuantum128(x, y decimal128) bool {
+	if bid.NativeUBD128 {
+		return bid.UBDSameQuantum128(ubdWords(x), ubdWords(y))
+	}
+	return bid.SameQuantum128(b128(x), b128(y))
+}
 
 // Quantum returns the quantum of x, the value of one unit in its last digit
 // (the quantum operation of IEEE 754-2019 clause 5.3.2): 1 × 10^e, where e is
@@ -399,8 +457,13 @@ func Quantum[D Decimal](x D) D {
 	return D(quantum128(decimal128(x)))
 }
 
-func quantum64(x decimal64) decimal64    { return BID64frombits(bid.Quantum64(BID64bits(x))) }
-func quantum128(x decimal128) decimal128 { return d128(bid.Quantum128(b128(x))) }
+func quantum64(x decimal64) decimal64 { return BID64frombits(bid.Quantum64(BID64bits(x))) }
+func quantum128(x decimal128) decimal128 {
+	if bid.NativeUBD128 {
+		return fromUBD(bid.UBDQuantum128(ubdWords(x)))
+	}
+	return d128(bid.Quantum128(b128(x)))
+}
 
 // Reduce returns x with its trailing zeros removed: the value of x with the
 // largest exponent at which it is representable. Reduce(1.50) is 1.5, and
@@ -412,8 +475,13 @@ func Reduce[D Decimal](x D) D {
 	return D(reduce128(decimal128(x)))
 }
 
-func reduce64(x decimal64) decimal64    { return BID64frombits(bid.Reduce64(BID64bits(x))) }
-func reduce128(x decimal128) decimal128 { return d128(bid.Reduce128(b128(x))) }
+func reduce64(x decimal64) decimal64 { return BID64frombits(bid.Reduce64(BID64bits(x))) }
+func reduce128(x decimal128) decimal128 {
+	if bid.NativeUBD128 {
+		return fromUBD(bid.UBDReduce128(ubdWords(x)))
+	}
+	return d128(bid.Reduce128(b128(x)))
+}
 
 // Concrete entry points keep the generic dispatch small enough to inline.
 // ARM64 and AMD64 recognize these calls and lower bounded BID cases directly;
@@ -422,12 +490,18 @@ func integral64(x decimal64, mode bid.Mode) decimal64 {
 	return BID64frombits(bid.RoundToIntegral64(BID64bits(x), mode))
 }
 func integral128(x decimal128, mode bid.Mode) decimal128 {
+	if bid.NativeUBD128 {
+		return fromUBD(bid.UBDRoundToIntegral128(ubdWords(x), mode))
+	}
 	return d128(bid.RoundToIntegral128(b128(x), mode))
 }
 func quantize64(x, y decimal64, mode RoundingMode) decimal64 {
 	return BID64frombits(bid.Quantize64(BID64bits(x), BID64bits(y), mode.mode()))
 }
 func quantize128(x, y decimal128, mode RoundingMode) decimal128 {
+	if bid.NativeUBD128 {
+		return fromUBD(bid.UBDQuantizeMode128(ubdWords(x), ubdWords(y), mode.mode()))
+	}
 	return d128(bid.Quantize128(b128(x), b128(y), mode.mode()))
 }
 
@@ -443,6 +517,9 @@ func quoQuantize64(x, y, q decimal64, mode RoundingMode) decimal64 {
 	return BID64frombits(bid.QuoQuantize64(BID64bits(x), BID64bits(y), BID64bits(q), mode.mode()))
 }
 func quoQuantize128(x, y, q decimal128, mode RoundingMode) decimal128 {
+	if bid.NativeUBD128 {
+		return fromUBD(bid.UBDQuoQuantize128(ubdWords(x), ubdWords(y), ubdWords(q), mode.mode()))
+	}
 	return d128(bid.QuoQuantize128(b128(x), b128(y), b128(q), mode.mode()))
 }
 
@@ -463,6 +540,16 @@ func decompose64(x decimal64) (neg bool, hi, lo uint64, exp int, ok bool) {
 	return neg, 0, c, exp, true
 }
 func decompose128(x decimal128) (neg bool, hi, lo uint64, exp int, ok bool) {
+	if bid.NativeUBD128 {
+		// UBD: the fields of the stored words, with no conversion. Every
+		// special has the special tag; a well-formed finite value is
+		// canonical.
+		h, l := Bits128(x)
+		if h>>60 == bid.UBDSpecialTag {
+			return false, 0, 0, 0, false
+		}
+		return h&bid.UBDSignHi != 0, h & bid.UBDCoeffMaskHi, l, int(int64(h) >> bid.UBDExpShift), true
+	}
 	kind, neg, c, exp := bid.Unpack128(b128(x))
 	if kind != bid.KindFinite {
 		return false, 0, 0, 0, false
@@ -485,6 +572,11 @@ func compose64(neg bool, hi, lo uint64, exp int) decimal64 {
 	return BID64frombits(b)
 }
 func compose128(neg bool, hi, lo uint64, exp int) decimal128 {
+	if bid.NativeUBD128 {
+		// UBD: rounded straight into the stored words.
+		r, _ := bid.UBDRound128(neg, bid.Uint128{Hi: hi, Lo: lo}, exp, false, bid.ToNearestEven)
+		return FromBits128(r.Hi, r.Lo)
+	}
 	b, _ := bid.Round128(neg, bid.Uint128{Hi: hi, Lo: lo}, exp, false, bid.ToNearestEven)
 	return d128(b)
 }

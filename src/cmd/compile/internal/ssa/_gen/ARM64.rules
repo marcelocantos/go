@@ -1056,6 +1056,11 @@
 (ADCSflags x y (Select1 <types.TypeFlags> (ADDSconstflags [-1] (MOVDconst [0])))) => (ADDSflags x y)
 (SBCSflags x y (Select1 <types.TypeFlags> (NEGSflags (NEG <typ.UInt64> (NGCzerocarry <typ.UInt64> bo))))) => (SBCSflags x y bo)
 (SBCSflags x y (Select1 <types.TypeFlags> (NEGSflags (MOVDconst [0])))) => (SUBSflags x y)
+// The borrow of a subtraction as a bool: NGCzerocarry is nonzero exactly
+// when the carry is clear (a borrow), the unsigned-lower condition, so test
+// the flags themselves rather than the borrow made an integer.
+(NotEqual (CMNconst [0] (NGCzerocarry <typ.UInt64> f))) => (LessThanU f)
+(Equal (CMNconst [0] (NGCzerocarry <typ.UInt64> f))) => (GreaterEqualU f)
 
 // mul by constant
 (MUL _ (MOVDconst [0])) => (MOVDconst [0])

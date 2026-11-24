@@ -13,9 +13,10 @@ import (
 
 // TestWordPathsAgreeWithCompiler runs the kernel's word fast paths and the
 // compiler's inline lowering of + - * and the comparisons (ssagen's
-// bidAddSub128, bidMul128 and bidCompare) on the operands at their bounds:
-// word coefficients at gaps around both the compiler's add bound (14) and
-// the kernel's (19), at both ends of the exponent range. The two were
+// ubdAddNarrow, ubdMulFast and ubdCompareNarrow at the default ubdlevel,
+// and bidCompare for decimal64) on the operands at their bounds: word
+// coefficients at gaps around both the add bound of the compiler's level 3
+// (14) and the kernel's (19), at both ends of the exponent range. The two were
 // written to the same proofs; this checks that they agree bit for bit,
 // whichever path each takes. The compiled decimal64 operators call the
 // kernel, so they are checked too, against it.

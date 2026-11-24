@@ -239,7 +239,7 @@ var operatorTests = []struct {
 	{"Neg128", dec128, func(g *gen) opCase {
 		x := g.dec()
 		want := x
-		if bid.NativeDPD {
+		if bid.NativeDPD || bid.NativeUBD128 {
 			want = canonical128(want)
 		}
 		return opCase{display(dec128, x), hex(b128(opNeg128(d128(x)))), hex(bid.Neg128(want))}

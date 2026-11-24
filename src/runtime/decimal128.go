@@ -8,7 +8,7 @@
 // the comparisons, are in decimal128_call.go for the targets without those
 // paths. On amd64 and arm64 the compiler calls internal/bid for the
 // operands its fast paths refuse, and for division, with no function here
-// between them (cmd/compile/internal/ssagen.bidKernelOp).
+// between them (cmd/compile/internal/ssagen.ubdKernelOp).
 
 package runtime
 
@@ -42,6 +42,14 @@ func d128load(p unsafe.Pointer) bid.Uint128 {
 	return from128(x[1]^bid.NativeZero128Hi, x[0])
 }
 
+// d128words returns the stored words of the decimal128 at p as the UBD
+// kernel takes them, where decimal128 is stored as UBD (bid.NativeUBD128),
+// which XORs nothing.
+func d128words(p unsafe.Pointer) bid.UBD128 {
+	x := (*[2]uint64)(p)
+	return bid.UBD128{Lo: x[0], Hi: x[1]}
+}
+
 // from128 and to128 convert between the native encoding, as its halves, and
 // the BID encoding.
 func from128(hi, lo uint64) bid.Uint128 { return bid.FromNative128(bid.Uint128{Hi: hi, Lo: lo}) }
@@ -56,5 +64,9 @@ func to128(x bid.Uint128) (hi, lo uint64) {
 // write, which keeps the quantum. A float64 prints its %v form too.
 func printdecimal128(x decimal128) {
 	var buf [bid.MaxLen128]byte
+	if bid.NativeUBD128 {
+		gwrite(bid.UBDAppend128(buf[:0], d128words(unsafe.Pointer(&x))))
+		return
+	}
 	gwrite(bid.Append128(buf[:0], d128load(unsafe.Pointer(&x))))
 }

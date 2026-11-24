@@ -21,10 +21,16 @@ const NativeDPD = NativeEncoding == EncodingDPD
 
 // NativeZero64 and NativeZero128Hi are the native encodings of 0E+0, the
 // masks that make all bits clear the zero value in memory.
+//
+// decimal128 is stored in the UBD layout (ubd.go), whose all-bits-clear
+// pattern is already +0E+0, so its mask is zero.
 const (
-	NativeZero64    = Zero64
-	NativeZero128Hi = Zero128Hi
+	NativeZero64           = Zero64
+	NativeZero128Hi uint64 = 0
 )
+
+// NativeUBD128 reports whether the native decimal128 encoding is UBD.
+const NativeUBD128 = true
 
 // FromNative64 returns the BID encoding of the native encoding x.
 func FromNative64(x uint64) uint64 { return x }
@@ -34,7 +40,7 @@ func FromNative64(x uint64) uint64 { return x }
 func ToNative64(x uint64) uint64 { return x }
 
 // FromNative128 is FromNative64 for decimal128.
-func FromNative128(x Uint128) Uint128 { return x }
+func FromNative128(x Uint128) Uint128 { return BIDFromUBD128(x) }
 
 // ToNative128 is ToNative64 for decimal128.
-func ToNative128(x Uint128) Uint128 { return x }
+func ToNative128(x Uint128) Uint128 { return UBDFromBID128(x) }

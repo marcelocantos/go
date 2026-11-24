@@ -47,6 +47,10 @@ func BID64frombits(b uint64) decimal64 { return impl.BID64frombits(b) }
 func BID128bits(d decimal128) (hi, lo uint64) { return impl.BID128bits(d) }
 
 // BID128frombits is BID64frombits for decimal128, with the high word first.
+// Where decimal128 is stored as UBD (every target but ppc64le), a
+// non-canonical encoding is stored as the value IEEE 754-2019 clause 3.5.2
+// item c.2 gives it, a significand above 10^34 - 1 (10^33 - 1 as a NaN's
+// payload) being zero, so BID128bits then returns the canonical encoding.
 func BID128frombits(hi, lo uint64) decimal128 { return impl.BID128frombits(hi, lo) }
 
 // DPD64bits returns the IEEE 754 DPD encoding of d, without the zero-value XOR.
@@ -85,15 +89,34 @@ func Native64frombits(b uint64) decimal64 { return *(*decimal64)(unsafe.Pointer(
 // and low uint64 words, including the zero-value XOR. See [Native64bits];
 // [NativeRepresentation] names what the words mean. The word order of the
 // result is independent of the target's byte order.
+//
+// In the UBD experiment (internal/bid/ubd.go) a decimal128 is stored as
+// UBD on every target but ppc64le, with no zero-value XOR, and
+// [NativeRepresentation] does not describe it.
 func Native128bits(d decimal128) (hi, lo uint64) {
 	p := (*[2]uint64)(unsafe.Pointer(&d)) // decimal128 is stored as [lo, hi]
 	return p[1], p[0]
 }
 
 // Native128frombits returns the decimal128 with the exact stored words hi
-// and lo. Every bit pattern is preserved without encoding conversion.
-// Native128bits(Native128frombits(hi, lo)) returns (hi, lo) for every pair.
+// and lo, without encoding conversion. Where decimal128 is stored as UBD,
+// a pattern that is not well-formed (canonical) UBD, such as a finite
+// exponent outside the format, a coefficient above 10^34 - 1 or a NaN
+// payload of 10^33 or more (see internal/bid.UBDWellFormed128), is
+// stored as a positive quiet NaN instead: those patterns have no meaning,
+// and the operators' inline paths assume they never occur. Every other
+// pattern is preserved, and Native128bits(Native128frombits(hi, lo))
+// returns (hi, lo).
+//
+// This function should be removed. UBD is an internal representation that
+// is never read from an external source: values enter it only through
+// conversions, which produce well-formed patterns, and this function is the
+// one way to write arbitrary words into a decimal128 without unsafe. It has
+// no purpose that BID128frombits does not serve.
 func Native128frombits(hi, lo uint64) decimal128 {
+	if bid.NativeUBD128 && !bid.UBDWellFormed128(bid.Uint128{Hi: hi, Lo: lo}) {
+		hi, lo = bid.UBDNaNHi, 0
+	}
 	var d decimal128
 	p := (*[2]uint64)(unsafe.Pointer(&d))
 	p[0], p[1] = lo, hi

@@ -69,9 +69,9 @@ func cCmpFinite128(xneg bool, xc coef128, xe int, yneg bool, yc coef128, ye int)
 	dLo, dHi := (xc.Lo^yc.Lo)&uint64(m), (xc.Hi^yc.Hi)&uint64(m)
 	aLo, aHi := xc.Lo^dLo, xc.Hi^dHi
 	bLo, bHi := yc.Lo^dLo, yc.Hi^dHi
-	g := (gap ^ m) - m
+	g := uint((gap ^ m) - m) // unsigned: no bounds checks below, and no frame
 	var l00, w1, over uint64
-	if g < len(pow10tab64) {
+	if g < uint(len(pow10tab64)) {
 		// The power is a word, as it is for values of one kind, whose
 		// exponents are near: half the products, and how far apart the
 		// exponents are goes with the data's kind, not its digits.
@@ -82,7 +82,7 @@ func cCmpFinite128(xneg bool, xc coef128, xe int, yneg bool, yc coef128, ye int)
 		w1, c1 = bits.Add64(h00, l10, 0)
 		over = h10 | c1
 	} else {
-		p := &pow10tab128[min(g, len(pow10tab128)-1)]
+		p := &pow10tab128[min(g, uint(len(pow10tab128)-1))]
 		var h00, h01, l01, h10, l10, h11, l11, c1, c2 uint64
 		h00, l00 = bits.Mul64(aLo, p.Lo)
 		h01, l01 = bits.Mul64(aLo, p.Hi)
@@ -155,11 +155,13 @@ func cDigits128(c coef128) int {
 	// borrow of c - 10^t: no branch, which for coefficients of one length
 	// would be taken about half the time. The branch in u128Len, on the
 	// magnitude, stays: operands of one kind take it one way.
-	t := u128Len(c) * 1233 >> 12
-	p := &pow10tab128[t]
+	// t is at most 128 × 1233 >> 12 = 38; as an unsigned index bounded by
+	// min it needs no bounds check, whose panic gave the function a frame.
+	t := uint(u128Len(c)) * 1233 >> 12
+	p := &pow10tab128[min(t, uint(len(pow10tab128)-1))]
 	_, b := bits.Sub64(c.Lo, p.Lo, 0)
 	_, b = bits.Sub64(c.Hi, p.Hi, b)
-	return t + 1 - int(b)
+	return int(t) + 1 - int(b)
 }
 
 // cMulPow10128 returns c × 10^k. Precondition: 0 <= k <= 38 and the product

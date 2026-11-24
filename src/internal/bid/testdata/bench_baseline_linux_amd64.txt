@@ -1,5 +1,12 @@
 # Benchmark baseline of internal/bid on linux/amd64 (targets T1.6.4 and T13).
 #
+# STALE (2026-11-23): four rows added on branch ubd128 after this run,
+# ShortForm/128/short, PutLongFixed/128/long, IsShortFixed/128/mixed and
+# FixedForm/128/short, have no sample here, so TestBenchBaselineShape
+# fails on linux/amd64 until the bench job below is run again on a tree
+# that has them. The darwin/arm64 baseline was retaken (and extended) for
+# them; this one was not, for want of a linux/amd64 run.
+#
 # Taken on a GitHub Actions hosted runner (AMD EPYC 7763, 4 vCPUs) by the
 # bench job of go-decimal-proposal's build.yml, run 43859078021 on
 # 2026-11-16, at c4cd3b35f6 (branch design-review-fixes), with

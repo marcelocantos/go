@@ -7,6 +7,7 @@
 package decimal_test
 
 import (
+	"internal/bid"
 	"math/decimal"
 	"math/rand/v2"
 	"testing"
@@ -37,12 +38,17 @@ func TestNativeBits(t *testing.T) {
 		}
 		lo := r.Uint64()
 		q := decimal.Native128frombits(b, lo)
-		words := *(*[2]uint64)(unsafe.Pointer(&q))
-		if words != [2]uint64{lo, b} {
-			t.Fatalf("decimal128 memory %#x, want [lo=%#x hi=%#x]", words, lo, b)
+		// A pattern that is not well-formed UBD is stored as a quiet NaN.
+		wantHi, wantLo := b, lo
+		if bid.NativeUBD128 && !bid.UBDWellFormed128(bid.Uint128{Hi: b, Lo: lo}) {
+			wantHi, wantLo = bid.UBDNaNHi, 0
 		}
-		if hi2, lo2 := decimal.Native128bits(q); hi2 != b || lo2 != lo {
-			t.Fatalf("decimal128 bits round trip (%#x,%#x), want (%#x,%#x)", hi2, lo2, b, lo)
+		words := *(*[2]uint64)(unsafe.Pointer(&q))
+		if words != [2]uint64{wantLo, wantHi} {
+			t.Fatalf("decimal128 memory %#x, want [lo=%#x hi=%#x]", words, wantLo, wantHi)
+		}
+		if hi2, lo2 := decimal.Native128bits(q); hi2 != wantHi || lo2 != wantLo {
+			t.Fatalf("decimal128 bits round trip (%#x,%#x), want (%#x,%#x)", hi2, lo2, wantHi, wantLo)
 		}
 	}
 }
@@ -58,12 +64,12 @@ func TestNativeBitsFixed(t *testing.T) {
 	cases := []struct {
 		d64  decimal64
 		d128 decimal128
-		bid  want // IEEE BID XORed with the BID encoding of 0E+0
+		bid  want // IEEE BID XORed with the BID encoding of 0E+0; decimal128 UBD (experiment)
 		dpd  want // IEEE DPD XORed with the DPD encoding of 0E+0
 	}{
 		{1, 1, want{0x1, 0, 0x1}, want{0x1, 0, 0x1}},
-		{-1.5, -1.5, want{0x806000000000000f, 0x807e000000000000, 0xf}, want{0x800c000000000015, 0x800fc00000000000, 0x15}},
-		{19.99, 19.99, want{0x00400000000007cf, 0x007c000000000000, 0x7cf}, want{0x00080000000004ff, 0x000f800000000000, 0x4ff}},
+		{-1.5, -1.5, want{0x806000000000000f, 0xfffe000000000000, 0xf}, want{0x800c000000000015, 0x800fc00000000000, 0x15}},
+		{19.99, 19.99, want{0x00400000000007cf, 0xfff8000000000000, 0x7cf}, want{0x00080000000004ff, 0x000f800000000000, 0x4ff}},
 	}
 	for _, c := range cases {
 		w := c.bid

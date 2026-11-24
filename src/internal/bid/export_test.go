@@ -149,6 +149,45 @@ var (
 	SubSlow64          = subSlow64
 )
 
+// The UBD kernel entries the compiler calls (ubd.go), with the operands and
+// results as Uint128, as the conversions take and give them.
+func ubdIn(x Uint128) UBD128  { return UBD128{Lo: x.Lo, Hi: x.Hi} }
+func ubdOut(r UBD128) Uint128 { return Uint128{Hi: r.Hi, Lo: r.Lo} }
+
+func UBDAddTTE128(x, y Uint128) Uint128 { return ubdOut(ubdAddTTE128(ubdIn(x), ubdIn(y))) }
+func UBDSubTTE128(x, y Uint128) Uint128 { return ubdOut(ubdSubTTE128(ubdIn(x), ubdIn(y))) }
+func UBDMulTTE128(x, y Uint128) Uint128 { return ubdOut(ubdMulTTE128(ubdIn(x), ubdIn(y))) }
+func UBDDivTTE128(x, y Uint128) Uint128 { return ubdOut(ubdDivTTE128(ubdIn(x), ubdIn(y))) }
+func UBDQuantizeTTE128(x, y Uint128) Uint128 {
+	return ubdOut(ubdQuantizeTTE128(ubdIn(x), ubdIn(y)))
+}
+func UBDRoundToIntegralTTE128(x Uint128) Uint128 { return ubdOut(ubdRoundToIntegralTTE128(ubdIn(x))) }
+
+func UBDAddRnd128(x, y Uint128, m Mode) Uint128 { return ubdOut(ubdAddRnd128(ubdIn(x), ubdIn(y), m)) }
+func UBDSubRnd128(x, y Uint128, m Mode) Uint128 { return ubdOut(ubdSubRnd128(ubdIn(x), ubdIn(y), m)) }
+func UBDMulRnd128(x, y Uint128, m Mode) Uint128 { return ubdOut(ubdMulRnd128(ubdIn(x), ubdIn(y), m)) }
+func UBDDivRnd128(x, y Uint128, m Mode) Uint128 { return ubdOut(ubdDivRnd128(ubdIn(x), ubdIn(y), m)) }
+func UBDQuantizeRnd128(x, y Uint128, m Mode) Uint128 {
+	return ubdOut(ubdQuantizeRnd128(ubdIn(x), ubdIn(y), m))
+}
+func UBDRoundToIntegralRnd128(x Uint128, m Mode) Uint128 {
+	return ubdOut(ubdRoundToIntegralRnd128(ubdIn(x), m))
+}
+
+func UBDCompare128(x, y Uint128) (c int, ok bool) { return ubdCompare128(ubdIn(x), ubdIn(y)) }
+
+func UBDMin128(x, y Uint128) Uint128    { return ubdOut(ubdMin128(ubdIn(x), ubdIn(y))) }
+func UBDMax128(x, y Uint128) Uint128    { return ubdOut(ubdMax128(ubdIn(x), ubdIn(y))) }
+func UBDInt64From128(x Uint128) int64   { return ubdInt64From128(ubdIn(x)) }
+func UBDUint64From128(x Uint128) uint64 { return ubdUint64From128(ubdIn(x)) }
+
+// UBDPredicates128 returns the predicate entries' results on x and y: ==,
+// <, <=, >, >=.
+func UBDPredicates128(x, y Uint128) [5]bool {
+	ux, uy := ubdIn(x), ubdIn(y)
+	return [5]bool{ubdEqual128(ux, uy), ubdLess128(ux, uy), ubdLessEqual128(ux, uy), ubdGreater128(ux, uy), ubdGreaterEqual128(ux, uy)}
+}
+
 // Recip10tab64 and Recip10tab128 return entry k of the reciprocal tables.
 func Recip10tab64(k int) (m uint64, s uint) {
 	return recip10tab64[k].m, uint(recip10tab64[k].s)
@@ -248,3 +287,46 @@ func Div64ScaleEntry(n int) (p uint64, s int) {
 	e := div64Scale[n]
 	return e.p, e.s
 }
+
+// The parts PutShort128 and PutLong128 take, decoded from BID.
+func ShortParts128(x Uint128) (sign, frac uint) { return shortParts128(x) }
+func LongParts128(x Uint128) (sign uint, exp int, c Uint128) {
+	c, _ = longCoeff128(x)
+	sign, exp = longParts128(x)
+	return sign, exp, c
+}
+
+// The kernel entries BenchmarkUBDKernel times, as function values: the UBD
+// entries the compiler calls at -d=ubdlevel=1 and the BID entries the XOR-BID
+// compiler calls for the same operations. A function value is called as a
+// call site calls the kernel, never inlined, with no adapter between.
+var (
+	UBDKernelAdd    = ubdAddTTE128
+	UBDKernelSub    = ubdSubTTE128
+	UBDKernelMul    = ubdMulTTE128
+	UBDKernelDiv    = ubdDivTTE128
+	UBDKernelQnt    = ubdQuantizeTTE128
+	UBDKernelQntR   = ubdQuantizeRnd128
+	UBDKernelLess   = ubdLess128
+	UBDKernelEqual  = ubdEqual128
+	UBDKernelCmp    = ubdCompare128
+	UBDKernelMin    = ubdMin128
+	UBDKernelMax    = ubdMax128
+	UBDKernelRTI    = ubdRoundToIntegralTTE128
+	UBDKernelInt64  = ubdInt64From128
+	UBDKernelUint64 = ubdUint64From128
+
+	BIDKernelAdd = addSlow128
+	BIDKernelSub = subSlow128
+	BIDKernelMul = mulSlow128
+	BIDKernelDiv = div128
+	BIDKernelQnt = quantizeSlow128
+	BIDKernelCmp = quietCmpSlow128
+	BIDKernelMin = Min128
+	BIDKernelMax = Max128
+	BIDKernelRTI = roundToIntegral128
+	// The XOR-BID compiler converts to int64 through Int64From128 with
+	// TowardZero, which also returns a status.
+	BIDKernelInt64  = Int64From128
+	BIDKernelUint64 = Uint64From128
+)

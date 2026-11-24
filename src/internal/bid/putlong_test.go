@@ -8,6 +8,7 @@ import (
 	"internal/bid"
 	"math/big"
 	"math/rand/v2"
+	"strings"
 	"testing"
 )
 
@@ -70,7 +71,8 @@ func TestLong128(t *testing.T) {
 		for i := range buf {
 			buf[i] = '#'
 		}
-		n := bid.PutLong128(&buf, x)
+		sign, exp, c := bid.LongParts128(x)
+		n := bid.PutLong128(&buf, sign, exp, c)
 		if n < 0 || n > len(buf) || string(buf[:n]) != ref {
 			t.Fatalf("PutLong128(%s) = %q (n = %d), want %q", hex128(x), buf[:max(0, min(n, len(buf)))], n, ref)
 		}
@@ -79,6 +81,7 @@ func TestLong128(t *testing.T) {
 				t.Fatalf("PutLong128(%s) wrote byte %d, after its %d-byte result %q", hex128(x), i, n, ref)
 			}
 		}
+		checkFixed(t, x, v)
 		// Append128 with a prefix, at each amount of spare capacity around
 		// what the long path asks for, and the bytes after the result in use.
 		for _, room := range []int{0, len(ref), bid.LongLen128 - 1, bid.LongLen128, bid.LongLen128 + 9} {
@@ -228,4 +231,42 @@ func TestLong64(t *testing.T) {
 		}
 	}
 	t.Logf("%d encodings", count)
+}
+
+// checkFixed checks PutLongFixed128 on x, a long value v, against the fixed
+// form built from its digits: plain notation where the exponent is zero or
+// negative and the leading digit's exponent is -4 or more, and nothing
+// written otherwise.
+func checkFixed(t *testing.T, x bits, v value) {
+	t.Helper()
+	digits := v.coeff.String()
+	n := len(digits)
+	ref := ""
+	if v.exp <= 0 && v.exp+n-1 >= -4 {
+		switch p := n + v.exp; {
+		case v.exp == 0:
+			ref = digits
+		case p > 0:
+			ref = digits[:p] + "." + digits[p:]
+		default:
+			ref = "0." + strings.Repeat("0", -p) + digits
+		}
+		if v.neg {
+			ref = "-" + ref
+		}
+	}
+	var buf [bid.LongLen128]byte
+	for i := range buf {
+		buf[i] = '#'
+	}
+	sign, exp, c := bid.LongParts128(x)
+	got := bid.PutLongFixed128(&buf, sign, exp, c)
+	if got < 0 || got > len(buf) || string(buf[:got]) != ref {
+		t.Fatalf("PutLongFixed128(%s) = %q (n = %d), want %q", hex128(x), buf[:max(0, min(got, len(buf)))], got, ref)
+	}
+	for i := got; i < len(buf); i++ {
+		if buf[i] != '#' {
+			t.Fatalf("PutLongFixed128(%s) wrote byte %d, after its %d-byte result %q", hex128(x), i, got, ref)
+		}
+	}
 }

@@ -26,8 +26,18 @@ func main() {
 	if decimal.Native64bits(decimal.Native64frombits(pattern)) != pattern {
 		panic("raw bits changed")
 	}
-	if hi, lo := decimal.Native128bits(decimal.Native128frombits(pattern, ^pattern)); hi != pattern || lo != ^pattern {
+	// decimal128 words that are well-formed in every memory form: a finite
+	// UBD value (exponent 0x2A, coefficient high bits 0x123456789), and any
+	// pattern in XOR-BID and DPD.
+	const hi128 = uint64(0x2A<<50 | 0x123456789)
+	if hi, lo := decimal.Native128bits(decimal.Native128frombits(hi128, ^pattern)); hi != hi128 || lo != ^pattern {
 		panic("raw words changed")
+	}
+	// Where decimal128 is stored as UBD (every target but ppc64le), a
+	// pattern that is not well-formed UBD is stored as a quiet NaN: this
+	// one has the special tag and qExp bits that must be clear.
+	if runtime.GOARCH != "ppc64le" && !decimal.IsNaN(decimal.Native128frombits(pattern, ^pattern)) {
+		panic("malformed UBD words not stored as NaN")
 	}
 	want := decimal.BIDXOR
 	if runtime.GOARCH == "ppc64le" {

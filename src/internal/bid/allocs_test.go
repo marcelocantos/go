@@ -78,7 +78,10 @@ func exportedAPI(t testing.TB) []string {
 	var names []string
 	fset := token.NewFileSet()
 	for _, name := range files {
-		if strings.HasSuffix(name, "_test.go") {
+		// The ubd files are the experimental UBD memory form's kernel,
+		// conversions and character form, not part of the decimal API
+		// these tables cover.
+		if strings.HasSuffix(name, "_test.go") || strings.HasPrefix(name, "ubd") {
 			continue
 		}
 		src, err := os.ReadFile(name)
@@ -621,14 +624,36 @@ func allocCases() map[string]func() {
 		"Float32From128": eachMode(all128, func(x bid.Uint128, m bid.Mode) { asF32 += bid.Float32From128(x, m) }),
 
 		// string.go. dst has the spare capacity the contract requires.
-		"Append64":     each(all64, func(x uint64) { asBuf = bid.Append64(buf[:0], x) }),
-		"Append128":    each(all128, func(x bid.Uint128) { asBuf = bid.Append128(buf[:0], x) }),
-		"AppendSci64":  each(all64, func(x uint64) { asBuf = bid.AppendSci64(buf[:0], x) }),
-		"AppendSci128": each(all128, func(x bid.Uint128) { asBuf = bid.AppendSci128(buf[:0], x) }),
-		"IsShort128":   each(all128, func(x bid.Uint128) { asBool = bid.IsShort128(x) }),
-		"PutShort128":  each(shorts, func(x bid.Uint128) { asInt = bid.PutShort128(&short128, x) }),
-		"IsLong128":    each(all128, func(x bid.Uint128) { asBool = bid.IsLong128(x) }),
-		"PutLong128":   each(longs, func(x bid.Uint128) { asInt = bid.PutLong128(&long128, x) }),
+		"Append64":        each(all64, func(x uint64) { asBuf = bid.Append64(buf[:0], x) }),
+		"Append128":       each(all128, func(x bid.Uint128) { asBuf = bid.Append128(buf[:0], x) }),
+		"AppendSci64":     each(all64, func(x uint64) { asBuf = bid.AppendSci64(buf[:0], x) }),
+		"AppendSci128":    each(all128, func(x bid.Uint128) { asBuf = bid.AppendSci128(buf[:0], x) }),
+		"IsShort128":      each(all128, func(x bid.Uint128) { asBool = bid.IsShort128(x) }),
+		"IsShortFixed128": each(all128, func(x bid.Uint128) { asBool = bid.IsShortFixed128(x) }),
+		"FixedForm128": func() {
+			for frac := uint(8); frac <= 13; frac++ {
+				h, t, n := bid.FixedForm128(frac, 12345678)
+				asInt = int(h^t) + int(n)
+			}
+		},
+		"PutShort128": each(shorts, func(x bid.Uint128) {
+			sign, frac := bid.ShortParts128(x)
+			asInt = bid.PutShort128(&short128, sign, frac, x.Lo)
+		}),
+		"ShortForm128": each(shorts, func(x bid.Uint128) {
+			_, frac := bid.ShortParts128(x)
+			h, t, n := bid.ShortForm128(frac, x.Lo)
+			asInt = int(h^t) + int(n)
+		}),
+		"IsLong128": each(all128, func(x bid.Uint128) { asBool = bid.IsLong128(x) }),
+		"PutLong128": each(longs, func(x bid.Uint128) {
+			sign, exp, c := bid.LongParts128(x)
+			asInt = bid.PutLong128(&long128, sign, exp, c)
+		}),
+		"PutLongFixed128": each(longs, func(x bid.Uint128) {
+			sign, exp, c := bid.LongParts128(x)
+			asInt = bid.PutLongFixed128(&long128, sign, exp, c)
+		}),
 		"UnpackDigits64": each(all64, func(x uint64) {
 			asKind, asBool, asInt, _ = bid.UnpackDigits64(&digs64, x)
 		}),

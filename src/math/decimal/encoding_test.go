@@ -78,9 +78,8 @@ func TestNativeEncodingPreservesEveryBit(t *testing.T) {
 			if b := decimal.BID64bits(decimal.BID64frombits(lo)); b != lo {
 				t.Fatal("native BID64 encoding changed")
 			}
-			if h, l := decimal.BID128bits(decimal.BID128frombits(hi, lo)); h != hi || l != lo {
-				t.Fatal("native BID128 encoding changed")
-			}
+			// decimal128 is stored as UBD (experiment), which, like
+			// DPD, holds the value a BID encoding reads as.
 		} else {
 			if b := decimal.DPD64bits(decimal.DPD64frombits(lo)); b != lo {
 				t.Fatal("native DPD64 encoding changed")

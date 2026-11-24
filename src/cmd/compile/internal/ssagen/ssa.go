@@ -3028,6 +3028,17 @@ func (s *state) conv(n ir.Node, v *ssa.Value, ft, tt *types.Type) *ssa.Value {
 				return r
 			}
 		}
+		if bidKernelDirect() {
+			if r := s.ubdWidthConv(v, fk, tk, rt); r != nil {
+				return r
+			}
+			if r := s.ubdIntConv(v, fk, tk, rt); r != nil {
+				if tt.IsInteger() && tt.Size() < 8 {
+					r = s.newValue1(decTrunc[tt.Size()], tt, r)
+				}
+				return r
+			}
+		}
 		fn, ok := softDecimalConvs[twoTypes{fk, tk}]
 		if !ok {
 			s.Fatalf("unhandled decimal conversion %v -> %v", ft, tt)
@@ -3386,7 +3397,9 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			}
 		}
 
-		if n.X.Type().IsDecimal() && !ir.DecimalDPD() {
+		// On a UBD target, the comparisons with zero are inline from
+		// ubdLevel 2, with no call (bidIsZero, ubdCompareZeroOrdered).
+		if n.X.Type().IsDecimal() && !ir.DecimalDPD() && (!ubdLowered(a) || ubdLevel() >= 2) {
 			// Inspect already evaluated SSA values, before OGT/OGE are
 			// reversed. This also recognizes simple locals initialized to
 			// zero, at any quantum, without assuming anything about loads.
@@ -3396,6 +3409,10 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			if bidConstZero(b) {
 				return s.bidCompareZero(n.Op(), a, false)
 			}
+		}
+
+		if n.X.Type().IsDecimal() && ubdLowered(a) {
+			return s.ubdComparePred(n.Op(), a, b)
 		}
 
 		// Convert OGE and OGT into OLE and OLT.
@@ -5007,7 +5024,7 @@ func softdecimalInit() {
 // operands, which have a common type. Its result has type rt.
 func (s *state) softDecimalOp(op ir.Op, rt *types.Type, args ...*ssa.Value) *ssa.Value {
 	if bidKernelDirect() && args[0].Type.Kind() == types.TDECIMAL128 {
-		if res := s.bidKernelOp(op, rt, args[0], args[1]); res != nil {
+		if res := s.ubdKernelOp(op, rt, args[0], args[1]); res != nil {
 			return res
 		}
 	}

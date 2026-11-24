@@ -13,6 +13,8 @@ const NativeEncoding = EncodingDPD
 
 const NativeDPD = NativeEncoding == EncodingDPD
 
+const NativeUBD128 = false
+
 const (
 	NativeZero64    = DPDZero64
 	NativeZero128Hi = DPDZero128Hi

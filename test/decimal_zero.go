@@ -169,6 +169,10 @@ func main() {
 		want64, wantHi, wantLo := c.b, c.b, c.b
 		if dpd {
 			want64, wantHi, wantLo = c.canon64, c.canonHi, c.canonLo
+		} else {
+			// decimal128 is stored as UBD, which, like DPD, holds the
+			// value a BID encoding reads as, not its bits.
+			wantHi, wantLo = c.canonHi, c.canonLo
 		}
 		if got := decimal.BID64bits(decimal.BID64frombits(c.b)); got != want64 {
 			panic(fmt.Sprintf("decimal64 round trip %#x got %#x, want %#x", c.b, got, want64))

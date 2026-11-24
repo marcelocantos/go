@@ -130,18 +130,21 @@ var dpdArith = map[opAndType]ssaop.Op{
 // result type rt: on a DPD target the hardware's instructions, elsewhere
 // integer fast paths with runtime calls for the general case.
 func (s *state) decimalOp(op ir.Op, rt *types.Type, args ...*ssa.Value) *ssa.Value {
+	if ubdLowered(args[0]) {
+		if ubdLevel() >= 2 && (op == ir.OADD || op == ir.OSUB) {
+			return s.ubdAddNarrow(op, rt, args[0], args[1])
+		}
+		if ubdLevel() >= 2 && op == ir.OMUL {
+			return s.ubdMulFast(rt, args[0], args[1])
+		}
+		if ubdLevel3() && (op == ir.OMIN || op == ir.OMAX) {
+			return s.ubdMinMax3(op, rt, args[0], args[1])
+		}
+		return s.softDecimalOp(op, rt, args...)
+	}
 	if !ir.DecimalDPD() {
 		if rt.IsBoolean() && (Arch.LinkArch.Family == sys.ARM64 || Arch.LinkArch.Family == sys.AMD64) {
 			return s.bidCompare(op, args[0], args[1])
-		}
-		if rt.Kind() == types.TDECIMAL128 &&
-			(Arch.LinkArch.Family == sys.ARM64 || Arch.LinkArch.Family == sys.AMD64) {
-			switch op {
-			case ir.OADD, ir.OSUB:
-				return s.bidAddSub128(op, rt, args[0], args[1])
-			case ir.OMUL:
-				return s.bidMul128(rt, args[0], args[1])
-			}
 		}
 		if rt.Kind() == types.TDECIMAL64 && bidKernelDirect() {
 			switch op {
@@ -241,7 +244,7 @@ func (s *state) dpdExponent(w *ssa.Value, wide bool) *ssa.Value {
 // redundant declet survives only from unsafe memory, so the result is the
 // operand's encoding as it is.
 func (s *state) dpdMinMax(isMax bool, rt *types.Type, x, y *ssa.Value) *ssa.Value {
-	result := ssaMarker("dpdminmax") // one per lowering; see bidAddSub128
+	result := ssaMarker("dpdminmax") // one per lowering; see ubdAddNarrow
 	boolT := types.Types[types.TBOOL]
 	wide := rt.Kind() == types.TDECIMAL128
 	var xh, xl, yh, yl *ssa.Value

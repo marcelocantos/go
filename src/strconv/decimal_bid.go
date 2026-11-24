@@ -6,15 +6,20 @@ package strconv
 
 import (
 	"internal/bid"
+	"internal/bytealg"
 	"internal/decimal"
-	_ "unsafe"
+	"internal/goarch"
+	"math/bits"
+	"unsafe"
 )
 
 // The conversions between decimal values and text are those of
 // internal/bid: parseDecimal reads its input with bid.Parse64 or
-// bid.Parse128 once decimal_parse.go has put Go's syntax into the kernel's,
+// bid.Parse128 (bid.UBDParse128 where decimal128 is stored as UBD) once
+// decimal_parse.go has put Go's syntax into the kernel's,
 // and formatDecimal and appendDecimal take the coefficient digits, sign and
-// quantum from bid.UnpackDigits128. This file owns the format verbs and
+// quantum from bid.UnpackDigits128, or from bid.UBDUnpackDigits128 where
+// decimal128 is stored as UBD (see decimalWords). This file owns the format verbs and
 // precision, and the layout of the digits that follows from them. Whenever
 // a precision asks for fewer digits than a value has, the value is
 // rounded by the kernel's Quantize.
@@ -41,6 +46,20 @@ func formatDecimal(d decimal128, fmt byte, prec int, bitSize int) string {
 	// The canonical form fits on the stack. Explicit fixed-point formats
 	// and large precisions may grow past this buffer through append.
 	var buf [bid.MaxLen128]byte
+	switch fmt {
+	case 'e', 'E', 'f', 'g', 'G':
+		// A short value (appendDecimal's first path) is stored in the
+		// string's own bytes: one allocation of the room PutShort128 is
+		// given, which it writes exactly the bytes of the result in, and
+		// no copy. Every other value takes appendDecimal's other paths,
+		// with the words decoded and the short test made once.
+		x := decimalWords(d)
+		if prec < 0 && fmt != 'e' && fmt != 'E' && (isShortDecimal(x) || fmt == 'f' && isShortFixedDecimal(x)) {
+			sign, frac := shortParts(x)
+			return shortString(sign, frac, x.Lo)
+		}
+		return string(appendDecimalRest(buf[:0], x, fmt, prec))
+	}
 	return string(appendDecimal(buf[:0], d, fmt, prec, bitSize))
 }
 
@@ -54,8 +73,7 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 	// so both widths have the same digits and the same rounding.
 	_ = bitSize
 
-	hi, lo := decimal.BID128bits(d)
-	x := bid.Uint128{Hi: hi, Lo: lo}
+	x := decimalWords(d)
 
 	switch fmt {
 	case 'e', 'E', 'f', 'g', 'G':
@@ -66,7 +84,7 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 	default:
 		// As FormatFloat does: the specials whatever the format, and
 		// otherwise "%" and the format.
-		switch kind, neg, _, _ := bid.Unpack128(x); kind {
+		switch kind, neg, _, _ := unpackDecimal(x); kind {
 		case bid.KindNaN:
 			return append(dst, "NaN"...)
 		case bid.KindInf:
@@ -82,26 +100,61 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 	// (money and most quantities) is plain digits around a point in every
 	// notation that keeps all the digits, which is each verb but 'e' and
 	// 'E' at precision -1. The kernel lays those out in registers and stores
-	// them straight into dst, exactly the bytes appended.
-	if i := len(dst); bid.IsShort128(x) && prec < 0 && fmt != 'e' && fmt != 'E' && cap(dst)-i >= bid.ShortLen128 {
-		return dst[:i+bid.PutShort128((*[bid.ShortLen128]byte)(dst[i:i+bid.ShortLen128]), x)]
-	}
-
-	// A coefficient of nine digits or more, in the canonical form: the
-	// kernel converts the digits eight at a time and stores the whole form
-	// in place, exactly the bytes appended. It asks for the room of the
-	// longest form, which formatDecimal's buffer and fmt's have; with less
-	// it lays the form out in a buffer of its own.
-	if prec < 0 && bid.IsLong128(x) && fmt != 'e' && fmt != 'E' && fmt != 'f' && fmt != 'G' {
-		if i := len(dst); cap(dst)-i >= bid.LongLen128 {
-			return dst[:i+bid.PutLong128((*[bid.LongLen128]byte)(dst[i:i+bid.LongLen128]), x)]
+	// them straight into dst, exactly the bytes appended. The fixed form
+	// ('f') also takes them at a magnitude of 10^6 or more, which it writes
+	// in plain notation and the canonical form does not.
+	if i := len(dst); (isShortDecimal(x) || fmt == 'f' && isShortFixedDecimal(x)) && prec < 0 && fmt != 'e' && fmt != 'E' && cap(dst)-i >= bid.ShortLen128 {
+		sign, frac := shortParts(x)
+		out := (*[bid.ShortLen128]byte)(dst[i : i+bid.ShortLen128])
+		if frac >= 8 {
+			// The fixed form below one at 8 to 13 places (FixedForm128):
+			// '-' first, then the head and the tail, inside the result.
+			head, tail, total := bid.FixedForm128(frac, x.Lo)
+			p := unsafe.Pointer(out)
+			*(*byte)(p) = '-'
+			put8(p, sign, head)
+			put8(p, sign+total-8, tail)
+			return dst[:i+int(sign+total)]
 		}
-		var buf [bid.LongLen128]byte
-		return append(dst, buf[:bid.PutLong128(&buf, x)]...)
+		return dst[:i+bid.PutShort128(out, sign, frac, x.Lo)]
+	}
+	return appendDecimalRest(dst, x, fmt, prec)
+}
+
+// appendDecimalRest is appendDecimal past its short path, for a format
+// of 'e', 'E', 'f', 'g' or 'G' and the words x.
+func appendDecimalRest(dst []byte, x bid.Uint128, fmt byte, prec int) []byte {
+	// A coefficient of nine digits or more, in the canonical form ('g')
+	// or the fixed form ('f') at full precision: the kernel converts the
+	// digits eight at a time and stores the whole form in place, exactly
+	// the bytes appended. The fixed form is written there only in plain
+	// notation down to 0.0001, with no zeros after the digits; the kernel
+	// writes nothing for any other value, which goes on below. It asks
+	// for the room of the longest form, which formatDecimal's buffer and
+	// fmt's have; with less it lays the form out in a buffer of its own.
+	if prec < 0 && (fmt == 'g' || fmt == 'f') && isLongDecimal(x) {
+		sign, exp, c := longParts(x)
+		if i := len(dst); cap(dst)-i >= bid.LongLen128 {
+			out := (*[bid.LongLen128]byte)(dst[i : i+bid.LongLen128])
+			if fmt == 'g' {
+				return dst[:i+bid.PutLong128(out, sign, exp, c)]
+			}
+			if n := bid.PutLongFixed128(out, sign, exp, c); n > 0 {
+				return dst[:i+n]
+			}
+		} else {
+			var buf [bid.LongLen128]byte
+			if fmt == 'g' {
+				return append(dst, buf[:bid.PutLong128(&buf, sign, exp, c)]...)
+			}
+			if n := bid.PutLongFixed128(&buf, sign, exp, c); n > 0 {
+				return append(dst, buf[:n]...)
+			}
+		}
 	}
 
 	var digs [bid.Precision128]byte
-	kind, neg, n, exp := bid.UnpackDigits128(&digs, x)
+	kind, neg, n, exp := unpackDigitsDecimal(&digs, x)
 	switch kind {
 	case bid.KindNaN:
 		return append(dst, "NaN"...)
@@ -181,12 +234,82 @@ func appendDecimal(dst []byte, d decimal128, fmt byte, prec int, bitSize int) []
 	return formatDigits(dst, v.neg, v.exp, v.digs[len(v.digs)-v.n:], normalFormat(fmt), prec)
 }
 
+// decimalWords returns the words of d in the encoding the kernel formats
+// it in: decimal128's own where that is UBD (bid.NativeUBD128), which
+// formats with no conversion, and otherwise BID. The functions below read
+// the words in that encoding; bid.NativeUBD128 is a constant, so each is a
+// single kernel call.
+func decimalWords(d decimal128) bid.Uint128 {
+	if bid.NativeUBD128 {
+		hi, lo := decimal.Bits128(d)
+		return bid.Uint128{Hi: hi, Lo: lo}
+	}
+	hi, lo := decimal.BID128bits(d)
+	return bid.Uint128{Hi: hi, Lo: lo}
+}
+
+func ubdWords(x bid.Uint128) bid.UBD128 { return bid.UBD128{Lo: x.Lo, Hi: x.Hi} }
+
+func isShortDecimal(x bid.Uint128) bool {
+	if bid.NativeUBD128 {
+		return bid.UBDIsShort128(ubdWords(x))
+	}
+	return bid.IsShort128(x)
+}
+
+// shortParts returns the sign (0 or 1) and the places after the point of
+// x, a value isShortDecimal accepts, for bid.PutShort128.
+func shortParts(x bid.Uint128) (sign, frac uint) {
+	if bid.NativeUBD128 {
+		return uint(x.Hi >> bid.UBDSignShift & 1), uint(-(int64(x.Hi) >> bid.UBDExpShift))
+	}
+	return uint(x.Hi >> 63), uint(bid.Bias128 - int(x.Hi>>bid.ExpShift128&bid.ExpMask128))
+}
+
+// isShortFixedDecimal reports whether x is short in the fixed form: what
+// isShortDecimal accepts, at any magnitude.
+func isShortFixedDecimal(x bid.Uint128) bool {
+	if bid.NativeUBD128 {
+		return bid.UBDIsShortFixed128(ubdWords(x))
+	}
+	return bid.IsShortFixed128(x)
+}
+
+func isLongDecimal(x bid.Uint128) bool {
+	if bid.NativeUBD128 {
+		return bid.UBDIsLong128(ubdWords(x))
+	}
+	return bid.IsLong128(x)
+}
+
+// longParts returns the sign (0 or 1), the exponent and the coefficient of
+// x, a value isLongDecimal accepts, for bid.PutLong128.
+func longParts(x bid.Uint128) (sign uint, exp int, c bid.Uint128) {
+	if bid.NativeUBD128 {
+		return uint(x.Hi >> bid.UBDSignShift & 1), int(int64(x.Hi) >> bid.UBDExpShift), bid.Uint128{Hi: x.Hi & bid.UBDCoeffMaskHi, Lo: x.Lo}
+	}
+	return uint(x.Hi >> 63), int(x.Hi>>bid.ExpShift128&bid.ExpMask128) - bid.Bias128, bid.Uint128{Hi: x.Hi & bid.CoeffMask128Hi, Lo: x.Lo}
+}
+
+func unpackDecimal(x bid.Uint128) (kind bid.Kind, neg bool, coeff bid.Uint128, exp int) {
+	if bid.NativeUBD128 {
+		return bid.UBDUnpack128(ubdWords(x))
+	}
+	return bid.Unpack128(x)
+}
+
+func unpackDigitsDecimal(buf *[bid.Precision128]byte, x bid.Uint128) (kind bid.Kind, neg bool, n, exp int) {
+	if bid.NativeUBD128 {
+		return bid.UBDUnpackDigits128(buf, ubdWords(x))
+	}
+	return bid.UnpackDigits128(buf, x)
+}
+
 // decimal64Exact reports whether d is a finite decimal128 whose coefficient
 // and exponent a decimal64 holds, as every decimal64 widened is: converting
 // it to decimal64 changes nothing.
 func decimal64Exact(d decimal128) bool {
-	hi, lo := decimal.BID128bits(d)
-	kind, _, coeff, exp := bid.Unpack128(bid.Uint128{Hi: hi, Lo: lo})
+	kind, _, coeff, exp := unpackDecimal(decimalWords(d))
 	return kind == bid.KindFinite && coeff.Hi == 0 && coeff.Lo <= bid.MaxCoeff64 &&
 		bid.MinExp64 <= exp && exp <= bid.MaxExp64
 }
@@ -198,7 +321,7 @@ func decimal64Exact(d decimal128) bool {
 // format.
 func appendDecimalB(dst []byte, x bid.Uint128) []byte {
 	var digs [bid.Precision128]byte
-	kind, neg, n, exp := bid.UnpackDigits128(&digs, x)
+	kind, neg, n, exp := unpackDigitsDecimal(&digs, x)
 	switch kind {
 	case bid.KindNaN:
 		return append(dst, "NaN"...)
@@ -306,12 +429,24 @@ func (v *finite) round(x bid.Uint128, format byte, prec int) {
 	// a decimal with 34 digits is 6111 at most; the quantum may be 6144),
 	// so quantize the coefficient alone, at exponent zero, and put the
 	// exponent back afterwards.
-	_, neg, coeff, _ := bid.Unpack128(x)
-	c, _ := bid.Pack128(neg, coeff, 0)
-	quantum, _ := bid.Pack128(false, bid.Uint128{Lo: 1}, drop)
-	q := bid.Quantize128(c, quantum, bid.ToNearestEven)
+	_, neg, coeff, _ := unpackDecimal(x)
+	var q bid.Uint128
+	if bid.NativeUBD128 {
+		// UBD: the sign and the coefficient at exponent zero, and the
+		// quantum's exponent, are fields; nothing packs.
+		c := bid.UBD128{Lo: coeff.Lo, Hi: coeff.Hi}
+		if neg {
+			c.Hi |= bid.UBDSignHi
+		}
+		r := bid.UBDQuantizeMode128(c, bid.UBD128{Lo: 1, Hi: uint64(drop) << bid.UBDExpShift}, bid.ToNearestEven)
+		q = bid.Uint128{Hi: r.Hi, Lo: r.Lo}
+	} else {
+		c, _ := bid.Pack128(neg, coeff, 0)
+		quantum, _ := bid.Pack128(false, bid.Uint128{Lo: 1}, drop)
+		q = bid.Quantize128(c, quantum, bid.ToNearestEven)
+	}
 
-	_, _, n, qexp := bid.UnpackDigits128(v.digs, q)
+	_, _, n, qexp := unpackDigitsDecimal(v.digs, q)
 	v.n = n
 	v.exp += qexp
 	if keep > 0 && v.n > keep {
@@ -514,4 +649,79 @@ func appendExp(dst []byte, digits []byte, exp int, format byte, prec int) []byte
 	}
 	dst = append(dst, byte(e%10)+'0')
 	return dst
+}
+
+// shortString is the form of a short value as a string allocated at its
+// exact length, which bid.ShortForm128 gives before anything is stored:
+// PutShort128's stores, made here into the string's own bytes, each
+// through a pointer to its own bytes, all of which lie inside the form.
+// A form of fewer than four bytes stores its words to a scratch buffer, by
+// a selected address, as PutShort128 does.
+func shortString(sign, frac uint, c uint64) string {
+	if frac >= 8 {
+		// The fixed form below one at 8 to 13 places, ten to fifteen
+		// bytes: the whole head and the whole tail, overlapping.
+		head, tail, total := bid.FixedForm128(frac, c)
+		n := sign + total
+		b := bytealg.MakeNoZero(int(n))
+		p := unsafe.Pointer(unsafe.SliceData(b))
+		*(*byte)(p) = '-'
+		put8(p, sign, head)
+		put8(p, n-8, tail)
+		return unsafe.String((*byte)(p), n)
+	}
+	head, tail, total := bid.ShortForm128(frac, c)
+	n := sign + total
+	if n <= 2 {
+		// One or two characters: an integer, 0 to 99 or -0 to -9, which
+		// is c. A slice of a constant, with no allocation.
+		switch {
+		case n == 1:
+			return digitStrings[c : c+1]
+		case sign != 0:
+			return minusDigitStrings[2*c : 2*c+2]
+		}
+		return pairStrings[2*c : 2*c+2]
+	}
+	b := bytealg.MakeNoZero(int(n))
+	p := unsafe.Pointer(unsafe.SliceData(b))
+	half := total / 2
+	*(*byte)(p) = '-'
+	*(*byte)(unsafe.Add(p, sign)) = byte(head)
+	*(*byte)(unsafe.Add(p, sign+half)) = byte(head >> (8 * half & 63))
+	*(*byte)(unsafe.Add(p, n-1)) = byte(tail >> 56)
+	var scratch [16]byte
+	q := p
+	if total < 4 {
+		q = unsafe.Pointer(&scratch)
+	}
+	t := (total - 4) & 7
+	put4(q, sign, uint32(head))
+	put4(q, sign+t/2, uint32(head>>(8*(t/2))))
+	put4(q, sign+t, uint32(tail>>32))
+	return unsafe.String((*byte)(p), n)
+}
+
+// The forms of one and two characters: 0 to 9, -0 to -9 (two each), and
+// 10 to 99 (two each, from 00).
+const (
+	digitStrings      = "0123456789"
+	minusDigitStrings = "-0-1-2-3-4-5-6-7-8-9"
+	pairStrings       = "00010203040506070809101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263646566676869707172737475767778798081828384858687888990919293949596979899"
+)
+
+// put4 stores w little-endian at p+i.
+func put4(p unsafe.Pointer, i uint, w uint32) {
+	if goarch.BigEndian {
+		w = bits.ReverseBytes32(w)
+	}
+	*(*uint32)(unsafe.Add(p, i)) = w
+}
+
+// put8 is put4 for eight bytes.
+func put8(p unsafe.Pointer, i uint, w uint64) {
+	if goarch.BigEndian {
+		w = bits.ReverseBytes64(w)
+	}
+	*(*uint64)(unsafe.Add(p, i)) = w
 }

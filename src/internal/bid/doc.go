@@ -266,7 +266,7 @@
 //	                           representable; 0 for a zero
 //	Widen, Narrow              Q(x)                            clause 5.2, convertFormat
 //	Int64To*, Uint64To*        0                               clause 5.2, convertFromInt
-//	Float64To*, Float32To*     0                               this package; see "Binary floating-point conversions"
+//	Float64To*, Float32To*     0, the least if inexact         clause 5.4.2; see "Binary floating-point conversions"
 //	Parse                      the exponent the numeral        clause 5.12.2 with clause 5.2
 //	                           denotes: its exponent part
 //	                           less its fraction digits
@@ -677,12 +677,15 @@
 // the float64 nearest 0.1 converts to 0.1000000000000000 in decimal64 and
 // to 0.1000000000000000055511151231257827 in decimal128, and the float64
 // 1e23, whose exact value is 99999999999999991611392, converts to
-// 9.999999999999999E+22 in decimal64. Clause 5.2 gives no preferred
-// exponent for a conversion from a binary format (Q(x) is undefined for
-// binary x, and GDA has no such operation); this package chooses 0, as
-// for convertFromInt, so an exact result has the exponent closest to 0:
-// float64 0.5 is 0.5, 2.0 is 2, -0 is -0 with exponent 0, and 1e20 is
-// 100000000000000000000 in decimal128. Infinities convert to the infinity
+// 9.999999999999999E+22 in decimal64. Clause 5.4.2 gives the preferred
+// exponents of a conversion from a binary format, which clause 5.2's table
+// cannot (Q(x) is undefined for binary x, and GDA has no such operation):
+// 0 for an exact conversion, so an exact result has the exponent closest
+// to 0, as convertFromInt's does: float64 0.5 is 0.5, 2.0 is 2, -0 is -0
+// with exponent 0, and 1e20 is 100000000000000000000 in decimal128; and
+// the least possible exponent for an inexact one, so a rounded result has
+// all the format's digits, as every inexact result does here (the 34
+// digits of the decimal128 nearest 0.1 above). Infinities convert to the infinity
 // of their sign, and a NaN of any sign and payload to the canonical quiet
 // NaN (see "NaN results").
 //
@@ -1879,7 +1882,7 @@
 // coefficients of one word each, addLong128 and mulLong128 directly, which
 // take those first), quietCmpSlow128 for the
 // comparisons, and for two finite operands it has decoded itself,
-// cCmpFinite128 (cmd/compile/internal/ssagen.bidKernelOp and bidCompare).
+// cCmpFinite128 (cmd/compile/internal/ssagen.ubdKernelOp, and bidCompare for decimal64).
 // No runtime function stands between the operator and the kernel there:
 // one cost a frame and a second call on every such operand pair, 0.6 to
 // 0.8 ns of an addition's 9. Those functions' parameters are therefore a

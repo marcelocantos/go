@@ -353,6 +353,13 @@ func shortExp128(x Uint128) uint64 {
 	return bits.RotateLeft64(x.Hi&^SignMask128Hi-(Bias128+shortMinExp)<<ExpShift128, 64-ExpShift128)
 }
 
+// fixedExp128 is shortExp128 from fixedMinExp: the exponent of x minus
+// fixedMinExp, or a larger value for anything but a finite first-form x
+// with a one-word coefficient.
+func fixedExp128(x Uint128) uint64 {
+	return bits.RotateLeft64(x.Hi&^SignMask128Hi-(Bias128+fixedMinExp)<<ExpShift128, 64-ExpShift128)
+}
+
 // shortParts128 returns the sign of a short x as 0 or 1 and the number of
 // its digits after the point, the negation of its exponent: the fields
 // PutShort128 lays out, with the coefficient in the low word.

@@ -6,7 +6,6 @@ package strconv
 
 import (
 	"internal/bid"
-	"internal/decimal"
 	"math/bits"
 )
 
@@ -22,7 +21,7 @@ import (
 // appendDecimalX appends the 'x' or 'X' form of the decimal x of the given
 // bitSize at precision prec.
 func appendDecimalX(dst []byte, x bid.Uint128, fmt byte, prec, bitSize int) []byte {
-	kind, neg, coeff, q := bid.Unpack128(x)
+	kind, neg, coeff, q := unpackDecimal(x)
 	switch kind {
 	case bid.KindNaN:
 		return append(dst, "NaN"...)
@@ -168,8 +167,7 @@ func hexShortest(c nat, q int, bitSize int) (nat, int, int, bool) {
 // hexSameValue reports whether the decimal d has the value (-1)^neg × c ×
 // 10^q.
 func hexSameValue(d decimal128, neg bool, c nat, q int) bool {
-	hi, lo := decimal.BID128bits(d)
-	kind, dneg, dc, dq := bid.Unpack128(bid.Uint128{Hi: hi, Lo: lo})
+	kind, dneg, dc, dq := unpackDecimal(decimalWords(d))
 	if kind != bid.KindFinite || dneg != neg {
 		return false
 	}

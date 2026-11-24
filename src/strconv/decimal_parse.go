@@ -282,11 +282,22 @@ func scaledDecimal(neg bool, m nat, e2, q10 int64, bitSize int) (decimal128, bid
 const maxDecimalExp = 6250
 
 // kernelParse is the kernel's Parse of the given bitSize, which reads the
-// character form, to nearest even.
+// character form, to nearest even. Where decimal128 is stored as UBD
+// (bid.NativeUBD128) a decimal128 is parsed straight into it, with no
+// conversion from BID.
 func kernelParse(s string, bitSize int) (decimal128, bid.Status) {
 	if bitSize == 64 {
 		x, st := bid.Parse64(s, bid.ToNearestEven)
+		if bid.NativeUBD128 {
+			// Widened straight from BID64 into decimal128's words.
+			z := bid.UBDWiden128(x)
+			return decimal.FromBits128(z.Hi, z.Lo), st
+		}
 		return decimal128(decimal.BID64frombits(x)), st
+	}
+	if bid.NativeUBD128 {
+		x, st := bid.UBDParse128(s, bid.ToNearestEven)
+		return decimal.FromBits128(x.Hi, x.Lo), st
 	}
 	x, st := bid.Parse128(s, bid.ToNearestEven)
 	return decimal.BID128frombits(x.Hi, x.Lo), st

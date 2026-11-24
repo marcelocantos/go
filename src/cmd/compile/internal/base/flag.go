@@ -287,6 +287,9 @@ func ParseFlags() {
 	if Debug.MergeLocalsHash != "" {
 		MergeLocalsHash = NewHashDebug("mergelocals", Debug.MergeLocalsHash, nil)
 	}
+	if l := Debug.UBDLevel; l < 0 || l > 3 {
+		log.Fatalf("-d=ubdlevel=%d: want 1, 2 or 3 (0 is the default, 2)", l)
+	}
 	if Debug.VariableMakeHash != "" {
 		VariableMakeHash = NewHashDebug("variablemake", Debug.VariableMakeHash, nil)
 	}

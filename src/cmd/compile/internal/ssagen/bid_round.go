@@ -29,11 +29,53 @@ import (
 // Any unproved case calls the portable typed helper with already-evaluated args;
 // this preserves special values, arbitrary encodings and argument evaluation.
 func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fallback *obj.LSym) *ssa.Value {
-	result := ssaMarker("bidround") // one per lowering; see bidAddSub128
+	result := ssaMarker("bidround") // one per lowering; see ubdAddNarrow
 	u64, u8, boolT := types.Types[types.TUINT64], types.Types[types.TUINT8], types.Types[types.TBOOL]
 	zero, one := s.constInt64(u64, 0), s.constInt64(u64, 1)
 	x, mode := args[0], args[len(args)-1]
 	is64 := x.Type.Kind() == types.TDECIMAL64
+	// kernelCall calls the kernel's UBD entry for this rounding with the
+	// operand words kargs, low first: the ties-to-even entry, with no mode,
+	// when the mode is that constant, and otherwise the entry that takes it.
+	kernelCall := func(kargs []*ssa.Value) *ssa.Value {
+		fn, tte := ubdKernelQuantize, ubdKernelQuantizeTTE
+		if integral {
+			fn, tte = ubdKernelIntegral, ubdKernelIntegralTTE
+		}
+		if mode.Op == ssaop.OpConst8 && mode.AuxInt == int64(bid.ToNearestEven) {
+			fn = tte
+		} else {
+			kargs = append(kargs, mode)
+		}
+		res := s.rtcall(fn, true, []*types.Type{u64, u64}, kargs...)
+		return s.newValue2(ssaop.OpDecimal128Make, n.Type(), res[0], res[1])
+	}
+	// level2Quantize: quantize at ubdLevel 2 takes the inline paths below
+	// for a one-word x at y's exponent (x itself) and for one 1 to 19
+	// places finer than y's (one division, rounded in the mode: telco's
+	// products to cents), and the kernel call for the rest; it leaves out
+	// the path for an x coarser than y's exponent. At ubdLevel 3
+	// integral rounding takes them as well (the kernel's word path: an x
+	// with qExp >= 0 is x, one with a fraction of 1 to 19 digits is one
+	// division, rounded in the mode).
+	level2Quantize := ubdLowered(x) && (!integral && ubdLevel() >= 2 || ubdLevel3())
+	if ubdLowered(x) && !level2Quantize {
+		xh := s.newValue1(ssaop.OpDecimal128Hi, u64, x)
+		kargs := []*ssa.Value{s.newValue1(ssaop.OpDecimal128Lo, u64, x), xh}
+		if !integral {
+			kargs = append(kargs, s.newValue1(ssaop.OpDecimal128Lo, u64, args[1]), s.newValue1(ssaop.OpDecimal128Hi, u64, args[1]))
+		}
+		if ubdLevel() < 2 {
+			return kernelCall(kargs)
+		}
+		// From ubdLevel 2, integral rounding's first kernel path inline,
+		// where x is returned as it is: x finite with qExp >= 0, which is
+		// the high word below 7<<60 (qExp's sign is its top bit, a finite
+		// qExp >= 0 leaves the top four bits at most 5, and a special's
+		// are 7). Quantize at level 2 is level2Quantize's.
+		fast := s.newValue2(ssaop.OpLess64U, boolT, xh, s.constInt64(u64, int64(bid.UBDSpecialTag)<<60))
+		return s.ubdEarlyExit(n.Type(), fast, x, func() *ssa.Value { return kernelCall(kargs) })
+	}
 	shift, bias := bid.ExpShift128, bid.Bias128
 	zeroEncoding := uint64(bid.Zero128Hi)
 	expMask, coeffMask, formMask := uint64(bid.ExpMask128), uint64(bid.CoeffMask128Hi), uint64(bid.Form2Mask128Hi)
@@ -48,14 +90,24 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 		return s.newValue1(ssaop.OpDecimal128Hi, u64, v)
 	}
 	xh := high(x)
-	native := s.newValue2(ssaop.OpXor64, u64, xh, s.constInt64(u64, int64(zeroEncoding)))
+	native := xh // UBD decimal128 has no storage mask
+	if is64 {
+		native = s.newValue2(ssaop.OpXor64, u64, xh, s.constInt64(u64, int64(zeroEncoding)))
+	}
 	coeff := s.newValue2(ssaop.OpAnd64, u64, native, s.constInt64(u64, int64(coeffMask)))
 	finite := func(h *ssa.Value) *ssa.Value {
+		if !is64 {
+			tag := s.newValue2(ssaop.OpRsh64Ux64, u64, h, s.constInt64(u64, 60))
+			return s.newValue2(ssaop.OpNeq64, boolT, tag, s.constInt64(u64, bid.UBDSpecialTag))
+		}
 		mask := s.constInt64(u64, int64(formMask))
 		second := s.constInt64(u64, int64(formMask^(zeroEncoding&formMask)))
 		return s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, h, mask), second)
 	}
 	exponent := func(v *ssa.Value) *ssa.Value {
+		if !is64 {
+			return s.newValue2(ssaop.OpRsh64x64, u64, v, s.constInt64(u64, bid.UBDExpShift))
+		}
 		return s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpRsh64Ux64, u64, v, s.constInt64(u64, int64(shift))), s.constInt64(u64, int64(expMask)))
 	}
 	bSlow, bAfter := s.f.NewBlock(block.BlockPlain), s.f.NewBlock(block.BlockPlain)
@@ -68,20 +120,34 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 		b.AddEdgeTo(bSlow)
 		s.startBlock(next)
 	}
-	guard(finite(xh))
-	if !is64 {
+	if is64 {
+		guard(finite(xh))
+	} else {
+		// UBD: a word coefficient rules out the special values.
 		guard(s.newValue2(ssaop.OpEq64, boolT, coeff, zero))
 		coeff = s.newValue1(ssaop.OpDecimal128Lo, u64, x)
+	}
+	// less is the exponent order: unsigned for BID's biased exponents,
+	// signed for UBD's.
+	less, lessEq := ssaop.OpLess64U, ssaop.OpLeq64U
+	if !is64 {
+		less, lessEq = ssaop.OpLess64, ssaop.OpLeq64
 	}
 	xe := exponent(native)
 	var ye, unchanged *ssa.Value
 	if integral {
 		ye = s.constInt64(u64, int64(bias))
-		unchanged = s.newValue2(ssaop.OpLeq64U, boolT, ye, xe)
+		if !is64 {
+			ye = zero
+		}
+		unchanged = s.newValue2(lessEq, boolT, ye, xe)
 	} else {
 		yh := high(args[1])
 		guard(finite(yh))
-		ye = exponent(s.newValue2(ssaop.OpXor64, u64, yh, s.constInt64(u64, int64(zeroEncoding))))
+		if is64 {
+			yh = s.newValue2(ssaop.OpXor64, u64, yh, s.constInt64(u64, int64(zeroEncoding)))
+		}
+		ye = exponent(yh)
 		unchanged = s.newValue2(ssaop.OpEq64, boolT, xe, ye)
 	}
 	b := s.endBlock()
@@ -95,11 +161,17 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 	s.endBlock().AddEdgeTo(bAfter)
 	s.startBlock(bShift)
 	header := func() *ssa.Value {
+		if !is64 {
+			sign := s.newValue2(ssaop.OpAnd64, u64, xh, s.constInt64(u64, bid.UBDSignHi))
+			return s.newValue2(ssaop.OpOr64, u64, sign, s.newValue2(ssaop.OpLsh64x64, u64, ye, s.constInt64(u64, bid.UBDExpShift)))
+		}
 		signMask := uint64(bid.SignMask64)
 		h := s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpAnd64, u64, native, s.constInt64(u64, int64(signMask))), s.newValue2(ssaop.OpLsh64x64, u64, ye, s.constInt64(u64, int64(shift))))
 		return s.newValue2(ssaop.OpXor64, u64, h, s.constInt64(u64, int64(zeroEncoding)))
 	}
-	if !integral && !is64 {
+	// Level 3 keeps this path (the kernel's ubdQuantizeWord scales a word
+	// up the same way); level 2 leaves it to the kernel.
+	if !integral && !is64 && (!level2Quantize || ubdLevel3()) {
 		// A decimal128 word at a larger exponent than y's by at most 19
 		// places is scaled up to it, exactly, when the product is still a
 		// word: 5 quantized to cents is 5.00. One multiplication by a
@@ -107,7 +179,7 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 		// word is below 10^34, so the result is canonical, and a zero
 		// stays a zero at the exponent of y. Whether x is above or below
 		// y's exponent is a property of the data's kind, and a branch.
-		above := s.newValue2(ssaop.OpLess64U, boolT, ye, xe)
+		above := s.newValue2(less, boolT, ye, xe)
 		b := s.endBlock()
 		b.Kind = block.BlockIf
 		b.SetControl(above)
@@ -150,7 +222,12 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 		v = s.newValue1(ssaop.OpZeroExt8to64, u64, s.newValue1(ssaop.OpCvtBoolToUint8, u8, v))
 		increment = s.newValue3(ssaop.OpCondSelect, u64, v, increment, eq)
 	}
-	negative := s.newValue2(ssaop.OpLess64, boolT, native, zero)
+	var negative *ssa.Value
+	if is64 {
+		negative = s.newValue2(ssaop.OpLess64, boolT, native, zero)
+	} else {
+		negative = s.newValue2(ssaop.OpNeq64, boolT, s.newValue2(ssaop.OpAnd64, u64, xh, s.constInt64(u64, bid.UBDSignHi)), zero)
+	}
 	nonzero := s.newValue2(ssaop.OpNeq64, boolT, r, zero)
 	selectMode(bid.ToNearestAway, s.newValue2(ssaop.OpOrB, boolT, above, tie))
 	selectMode(bid.TowardZero, s.constBool(false))
@@ -167,41 +244,18 @@ func (s *state) bidRounding(n *ir.CallExpr, args []*ssa.Value, integral bool, fa
 	s.startBlock(bSlow)
 	if !is64 && bidKernelDirect() {
 		// The kernel's general path, called directly as the operators'
-		// are (bidKernelOp): the typed helper would only convert the
+		// are (ubdKernelOp): the typed helper would only convert the
 		// operands and the mode, whose values the public and the kernel
 		// modes share, and call it.
-		zeroHi := s.constInt64(u64, int64(zeroEncoding))
-		kargs := []*ssa.Value{s.newValue2(ssaop.OpXor64, u64, xh, zeroHi), s.newValue1(ssaop.OpDecimal128Lo, u64, x)}
-		call := func(fn *obj.LSym) {
-			res := s.rtcall(fn, true, []*types.Type{u64, u64}, append(kargs, mode)...)
-			s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, n.Type(), res[1], s.newValue2(ssaop.OpXor64, u64, res[0], zeroHi))
+		// UBD: the kernel's UBD entries take the stored words as they are,
+		// low first (internal/bid.UBD128).
+		kargs := []*ssa.Value{s.newValue1(ssaop.OpDecimal128Lo, u64, x), xh}
+		if !integral {
+			kargs = append(kargs, s.newValue1(ssaop.OpDecimal128Lo, u64, args[1]), high(args[1]))
 		}
-		if integral {
-			call(bidKernelIntegral)
-		} else {
-			kargs = append(kargs, s.newValue2(ssaop.OpXor64, u64, high(args[1]), zeroHi), s.newValue1(ssaop.OpDecimal128Lo, u64, args[1]))
-			// The kernel's own path for a quantize is for a coefficient
-			// of two words; a word that the code above did not decide
-			// (the quantum too far, or the value too large for it) goes
-			// to the routine for every operand, where its word path is
-			// the first thing tried, as in bidKernelOp.
-			words := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpAnd64, u64, kargs[0], s.constInt64(u64, int64(bid.CoeffMask128Hi))), zero)
-			bWords := s.f.NewBlock(block.BlockPlain)
-			bWide := s.f.NewBlock(block.BlockPlain)
-			bDone := s.f.NewBlock(block.BlockPlain)
-			b := s.endBlock()
-			b.Kind = block.BlockIf
-			b.SetControl(words)
-			b.AddEdgeTo(bWords)
-			b.AddEdgeTo(bWide)
-			s.startBlock(bWords)
-			call(bidKernelQuantizeLong)
-			s.endBlock().AddEdgeTo(bDone)
-			s.startBlock(bWide)
-			call(bidKernelQuantize)
-			s.endBlock().AddEdgeTo(bDone)
-			s.startBlock(bDone)
-		}
+		// One call for every operand, as in ubdKernelOp: the kernel's
+		// entry sends a word coefficient to its word path itself.
+		s.vars[result] = kernelCall(kargs)
 	} else {
 		s.vars[result] = s.rtcall(fallback, true, []*types.Type{n.Type()}, args...)[0]
 	}

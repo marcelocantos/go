@@ -55,11 +55,13 @@ func Append64(dst []byte, x uint64) []byte {
 	// width has no short form of its own.
 	if _, c, _, ok := unpackWordCanon64(x); ok && c >= shortCoeff {
 		w := Widen(x)
+		c, _ := longCoeff128(w)
+		sign, exp := longParts128(w)
 		if i := len(dst); cap(dst)-i >= LongLen128 {
-			return dst[:i+PutLong128((*[LongLen128]byte)(dst[i:i+LongLen128]), w)]
+			return dst[:i+PutLong128((*[LongLen128]byte)(dst[i:i+LongLen128]), sign, exp, c)]
 		}
 		var buf [LongLen128]byte
-		return append(dst, buf[:PutLong128(&buf, w)]...)
+		return append(dst, buf[:PutLong128(&buf, sign, exp, c)]...)
 	}
 	return append64(dst, x, false)
 }
@@ -68,14 +70,17 @@ func Append64(dst []byte, x uint64) []byte {
 // capacity to avoid allocating.
 func Append128(dst []byte, x Uint128) []byte {
 	if i := len(dst); IsShort128(x) && cap(dst)-i >= ShortLen128 {
-		return dst[:i+PutShort128((*[ShortLen128]byte)(dst[i:i+ShortLen128]), x)]
+		sign, frac := shortParts128(x)
+		return dst[:i+PutShort128((*[ShortLen128]byte)(dst[i:i+ShortLen128]), sign, frac, x.Lo)]
 	}
 	if IsLong128(x) {
+		c, _ := longCoeff128(x)
+		sign, exp := longParts128(x)
 		if i := len(dst); cap(dst)-i >= LongLen128 {
-			return dst[:i+PutLong128((*[LongLen128]byte)(dst[i:i+LongLen128]), x)]
+			return dst[:i+PutLong128((*[LongLen128]byte)(dst[i:i+LongLen128]), sign, exp, c)]
 		}
 		var buf [LongLen128]byte
-		return append(dst, buf[:PutLong128(&buf, x)]...)
+		return append(dst, buf[:PutLong128(&buf, sign, exp, c)]...)
 	}
 	return append128(dst, x, false)
 }
@@ -91,7 +96,8 @@ func AppendSci64(dst []byte, x uint64) []byte {
 // same plain notation in both forms.
 func AppendSci128(dst []byte, x Uint128) []byte {
 	if i := len(dst); IsShort128(x) && cap(dst)-i >= ShortLen128 {
-		return dst[:i+PutShort128((*[ShortLen128]byte)(dst[i:i+ShortLen128]), x)]
+		sign, frac := shortParts128(x)
+		return dst[:i+PutShort128((*[ShortLen128]byte)(dst[i:i+ShortLen128]), sign, frac, x.Lo)]
 	}
 	return append128(dst, x, true)
 }
@@ -110,9 +116,9 @@ const (
 	shortCoeff  = 100_000_000
 	shortMinExp = -4
 
-	// ShortLen128 is the room PutShort128 is given. The longest form it
-	// writes has ten bytes, a sign, eight digits and a point; the rest is
-	// slack that lets every store be proved inside the buffer.
+	// ShortLen128 is the room PutShort128 is given. The longest canonical
+	// form it writes has ten bytes, a sign, eight digits and a point; the
+	// longest fixed form sixteen, a sign, "0." and thirteen digits.
 	ShortLen128 = 16
 )
 
@@ -125,20 +131,46 @@ func IsShort128(x Uint128) bool {
 	return k <= -shortMinExp && x.Lo < shortLimit[k]
 }
 
+// IsShortFixed128 reports whether x is finite with a coefficient below
+// 10^8 and an exponent from -13 to 0, of any magnitude: a value PutShort128
+// formats in the fixed form ('f' at full precision), which writes plain
+// notation where the canonical form is exponential, at a magnitude of
+// 10^6 or more or below 10^-4. It accepts what IsShort128 does, and
+// besides coefficients of seven and eight digits at an exponent of -1 or
+// 0, and every coefficient at five to thirteen places: every such form
+// that fits ShortLen128 with its sign.
+func IsShortFixed128(x Uint128) bool {
+	return fixedExp128(x) <= -fixedMinExp && x.Lo < shortCoeff
+}
+
+// fixedMinExp is the least exponent of a short value in the fixed form:
+// thirteen places, whose form below one, "0." and thirteen digits, is
+// fifteen bytes, ShortLen128 with a sign.
+const fixedMinExp = -13
+
 // shortLimit[k] bounds the coefficient of a short value at the exponent
 // shortMinExp + k: shortCoeff, or less where 10^canonicalMaxExp is the
 // lower bound, 10^(canonicalMaxExp - shortMinExp - k).
 var shortLimit = [1 - shortMinExp]uint64{shortCoeff, shortCoeff, shortCoeff, 10_000_000, 1_000_000}
 
 // PutShort128 writes the character form of x, as Append128 gives it, to
-// the start of buf and returns its length, for an x that IsShort128
-// accepts; for any other x what it writes is unspecified. It writes
+// the start of buf and returns its length, for an x that IsShort128 (or
+// UBDIsShort128 on UBD) accepts, given as its parts: the sign, 0 or 1; the
+// places after the point, minus the exponent, 0 to 4 (to 7 for the fixed
+// form; FixedForm128 lays out 8 to 13); and the coefficient.
+// The caller decodes them from its own encoding (shortParts128 for BID),
+// so both encodings share this layout without a call between. For parts
+// of any other x what it writes is unspecified. It writes
 // exactly the bytes of the result, none after them, so buf may be the
 // spare capacity of a buffer whose later bytes are in use.
 //
 // Every notation that keeps all the digits of the coefficient and does
 // not ask for an exponent agrees on the form of these values, so strconv
-// calls this for its canonical and its fixed forms.
+// calls this for its canonical and its fixed forms. For the fixed form it
+// also takes the values IsShortFixed128 (UBDIsShortFixed128) adds, which
+// it writes in plain notation, as that form does, to seven places: every
+// digit shown lies within the word eightQuads gives. The caller takes the
+// values at eight places or more to FixedForm128.
 //
 // The digits are laid out in a register, and no branch depends on the
 // value. eightQuads gives all eight digits, zeros on the left, with the
@@ -155,15 +187,14 @@ var shortLimit = [1 - shortMinExp]uint64{shortCoeff, shortCoeff, shortCoeff, 10_
 // instead, by a selected address. The masks on the offsets change no
 // value; they bound each store for the compiler, which then needs no
 // check. See "Digit conversion" in the package documentation.
-func PutShort128(buf *[ShortLen128]byte, x Uint128) int {
-	sign, frac := shortParts128(x)
-	w := eightQuads(x.Lo)
+func PutShort128(buf *[ShortLen128]byte, sign, frac uint, c uint64) int {
+	w := eightQuads(c)
 	// Significant digits, one for a zero coefficient: c|1 has the digit
 	// count of c, because an even c is not one below a power of ten. The
 	// count comes from the coefficient, not from the zero bytes of w,
 	// which would cost nothing more to read: every store address below
 	// depends on it, and the addresses must not wait for the digits.
-	n := uint(cDigits64(x.Lo | 1))
+	n := uint(cDigits64(c | 1))
 	// Digits shown: the significant ones, and zeros up to the units place
 	// when the point is to the left of them (0.05, 0.00).
 	shown := max(n, frac+1)
@@ -198,6 +229,49 @@ func PutShort128(buf *[ShortLen128]byte, x Uint128) int {
 	putFour(q, sign+t/2, uint32(head>>(8*(t/2))))
 	putFour(q, sign+t, uint32(tail>>32))
 	return int(sign + total)
+}
+
+// FixedForm128 is ShortForm128 for the fixed form of a short value at
+// frac places from 8 to 13, which IsShortFixed128 accepts and ShortForm128
+// and PutShort128 do not lay out: the value is below one, and the form,
+// ten to fifteen bytes after the sign, is "0.", frac-8 zeros and the eight
+// digits of c (zeros on the left). The tail, its last eight bytes, is
+// those digits; the head, its first eight, is the lead with the first
+// digits after it. Its stores are '-' at 0 (overwritten by the first
+// digit unless the sign is set), the head at sign and the tail at
+// sign+total-8, which overlap and cover every such length.
+func FixedForm128(frac uint, c uint64) (head, tail uint64, total uint) {
+	w := eightQuads(c)
+	lead := (frac - 6) & 7 // "0." and the zeros, 2 to 7 bytes
+	head = 0x3030_3030_3030_2E30&(1<<(8*lead)-1) | w<<(8*lead)
+	return head, w, frac + 2
+}
+
+// ShortForm128 is PutShort128 without its stores, for a caller that
+// allocates the result at its exact length and stores it itself: the head
+// and the tail words, as PutShort128 lays them out, and total, the length
+// of the form after the sign. The form is sign+total bytes. Its stores are
+// PutShort128's: '-' at 0 (overwritten by the first digit unless the sign
+// is set), the low byte of head at sign, byte half = total/2 of head at
+// sign+half, the top byte of tail at sign+total-1, and, for a total of
+// four or more, the low four bytes of head at sign, of head >> 8*(t/2) at
+// sign+t/2 and of tail >> 32 at sign+t, t = total-4. Every one lies
+// inside the form. Those stores cover a total of up to nine: frac from 0
+// to 7. The fixed form at eight places or more is FixedForm128's.
+func ShortForm128(frac uint, c uint64) (head, tail uint64, total uint) {
+	w := eightQuads(c)
+	n := uint(cDigits64(c | 1))
+	shown := max(n, frac+1)
+	dot := (frac + 7) >> 3
+	total = shown + dot
+	pt := uint64('.') * uint64(dot)
+	m := ^uint64(0) >> (8 * frac & 63)
+	tail = w&^m | w&m>>(8*dot&63) | pt<<(8*(7-frac)&63)
+	hw := w >> (8 * (8 - shown) & 63)
+	before := shown - frac
+	lm := ^uint64(0) >> ((64 - 8*before) & 63)
+	head = hw&lm | hw&^lm<<8 | pt<<(8*before&63)
+	return head, tail, total
 }
 
 // putFour stores w little-endian in buf[i:i+4]; the caller bounds i so that

@@ -12,7 +12,8 @@ import "math/bits"
 
 // fromFloat64 converts the binary floating-point value of kind kind and, when
 // finite, (-1)^neg × m × 2^e, to the decimal format, rounded once in mode
-// from that exact value with preferred exponent 0 ("Binary floating-point
+// from that exact value with clause 5.4.2's preferred exponent, 0 for an
+// exact result and the least possible for an inexact one ("Binary floating-point
 // conversions" in the package documentation). The arithmetic and the
 // argument that its sticky bit and tie decisions are exact are in
 // fromfloat.go; this function chooses the digit count and hands the result

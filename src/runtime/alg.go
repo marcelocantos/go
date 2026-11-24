@@ -152,7 +152,8 @@ func c128hash(p unsafe.Pointer, h uintptr) uintptr {
 
 // d64hash and d128hash hash the canonical key of a decimal value, on which
 // all the values that compare equal agree, whatever their exponents and the
-// sign of a zero. A NaN hashes randomly, as in f64hash, since it is not equal
+// sign of a zero. Where decimal128 is stored as UBD, d128hash and d128equal
+// read its words as they are, with no conversion to BID. A NaN hashes randomly, as in f64hash, since it is not equal
 // to itself.
 func d64hash(p unsafe.Pointer, h uintptr) uintptr {
 	k := bid.Key64(d64load(p))
@@ -163,7 +164,12 @@ func d64hash(p unsafe.Pointer, h uintptr) uintptr {
 }
 
 func d128hash(p unsafe.Pointer, h uintptr) uintptr {
-	k := bid.Key128(d128load(p))
+	var k bid.Key
+	if bid.NativeUBD128 {
+		k = bid.UBDKey128(d128words(p))
+	} else {
+		k = bid.Key128(d128load(p))
+	}
 	if k.Kind == bid.KindNaN {
 		return trimHash(c1 * (c0 ^ h ^ uintptr(rand())))
 	}
@@ -175,6 +181,9 @@ func d64equal(p, q unsafe.Pointer) bool {
 }
 
 func d128equal(p, q unsafe.Pointer) bool {
+	if bid.NativeUBD128 {
+		return bid.UBDEqual128(d128words(p), d128words(q))
+	}
 	return bid.Equal128(d128load(p), d128load(q))
 }
 
