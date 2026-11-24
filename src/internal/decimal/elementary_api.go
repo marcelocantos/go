@@ -225,70 +225,48 @@ func pow128(x, y decimal128) decimal128 {
 	return r.decimal128()
 }
 
-// The decimal128 boundary of the functions above, in decimal128's stored
-// encoding: UBD where it is stored as UBD (bid.NativeUBD128), with no
-// conversion, and otherwise BID. bid.NativeUBD128 is a constant, so each
-// is one of its two branches.
-
-// ubdWords returns the stored words of x where decimal128 is UBD.
+// ubdWords and fromUBD are UBD128bits and UBD128frombits as the kernel's
+// UBD128.
 func ubdWords(x decimal128) bid.UBD128 {
-	hi, lo := Bits128(x)
+	hi, lo := UBD128bits(x)
 	return bid.UBD128{Lo: lo, Hi: hi}
 }
 
-// fromUBD returns the decimal128 whose stored words are r, where decimal128
-// is UBD.
-func fromUBD(r bid.UBD128) decimal128 { return FromBits128(r.Hi, r.Lo) }
+func fromUBD(r bid.UBD128) decimal128 { return UBD128frombits(r.Hi, r.Lo) }
 
 func isNaN128(x decimal128) bool {
-	if bid.NativeUBD128 {
-		return ubdWords(x).Hi>>59 == bid.UBDNaNTag
-	}
-	return bid.IsNaN128(b128(x))
+	return ubdWords(x).Hi>>59 == bid.UBDNaNTag
 }
 
 func isSignaling128(x decimal128) bool {
-	if bid.NativeUBD128 {
-		return ubdWords(x).Hi>>58 == bid.UBDSNaNTag
-	}
-	return bid.IsSignaling128(b128(x))
+	return ubdWords(x).Hi>>58 == bid.UBDSNaNTag
 }
 
 // nanResult128 is the NaN result of an operation on x and y, at least one
 // a NaN: the first signaling NaN, else the first NaN, made quiet, as the
 // arithmetic operations propagate them. For one operand pass it twice.
 func nanResult128(x, y decimal128) decimal128 {
-	if bid.NativeUBD128 {
-		r := bid.UBDNaN128(ubdWords(x), ubdWords(y))
-		return FromBits128(r.Hi, r.Lo)
-	}
-	return d128(bid.Add128(b128(x), b128(y), bid.ToNearestEven))
+	return fromUBD(bid.UBDNaN128(ubdWords(x), ubdWords(y)))
 }
 
 // unpackDec128 returns x as a dec.
 func unpackDec128(x decimal128) dec {
-	if bid.NativeUBD128 {
-		kind, neg, c, e := bid.UBDUnpack128(ubdWords(x))
-		return dec{kind, neg, c, e}
-	}
-	return unpack128(b128(x))
+	kind, neg, c, e := bid.UBDUnpack128(ubdWords(x))
+	return dec{kind, neg, c, e}
 }
 
 // decimal128 rounds r to decimal128, to nearest with ties to even.
 func (r result) decimal128() decimal128 {
-	if bid.NativeUBD128 {
-		switch r.kind {
-		case bid.KindNaN:
-			return FromBits128(bid.UBDNaNHi, 0)
-		case bid.KindInf:
-			hi := bid.UBDInfHi
-			if r.neg {
-				hi |= bid.UBDSignHi
-			}
-			return FromBits128(hi, 0)
+	switch r.kind {
+	case bid.KindNaN:
+		return fromUBD(bid.UBD128{Hi: bid.UBDNaNHi})
+	case bid.KindInf:
+		hi := bid.UBDInfHi
+		if r.neg {
+			hi |= bid.UBDSignHi
 		}
-		x, _ := bid.UBDRound128(r.neg, r.c, r.e, r.sticky, bid.ToNearestEven)
-		return FromBits128(x.Hi, x.Lo)
+		return fromUBD(bid.UBD128{Hi: hi})
 	}
-	return d128(r.pack128())
+	x, _ := bid.UBDRound128(r.neg, r.c, r.e, r.sticky, bid.ToNearestEven)
+	return fromUBD(x)
 }

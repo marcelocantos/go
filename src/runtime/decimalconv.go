@@ -41,59 +41,33 @@ func du64tod128(x uint64) (hi, lo uint64) {
 }
 
 func dd128toi64(hi, lo uint64) int64 {
-	z, _ := bid.Int64From128(from128(hi, lo), bid.TowardZero)
-	return z
+	return bid.UBDInt64From128(ubd128(hi, lo))
 }
 
 func dd128tou64(hi, lo uint64) uint64 {
-	z, _ := bid.Uint64From128(from128(hi, lo), bid.TowardZero)
-	return z
+	return bid.UBDUint64From128(ubd128(hi, lo))
 }
 
 func df32tod128(x float32) (hi, lo uint64) {
-	if bid.NativeUBD128 {
-		z := bid.UBDFloat32To128(x, bid.ToNearestEven)
-		return z.Hi, z.Lo
-	}
-	z := bid.Float32To128(x, bid.ToNearestEven)
-	return to128(z)
+	return fromUBD128(bid.UBDFloat32To128(x, bid.ToNearestEven))
 }
 
 func df64tod128(x float64) (hi, lo uint64) {
-	if bid.NativeUBD128 {
-		z := bid.UBDFloat64To128(x, bid.ToNearestEven)
-		return z.Hi, z.Lo
-	}
-	z := bid.Float64To128(x, bid.ToNearestEven)
-	return to128(z)
+	return fromUBD128(bid.UBDFloat64To128(x, bid.ToNearestEven))
 }
 
 func dd128tof32(hi, lo uint64) float32 {
-	if bid.NativeUBD128 {
-		return bid.UBDFloat32From128(bid.UBD128{Lo: lo, Hi: hi}, bid.ToNearestEven)
-	}
-	return bid.Float32From128(from128(hi, lo), bid.ToNearestEven)
+	return bid.UBDFloat32From128(ubd128(hi, lo), bid.ToNearestEven)
 }
 
 func dd128tof64(hi, lo uint64) float64 {
-	if bid.NativeUBD128 {
-		return bid.UBDFloat64From128(bid.UBD128{Lo: lo, Hi: hi}, bid.ToNearestEven)
-	}
-	return bid.Float64From128(from128(hi, lo), bid.ToNearestEven)
+	return bid.UBDFloat64From128(ubd128(hi, lo), bid.ToNearestEven)
 }
 
 func dd64tod128(x uint64) (hi, lo uint64) {
-	if bid.NativeUBD128 {
-		z := bid.UBDWiden128(from64(x))
-		return z.Hi, z.Lo
-	}
-	z := bid.Widen(from64(x))
-	return to128(z)
+	return fromUBD128(bid.UBDWiden128(from64(x)))
 }
 
 func dd128tod64(hi, lo uint64) uint64 {
-	if bid.NativeUBD128 {
-		return to64(bid.UBDNarrow128(bid.UBD128{Lo: lo, Hi: hi}, bid.ToNearestEven))
-	}
-	return to64(bid.Narrow(from128(hi, lo), bid.ToNearestEven))
+	return to64(bid.UBDNarrow128(ubd128(hi, lo), bid.ToNearestEven))
 }

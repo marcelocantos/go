@@ -75,6 +75,29 @@ func BID128frombits(hi, lo uint64) decimal128 {
 	return FromBits128(x.Hi^bid.NativeZero128Hi, x.Lo)
 }
 
+// UBD128bits returns the UBD encoding of d, the encoding of the kernel's
+// decimal128 arithmetic: its stored words where decimal128 is stored as UBD
+// (bid.NativeUBD128), and on a DPD target its encoding converted through
+// BID. bid.NativeUBD128 is a constant, so this is one of its two branches.
+func UBD128bits(d decimal128) (hi, lo uint64) {
+	if !bid.NativeUBD128 {
+		hi, lo = BID128bits(d)
+		u := bid.UBDFromBID128(bid.Uint128{Hi: hi, Lo: lo})
+		return u.Hi, u.Lo
+	}
+	return Bits128(d)
+}
+
+// UBD128frombits returns the decimal128 whose UBD encoding is hi, lo, a
+// well-formed UBD encoding.
+func UBD128frombits(hi, lo uint64) decimal128 {
+	if !bid.NativeUBD128 {
+		b := bid.BIDFromUBD128(bid.Uint128{Hi: hi, Lo: lo})
+		return BID128frombits(b.Hi, b.Lo)
+	}
+	return FromBits128(hi, lo)
+}
+
 // DPD64bits returns the IEEE 754 DPD encoding of d, without the zero-value XOR.
 // If the native representation uses BID, this converts the value to canonical
 // DPD, preserving its sign, quantum and NaN payload. If it uses DPD, every

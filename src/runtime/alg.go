@@ -165,11 +165,7 @@ func d64hash(p unsafe.Pointer, h uintptr) uintptr {
 
 func d128hash(p unsafe.Pointer, h uintptr) uintptr {
 	var k bid.Key
-	if bid.NativeUBD128 {
-		k = bid.UBDKey128(d128words(p))
-	} else {
-		k = bid.Key128(d128load(p))
-	}
+	k = bid.UBDKey128(d128words(p))
 	if k.Kind == bid.KindNaN {
 		return trimHash(c1 * (c0 ^ h ^ uintptr(rand())))
 	}
@@ -181,10 +177,7 @@ func d64equal(p, q unsafe.Pointer) bool {
 }
 
 func d128equal(p, q unsafe.Pointer) bool {
-	if bid.NativeUBD128 {
-		return bid.UBDEqual128(d128words(p), d128words(q))
-	}
-	return bid.Equal128(d128load(p), d128load(q))
+	return bid.UBDEqual128(d128words(p), d128words(q))
 }
 
 func interhash(p unsafe.Pointer, h uintptr) uintptr {

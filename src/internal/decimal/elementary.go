@@ -94,11 +94,6 @@ func unpack64(x uint64) dec {
 	return dec{kind, neg, u128{Lo: c}, e}
 }
 
-func unpack128(x u128) dec {
-	kind, neg, c, e := bid.Unpack128(x)
-	return dec{kind, neg, c, e}
-}
-
 func (r result) pack64() uint64 {
 	switch r.kind {
 	case bid.KindNaN:
@@ -120,20 +115,6 @@ func (r result) pack64() uint64 {
 		e += int64(k)
 	}
 	x, _ := bid.Round64(r.neg, c.Lo, clampExp(e), sticky, bid.ToNearestEven)
-	return x
-}
-
-func (r result) pack128() u128 {
-	switch r.kind {
-	case bid.KindNaN:
-		return u128{Hi: bid.NaN128Hi}
-	case bid.KindInf:
-		if r.neg {
-			return bid.Neg128(u128{Hi: bid.Inf128Hi})
-		}
-		return u128{Hi: bid.Inf128Hi}
-	}
-	x, _ := bid.Round128(r.neg, r.c, r.e, r.sticky, bid.ToNearestEven)
 	return x
 }
 

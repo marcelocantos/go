@@ -15,25 +15,25 @@ package runtime
 import "internal/bid"
 
 func dadd128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
-	return to128(bid.Add128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven))
+	return fromUBD128(bid.UBDAdd128(ubd128(xhi, xlo), ubd128(yhi, ylo)))
 }
 
 func dsub128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
-	return to128(bid.Sub128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven))
+	return fromUBD128(bid.UBDSub128(ubd128(xhi, xlo), ubd128(yhi, ylo)))
 }
 
 func dmul128(xhi, xlo, yhi, ylo uint64) (hi, lo uint64) {
-	return to128(bid.Mul128(from128(xhi, xlo), from128(yhi, ylo), bid.ToNearestEven))
+	return fromUBD128(bid.UBDMul128(ubd128(xhi, xlo), ubd128(yhi, ylo)))
 }
 
 func deq128(xhi, xlo, yhi, ylo uint64) bool {
-	return bid.Equal128(from128(xhi, xlo), from128(yhi, ylo))
+	return bid.UBDEqual128(ubd128(xhi, xlo), ubd128(yhi, ylo))
 }
 
 func dlt128(xhi, xlo, yhi, ylo uint64) bool {
-	return bid.Less128(from128(xhi, xlo), from128(yhi, ylo))
+	return bid.UBDLess128(ubd128(xhi, xlo), ubd128(yhi, ylo))
 }
 
 func dle128(xhi, xlo, yhi, ylo uint64) bool {
-	return bid.LessEqual128(from128(xhi, xlo), from128(yhi, ylo))
+	return bid.UBDLessEqual128(ubd128(xhi, xlo), ubd128(yhi, ylo))
 }
