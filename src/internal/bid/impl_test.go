@@ -509,12 +509,18 @@ const notImplemented = "internal/bid: not implemented"
 
 // try runs fn and reports whether the kernel implements what it calls. A
 // panic other than the not-implemented one is a contract violation (no
-// function may panic on any input) and is returned as an error.
+// function may panic on any input) and is returned as an error. An implSkip
+// panic, a test target declining the call, is reported as not implemented,
+// with the implSkip as err.
 func try(fn func()) (implemented bool, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			if r == notImplemented {
 				implemented = false
+				return
+			}
+			if s, ok := r.(implSkip); ok {
+				implemented, err = false, s
 				return
 			}
 			implemented, err = true, fmt.Errorf("panic: %v", r)

@@ -6,12 +6,13 @@ package bid_test
 
 import "internal/bid"
 
-// ubdKernel is the kernel with the decimal128 operations the compiler
-// calls replaced by its UBD entries: each operand converted to UBD, the
-// ties-to-even entry called for ToNearestEven and the Rnd entry for every
-// other mode, and the result converted back. -bid.vectors=ubd runs the
-// published vectors against it, so that they exercise the UBD kernel and
-// not only the BID functions. Every other operation is the kernel's.
+// ubdKernel is the kernel with the decimal128 operations the compiler calls
+// replaced by its UBD entries: each operand converted to UBD, the
+// TiesToEven entry called for ToNearestEven and the Rnd entry for every
+// other rounding direction, and the result converted back. -bid.vectors=ubd
+// runs the published vectors against it, so that they exercise the UBD
+// kernel and not only the BID functions. Every other operation is the
+// kernel's.
 type ubdKernel struct{ kernel }
 
 func ubdIn(x bits) bits  { return bid.UBDFromBID128(x) }
@@ -47,6 +48,22 @@ func (k ubdKernel) div(f *format, x, y bits, m bid.Mode) bits {
 		return k.kernel.div(f, x, y, m)
 	}
 	return ubdBinary(bid.UBDDivTTE128, bid.UBDDivRnd128, x, y, m)
+}
+
+// fma is UBDFMA128, the entry math/decimal's FMA calls, which takes the
+// rounding direction itself rather than coming in a TTE and Rnd pair.
+func (k ubdKernel) fma(f *format, x, y, z bits, m bid.Mode) bits {
+	if w64(f) {
+		return k.kernel.fma(f, x, y, z, m)
+	}
+	r := bid.UBDFMA128(ubdWord(x), ubdWord(y), ubdWord(z), m)
+	return ubdOut(bits{Hi: r.Hi, Lo: r.Lo})
+}
+
+// ubdWord is ubdIn for an entry that takes bid.UBD128.
+func ubdWord(x bits) bid.UBD128 {
+	u := ubdIn(x)
+	return bid.UBD128{Hi: u.Hi, Lo: u.Lo}
 }
 func (k ubdKernel) quantize(f *format, x, y bits, m bid.Mode) bits {
 	if w64(f) {
