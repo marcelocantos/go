@@ -85,6 +85,9 @@ func TestTotalOrder128(t *testing.T) {
 			if got := decimal.TotalOrder(x, y); got != (i <= j) {
 				t.Errorf("TotalOrder(%s, %s) = %v, want %v", names[i], names[j], got, i <= j)
 			}
+			if got, want := decimal.TotalCompareMag(x, y), decimal.TotalCompare(decimal.Abs(x), decimal.Abs(y)); got != want {
+				t.Errorf("TotalCompareMag(%s, %s) = %d, want %d", names[i], names[j], got, want)
+			}
 			if got, want := decimal.TotalOrderMag(x, y), decimal.TotalOrder(decimal.Abs(x), decimal.Abs(y)); got != want {
 				t.Errorf("TotalOrderMag(%s, %s) = %v, want %v", names[i], names[j], got, want)
 			}
@@ -124,5 +127,31 @@ func TestTotalOrderMag128(t *testing.T) {
 		if got := decimal.TotalOrderMag(tt.x, tt.y); got != tt.want {
 			t.Errorf("TotalOrderMag(%v, %v) = %v, want %v", tt.x, tt.y, got, tt.want)
 		}
+	}
+}
+
+// TestTotalCompareMag128 sorts decimal128 values by magnitude with
+// TotalCompareMag: the signs drop out, members of one cohort keep the
+// smaller exponent first, and NaNs follow the infinity, signaling before
+// quiet.
+func TestTotalCompareMag128(t *testing.T) {
+	if runtime.GOARCH == "ppc64le" {
+		t.Skip("decimal128 is not stored as UBD on ppc64le")
+	}
+	q := func(x, e decimal128) decimal128 { return decimal.Quantize(x, e) }
+	snan2 := decimal.SignalingNaNWithPayload(decimal128(2))
+	negNaN1 := decimal.Copysign(decimal.NaNWithPayload(decimal128(1)), -1)
+	inf := decimal.Inf[decimal128](-1)
+	in := []decimal128{-3, negNaN1, 2, inf, q(-1, 0.1), snan2, q(1, 0.01)}
+	want := []decimal128{q(1, 0.01), q(-1, 0.1), 2, -3, inf, snan2, negNaN1}
+	got := slices.Clone(in)
+	slices.SortFunc(got, decimal.TotalCompareMag)
+	for i := range want {
+		if decimal.TotalCompare(got[i], want[i]) != 0 {
+			t.Errorf("sorted by magnitude, position %d is %v, want %v (all: %v)", i, got[i], want[i], got)
+		}
+	}
+	if c := decimal.TotalCompareMag(decimal128(-1), decimal128(1)); c != 0 {
+		t.Errorf("TotalCompareMag(-1, 1) = %d, want 0", c)
 	}
 }

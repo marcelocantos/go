@@ -93,6 +93,9 @@ func TestUBDTotalOrder(t *testing.T) {
 				t.Errorf("UBDTotalCompare128(%#x, %#x) = 0 is %v, but the patterns are the same is %v", x, y, c == 0, x == y)
 			}
 			ax, ay := bid.UBD128{Lo: x.Lo, Hi: x.Hi &^ bid.UBDSignHi}, bid.UBD128{Lo: y.Lo, Hi: y.Hi &^ bid.UBDSignHi}
+			if got, want := bid.UBDTotalCompareMag128(x, y), bid.UBDTotalCompare128(ax, ay); got != want {
+				t.Errorf("UBDTotalCompareMag128(%#x, %#x) = %d, but the compare of the magnitudes is %d", x, y, got, want)
+			}
 			if got, want := bid.UBDTotalOrderMag128(x, y), bid.UBDTotalOrder128(ax, ay); got != want {
 				t.Errorf("UBDTotalOrderMag128(%#x, %#x) = %v, but totalOrder of the magnitudes is %v", x, y, got, want)
 			}

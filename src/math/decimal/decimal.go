@@ -170,6 +170,13 @@ func TotalCompare[D Decimal](x, y D) int { return impl.TotalCompare[D](x, y) }
 // totalOrderMag operation of IEEE 754-2019 clause 5.7.2).
 func TotalOrderMag[D Decimal](x, y D) bool { return impl.TotalOrderMag[D](x, y) }
 
+// TotalCompareMag is [TotalOrderMag] as a three-way comparison, for sorting
+// by magnitude with [slices.SortFunc] and the like: -1, 0 or +1 as the
+// magnitude of x precedes, is, or follows the magnitude of y in the total
+// order, TotalCompare(Abs(x), Abs(y)). Where decimal128 is stored as UBD,
+// it is 0 for two decimal128 values only when they differ at most in sign.
+func TotalCompareMag[D Decimal](x, y D) int { return impl.TotalCompareMag[D](x, y) }
+
 // Abs returns the absolute value of x, keeping its quantum.
 //
 // Special cases are:
