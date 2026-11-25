@@ -1003,7 +1003,7 @@ func evalDec(im impl, v *decVector) vecOutcome {
 		if args[i], why = vecOperand(f, s); why != "" {
 			return vecSkip(why)
 		}
-		if (op == "comparetotal" || op == "comparetotmag") && strings.Contains(strings.ToLower(s), "snan") {
+		if (op == "comparetotal" || op == "comparetotmag") && strings.Contains(strings.ToLower(s), "snan") && !ubdTotal(im, f) {
 			return vecSkip("contract: signaling NaN ordering")
 		}
 	}
@@ -1049,6 +1049,7 @@ func evalDec(im impl, v *decVector) vecOutcome {
 		out := vecOutcome{pass: got.text == v.result, got: got.text}
 		switch {
 		case out.pass:
+		case ubdTotal(im, f):
 		case op == "comparetotal":
 			if why := totalOrderNaNDivergence(f, args[0], args[1], got.text); why != "" {
 				return vecSkip(why)
@@ -2210,7 +2211,7 @@ func (c *intelCall) totalOrder(mag bool) vecOutcome {
 		gotText = "1"
 	}
 	out := vecOutcome{pass: gotText == res, got: gotText}
-	if !out.pass && vecRef.isNaN(c.f, a[0]) && vecRef.isNaN(c.f, a[1]) &&
+	if !out.pass && !ubdTotal(c.im, c.f) && vecRef.isNaN(c.f, a[0]) && vecRef.isNaN(c.f, a[1]) &&
 		vecRef.signbit(c.f, a[0]) == vecRef.signbit(c.f, a[1]) {
 		return vecSkip("contract: TotalOrder ignores the signaling bit and the payload of NaNs of one sign")
 	}
