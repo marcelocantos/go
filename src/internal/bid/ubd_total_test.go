@@ -69,7 +69,8 @@ func pow10u(n int) uint64 {
 	return p
 }
 
-// TestUBDTotalOrder checks UBDTotalCompare128 and UBDTotalOrder128 on every
+// TestUBDTotalOrder checks UBDTotalCompare128, UBDTotalOrder128 and
+// UBDTotalOrderMag128 (against UBDTotalOrder128 of the magnitudes) on every
 // pair of a pool:
 //
 //   - against the BID TotalOrder128 for every pair without a NaN, where its
@@ -90,6 +91,10 @@ func TestUBDTotalOrder(t *testing.T) {
 			}
 			if (c == 0) != (x == y) {
 				t.Errorf("UBDTotalCompare128(%#x, %#x) = 0 is %v, but the patterns are the same is %v", x, y, c == 0, x == y)
+			}
+			ax, ay := bid.UBD128{Lo: x.Lo, Hi: x.Hi &^ bid.UBDSignHi}, bid.UBD128{Lo: y.Lo, Hi: y.Hi &^ bid.UBDSignHi}
+			if got, want := bid.UBDTotalOrderMag128(x, y), bid.UBDTotalOrder128(ax, ay); got != want {
+				t.Errorf("UBDTotalOrderMag128(%#x, %#x) = %v, but totalOrder of the magnitudes is %v", x, y, got, want)
 			}
 			if d := bid.UBDTotalCompare128(y, x); d != -c {
 				t.Errorf("UBDTotalCompare128 not antisymmetric on %#x, %#x: %d and %d", x, y, c, d)

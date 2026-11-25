@@ -135,6 +135,41 @@ func SignalingNaNWithPayload[D Decimal](payload D) D { return impl.SignalingNaNW
 // Signbit reports whether x is negative or negative zero.
 func Signbit[D Decimal](x D) bool { return impl.Signbit[D](x) }
 
+// TotalOrder reports whether x precedes or is y in the total order of IEEE
+// 754-2019 clause 5.10 (the totalOrder operation). The order is defined on
+// every pair of values, NaNs included, so it can sort them:
+//
+//   - numerically, x < y puts x first;
+//   - -0 precedes +0;
+//   - members of one cohort, equal values with different exponents, are
+//     ordered by exponent, the smaller first for a positive value and the
+//     larger first for a negative one, so -1.0 precedes -1.00, which
+//     precedes 1.00, which precedes 1.0;
+//   - a NaN with a negative sign precedes every number and one with a
+//     positive sign follows every number;
+//   - between two NaNs, a negative sign comes first, then, for a positive
+//     sign, a signaling NaN precedes a quiet one, and the reverse for a
+//     negative sign; NaNs of one sign and kind are ordered by payload,
+//     ascending for a positive sign and descending for a negative one.
+//
+// Where decimal128 is stored as UBD, on every target but ppc64le,
+// TotalOrder of two different decimal128 values is never true both ways.
+// For decimal64, and for decimal128 on ppc64le, NaNs are so far ordered by
+// sign alone, so two NaNs of one sign precede each other.
+func TotalOrder[D Decimal](x, y D) bool { return impl.TotalOrder[D](x, y) }
+
+// TotalCompare is [TotalOrder] as a three-way comparison, for
+// [slices.SortFunc] and the like: -1, 0 or +1 as x precedes, is, or follows
+// y. Where decimal128 is stored as UBD, it is 0 for two decimal128 values
+// only when they are the same value with the same exponent, sign and, for
+// a NaN, kind and payload.
+func TotalCompare[D Decimal](x, y D) int { return impl.TotalCompare[D](x, y) }
+
+// TotalOrderMag reports whether the magnitude of x precedes or is the
+// magnitude of y in the total order: TotalOrder(Abs(x), Abs(y)) (the
+// totalOrderMag operation of IEEE 754-2019 clause 5.7.2).
+func TotalOrderMag[D Decimal](x, y D) bool { return impl.TotalOrderMag[D](x, y) }
+
 // Abs returns the absolute value of x, keeping its quantum.
 //
 // Special cases are:
