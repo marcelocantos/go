@@ -106,3 +106,6 @@ pkg math/decimal, func Ilogb[$0 Decimal]($0) int #19787
 pkg math/decimal, func Ldexp[$0 Decimal]($0, int) $0 #19787
 pkg math/decimal, func Logb[$0 Decimal]($0) $0 #19787
 pkg math/decimal, func Nextafter[$0 Decimal]($0, $0) $0 #19787
+pkg math/decimal, func TotalCompare[$0 Decimal]($0, $0) int #19787
+pkg math/decimal, func TotalOrderMag[$0 Decimal]($0, $0) bool #19787
+pkg math/decimal, func TotalOrder[$0 Decimal]($0, $0) bool #19787

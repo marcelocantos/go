@@ -116,3 +116,21 @@ func (k ubdKernel) compare(f *format, x, y bits) (int, bool) {
 	}
 	return bid.UBDCompare128(ubdIn(x), ubdIn(y))
 }
+
+// totalOrder is UBDTotalOrder128 on the UBD patterns, which orders NaNs as
+// IEEE 754-2019 clause 5.10 d) does (go-decimal-proposal#39), where the
+// kernel's TotalOrder128 orders them by sign alone.
+func (k ubdKernel) totalOrder(f *format, x, y bits) bool {
+	if w64(f) {
+		return k.kernel.totalOrder(f, x, y)
+	}
+	xu, yu := ubdIn(x), ubdIn(y)
+	return bid.UBDTotalOrder128(bid.UBD128{Lo: xu.Lo, Hi: xu.Hi}, bid.UBD128{Lo: yu.Lo, Hi: yu.Hi})
+}
+
+// ubdTotal reports whether im orders NaNs as clause 5.10 d) does for format
+// f, so that the runner's skips for the kernel's NaN order do not apply.
+func ubdTotal(im impl, f *format) bool {
+	_, ok := im.(ubdKernel)
+	return ok && !w64(f)
+}
