@@ -399,6 +399,26 @@ non-canonical BID patterns to survive a round trip now expect UBD /
 canonical values, as they already do for DPD on ppc64le. `ubd.go` is
 excluded from `internal/bid`'s API-coverage and layout lint tests.
 
+## Multiply's 2^56 bound, reviewed (2026-11-26)
+
+Reviewed whether level 2's `x * y` should take full one-word coefficients
+and test the product (high word >> 48 == 0, below 2^112) instead of
+requiring both coefficients below 2^56, so that every level-2 path (`+`,
+`-`, the comparisons, `*`) uses the one-word criterion. The 2^56 bound was
+deliberate (`ubdMulFast`'s comment; History, `efdd84e4` → `b5c2edb4`): the
+low-word test is ORed into the same single guard as the high-word test,
+while the 64-bit form drops it but adds a product test and a branch after
+the multiply, a net 1 instruction more on arm64 (21 against 20) and 2 on
+amd64 (30 against 28). It gains only factors of 2^56 or more whose product
+still fits (17–19 digits), which neither the money-form workloads (0% sent
+to the kernel at 2^56) nor the apps produce.
+
+Decision (the user's): no change here at this time; level 2 keeps 2^56.
+The decimal128-* ports adopt the uniform one-word (64-bit) criterion for
+their fast paths. If this is revisited, rebuild cmd/compile with the
+product test and remeasure the site (expected 21 instructions on arm64)
+and the `x * y` money rows before changing it.
+
 ## Not done
 
 - The GDB printer does not know UBD (`TestGdbDecimal` fails).
