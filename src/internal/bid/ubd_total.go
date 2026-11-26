@@ -52,6 +52,11 @@ func UBDTotalOrder128(x, y UBD128) bool { return UBDTotalCompare128(x, y) <= 0 }
 // magnitude of y in the total order.
 func UBDTotalOrderMag128(x, y UBD128) bool { return ubdTotalCompareMag128(x, y) <= 0 }
 
+// UBDTotalCompareMag128 is UBDTotalCompare128 on the magnitudes of x and y:
+// -1, 0 or +1 as abs(x) precedes, is, or follows abs(y) in the total order.
+// It is 0 only when x and y are the same pattern but for the sign.
+func UBDTotalCompareMag128(x, y UBD128) int { return ubdTotalCompareMag128(x, y) }
+
 // ubdTotalCompareMag128 orders the magnitudes of x and y, their signs
 // ignored, as totalOrder orders positive values.
 func ubdTotalCompareMag128(x, y UBD128) int {

@@ -81,20 +81,28 @@ func narrowDecimal(d decimal128, bitSize int) decimal128 {
 }
 
 // ParseDecimal converts the string s to a decimal value of the given bitSize,
-// 64 for decimal64 or 128 for decimal128, rounded to nearest even from the
-// exact value s denotes. The result has type decimal128 whatever the bitSize,
-// as [ParseFloat]'s result has type float64; it converts to decimal64 without
-// changing its value or quantum if bitSize is 64. As for ParseFloat, a
-// bitSize other than 64 is taken as the larger size, 128.
+// 64 for decimal64 or 128 for decimal128: the conversion from an external
+// character sequence of IEEE 754-2019 clause 5.12. The result has type
+// decimal128 whatever the bitSize; it converts to decimal64 without changing
+// its value or quantum if bitSize is 64. A bitSize other than 64 is taken
+// as 128.
 //
-// ParseDecimal accepts what ParseFloat accepts: decimal and hexadecimal
-// floating-point numbers as defined by the Go syntax for [floating-point
-// literals], underscores included, the string "NaN", and the (possibly
-// signed) strings "Inf" and "Infinity", ignoring case. There is no signaling
-// NaN and no signed NaN, as for ParseFloat.
+// s is one of the following, with an optional sign:
 //
-// A decimal numeral gives the quantum of its digits if its value is exact:
-// "1.50" is 1.50, not 1.5. A hexadecimal numeral has no quantum, and the
+//   - a decimal or hexadecimal numeral, in the syntax of Go's
+//     [floating-point literals], underscores included;
+//   - "Inf" or "Infinity", which gives an infinity of that sign
+//     (clause 5.12.1);
+//   - "NaN", which gives a quiet NaN (clause 5.12.1). The standard does not
+//     interpret the sign of a NaN, and it is not kept: "-NaN" and "NaN" give
+//     the same NaN.
+//
+// The words are matched ignoring case. "sNaN" is not accepted.
+//
+// A decimal numeral is converted as clause 5.12.2 requires: its value, sign
+// and quantum are kept unless rounding is necessary, and a result that must
+// be rounded is rounded correctly, with roundTiesToEven. So "1.50" is 1.50,
+// not 1.5. A hexadecimal numeral (clause 5.12.3) has no quantum, and the
 // result's exponent is chosen as for a constant without one (see
 // "Conversions" in the Go specification): an exact value that is an integer
 // that fits has exponent 0, another exact value has the smallest coefficient
@@ -105,8 +113,8 @@ func narrowDecimal(d decimal128, bitSize int) decimal128 {
 // include err.Num = s. If s is not syntactically well-formed, ParseDecimal
 // returns zero and err.Err = ErrSyntax. If s is well-formed but rounds to a
 // magnitude beyond the largest value of the size, ParseDecimal returns ±Inf
-// and err.Err = ErrRange. As with ParseFloat, a value too small for the
-// format is not an error: it rounds to a subnormal value or to zero.
+// and err.Err = ErrRange. A value too small for the format is not an error:
+// it rounds to a subnormal value or to zero.
 //
 // [floating-point literals]: https://go.dev/ref/spec#Floating-point_literals
 func ParseDecimal(s string, bitSize int) (decimal128, error) { return parseDecimal(s, bitSize) }
