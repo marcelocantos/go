@@ -47,3 +47,12 @@ func TotalOrderMag[D Decimal](x, y D) bool {
 	}
 	return TotalOrder(Abs(x), Abs(y))
 }
+
+// TotalCompareMag returns -1, 0 or +1 as the magnitude of x precedes, is, or
+// follows the magnitude of y in the total order: TotalCompare(Abs(x), Abs(y)).
+func TotalCompareMag[D Decimal](x, y D) int {
+	if !is64(x) && bid.NativeUBD128 {
+		return bid.UBDTotalCompareMag128(ubdWords(decimal128(x)), ubdWords(decimal128(y)))
+	}
+	return TotalCompare(Abs(x), Abs(y))
+}
