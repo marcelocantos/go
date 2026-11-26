@@ -217,3 +217,46 @@ func BIDFromDPD128(x Uint128) Uint128 {
 	r, _ := Pack128(sign != 0, Uint128{Hi: hi + c, Lo: lo}, int(biased)-Bias128)
 	return r
 }
+
+// IsCanonicalDPD128 reports whether x is a canonical DPD encoding of a
+// decimal128 (IEEE 754-2019 clause 3.5.2, for the decimal encoding of the
+// significand). The 17-bit combination field G is G0 at bit 62 to G16 at
+// bit 46, and the trailing significand field T is the 110 bits below it,
+// eleven declets.
+//
+//   - A NaN (G0 to G4 11111) is canonical if G6 to G16 are zero, G5 being
+//     the signaling bit, and its payload's declets are canonical.
+//   - An infinity (G0 to G4 11110) is canonical if G5 to G16 and T are zero.
+//   - A finite number is canonical if its declets are: "A canonical
+//     significand has only canonical declets". Every combination field of a
+//     finite number is canonical, as its leading digit is 0 to 9.
+func IsCanonicalDPD128(x Uint128) bool {
+	g := x.Hi >> 46 & (1<<17 - 1)
+	switch g >> 12 {
+	case 0x1F:
+		if g&(1<<11-1) != 0 {
+			return false
+		}
+	case 0x1E:
+		return g&(1<<12-1) == 0 && x.Hi&(1<<46-1) == 0 && x.Lo == 0
+	}
+	// Declets 0 to 5 are lo's bits 0 to 59, and declets 6 to 10 the 50
+	// bits above them.
+	return dpdDecletsCanonical(x.Lo, 0x0004010040100401) &&
+		dpdDecletsCanonical(x.Lo>>60|(x.Hi&(1<<46-1))<<4, 0x0000010040100401)
+}
+
+// dpdDecletsCanonical reports whether every declet of t whose lowest bit is
+// set in m is canonical, all at once: bit 10k of the result has bits 1, 2,
+// 3, 5 and 6 of declet k all set and bit 8 or 9 set, the non-canonical
+// forms (see dpdDecletCanonical).
+func dpdDecletsCanonical(t, m uint64) bool {
+	return t>>1&(t>>2)&(t>>3)&(t>>5)&(t>>6)&(t>>8|t>>9)&m == 0
+}
+
+// dpdDecletCanonical reports whether the declet d is one of the 1000
+// canonical ones: not of the forms 01x11x111x, 10x11x111x or 11x11x111x,
+// the 24 non-canonical patterns of clause 3.5.2.
+func dpdDecletCanonical(d uint64) bool {
+	return d&0b0001101110 != 0b0001101110 || d&0b1100000000 == 0
+}

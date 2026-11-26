@@ -131,3 +131,13 @@ func FromBits128(hi, lo uint64) decimal128 {
 	p[0], p[1] = lo, hi
 	return d
 }
+
+// IsCanonicalBID128 reports whether hi, lo is a canonical BID encoding of a
+// decimal128.
+func IsCanonicalBID128(hi, lo uint64) bool { return bid.IsCanonical128(bid.Uint128{Hi: hi, Lo: lo}) }
+
+// IsCanonicalDPD128 reports whether hi, lo is a canonical DPD encoding of a
+// decimal128.
+func IsCanonicalDPD128(hi, lo uint64) bool {
+	return bid.IsCanonicalDPD128(bid.Uint128{Hi: hi, Lo: lo})
+}

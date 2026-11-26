@@ -72,6 +72,35 @@ func DPD128bits(d decimal128) (hi, lo uint64) { return impl.DPD128bits(d) }
 // DPD128frombits is DPD64frombits for decimal128, with the high word first.
 func DPD128frombits(hi, lo uint64) decimal128 { return impl.DPD128frombits(hi, lo) }
 
+// IsCanonicalBID128 reports whether hi, lo (high word first) is a canonical
+// BID encoding of a decimal128 (the isCanonical operation of IEEE 754-2019
+// clause 5.7.2 on the interchange format, as clause 3.5.2 defines it). It is
+// not when it is:
+//
+//   - a finite number whose significand is above 10^34 - 1, which is every
+//     significand of the second form;
+//   - an infinity with any bit set below its five-bit tag;
+//   - a NaN with any bit set between the signaling bit and the trailing
+//     significand field, or a payload above 10^33 - 1.
+//
+// [BID128frombits] reads a non-canonical encoding as the value clause
+// 3.5.2 gives it. Where decimal128 is stored as UBD, IsCanonicalBID128 is
+// the way to tell that an encoding read from outside the program was not
+// canonical, as [IsCanonical] is then true for every decimal128.
+func IsCanonicalBID128(hi, lo uint64) bool { return impl.IsCanonicalBID128(hi, lo) }
+
+// IsCanonicalDPD128 is IsCanonicalBID128 for the DPD encoding, which is not
+// canonical when it is:
+//
+//   - a finite number with any of the 24 non-canonical declets;
+//   - an infinity with any bit set below its five-bit tag;
+//   - a NaN with any bit set between the signaling bit and the trailing
+//     significand field, or a non-canonical declet in its payload.
+//
+// [DPD128frombits] reads a non-canonical declet as the value Table 3.3 of
+// IEEE 754-2019 gives it.
+func IsCanonicalDPD128(hi, lo uint64) bool { return impl.IsCanonicalDPD128(hi, lo) }
+
 // Native64bits returns the exact stored representation of d, including the
 // zero-value XOR. The representation is implementation-dependent:
 // [NativeRepresentation] names what the bits mean, and the BID and DPD codecs

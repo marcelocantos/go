@@ -2152,3 +2152,17 @@ BenchmarkKernel/FixedForm/128/short-12         	71584821	         1.788 ns/op	  
 BenchmarkKernel/FixedForm/128/short-12         	69625760	         1.771 ns/op	       0 B/op	       0 allocs/op
 BenchmarkKernel/FixedForm/128/short-12         	71631099	         1.772 ns/op	       0 B/op	       0 allocs/op
 BenchmarkKernel/FixedForm/128/short-12         	71648934	         1.760 ns/op	       0 B/op	       0 allocs/op
+
+# The IsCanonicalDPD row was added later, with the same command restricted to
+# it (-test.bench 'BenchmarkKernel/IsCanonicalDPD/128/mixed$'), on 2026-11-24
+# on the same machine at load 2.29 2.49 1.97 at the start and 2.27 2.48 1.97
+# at the end, on the tree of the commit that adds it; the lines below are
+# that output unedited.
+BenchmarkKernel/IsCanonicalDPD/128/mixed-12         	43915183	         2.776 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/IsCanonicalDPD/128/mixed-12         	43658859	         2.803 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/IsCanonicalDPD/128/mixed-12         	45849650	         2.802 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/IsCanonicalDPD/128/mixed-12         	43723158	         2.808 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/IsCanonicalDPD/128/mixed-12         	42479124	         2.799 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/IsCanonicalDPD/128/mixed-12         	45855484	         2.762 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/IsCanonicalDPD/128/mixed-12         	45810985	         2.811 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKernel/IsCanonicalDPD/128/mixed-12         	45573225	         2.814 ns/op	       0 B/op	       0 allocs/op

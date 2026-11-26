@@ -110,3 +110,35 @@ pkg math/decimal, func TotalCompare[$0 Decimal]($0, $0) int #19787
 pkg math/decimal, func TotalOrderMag[$0 Decimal]($0, $0) bool #19787
 pkg math/decimal, func TotalOrder[$0 Decimal]($0, $0) bool #19787
 pkg math/decimal, func TotalCompareMag[$0 Decimal]($0, $0) int #19787
+pkg math/decimal, const ClassNegativeInfinity = 2 #19787
+pkg math/decimal, const ClassNegativeInfinity IEEE754Class #19787
+pkg math/decimal, const ClassNegativeNormal = 3 #19787
+pkg math/decimal, const ClassNegativeNormal IEEE754Class #19787
+pkg math/decimal, const ClassNegativeSubnormal = 4 #19787
+pkg math/decimal, const ClassNegativeSubnormal IEEE754Class #19787
+pkg math/decimal, const ClassNegativeZero = 5 #19787
+pkg math/decimal, const ClassNegativeZero IEEE754Class #19787
+pkg math/decimal, const ClassPositiveInfinity = 9 #19787
+pkg math/decimal, const ClassPositiveInfinity IEEE754Class #19787
+pkg math/decimal, const ClassPositiveNormal = 8 #19787
+pkg math/decimal, const ClassPositiveNormal IEEE754Class #19787
+pkg math/decimal, const ClassPositiveSubnormal = 7 #19787
+pkg math/decimal, const ClassPositiveSubnormal IEEE754Class #19787
+pkg math/decimal, const ClassPositiveZero = 6 #19787
+pkg math/decimal, const ClassPositiveZero IEEE754Class #19787
+pkg math/decimal, const ClassQuietNaN = 1 #19787
+pkg math/decimal, const ClassQuietNaN IEEE754Class #19787
+pkg math/decimal, const ClassSignalingNaN = 0 #19787
+pkg math/decimal, const ClassSignalingNaN IEEE754Class #19787
+pkg math/decimal, const Radix = 10 #19787
+pkg math/decimal, const Radix ideal-int #19787
+pkg math/decimal, func Class[$0 Decimal]($0) IEEE754Class #19787
+pkg math/decimal, func IsCanonical[$0 Decimal]($0) bool #19787
+pkg math/decimal, func IsFinite[$0 Decimal]($0) bool #19787
+pkg math/decimal, func IsNormal[$0 Decimal]($0) bool #19787
+pkg math/decimal, func IsSubnormal[$0 Decimal]($0) bool #19787
+pkg math/decimal, func IsZero[$0 Decimal]($0) bool #19787
+pkg math/decimal, method (IEEE754Class) String() string #19787
+pkg math/decimal, type IEEE754Class int #19787
+pkg math/decimal, func IsCanonicalBID128(uint64, uint64) bool #19787
+pkg math/decimal, func IsCanonicalDPD128(uint64, uint64) bool #19787

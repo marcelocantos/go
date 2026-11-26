@@ -1004,6 +1004,10 @@ var decOps = map[string]decOp{
 	"samequantum": {2, false, true, func(im impl, f *format, a []bits, m bid.Mode) decRes {
 		return resBool(im.sameQuantum(f, a[0], a[1]))
 	}},
+	// class (IEEE 754-2019 clause 5.7.2), with GDA's names for the classes.
+	"class": {1, false, true, func(im impl, f *format, a []bits, m bid.Mode) decRes {
+		return decRes{text: decClassNames[implClass(im, f, a[0])]}
+	}},
 	"compare": {2, false, true, func(im impl, f *format, a []bits, m bid.Mode) decRes {
 		return resCmp(im.compare(f, a[0], a[1]))
 	}},
@@ -1073,7 +1077,7 @@ var decOps = map[string]decOp{
 // vecOpReason names why an operation has no mapping.
 func vecOpReason(op string) string {
 	switch op {
-	case "class", "canonical", "copy",
+	case "canonical", "copy",
 		"minmag", "maxmag", "toeng", "plus", "minus":
 		return "op: IEEE or identity operation outside the kernel API"
 	case "?malformed":
@@ -1162,9 +1166,10 @@ func evalDec(im impl, v *decVector) vecOutcome {
 	}
 
 	if spec.text {
-		if wantNaN {
+		if wantNaN && op != "class" {
 			// Only compare and comparesig answer NaN, which the kernel's
-			// Compare reports as unordered without a NaN value.
+			// Compare reports as unordered without a NaN value. class
+			// answers a class's name, which may be NaN or sNaN.
 			return vecOutcome{pass: got.text == "NaN", got: got.text}.noted(noteUnorderedNaN)
 		}
 		out := vecOutcome{pass: got.text == v.result, got: got.text}
@@ -1790,6 +1795,29 @@ func intelClass(im impl, f *format, x bits) int {
 	return pick(intelClassPosNormal, intelClassNegNormal)
 }
 
+// implClass is the class of x: UBDClass128 on the UBD pattern for the ubd
+// target's decimal128, otherwise intelClass, from im's predicates.
+func implClass(im impl, f *format, x bits) int {
+	if _, ok := im.(ubdKernel); ok && !w64(f) {
+		return bid.UBDClass128(ubdWord(x))
+	}
+	return intelClass(im, f, x)
+}
+
+// decClassNames are GDA's names for the classes, in intelClass's order.
+var decClassNames = [...]string{
+	intelClassSNaN:         "sNaN",
+	intelClassQNaN:         "NaN",
+	intelClassNegInf:       "-Infinity",
+	intelClassNegNormal:    "-Normal",
+	intelClassNegSubnormal: "-Subnormal",
+	intelClassNegZero:      "-Zero",
+	intelClassPosZero:      "+Zero",
+	intelClassPosSubnormal: "+Subnormal",
+	intelClassPosNormal:    "+Normal",
+	intelClassPosInf:       "+Infinity",
+}
+
 // intelCall is one vector in the course of being evaluated.
 type intelCall struct {
 	im   impl
@@ -2350,7 +2378,7 @@ func (c *intelCall) class() vecOutcome {
 		return vecSkip(why)
 	}
 	var got int
-	if o, ok := intelRun(func() { got = intelClass(c.im, c.f, a[0]) }); !ok {
+	if o, ok := intelRun(func() { got = implClass(c.im, c.f, a[0]) }); !ok {
 		return o
 	}
 	return vecOutcome{pass: strconv.Itoa(got) == res, got: strconv.Itoa(got)}.noted(noteNoStatus)

@@ -177,6 +177,91 @@ func TotalOrderMag[D Decimal](x, y D) bool { return impl.TotalOrderMag[D](x, y) 
 // it is 0 for two decimal128 values only when they differ at most in sign.
 func TotalCompareMag[D Decimal](x, y D) int { return impl.TotalCompareMag[D](x, y) }
 
+// IsFinite reports whether x is neither an infinity nor a NaN (the isFinite
+// operation of IEEE 754-2019 clause 5.7.2).
+func IsFinite[D Decimal](x D) bool { return impl.IsFinite[D](x) }
+
+// IsZero reports whether x is a zero of either sign (isZero). It gives the
+// same answer as x == 0.
+func IsZero[D Decimal](x D) bool { return impl.IsZero[D](x) }
+
+// IsNormal reports whether x is finite, non-zero and not subnormal
+// (isNormal).
+func IsNormal[D Decimal](x D) bool { return impl.IsNormal[D](x) }
+
+// IsSubnormal reports whether x is finite, non-zero and smaller in magnitude
+// than the smallest normal value of its type, 1e-383 for decimal64 and
+// 1e-6143 for decimal128 (isSubnormal).
+func IsSubnormal[D Decimal](x D) bool { return impl.IsSubnormal[D](x) }
+
+// IsCanonical reports whether x is stored in its canonical encoding
+// (isCanonical). Where decimal128 is stored as UBD, on every target but
+// ppc64le, a decimal128 is always canonical: a non-canonical BID or DPD
+// encoding is stored as the value IEEE 754-2019 clause 3.5.2 gives it. A
+// decimal64, or a decimal128 on ppc64le, is not canonical when it was made
+// from a non-canonical encoding by [BID64frombits], [BID128frombits],
+// [Native64frombits] or [Native128frombits], or copies one through a sign
+// operation. [IsCanonicalBID128] and [IsCanonicalDPD128] tell whether a
+// decimal128 encoding is canonical before it is converted.
+func IsCanonical[D Decimal](x D) bool { return impl.IsCanonical[D](x) }
+
+// An IEEE754Class is one of the ten classes of IEEE 754-2019 clause 5.7.2
+// into which every decimal value falls.
+type IEEE754Class int
+
+// The classes, in the order of the standard's list.
+const (
+	ClassSignalingNaN IEEE754Class = iota
+	ClassQuietNaN
+	ClassNegativeInfinity
+	ClassNegativeNormal
+	ClassNegativeSubnormal
+	ClassNegativeZero
+	ClassPositiveZero
+	ClassPositiveSubnormal
+	ClassPositiveNormal
+	ClassPositiveInfinity
+)
+
+// String returns the class's name without its prefix, such as "QuietNaN".
+func (c IEEE754Class) String() string {
+	switch c {
+	case ClassSignalingNaN:
+		return "SignalingNaN"
+	case ClassQuietNaN:
+		return "QuietNaN"
+	case ClassNegativeInfinity:
+		return "NegativeInfinity"
+	case ClassNegativeNormal:
+		return "NegativeNormal"
+	case ClassNegativeSubnormal:
+		return "NegativeSubnormal"
+	case ClassNegativeZero:
+		return "NegativeZero"
+	case ClassPositiveZero:
+		return "PositiveZero"
+	case ClassPositiveSubnormal:
+		return "PositiveSubnormal"
+	case ClassPositiveNormal:
+		return "PositiveNormal"
+	case ClassPositiveInfinity:
+		return "PositiveInfinity"
+	}
+	if c < 0 {
+		return "IEEE754Class(-" + itoa(int(-c)) + ")"
+	}
+	return "IEEE754Class(" + itoa(int(c)) + ")"
+}
+
+// Class returns the class of x (the class operation of IEEE 754-2019 clause
+// 5.7.2). Like the other operations of that clause it is never exceptional,
+// even for a signaling NaN.
+func Class[D Decimal](x D) IEEE754Class { return IEEE754Class(impl.Class[D](x)) }
+
+// Radix is the radix of the decimal formats (the radix operation of IEEE
+// 754-2019 clause 5.7.2).
+const Radix = 10
+
 // Abs returns the absolute value of x, keeping its quantum.
 //
 // Special cases are:
