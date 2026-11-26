@@ -386,9 +386,11 @@ var atod64Tests = []atodTest{
 	{" Inf", "0", ErrSyntax},
 	{"--Inf", "0", ErrSyntax},
 	{"+-1", "0", ErrSyntax},
-	// As for ParseFloat, a NaN has no sign and there is no signaling NaN.
-	{"-NaN", "0", ErrSyntax},
-	{"+nan", "0", ErrSyntax},
+	// A NaN may have a sign (IEEE 754-2019 §5.12.1); there is no signaling
+	// NaN.
+	{"-NaN", "NaN", nil},
+	{"+nan", "NaN", nil},
+	{"-nan", "NaN", nil},
 	{"snan", "0", ErrSyntax},
 	{"sNaN", "0", ErrSyntax},
 	{"-sNaN", "0", ErrSyntax},
@@ -555,7 +557,10 @@ var atod128Tests = []atodTest{
 	{"Infoo", "0", ErrSyntax},
 	{"Infinityx", "0", ErrSyntax},
 	{"-Inf", "-Inf", nil},
-	{"-NaN", "0", ErrSyntax},
+	{"-NaN", "NaN", nil},
+	{"+nan", "NaN", nil},
+	{"-nan", "NaN", nil},
+	{"-sNaN", "0", ErrSyntax},
 	{"1_000.000_001", "1000.000001", nil},
 	{"0x1p-2", "0.25", nil},
 	{"0x1p100", "1.267650600228229401496703205376e+30", nil},
@@ -1414,7 +1419,8 @@ func mulhi64(a, b uint64) uint64 {
 }
 
 // TestParseDecimalGrammarLikeFloat checks that ParseDecimal accepts exactly
-// the strings ParseFloat accepts.
+// the strings ParseFloat accepts, and "nan" with a sign, which IEEE 754-2019
+// §5.12.1 requires and ParseFloat rejects.
 func TestParseDecimalGrammarLikeFloat(t *testing.T) {
 	strs := []string{
 		"", "+", "-", ".", "+.", "e5", "1", "+1", "-1", ".5", "5.", "1e5", "1E+5", "1e-5", "1e", "1e+",
@@ -1423,7 +1429,7 @@ func TestParseDecimalGrammarLikeFloat(t *testing.T) {
 		"0x1p-2", "0x1.8p1", "0X1P+1", "0x1", "0x", "0x.p1", "0x.8p1", "0x_1p0", "0x1_0p0", "0x1p1_0", "0x1_p0",
 		"0x1.Fp+2", "0xp1", "0x1p", "0x1p+", "0x1g1", "-0x1p0", "+0x1p0", "0x1.p0", "0x.1p0", "0x1e1p0", "0x1e1",
 		"0b101", "0o17", "0x1.8", "1.2p4", "1p4",
-		"nan", "NaN", "NAN", "+nan", "-nan", "snan", "sNaN", "nan1", "nana",
+		"nan", "NaN", "NAN", "+nan", "-nan", "snan", "sNaN", "+snan", "-SNAN", "--snan", "snan1", "nan1", "nana",
 		"inf", "Inf", "+inf", "-inf", "infinity", "-Infinity", "+INFINITY", "infin", "infinityx", "-in", "i",
 	}
 	for _, s := range strs {
@@ -1431,6 +1437,9 @@ func TestParseDecimalGrammarLikeFloat(t *testing.T) {
 		for _, bits := range []int{64, 128} {
 			_, derr := ParseDecimal(s, bits)
 			fsyn := ferr != nil && ferr.(*NumError).Err == ErrSyntax
+			if w := strings.TrimLeft(s, "+-"); len(s)-len(w) == 1 && strings.EqualFold(w, "nan") {
+				fsyn = false
+			}
 			dsyn := derr != nil && derr.(*NumError).Err == ErrSyntax
 			if fsyn != dsyn {
 				t.Errorf("ParseDecimal(%q, %d) error %v; ParseFloat gives %v", s, bits, derr, ferr)
@@ -2061,4 +2070,30 @@ func BenchmarkFormatDecimalHex(b *testing.B) {
 			FormatDecimal(d, 'x', 1_000_000, 128)
 		}
 	})
+}
+
+// TestParseDecimalSignedNaN checks that "nan" with or without a sign
+// parses, at both sizes, to the same quiet NaN (IEEE 754-2019 §5.12.1; the
+// standard does not interpret the sign of a NaN, §6.3), and that "snan" is
+// not accepted.
+func TestParseDecimalSignedNaN(t *testing.T) {
+	quiet := decimal.NaN[decimal128]()
+	wantHi, wantLo := decimal.Native128bits(quiet)
+	for _, bits := range []int{64, 128} {
+		for _, s := range []string{"nan", "NaN", "+nan", "-nan", "+NaN", "-NaN", "-NAN"} {
+			got, err := ParseDecimal(s, bits)
+			if err != nil {
+				t.Errorf("ParseDecimal(%q, %d): %v", s, bits, err)
+				continue
+			}
+			if hi, lo := decimal.Native128bits(got); hi != wantHi || lo != wantLo {
+				t.Errorf("ParseDecimal(%q, %d) = %#x %#x, want %#x %#x", s, bits, hi, lo, wantHi, wantLo)
+			}
+		}
+		for _, s := range []string{"--nan", "-nan1", "- nan", "snan", "-sNaN", "nans"} {
+			if _, err := ParseDecimal(s, bits); err == nil || err.(*NumError).Err != ErrSyntax {
+				t.Errorf("ParseDecimal(%q, %d) error = %v, want ErrSyntax", s, bits, err)
+			}
+		}
+	}
 }

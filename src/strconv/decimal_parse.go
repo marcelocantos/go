@@ -12,16 +12,17 @@ import (
 	_ "unsafe"
 )
 
-// This file reads the syntax ParseFloat reads into a decimal value: Go's
+// This file reads ParseDecimal's syntax into a decimal value: Go's
 // floating-point literals, with underscores between digits, hexadecimal
-// mantissas with a binary exponent, and the words ParseFloat knows. The
-// kernel's Parse reads the character form of IEEE 754-2019 clause 5.12,
-// which has none of the Go syntax; a decimal numeral is passed to it with
-// its underscores removed, and the value of a hexadecimal one is worked out
-// here, exactly, and passed as a decimal numeral that rounds the same way.
+// mantissas with a binary exponent, and the words of IEEE 754-2019 clause
+// 5.12.1, "inf", "infinity" and "nan". The kernel's Parse reads the
+// character form of clause 5.12, which has none of the Go syntax; a decimal
+// numeral is passed to it with its underscores removed, and the value of a
+// hexadecimal one is worked out here, exactly, and passed as a decimal
+// numeral that rounds the same way.
 
-// readDecimal converts s, in the syntax of ParseFloat, to a decimal value
-// of the given bitSize, rounded once to nearest even. The status is the
+// readDecimal converts s, in ParseDecimal's syntax, to a decimal value of
+// the given bitSize, rounded once with roundTiesToEven. The status is the
 // kernel's.
 func readDecimal(s string, bitSize int) (decimal128, bid.Status) {
 	i := 0
@@ -31,13 +32,14 @@ func readDecimal(s string, bitSize int) (decimal128, bid.Status) {
 	rest := s[i:]
 	switch {
 	case len(rest) > 0 && rest[0] != '.' && (rest[0] < '0' || rest[0] > '9'):
-		// A word. As for ParseFloat, an infinity may have a sign and a NaN
-		// may not, and there is no signaling NaN.
-		inf := foldEqual(rest, "inf") || foldEqual(rest, "infinity")
-		if !inf && (i > 0 || !foldEqual(rest, "nan")) {
-			return 0, bid.Syntax
+		// A word: "inf", "infinity" or "nan", with an optional sign, as IEEE
+		// 754-2019 §5.12.1 requires. The sign of a NaN is not kept. There is
+		// no signaling NaN.
+		switch {
+		case foldEqual(rest, "inf"), foldEqual(rest, "infinity"), foldEqual(rest, "nan"):
+			return kernelParse(s, bitSize)
 		}
-		return kernelParse(s, bitSize)
+		return 0, bid.Syntax
 	case len(rest) > 2 && rest[0] == '0' && (rest[1] == 'x' || rest[1] == 'X'):
 		if !underscoreOK(s) {
 			return 0, bid.Syntax
@@ -148,7 +150,7 @@ func readHexDecimal(neg bool, s string, bitSize int) (decimal128, bid.Status) {
 	}
 exponent:
 	if !saw || i == len(s) || s[i]|0x20 != 'p' {
-		return 0, bid.Syntax // ParseFloat requires the exponent of a hexadecimal mantissa
+		return 0, bid.Syntax // Go's syntax requires the exponent of a hexadecimal mantissa
 	}
 	i++
 	eneg := false
@@ -303,9 +305,9 @@ func kernelParse(s string, bitSize int) (decimal128, bid.Status) {
 	return decimal.BID128frombits(x.Hi, x.Lo), st
 }
 
-// underscoreOK reports whether the underscores in s are allowed, as
-// ParseFloat allows them: only between digits, or between a base prefix and
-// a digit.
+// underscoreOK reports whether the underscores in s are allowed, as Go's
+// literal syntax allows them: only between digits, or between a base prefix
+// and a digit.
 func underscoreOK(s string) bool {
 	// saw is the class of the last character: '^' for the beginning of the
 	// number, '0' for a digit or base prefix, '_' for an underscore and '!'
