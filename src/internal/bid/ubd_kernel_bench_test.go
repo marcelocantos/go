@@ -569,6 +569,52 @@ func TestUBDDivAgrees(t *testing.T) {
 	}
 }
 
+// TestUBDDivPow10Agrees checks the ties-to-even divide entry with divisors
+// that are powers of ten, which it decides from the divisor's trailing zero
+// bits, and with divisors that look like them (10^k ± 1, 2^k, 5^k, and
+// 10^k times 2^32, whose trailing zeros index past the table), against the
+// BID kernel: dividends of every width with trailing zeros, so that the
+// quotient strips, at exponents at both ends of the range.
+func TestUBDDivPow10Agrees(t *testing.T) {
+	r := rand.New(rand.NewPCG(61, 67))
+	var divisors []uint64
+	p := uint64(1)
+	for k := 0; k <= 19; k++ {
+		divisors = append(divisors, p, p+1, p<<32)
+		if p > 1 {
+			divisors = append(divisors, p-1)
+		}
+		p *= 10 // wraps after 10^19, when the loop ends
+	}
+	for k := 0; k < 64; k++ {
+		divisors = append(divisors, 1<<k)
+	}
+	for f := uint64(5); f < 1<<62; f *= 5 {
+		divisors = append(divisors, f)
+	}
+	exps := []int{MinExp128, MinExp128 + 20, -6, -2, 0, 4, MaxExp128 - 20, MaxExp128}
+	for i := 0; i < 1000000; i++ {
+		xc := ubdBenchDigits(r, 1, 34)
+		if r.IntN(2) == 0 {
+			// Append zeros, up to 34 digits in all.
+			for z := r.IntN(20); z > 0; z-- {
+				hi, lo := mbits.Mul64(xc.Lo, 10)
+				n := Uint128{Hi: xc.Hi*10 + hi, Lo: lo}
+				if n.Hi > MaxCoeff128Hi || n.Hi == MaxCoeff128Hi && n.Lo > MaxCoeff128Lo {
+					break
+				}
+				xc = n
+			}
+		}
+		bx, ux := ubdBenchVal(r.IntN(2) == 0, xc, exps[r.IntN(len(exps))])
+		by, uy := ubdBenchVal(r.IntN(2) == 0, Uint128{Lo: divisors[r.IntN(len(divisors))]}, exps[r.IntN(len(exps))])
+		got := UBDKernelDiv(ux, uy)
+		if g, want := BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}), BIDKernelDiv(bx, by, ToNearestEven); g != want {
+			t.Fatalf("div(%#x, %#x): got %#x, want %#x", bx, by, g, want)
+		}
+	}
+}
+
 // TestUBDRoundToIntegralWideAgrees checks the ties-to-even round-to-
 // integral entry on operands wider than a word against the BID kernel:
 // coefficients of 20 to 34 digits at exponents from -60 to 10, so that the
