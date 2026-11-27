@@ -375,69 +375,7 @@ func ubdAddRnd128(x, y UBD128, mode Mode) UBD128 {
 	return ubdAddLong128(x, y, mode)
 }
 
-// ubdSubTTE128, the subtract entry the compiler calls, is ubdAddTTE128 of
-// x and y with y's sign flipped (unless y is a NaN, as in ubdSubSlow128):
-// the word path, the same text as ubdAddTTE128's (TestUBDWordPathsMatch),
-// written in, and the add entry for the rest.
-func ubdSubTTE128(x, y UBD128) UBD128 {
-	if y.Hi>>59 != UBDNaNTag {
-		y.Hi ^= UBDSignHi
-	}
-	if (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {
-		xh, xl, yh, yl := x.Hi, x.Lo, y.Hi, y.Lo
-		if (xh^yh)>>UBDSignShift == 0 {
-			// One exponent and one sign: the usual sum, an add and its carry.
-			lo, c := bits.Add64(xl, yl, 0)
-			return UBD128{Lo: lo, Hi: xh | c}
-		}
-		if (xh^yh)>>UBDExpShift == 0 {
-			// One exponent, opposite signs: both differences, and the one
-			// that did not borrow, chosen by a select.
-			d, b := bits.Sub64(xl, yl, 0)
-			if b != 0 {
-				d = yl - xl
-			}
-			sign := (xh>>UBDSignShift ^ b) & b2u(d != 0)
-			return UBD128{Lo: d, Hi: xh&^UBDSignHi | sign<<UBDSignShift}
-		}
-		// a is the operand with the larger exponent, b the other, whose
-		// exponent is the result's. Which it is goes with the data's kind
-		// (an amount and a rate), so it is a branch.
-		ah, al, bh, bl := xh, xl, yh, yl
-		if int64(xh) < int64(yh) { // qExp is the high word's top bits
-			ah, al, bh, bl = yh, yl, xh, xl
-		}
-		gap := uint64(int64(ah)>>UBDExpShift - int64(bh)>>UBDExpShift)
-		if gap > uint64(maxWordGap) {
-			return ubdAddLong128(x, y, ToNearestEven)
-		}
-		hi, lo := bits.Mul64(al, pow10tab64[gap])
-		sign := ah >> UBDSignShift & 1
-		if (ah^bh)&UBDSignHi == 0 {
-			var c uint64
-			lo, c = bits.Add64(lo, bl, 0)
-			hi += c
-		} else {
-			// a × 10^gap - b, negative only when a × 10^gap is below 2^64:
-			// both differences, and the one that did not borrow selected.
-			d, b := bits.Sub64(lo, bl, 0)
-			var bw uint64
-			hi, bw = bits.Sub64(hi, 0, b)
-			lo = d
-			if bw != 0 {
-				lo, hi, sign = -d, 0, sign^1 // b's magnitude, below 2^64, the larger
-			}
-			sign &= b2u(hi|lo != 0) // an exact zero is +0
-		}
-		_, bw := bits.Sub64(MaxCoeff128Lo, lo, 0)
-		_, bw = bits.Sub64(MaxCoeff128Hi, hi, bw)
-		if bw != 0 {
-			return ubdAddLong128(x, y, ToNearestEven)
-		}
-		return UBD128{Lo: lo, Hi: bh&^(UBDSignHi|UBDCoeffMaskHi) | sign<<UBDSignShift | hi}
-	}
-	return ubdAddTTE128(x, y)
-}
+// ubdSubTTE128 is in ubd_add.go.
 
 func ubdSubRnd128(x, y UBD128, mode Mode) UBD128 { return ubdSubSlow128(x, y, mode) }
 

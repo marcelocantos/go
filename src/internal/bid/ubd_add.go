@@ -618,3 +618,218 @@ func ubdAddTTE128(x, y UBD128) UBD128 {
 	}
 	return ubdAddLong128(x, y, mode)
 }
+
+// ubdSubTTE128, the subtract entry the compiler calls, is ubdAddTTE128 of x
+// and y with y's sign flipped (unless y is a NaN, as in ubdSubSlow128), its
+// body written in again so that a subtract is one call and one frame, where
+// one past the word path was this entry and then ubdAddTTE128. The two
+// bodies stay the same after the flip (TestUBDSubTTEMatchesAdd).
+func ubdSubTTE128(x, y UBD128) UBD128 {
+	if y.Hi>>59 != UBDNaNTag {
+		y.Hi ^= UBDSignHi
+	}
+	const mode = ToNearestEven
+	if (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {
+		xh, xl, yh, yl := x.Hi, x.Lo, y.Hi, y.Lo
+		if (xh^yh)>>UBDSignShift == 0 {
+			// One exponent and one sign: the usual sum, an add and its carry.
+			lo, c := bits.Add64(xl, yl, 0)
+			return UBD128{Lo: lo, Hi: xh | c}
+		}
+		if (xh^yh)>>UBDExpShift == 0 {
+			// One exponent, opposite signs: both differences, and the one
+			// that did not borrow, chosen by a select.
+			d, b := bits.Sub64(xl, yl, 0)
+			if b != 0 {
+				d = yl - xl
+			}
+			sign := (xh>>UBDSignShift ^ b) & b2u(d != 0)
+			return UBD128{Lo: d, Hi: xh&^UBDSignHi | sign<<UBDSignShift}
+		}
+		// a is the operand with the larger exponent, b the other, whose
+		// exponent is the result's. Which it is goes with the data's kind
+		// (an amount and a rate), so it is a branch.
+		ah, al, bh, bl := xh, xl, yh, yl
+		if int64(xh) < int64(yh) { // qExp is the high word's top bits
+			ah, al, bh, bl = yh, yl, xh, xl
+		}
+		gap := uint64(int64(ah)>>UBDExpShift - int64(bh)>>UBDExpShift)
+		if gap > uint64(maxWordGap) {
+			return ubdAddLong128(x, y, ToNearestEven)
+		}
+		hi, lo := bits.Mul64(al, pow10tab64[gap])
+		sign := ah >> UBDSignShift & 1
+		if (ah^bh)&UBDSignHi == 0 {
+			var c uint64
+			lo, c = bits.Add64(lo, bl, 0)
+			hi += c
+		} else {
+			// a × 10^gap - b, negative only when a × 10^gap is below 2^64:
+			// both differences, and the one that did not borrow selected.
+			d, b := bits.Sub64(lo, bl, 0)
+			var bw uint64
+			hi, bw = bits.Sub64(hi, 0, b)
+			lo = d
+			if bw != 0 {
+				lo, hi, sign = -d, 0, sign^1 // b's magnitude, below 2^64, the larger
+			}
+			sign &= b2u(hi|lo != 0) // an exact zero is +0
+		}
+		_, bw := bits.Sub64(MaxCoeff128Lo, lo, 0)
+		_, bw = bits.Sub64(MaxCoeff128Hi, hi, bw)
+		if bw != 0 {
+			return ubdAddLong128(x, y, ToNearestEven)
+		}
+		return UBD128{Lo: lo, Hi: bh&^(UBDSignHi|UBDCoeffMaskHi) | sign<<UBDSignShift | hi}
+	}
+	if x.Hi>>60 == UBDSpecialTag || y.Hi>>60 == UBDSpecialTag || mode > ToNearestAway {
+		return ubdAddLong128(x, y, mode)
+	}
+	xhi, yhi := x.Hi&UBDCoeffMaskHi, y.Hi&UBDCoeffMaskHi
+	if (x.Hi^y.Hi)>>UBDExpShift == 0 {
+		if (x.Hi^y.Hi)&UBDSignHi == 0 {
+			// One exponent and one sign, the running total of amounts
+			// past 2^64: the sum of the coefficients, exact if it does not
+			// pass MaxCoeff128, under the operands' exponent and sign (17-
+			// to 19-digit amounts at one exponent, a running total: 6.25
+			// ns against BID's 5.33 through the general path below).
+			lo, c := bits.Add64(x.Lo, y.Lo, 0)
+			hi := xhi + yhi + c
+			_, bw := bits.Sub64(MaxCoeff128Lo, lo, 0)
+			if _, bw = bits.Sub64(MaxCoeff128Hi, hi, bw); bw == 0 {
+				return UBD128{Lo: lo, Hi: x.Hi&^UBDCoeffMaskHi | hi}
+			}
+		} else {
+			// One exponent, opposite signs: the two-word difference,
+			// negated by selects when it borrows, since x - y goes either
+			// way for random amounts, and the sign flipped then. Its
+			// magnitude is at most the larger operand's, so it is exact:
+			// no digit count and no MaxCoeff128 check. An exact
+			// cancellation is +0. (These pairs took the gap path below at
+			// a gap of 0: a digit count, a multiply by 10^0 and the bound
+			// checks. The exponents are compared first so that a pair at
+			// two exponents still takes one test to reach that path.)
+			lo, b := bits.Sub64(x.Lo, y.Lo, 0)
+			hi, bw := bits.Sub64(xhi, yhi, b)
+			m := -bw // all ones when y's magnitude was the larger
+			nlo, nb := bits.Sub64(0, lo, 0)
+			nhi, _ := bits.Sub64(0, hi, nb)
+			lo, hi = lo&^m|nlo&m, hi&^m|nhi&m
+			sign := (x.Hi ^ bw<<UBDSignShift) & UBDSignHi
+			if hi|lo == 0 {
+				sign = 0
+			}
+			return UBD128{Lo: lo, Hi: x.Hi>>UBDExpShift<<UBDExpShift | sign | hi}
+		}
+	}
+	xe, ye := int(int64(x.Hi)>>UBDExpShift), int(int64(y.Hi)>>UBDExpShift)
+	// a is the operand with the larger exponent, x if they are equal.
+	sw := uint64(int64(xe-ye) >> 63) // all ones when y has the larger
+	th, tl := (xhi^yhi)&sw, (x.Lo^y.Lo)&sw
+	a := Uint128{Hi: xhi ^ th, Lo: x.Lo ^ tl}
+	b := Uint128{Hi: yhi ^ th, Lo: y.Lo ^ tl}
+	gap := int((uint64(xe-ye) ^ sw) - sw)
+	exp := ye + int(uint64(xe-ye)&sw) // the smaller exponent
+	sub := (x.Hi ^ y.Hi) >> 49 & 1    // 1 when the signs differ
+	neg := (x.Hi^(x.Hi^y.Hi)&sw)>>49&1 != 0
+	da := cDigits128(a)
+	if uint(da-1) >= Precision128 || u128GtMaxCoeff(b) {
+		return ubdAddLong128(x, y, mode)
+	}
+	m := Precision128 - da
+	d := gap - m
+	var s Uint128
+	if d <= 0 {
+		p := u128MulLow(a, pow10tab128[gap])
+		if sub == 0 {
+			s, _ = u128Add(p, b)
+			if u128GtMaxCoeff(s) {
+				s, exp = addCarry128(s, false, mode), exp+1
+			}
+		} else {
+			var borrow uint64
+			s, borrow = u128Sub(p, b)
+			if borrow != 0 {
+				s, _ = u128Sub(Uint128{}, s)
+				neg = !neg
+			}
+			if s == (Uint128{}) {
+				neg = false
+			}
+		}
+	} else {
+		p := u128MulLow(a, pow10tab128[m])
+		exp += d
+		var q, rb, half Uint128
+		rb.Lo = 1
+		if d <= Precision128 {
+			pd := &pow10tab128[d]
+			half = u128Shr(*pd, 1)
+			t, _ := u128Add(b, half)
+			rm := &recip10tab128[d].t
+			h00, _ := bits.Mul64(t.Lo, rm.Lo)
+			h01, l01 := bits.Mul64(t.Lo, rm.Hi)
+			h10, l10 := bits.Mul64(t.Hi, rm.Lo)
+			h11, l11 := bits.Mul64(t.Hi, rm.Hi)
+			mid, c1 := bits.Add64(h00, l01, 0)
+			_, c2 := bits.Add64(mid, l10, 0)
+			q.Lo, c1 = bits.Add64(l11, h01, c1)
+			q.Hi = h11 + c1
+			q.Lo, c2 = bits.Add64(q.Lo, h10, c2)
+			q.Hi += c2
+			ph, pl := bits.Mul64(q.Lo, pd.Lo)
+			ph += q.Lo*pd.Hi + q.Hi*pd.Lo
+			var bw uint64
+			rb.Lo, bw = bits.Sub64(t.Lo, pl, 0)
+			rb.Hi, _ = bits.Sub64(t.Hi, ph, bw)
+			if !u128Lt(rb, *pd) {
+				q, _ = u128Add(q, Uint128{Lo: 1})
+				rb, _ = u128Sub(rb, *pd)
+			}
+		}
+		tie := uint64(0)
+		if rb == (Uint128{}) {
+			tie = 1
+		}
+		if sub == 0 {
+			s, _ = u128Add(p, q)
+			if u128GtMaxCoeff(s) {
+				t := s
+				if d <= Precision128 && u128Lt(rb, half) {
+					t, _ = u128Sub(s, Uint128{Lo: 1})
+				}
+				s, exp = addCarry128(t, d > Precision128 || rb != half, mode), exp+1
+			} else if mode == ToNearestEven {
+				s.Lo &^= tie
+			}
+		} else {
+			s, _ = u128Sub(p, q)
+			up := tie
+			if mode == ToNearestEven {
+				up &= s.Lo
+			}
+			s, _ = u128Add(s, Uint128{Lo: up})
+			if !u128Lt(pow10tab128[Precision128-1], s) {
+				const spare = len(pow10tab128) - 1 - Precision128
+				if d > spare {
+					return ubdAddLong128(x, y, mode)
+				}
+				s, _ = u128Sub(u128MulLow(a, pow10tab128[gap]), b)
+				exp -= d
+				if j := cDigits128(s) - Precision128; j > 0 {
+					t, _ := u128Add(s, u128Shr(pow10tab128[j], 1))
+					var r Uint128
+					s, r = divPow10Recip128(t, j)
+					if r == (Uint128{}) && mode == ToNearestEven {
+						s.Lo &^= 1
+					}
+					exp += j
+				}
+			}
+		}
+	}
+	if r, ok := ubdPackWord(neg, s.Hi, s.Lo, exp); ok {
+		return r
+	}
+	return ubdAddLong128(x, y, mode)
+}

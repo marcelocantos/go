@@ -438,32 +438,31 @@ func TestUBDAddWideAgrees(t *testing.T) {
 	}
 }
 
-// TestUBDWordPathsMatch checks that the word path written into
-// ubdSubTTE128 is the text of the one in ubdAddTTE128.
-func TestUBDWordPathsMatch(t *testing.T) {
-	block := func(file, sig string) string {
-		src, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatal(err)
-		}
+// TestUBDSubTTEMatchesAdd checks that ubdSubTTE128's body, after the
+// statement that flips y's sign, is ubdAddTTE128's.
+func TestUBDSubTTEMatchesAdd(t *testing.T) {
+	src, err := os.ReadFile("ubd_add.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := func(sig, after string) string {
 		s := string(src)
 		i := strings.Index(s, sig)
 		if i < 0 {
-			t.Fatalf("%s: %q not found", file, sig)
+			t.Fatalf("%q not found", sig)
 		}
-		s = s[i:]
-		const open = "\tif (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {\n"
-		j := strings.Index(s, open)
-		k := strings.Index(s[j:], "\n\t}\n")
-		if j < 0 || k < 0 {
-			t.Fatalf("%s: no word path in %q", file, sig)
+		s = s[i+len(sig):]
+		s = s[:strings.Index(s, "\n}\n")]
+		j := strings.Index(s, after)
+		if j < 0 {
+			t.Fatalf("%q not found", after)
 		}
-		return s[j : j+k]
+		return s[j+len(after):]
 	}
-	add := block("ubd_add.go", "func ubdAddTTE128(x, y UBD128) UBD128 {")
-	sub := block("ubd.go", "func ubdSubTTE128(x, y UBD128) UBD128 {")
+	add := body("func ubdAddTTE128(x, y UBD128) UBD128 {\n", "")
+	sub := body("func ubdSubTTE128(x, y UBD128) UBD128 {\n", "\ty.Hi ^= UBDSignHi\n\t}\n")
 	if add != sub {
-		t.Errorf("the word paths of ubdAddTTE128 and ubdSubTTE128 differ")
+		t.Errorf("ubdSubTTE128's body differs from ubdAddTTE128's")
 	}
 }
 
