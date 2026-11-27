@@ -71,10 +71,9 @@ const (
 // Round64 is the rounding routine of the package, exposed for callers that
 // hold an exact value in parts: the compiler encoding a constant whose
 // exact value it has reduced, and the string parser. The general
-// rounding implementation is round64 in zarith64.go, generated from
-// roundW in arith_tmpl.go. Fixed-quantum operations with bounded
-// coefficients use its shared roundFinite64 helper; the templates document
-// the preconditions of both entry points.
+// rounding implementation is round64 in arith64.go. Fixed-quantum
+// operations with bounded coefficients use its shared roundFinite64
+// helper; the comments of both document their preconditions.
 //
 // The input describes the exact value v = (-1)^neg × (coeff + f) × 10^exp,
 // where f is zero when sticky is false and an unspecified fraction with
@@ -102,14 +101,16 @@ func RoundWide64(neg bool, coeff Uint128, exp int, sticky bool, mode Mode) (uint
 
 // Round128 is Round64 for decimal128. The coefficient may be any Uint128.
 func Round128(neg bool, coeff Uint128, exp int, sticky bool, mode Mode) (Uint128, Status) {
-	return roundParts128(neg, wide128{Lo: coeff}, exp, sticky, mode)
+	r, st := UBDRound128(neg, coeff, exp, sticky, mode)
+	return fromUBD(r), st
 }
 
-// The width-independent half of the rounding routine (rule 7 of "Width
-// parameterisation" in the package documentation): the direction decision
-// and the overflow result, which look at a digit class, a mode and a sign
-// and at no coefficient. roundW and roundFiniteW in arith_tmpl.go are
-// the coefficient-dependent half.
+// The width-independent half of the rounding routine (rule 5 of
+// "Width-specific code" in the package documentation): the direction
+// decision and the overflow result, which look at a digit class, a mode
+// and a sign and at no coefficient. round64 and roundFinite64 in arith64.go
+// and their UBD counterparts in ubd_add.go are the coefficient-dependent
+// half.
 
 // roundInc returns the increment of a truncated magnitude, 1 if it is to be
 // rounded up by one unit in its last place and 0 if not: class is the
@@ -167,14 +168,16 @@ func overflowsToInf(mode Mode, neg bool) bool {
 	return true
 }
 
-// errRoundRange is the panic value of packW when a rounding routine hands
-// PackW a coefficient or exponent outside the format, which is an internal bug.
+// errRoundRange is the panic value of pack64 and ubdPack128 when a rounding
+// routine hands them a coefficient or exponent outside the format, which
+// is an internal bug.
 const errRoundRange = "internal/bid: rounded result outside the format"
 
-// maxWideDigits bounds the decimal digits of a wideW of either width: the
-// largest, a Uint256, is below 10^78. roundW clamps an exponent far outside
-// the format to within this many places of it, so that no exponent
-// arithmetic can overflow an int and no shift count exceeds what the digit
-// primitives need; the clamp preserves the result because a value that far
-// out overflows, or underflows to nothing, in every mode.
+// maxWideDigits bounds the decimal digits of a wide64 or wide128: the
+// larger, a Uint256, is below 10^78. round64 and ubdRoundFloor128 clamp an
+// exponent far outside the format to within this many places of it, so
+// that no exponent arithmetic can overflow an int and no shift count
+// exceeds what the digit primitives need; the clamp preserves the result
+// because a value that far out overflows, or underflows to nothing, in
+// every mode.
 const maxWideDigits = len(pow10tab256)

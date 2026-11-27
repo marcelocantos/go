@@ -84,13 +84,13 @@ func (k ubdKernel) min(f *format, x, y bits) bits {
 	if w64(f) {
 		return k.kernel.min(f, x, y)
 	}
-	return ubdOut(bid.UBDMin128(ubdIn(x), ubdIn(y)))
+	return ubdOut(ubdWords(bid.UBDMin128(ubdValue(ubdIn(x)), ubdValue(ubdIn(y)))))
 }
 func (k ubdKernel) max(f *format, x, y bits) bits {
 	if w64(f) {
 		return k.kernel.max(f, x, y)
 	}
-	return ubdOut(bid.UBDMax128(ubdIn(x), ubdIn(y)))
+	return ubdOut(ubdWords(bid.UBDMax128(ubdValue(ubdIn(x)), ubdValue(ubdIn(y)))))
 }
 func (k ubdKernel) equal(f *format, x, y bits) bool {
 	if w64(f) {
@@ -157,3 +157,8 @@ func (k ubdKernel) isSubnormal(f *format, x bits) bool {
 	}
 	return bid.UBDIsSubnormal128(ubdWord(x))
 }
+
+// ubdValue and ubdWords convert between UBD words held in a Uint128 and
+// the kernel's UBD128, for the exported entries that take UBD128.
+func ubdValue(x bits) bid.UBD128 { return bid.UBD128{Lo: x.Lo, Hi: x.Hi} }
+func ubdWords(r bid.UBD128) bits { return bits{Hi: r.Hi, Lo: r.Lo} }

@@ -8,9 +8,9 @@ import "math/bits"
 
 // Uint256 is a 256-bit unsigned integer, most significant half first. It is
 // the exact product of two 128-bit coefficients and the dividend of the
-// decimal128 division, and it is the wide type of the decimal128
-// instantiation of the shared core (see "Width parameterisation" in the
-// package documentation).
+// decimal128 division, and it is wide128, the wide type of the coefficient
+// vocabulary at 128 bits (see "Width-specific code" in the package
+// documentation).
 type Uint256 struct {
 	Hi, Lo Uint128
 }

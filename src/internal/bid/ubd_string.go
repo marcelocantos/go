@@ -7,11 +7,12 @@ package bid
 import "math/bits"
 
 // The character form of a UBD value. Each function is the BID function of
-// the same name without the UBD prefix, with UBD's decoding; the digit
-// layout is shared (PutShort128 and PutLong128, which take the parts of a
-// value, and writeDigits), and nothing converts to BID. strconv formats
-// decimal128 through these where decimal128 is stored as UBD
-// (NativeUBD128).
+// the same name without the UBD prefix, with UBD's decoding (Parse128 and
+// Append128 are themselves conversions around UBDParse128 and
+// UBDAppend128); the digit layout is shared (PutShort128 and PutLong128,
+// which take the parts of a value, and writeDigits), and nothing converts
+// to BID. strconv formats decimal128 through these where decimal128 is
+// stored as UBD (NativeUBD128).
 
 // UBDIsShort128 is IsShort128 on UBD. Adding 4 to the exponent field and
 // rotating it to the bottom leaves k, the exponent plus 4, with the
@@ -75,11 +76,12 @@ func UBDUnpackDigits128(buf *[Precision128]byte, x UBD128) (kind Kind, neg bool,
 // rounded to the exponent of y.
 func UBDQuantizeMode128(x, y UBD128, mode Mode) UBD128 { return ubdQuantizeRnd128(x, y, mode) }
 
-// UBDParse128 is Parse128 on UBD: parse128, its short path written out
-// here as there (see parseW for why it is not a call), the short numeral
-// packed as UBD fields, since it is exact and inside the format, and every
-// other numeral scanned by scanDecimal and rounded by ubdRoundStatus128.
-// TestParseShort checks it against Parse128.
+// UBDParse128 follows parse64 on UBD, and Parse128 converts its result to
+// BID: the short path written out here as in parse64 (see parse64 for why
+// it is not a call), the short numeral packed as UBD fields, since it is
+// exact and inside the format, and every other numeral scanned by
+// scanDecimal and rounded by ubdRoundStatus128. TestParseShort checks it,
+// through Parse128, against the general path alone (ParseLong128).
 func UBDParse128(s string, mode Mode) (UBD128, Status) {
 	if len(s) > 0 && len(s) <= 9 && s[0] <= '9' { // a sign, a point or a digit first
 		i := 0
@@ -159,7 +161,7 @@ func UBDParse128(s string, mode Mode) (UBD128, Status) {
 // UBDAppend128 is Append128 on UBD: the character form of x appended to
 // dst, the short and long layouts on the parts of x (PutShort128,
 // PutLong128), and every other value written out from its digits as
-// append128 writes it. It needs MaxLen128 bytes of spare capacity to avoid
+// append64 writes it. It needs MaxLen128 bytes of spare capacity to avoid
 // allocating. The runtime prints decimal128 with it, where decimal128 is
 // stored as UBD.
 func UBDAppend128(dst []byte, x UBD128) []byte {
@@ -175,12 +177,35 @@ func UBDAppend128(dst []byte, x UBD128) []byte {
 		var buf [LongLen128]byte
 		return append(dst, buf[:PutLong128(&buf, sign, exp, c)]...)
 	}
+	return ubdAppendRest128(dst, x, false)
+}
+
+// ubdAppendSci128 is UBDAppend128 for the to-scientific-string form of the
+// General Decimal Arithmetic specification (AppendSci128). The short values
+// have the same plain notation in both forms.
+func ubdAppendSci128(dst []byte, x UBD128) []byte {
+	if i := len(dst); UBDIsShort128(x) && cap(dst)-i >= ShortLen128 {
+		sign := uint(x.Hi >> UBDSignShift & 1)
+		return dst[:i+PutShort128((*[ShortLen128]byte)(dst[i:i+ShortLen128]), sign, uint(-(int64(x.Hi)>>UBDExpShift)), x.Lo)]
+	}
+	return ubdAppendRest128(dst, x, true)
+}
+
+// ubdAppendRest128 appends x in the general form: the specials by name, and
+// a finite value as its digits in plain or exponent notation, in the
+// to-scientific-string form when sci is set.
+func ubdAppendRest128(dst []byte, x UBD128, sci bool) []byte {
 	kind, neg, c, exp := UBDUnpack128(x)
 	switch kind {
 	case KindNaN:
 		return append(dst, "NaN"...)
 	case KindInf:
-		if neg {
+		switch {
+		case sci && neg:
+			return append(dst, "-Infinity"...)
+		case sci:
+			return append(dst, "Infinity"...)
+		case neg:
 			return append(dst, "-Inf"...)
 		}
 		return append(dst, "+Inf"...)
@@ -192,6 +217,9 @@ func UBDAppend128(dst []byte, x UBD128) []byte {
 		n = writeWordDigits(digs[:], lo)
 	} else {
 		n = writeDigits(digs[:], hi, lo)
+	}
+	if sci {
+		return appendSciDecimal(dst, neg, digs[len(digs)-n:], exp)
 	}
 	return appendDecimal(dst, neg, digs[len(digs)-n:], exp)
 }

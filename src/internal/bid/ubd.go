@@ -296,11 +296,11 @@ func UBDNarrow128(x UBD128, mode Mode) uint64 { return ubdNarrow128(x, mode) }
 // place and the result needs no reordering where it joins the inline
 // paths. Their names and signatures are a contract with the
 // compiler and stay fixed; what lies behind them may change. Each works on
-// UBD itself: it is this package's BID algorithm of the same name without the
-// ubd prefix, with the BID decoding and packing replaced by UBD's (ubd_add.go,
-// ubd_mul.go, ubd_div.go, ubd_quant.go, ubd_cmp.go, ubd_conv.go). None
-// converts to BID. A conversion from int64 or uint64 has no entry: the
-// compiler builds the coefficient at exponent 0 inline.
+// UBD itself: it is the package's 128-bit arithmetic, written for UBD
+// (ubd_add.go, ubd_mul.go, ubd_div.go, ubd_quant.go, ubd_cmp.go,
+// ubd_conv.go), which the BID-128 functions reach through toUBD and
+// fromUBD. None converts to BID. A conversion from int64 or uint64 has no
+// entry: the compiler builds the coefficient at exponent 0 inline.
 //
 // Each entry meets these rules, which TestUBDKernel checks:
 //
@@ -316,8 +316,8 @@ func UBDNarrow128(x UBD128, mode Mode) uint64 { return ubdNarrow128(x, mode) }
 //     The language's operators and the functions whose rounding is fixed
 //     at ties to even call TTE. Rnd accepts every Mode; one outside the six
 //     behaves as ToNearestEven.
-//   - Values. The result is that of the exported BID function on the
-//     operands' BID encodings, converted to UBD:
+//   - Values. The result is that of the exported BID function's operation,
+//     as the package documentation fixes it, on the operands' values:
 //
 //     ubdAddTTE128, ubdAddRnd128                          Add128
 //     ubdSubTTE128, ubdSubRnd128                          Sub128
@@ -344,15 +344,27 @@ func UBDNarrow128(x UBD128, mode Mode) uint64 { return ubdNarrow128(x, mode) }
 // it: its two words, low first, as decimal128 is laid out.
 type UBD128 struct{ Lo, Hi uint64 }
 
+// toUBD and fromUBD convert between BID-128 and UBD. The decimal128 entry
+// points that take and return BID-128 (Add128 and the rest), the interchange
+// encoding, are each a call of the UBD kernel between the two: the kernel
+// is the only 128-bit arithmetic in the package.
+func toUBD(x Uint128) UBD128 {
+	u := UBDFromBID128(x)
+	return UBD128{Lo: u.Lo, Hi: u.Hi}
+}
+
+func fromUBD(x UBD128) Uint128 { return BIDFromUBD128(Uint128{Hi: x.Hi, Lo: x.Lo}) }
+
 // The entries come in pairs: TTE rounds to nearest, ties to even, as the
 // language's operators and the functions without a mode do, and takes no
 // mode; Rnd takes the caller's.
 
 // Add, subtract, multiply, divide and quantize are this package's
 // arithmetic on UBD itself (ubd_add.go, ubd_mul.go, ubd_div.go,
-// ubd_quant.go): its general paths with UBD's decoding and packing, nothing
-// converted. Quantize and round-to-integral have word paths in front
-// (ubdQuantizeWord, called by the quantize and round-to-integral entries).
+// ubd_quant.go): decimal64's general paths with UBD's decoding and
+// packing, and paths of their own in front, nothing converted. Quantize and
+// round-to-integral have word paths in front (ubdQuantizeWord, called by
+// the quantize and round-to-integral entries).
 // Compare is this package's on UBD itself (ubd_cmp.go).
 //
 // decimal128-go (github.com/migueldecimal128/decimal128-go), whose
@@ -399,7 +411,7 @@ func ubdSubTTE128(x, y UBD128) UBD128 {
 //   - One exponent and one sign, a sum of amounts: an add and its carry.
 //     This is a branch, and it must be: a running total waits for each sum,
 //     and with the sum chosen by masks (the third path) it took 4.82 ns a
-//     step against 2.39 (and BID's 3.72); operands of mixed sign, which
+//     step against 2.39; operands of mixed sign, which
 //     mispredict it, take 2.67 against 2.21 that way.
 //   - One exponent and opposite signs, a difference: both differences, and
 //     the one that did not borrow chosen by a select, not a branch, since
@@ -410,7 +422,7 @@ func ubdSubTTE128(x, y UBD128) UBD128 {
 //     scaled, and the other added or subtracted, each chosen by a branch, as
 //     in ubdAddLong128, and a difference that goes negative negated by a
 //     select, its magnitude then below 2^64. These are most of what reaches
-//     the kernel at -d=ubdlevel=2, whose inline path takes one exponent and
+//     the kernel at -d=decimalinline=2, whose inline path takes one exponent and
 //     one sign. With the operand and the operation chosen by masks instead,
 //     tax_preparation's FED program at level 2 was 3.5% slower than before
 //     this word path existed; with branches, 4.4% faster. (An amount and a
@@ -517,10 +529,9 @@ func ubdQuantizeTTE128(x, y UBD128) UBD128 { // ubdQuantize128, written out
 // ubdQuantizeWideTTE is ubdQuantizeSlow128 for ties to even, called by the
 // entry itself for an x wider than a word, so that a quantize of a
 // quotient to cents makes one call where it made two, each with a frame (a
-// 30- to 34-digit quotient to cents: 5.11 ns against 4.25, BID's
-// quantizeSlow128 4.52). It reports false for a special operand and for a
-// coefficient that is not canonical, which ubdQuantizeSlow128 sends on to
-// ubdQuantizeLong128.
+// 30- to 34-digit quotient to cents: 5.11 ns against 4.25). It reports
+// false for a special operand and for a coefficient that is not canonical,
+// which ubdQuantizeSlow128 sends on to ubdQuantizeLong128.
 func ubdQuantizeWideTTE(x, y UBD128) (UBD128, bool) {
 	xc := Uint128{Hi: x.Hi & UBDCoeffMaskHi, Lo: x.Lo}
 	if x.Hi>>60 == UBDSpecialTag || y.Hi>>60 == UBDSpecialTag || u128GtMaxCoeff(xc) {
@@ -650,7 +661,7 @@ func ubdRoundToIntegralTTE128(x UBD128) UBD128 {
 	} else if x.Hi>>60 != UBDSpecialTag {
 		// Wider than a word, finite: the same, by ubdQuantizeWideTTE, one
 		// call where ubdRoundToIntegral128 made two (a 30- to 34-digit
-		// quotient: 6.51 ns against 4.51, BID's roundToIntegral128 6.18).
+		// quotient: 6.51 ns against 4.51).
 		if int64(x.Hi) >= 0 {
 			return x
 		}

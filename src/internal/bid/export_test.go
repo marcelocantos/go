@@ -130,24 +130,17 @@ var (
 
 // The inline fast paths and the general paths behind them.
 var (
-	AddSameQuantum128  = addSameQuantum128
-	AddSameQuantum64   = addSameQuantum64
-	AddLong64          = addLong64
-	AddSlow64          = addSlow64
-	MulShort128        = mulShort128
-	MulShort64         = mulShort64
-	MulSlow64          = mulSlow64
-	QuantizeSame128    = quantizeSame128
-	QuantizeSame64     = quantizeSame64
-	QuantizeSlow128    = quantizeSlow128
-	QuantizeSlow64     = quantizeSlow64
-	QuietCmpSlow128    = quietCmpSlow128
-	QuietCmpSlow64     = quietCmpSlow64
-	SameQuantumKeys128 = sameQuantumKeys128
-	SameQuantumKeys64  = sameQuantumKeys64
-	SubSameQuantum128  = subSameQuantum128
-	SubSameQuantum64   = subSameQuantum64
-	SubSlow64          = subSlow64
+	AddSameQuantum64  = addSameQuantum64
+	AddLong64         = addLong64
+	AddSlow64         = addSlow64
+	MulShort64        = mulShort64
+	MulSlow64         = mulSlow64
+	QuantizeSame64    = quantizeSame64
+	QuantizeSlow64    = quantizeSlow64
+	QuietCmpSlow64    = quietCmpSlow64
+	SameQuantumKeys64 = sameQuantumKeys64
+	SubSameQuantum64  = subSameQuantum64
+	SubSlow64         = subSlow64
 )
 
 // The UBD kernel entries the compiler calls (ubd.go), with the operands and
@@ -176,11 +169,6 @@ func UBDRoundToIntegralRnd128(x Uint128, m Mode) Uint128 {
 }
 
 func UBDCompare128(x, y Uint128) (c int, ok bool) { return ubdCompare128(ubdIn(x), ubdIn(y)) }
-
-func UBDMin128(x, y Uint128) Uint128    { return ubdOut(ubdMin128(ubdIn(x), ubdIn(y))) }
-func UBDMax128(x, y Uint128) Uint128    { return ubdOut(ubdMax128(ubdIn(x), ubdIn(y))) }
-func UBDInt64From128(x Uint128) int64   { return ubdInt64From128(ubdIn(x)) }
-func UBDUint64From128(x Uint128) uint64 { return ubdUint64From128(ubdIn(x)) }
 
 // UBDPredicates128 returns the predicate entries' results on x and y: ==,
 // <, <=, >, >=.
@@ -244,11 +232,12 @@ var (
 	CDivExactPow1064  = cDivExactPow1064
 )
 
-// ParseLong64 and ParseLong128 are the general path of parseW alone: the
-// scanner and the rounding routine, as parseW's tail has them, without the
-// short-numeral path. TestParseShort compares Parse64 and Parse128 with
-// them. Kept in step with parseW's tail by hand; the comparison on words,
-// syntax errors and long numerals would show a drift.
+// ParseLong64 and ParseLong128 are the general paths of parse64 and
+// UBDParse128 alone: the scanner and the rounding routine, as their tails
+// have them, without the short-numeral path. TestParseShort compares
+// Parse64 and Parse128 with them. Kept in step with those tails by hand;
+// the comparison on words, syntax errors and long numerals would show a
+// drift.
 func ParseLong64(s string, mode Mode) (uint64, Status) {
 	n := scanDecimal(s, Precision64+1)
 	switch n.kind {
@@ -270,17 +259,18 @@ func ParseLong128(s string, mode Mode) (Uint128, Status) {
 	n := scanDecimal(s, Precision128+1)
 	switch n.kind {
 	case scanSyntax:
-		return cNaN128(), Syntax
+		return Uint128{Hi: NaN128Hi}, Syntax
 	case scanNaN:
-		return cNaN128(), Exact
+		return Uint128{Hi: NaN128Hi}, Exact
 	case scanInf:
-		return cInf128(n.neg), Exact
+		return fromUBD(ubdInf(n.neg)), Exact
 	}
 	class := classZero
 	if n.sticky {
 		class = classBelowHalf
 	}
-	return round128(n.neg, cWide128(n.mant), n.exp, class, mode, MinExp128)
+	r, st := ubdRoundStatus128(n.neg, cWide128(n.mant), n.exp, class, mode)
+	return fromUBD(r), st
 }
 
 // Div64ScaleEntry returns the power and the places of div64Scale[n].
@@ -298,9 +288,9 @@ func LongParts128(x Uint128) (sign uint, exp int, c Uint128) {
 }
 
 // The kernel entries BenchmarkUBDKernel times, as function values: the UBD
-// entries the compiler calls at -d=ubdlevel=1 and the BID entries the XOR-BID
-// compiler calls for the same operations. A function value is called as a
-// call site calls the kernel, never inlined, with no adapter between.
+// entries the compiler calls at -d=decimalinline=1. A function value is
+// called as a call site calls the kernel, never inlined, with no adapter
+// between.
 var (
 	UBDKernelAdd    = ubdAddTTE128
 	UBDKernelSub    = ubdSubTTE128
@@ -316,18 +306,4 @@ var (
 	UBDKernelRTI    = ubdRoundToIntegralTTE128
 	UBDKernelInt64  = ubdInt64From128
 	UBDKernelUint64 = ubdUint64From128
-
-	BIDKernelAdd = addSlow128
-	BIDKernelSub = subSlow128
-	BIDKernelMul = mulSlow128
-	BIDKernelDiv = div128
-	BIDKernelQnt = quantizeSlow128
-	BIDKernelCmp = quietCmpSlow128
-	BIDKernelMin = Min128
-	BIDKernelMax = Max128
-	BIDKernelRTI = roundToIntegral128
-	// The XOR-BID compiler converts to int64 through Int64From128 with
-	// TowardZero, which also returns a status.
-	BIDKernelInt64  = Int64From128
-	BIDKernelUint64 = Uint64From128
 )

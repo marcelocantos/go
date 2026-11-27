@@ -17,14 +17,15 @@ import "math/bits"
 // removed, cannot be written in terms of these primitives.
 //
 // The primitives are in the coefficient vocabulary, in coef64.go and
-// coef128.go, so that the template can reach them:
+// coef128.go, so that the width-specific code can reach them. At 64 bits
+// they are:
 //
-//	cShiftW(c coefW, k int) (q coefW, class digitClass)
-//	cShiftFullW(p wideW, k int) (q wideW, class digitClass)
-//	cReduceClassW(p wideW, k int) (q coefW, class digitClass)
-//	cScaleW(c coefW, k int) (r coefW, overflow bool)
-//	cScaleTabW(c coefW, k int) (r coefW, overflow bool)
-//	cScaleFullW(p wideW, k int) (r wideW, overflow bool)
+//	cShift64(c coef64, k int) (q coef64, class digitClass)
+//	cShiftFull64(p wide64, k int) (q wide64, class digitClass)
+//	cReduceClass64(p wide64, k int) (q coef64, class digitClass)
+//	cScale64(c coef64, k int) (r coef64, overflow bool)
+//	cScaleTab64(c coef64, k int) (r coef64, overflow bool)
+//	cScaleFull64(p wide64, k int) (r wide64, overflow bool)
 //
 // cShift64, cShift128 and cShiftFull128 are the 64-, 128- and 256-bit forms
 // of the shift (cShiftFull64 is cShift128), and likewise for cScale. The
@@ -59,12 +60,13 @@ import "math/bits"
 // acts as a sticky bit. A fused multiply-add is the same addition over the wide
 // type, which it scales to no more than 10^71.
 //
-// cScaleW multiplies by 10^k and reports overflow instead of wrapping. On
-// overflow r is zero, so no wrapped value can be mistaken for a result. Zero
-// scales to zero for every k >= 0; any other value overflows for every k
-// beyond the table. cScaleTabW is cScaleW for a k within the table, 0 <= k
-// < len(pow10tabW), and inlines at both widths, which cScaleW does not at
-// 128 bits; a caller on a hot path tests the bound itself and calls it.
+// cScale64 and cScale128 multiply by 10^k and report overflow instead of
+// wrapping. On overflow r is zero, so no wrapped value can be mistaken for
+// a result. Zero scales to zero for every k >= 0; any other value overflows
+// for every k beyond the table. cScaleTab64 and cScaleTab128 are cScale64
+// and cScale128 for a k within the table, 0 <= k < len(pow10tab64) or
+// len(pow10tab128), and inline at both widths, which cScale128 does not; a
+// caller on a hot path tests the bound itself and calls them.
 
 // A digitClass classifies the part of a value discarded by a shift: the
 // remainder r of a division by 10^k, compared with 10^k / 2.
@@ -174,3 +176,36 @@ func reduceClass64(p Uint128, k int) (q uint64, class digitClass) {
 // errQuotientOverflow is the panic value of a reduction whose quotient does
 // not fit the coefficient type, which is a bug in the caller.
 const errQuotientOverflow = "internal/bid: quotient overflow"
+
+// fives returns the number of times that 5 divides n, which is not zero,
+// and n without those factors. A multiple of 5 times the inverse of 5
+// modulo 2^64 is its quotient, at most ⌊(2^64-1)/5⌋, and every other
+// value lands above that. The loop runs once for most coefficients and a
+// few times for the rest.
+func fives(n uint64) (c int, rest uint64) {
+	const inv5, max5 = 0xCCCCCCCCCCCCCCCD, ^uint64(0) / 5
+	for {
+		m := n * inv5
+		if m > max5 {
+			return c, n
+		}
+		n, c = m, c+1
+	}
+}
+
+// pow10word is pow10tab64 in an array of 32, so that an index masked to
+// five bits needs no bound test; TestPow10Word compares the two.
+var pow10word = [32]uint64{
+	1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9,
+	1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19,
+}
+
+// wordDigits returns the number of decimal digits of c, which is not zero.
+// It is cDigits64 with the comparison as a borrow: whether c reaches the
+// power of ten that its bit length suggests is in its leading digits, as
+// good as random.
+func wordDigits(c uint64) int {
+	t := bits.Len64(c) * 1233 >> 12
+	_, b := bits.Sub64(c, pow10word[t&31], 0)
+	return t + 1 - int(b)
+}

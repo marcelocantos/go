@@ -249,78 +249,65 @@ func FuzzRound128(f *testing.F) {
 }
 
 // TestRoundIsTheOnlyPacker enforces the fourth criterion of the rounding
-// routine by reading the package source: the raw encoders Pack64, Pack128
-// and PackW (in the template) are called only by packW and its
-// instantiations; those are called only by roundW, roundFiniteW, overflowW and their
-// instantiations; and the field layout constants that would let a function
-// assemble an encoding by hand are referenced only in encoding.go. The
-// exact fast paths that roundW's comment enumerates are the allowlist
-// here; a new one is added to both or the test fails. So is roundFaceW,
-// the face-value rounding of a swamped or aligned addend and of an inexact
-// quotient, and addLongW, divLongW and addSlow64, its only callers.
+// routine by reading the package source: the raw encoders Pack64 and
+// Pack128 are called only by pack64 and the exact fast paths; pack64 is
+// called only by round64, roundFinite64, overflow64 and roundFace64; and
+// the field layout constants that would let a function assemble an
+// encoding by hand are referenced only in encoding.go. The exact fast
+// paths that round64's comment enumerates are the allowlist here; a new
+// one is added to both or the test fails. So is roundFace64, the
+// face-value rounding of a swamped or aligned addend and of an inexact
+// quotient, and addLong64, divLong64 and addSlow64, its only callers.
 func TestRoundIsTheOnlyPacker(t *testing.T) {
 	// Callers of the raw encoder.
 	// Widen, the DPD decoders and the 128-bit integer conversions are exact
-	// fast paths: see the end of roundW's comment.
-	rawPackers := map[string]bool{"packW": true, "pack64": true, "pack128": true, "Widen": true,
+	// fast paths: see the end of round64's comment.
+	rawPackers := map[string]bool{"pack64": true, "Widen": true,
 		"BIDFromDPD64": true, "BIDFromDPD128": true,
 		"Int64To128": true, "Uint64To128": true}
-	// Callers of packW, the checked encoder: the rounding routine, its
+	// Callers of pack64, the checked encoder: the rounding routine, its
 	// overflow result and the face-value rounding (no exact fast path
 	// uses the checked encoder).
 	checkedPackers := map[string]bool{
-		"roundW": true, "round64": true, "round128": true,
-		"roundFiniteW": true, "roundFinite64": true, "roundFinite128": true,
-		"overflowW": true, "overflow64": true, "overflow128": true,
-		"roundFaceW": true, "roundFace64": true, "roundFace128": true,
+		"round64": true, "roundFinite64": true, "overflow64": true, "roundFace64": true,
 	}
-	// The face-value rounding is the one exception to roundW as the
+	// The face-value rounding is the one exception to round64 as the
 	// rounding routine, and its proof holds only for the swamped and the
-	// aligned addend of addLongW and the quotient of divLongW inside the exponent range divLongW
-	// tests, and for the swamped addend of addSlow64, which is addLong64's:
-	// see roundFaceW and "Face-value rounding" in the package
-	// documentation. It has those three callers.
-	faceRounder := map[string]bool{"roundFaceW": true, "roundFace64": true, "roundFace128": true}
-	faceCallers := map[string]bool{"addLongW": true, "addLong64": true, "addLong128": true, "addSlow64": true, "divLongW": true, "divLong64": true, "divLong128": true}
+	// aligned addend of addLong64 and the quotient of divLong64 inside the
+	// exponent range divLong64 tests, and for the swamped addend of
+	// addSlow64, which is addLong64's: see roundFace64 and "Face-value
+	// rounding" in the package documentation. It has those three callers.
+	faceRounder := map[string]bool{"roundFace64": true}
+	faceCallers := map[string]bool{"addLong64": true, "addSlow64": true, "divLong64": true}
 	// Callers of the word packers, which encode the exact results of the
 	// word fast paths of addition, multiplication, fused multiply-add,
 	// quantize and division: see the comments of those functions and the
-	// end of roundW's.
+	// end of round64's.
 	wordPackers := map[string]bool{
-		"addLongW": true, "addLong64": true, "addLong128": true, "addSlow64": true, "addWide64": true, "addSlow128": true,
-		"mulLongW": true, "mulLong64": true, "mulLong128": true, "mulSlow128": true,
-		"fmaLongW": true, "fmaLong64": true, "fmaLong128": true, "fmaSlow128": true,
-		"quantizeLongW": true, "quantizeLong64": true, "quantizeLong128": true, "quantizeSlow128": true,
+		"addLong64": true, "addSlow64": true, "addWide64": true,
+		"mulLong64": true, "fmaLong64": true, "quantizeLong64": true,
 		// The word path of the remainder: an exact remainder of one
 		// word at the smaller exponent.
-		"remainderW": true, "remainder64": true, "remainder128": true,
-		// The word path of division: a quotient of exactly Precision
+		"remainder64": true,
+		// The word path of division: a quotient of exactly Precision64
 		// digits rounded by its biased remainder, or an exact quotient
 		// with its zeros stripped, in range or turned away.
-		"div128": true, "divWide128": true, "div64": true, "div64Exact": true,
+		"div64": true, "div64Exact": true,
 		// The straight path of decimal64 multiplication: an exact product,
 		// or one rounded to Precision64 digits by its biased remainder,
 		// in range or turned away.
 		"mulSlow64": true,
 	}
 	// packSign64 and packWordSign64 are packWord64 with the sign as a bit.
-	wordEncoder := map[string]bool{"packWord64": true, "packWord128": true, "packWordW": true, "packQuotient64": true, "packSign64": true, "packWordSign64": true}
+	wordEncoder := map[string]bool{"packWord64": true, "packQuotient64": true, "packSign64": true, "packWordSign64": true}
 	// Callers of the inline encoders, which encode the exact results of the
 	// inline paths of addition, subtraction and multiplication in front of
 	// the general paths: see "Inline fast paths" in the package
 	// documentation.
-	inlinePackers := map[string]bool{
-		"addW": true, "add64": true, "add128": true,
-		"subW": true, "sub64": true, "sub128": true,
-		"mulW": true, "mul64": true, "mul128": true,
-	}
-	inlineEncoder := map[string]bool{
-		"addSameQuantum64": true, "addSameQuantum128": true, "addSameQuantumW": true,
-		"subSameQuantum64": true, "subSameQuantum128": true, "subSameQuantumW": true,
-		"mulShort64": true, "mulShort128": true, "mulShortW": true,
-	}
-	rawEncoder := map[string]bool{"Pack64": true, "Pack128": true, "PackW": true}
-	checkedEncoder := map[string]bool{"packW": true, "pack64": true, "pack128": true}
+	inlinePackers := map[string]bool{"add64": true, "sub64": true, "mul64": true}
+	inlineEncoder := map[string]bool{"addSameQuantum64": true, "subSameQuantum64": true, "mulShort64": true}
+	rawEncoder := map[string]bool{"Pack64": true, "Pack128": true}
+	checkedEncoder := map[string]bool{"pack64": true}
 	layout := map[string]bool{
 		"ExpShift64": true, "ExpShift128": true, "Form2ExpShift64": true, "Form2ExpShift128": true,
 		"Form2Mask64": true, "Form2Mask128Hi": true, "CoeffBits64": true, "Form2CoeffBits64": true,
@@ -395,11 +382,11 @@ func TestRoundIsTheOnlyPacker(t *testing.T) {
 		t.Error(v)
 	}
 	if len(violations) > 0 {
-		t.Errorf("%d call(s) reach the encoder outside the rounding routine; see roundW in arith_tmpl.go for the exact fast paths allowed", len(violations))
+		t.Errorf("%d call(s) reach the encoder outside the rounding routine; see round64 in arith64.go for the exact fast paths allowed", len(violations))
 	}
 }
 
-// TestRoundWideHalfBound checks roundW where it counts digits: in the
+// TestRoundWideHalfBound checks round64 where it counts digits: in the
 // coefficient type when the high half of the value is zero, and over the
 // whole double-width value otherwise. Products reach it on both sides: the
 // factor pairs below multiply to 2^n - 1, 2^n and 2^n + 1 for the width n
@@ -461,7 +448,7 @@ func TestRoundWideHalfBound(t *testing.T) {
 	}
 }
 
-// TestRoundFaceValue checks roundW where it takes a coefficient of exactly
+// TestRoundFaceValue checks round64 where it takes a coefficient of exactly
 // Precision digits at an exponent inside the format without counting its
 // digits: the swamped addend of add, whose class is known at face value.
 // The larger operand's coefficient runs from one digit to Precision digits,

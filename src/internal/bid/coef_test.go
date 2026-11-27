@@ -19,21 +19,21 @@ import (
 )
 
 // Tests of the coefficient vocabulary (coef64.go, coef128.go), the powers
-// of ten, the generated function, and the generator itself.
+// of ten, and the generator of the tables.
 
-// TestGenerated regenerates the generated files into a scratch directory and
-// fails on any difference from the committed ones: a stale or hand-edited
-// z*.go file, or a change to the template or generator that was not
-// followed by go generate.
+// TestGenerated regenerates the tables zpow10.go and zdpd.go into a scratch
+// directory and fails on any difference from the committed ones: a stale or
+// hand-edited table, or a change to gen_arith.go that was not followed by
+// go generate.
 func TestGenerated(t *testing.T) {
 	testenv.MustHaveGoRun(t)
 	dir := t.TempDir()
-	cmd := testenv.Command(t, testenv.GoToolPath(t), "run", "-tags", "bidgen", "gen_arith.go", "-out", dir)
+	cmd := testenv.Command(t, testenv.GoToolPath(t), "run", "gen_arith.go", "-out", dir)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("go run -tags bidgen gen_arith.go: %v\n%s", err, out)
+		t.Fatalf("go run gen_arith.go: %v\n%s", err, out)
 	}
-	// Compare in both directions, so that a generated file whose template
-	// was removed is reported too.
+	// Compare in both directions, so that a committed z*.go file that the
+	// generator no longer writes is reported too.
 	generated, err := filepath.Glob(filepath.Join(dir, "z*.go"))
 	if err != nil {
 		t.Fatal(err)
@@ -354,8 +354,8 @@ func FuzzCoef128(f *testing.F) {
 	})
 }
 
-// TestCoefZeroAllocs asserts that the vocabulary and the generated function
-// allocate nothing, for both widths.
+// TestCoefZeroAllocs asserts that the vocabulary allocates nothing, for both
+// widths.
 func TestCoefZeroAllocs(t *testing.T) {
 	a := bid.Uint128{Hi: 0x0001ED09BEAD87C0, Lo: 0x378D8E63FFFFFFFF}
 	b := bid.Uint128{Hi: 0x0000000012345678, Lo: 0xFEDCBA9876543210}
@@ -388,7 +388,7 @@ func TestCoefZeroAllocs(t *testing.T) {
 }
 
 // TestMulModPrepared checks the modular product of a long exponentiation
-// (cModEnterW, cMulModW, cModLeaveW) against math/big for moduli and
+// (cModEnter64, cMulMod64, cModLeave64) against math/big for moduli and
 // residues that random operands do not reach: moduli of every length with
 // their leading and trailing words at the extremes, where the reciprocal
 // is at its largest and smallest and the divisor's low word is all ones or

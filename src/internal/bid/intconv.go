@@ -12,9 +12,9 @@ const (
 	maxUint64 = 1<<64 - 1
 )
 
-// The width-independent half of the integer conversions (rule 7 of "Width
-// parameterisation" in the package documentation). The template
-// intconv_tmpl.go rounds a decimal to an integer magnitude; the functions
+// The width-independent half of the integer conversions (rule 5 of
+// "Width-specific code" in the package documentation). intconv64.go and
+// the UBD kernel round a decimal to an integer magnitude; the functions
 // here split an integer into sign and magnitude and apply the range and
 // Status rules of "Integer conversions", which are stated there and
 // nowhere else.
@@ -30,7 +30,7 @@ func int64Parts(x int64) (neg bool, m uint64) {
 }
 
 // int64Result applies the range rules to the rounded integer that
-// intPartsW describes. A NaN gives 0 and an infinity the bound of its sign,
+// intParts64 describes. A NaN gives 0 and an infinity the bound of its sign,
 // both Invalid. A finite value outside the range gives the nearest bound
 // and Inexact|Overflow, whether or not it had a fraction.
 func int64Result(kind Kind, neg bool, m uint64, big, inexact bool) (int64, Status) {

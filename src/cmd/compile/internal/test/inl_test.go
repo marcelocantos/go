@@ -122,14 +122,13 @@ func TestIntendedInlining(t *testing.T) {
 		// The decimal entry points inline their fast paths and call
 		// the general paths behind them (see "Inline fast paths" in
 		// internal/bid's package documentation).
+		// decimal128's arithmetic is the UBD kernel, which the compiler
+		// calls directly; its BID entry points are conversions around it.
 		"internal/bid": {
-			"Add64", "Add128", "Sub64", "Sub128", "Mul64", "Mul128",
-			"Quantize64", "Quantize128", "Equal64", "Equal128",
-			"Less64", "Less128", "LessEqual64", "LessEqual128",
-			"add64", "add128", "sub64", "sub128", "mul64", "mul128",
-			"quantize64", "quantize128", "equal64", "equal128",
-			"less64", "less128", "lessEqual64", "lessEqual128",
-			"FMA128", "fmaWordSlow128",
+			"Add64", "Sub64", "Mul64", "Quantize64", "Equal64",
+			"Less64", "LessEqual64",
+			"add64", "sub64", "mul64", "quantize64", "equal64",
+			"less64", "lessEqual64",
 		},
 		"compress/flate": {
 			"(*dictDecoder).tryWriteCopy",

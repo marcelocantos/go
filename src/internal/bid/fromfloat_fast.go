@@ -43,7 +43,7 @@ import "math/bits"
 // len(5^s) - 128), so T·2^a <= 5^s < (T + 1)·2^a, with equality on the left
 // when a = 0. Then m × 5^s / 2^r lies in [X/2^sh, (X + m)/2^sh) for X = m·T
 // and sh = r - a, and is exactly X/2^sh when a = 0. The largest s is that of
-// 2^-1074 at decimal128: PrecisionW - log10Pow2(-1074) = 34 + 324.
+// 2^-1074 at decimal128: Precision128 - log10Pow2(-1074) = 34 + 324.
 //
 // pow5DivTab[k], 1 <= k <= 292, is P = ⌈2^b / 5^k⌉ with b = len(5^k) + 127,
 // so 2^127 < P < 2^128 and, as 5^k does not divide a power of two,

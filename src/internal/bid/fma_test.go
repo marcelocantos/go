@@ -380,15 +380,15 @@ func FuzzFMA128(f *testing.F) {
 	})
 }
 
-// TestFMAWordPath drives the word fast path of fmaLongW at its bounds against
-// the reference: coefficients of x and y whose product sits on both sides of
-// a word (2^32-1 squared fits, 2^32 squared does not), word coefficients of
-// z up to the largest and one past it, gaps between the product's exponent
-// and z's on both sides of maxWordGap and in both directions, exponents at
-// both ends of each format so that the product's exponent leaves the format,
-// both signs of the product and of z, and every mode; and, for every gap the
-// path aligns across, the exact cancellation whose zero takes its sign from
-// the mode.
+// TestFMAWordPath drives the word fast path of fmaLong64 and ubdFMALong128
+// at its bounds against the reference: coefficients of x and y whose
+// product sits on both sides of a word (2^32-1 squared fits, 2^32 squared
+// does not), word coefficients of z up to the largest and one past it, gaps
+// between the product's exponent and z's on both sides of maxWordGap and in
+// both directions, exponents at both ends of each format so that the
+// product's exponent leaves the format, both signs of the product and of z,
+// and every mode; and, for every gap the path aligns across, the exact
+// cancellation whose zero takes its sign from the mode.
 func TestFMAWordPath(t *testing.T) {
 	var k kernel
 	xcs := []string{"1", "7", "4294967295", "4294967296", "9999999999", "9007199254740992", "9999999999999999", "18446744073709551615"}
@@ -455,10 +455,10 @@ func TestFMAWordPath(t *testing.T) {
 	}
 }
 
-// TestFMAWide drives fmaSlow128, the fused multiply-add of operands of
-// which one at least has two words, with z at the exponent of the product
-// or above it, against the reference in every mode and for every
-// combination of signs:
+// TestFMAWide drives ubdFMASlow128, through FMA128, the fused multiply-add
+// of operands of which one at least has two words, with z at the exponent
+// of the product or above it, against the reference in every mode and for
+// every combination of signs:
 //
 //   - x, y and z of every pairing of short, word-sized and full lengths;
 //   - z from two places below the product, which the path refuses, through

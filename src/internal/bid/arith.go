@@ -6,7 +6,7 @@ package bid
 
 import "math/bits"
 
-//go:generate go run -tags bidgen gen_arith.go
+//go:generate go run gen_arith.go
 
 // The arithmetic operations of IEEE 754-2019 clause 5.4.1 and the
 // homogeneous operations of clause 5.3, for both widths. Each computes its
@@ -26,7 +26,7 @@ func Add64(x, y uint64, mode Mode) uint64 {
 
 // Add128 is Add64 for decimal128.
 func Add128(x, y Uint128, mode Mode) Uint128 {
-	return add128(x, y, mode)
+	return fromUBD(ubdAddRnd128(toUBD(x), toUBD(y), mode))
 }
 
 // Sub64 returns x - y rounded in mode (IEEE 754-2019 clause 5.4.1,
@@ -39,7 +39,7 @@ func Sub64(x, y uint64, mode Mode) uint64 {
 
 // Sub128 is Sub64 for decimal128.
 func Sub128(x, y Uint128, mode Mode) Uint128 {
-	return sub128(x, y, mode)
+	return fromUBD(ubdSubRnd128(toUBD(x), toUBD(y), mode))
 }
 
 // Mul64 returns x × y rounded in mode (IEEE 754-2019 clause 5.4.1,
@@ -50,30 +50,7 @@ func Mul64(x, y uint64, mode Mode) uint64 {
 
 // Mul128 is Mul64 for decimal128.
 func Mul128(x, y Uint128, mode Mode) Uint128 {
-	return mul128(x, y, mode)
-}
-
-// AddSlow128, SubSlow128 and MulSlow128 are Add128, Sub128 and Mul128
-// without the inline front of each (see "Inline fast paths" in the package
-// documentation), for a caller that has already decided the operands the
-// front decides. That caller is the compiler on the targets where it
-// lowers the decimal128 operators to integer fast paths, which accept
-// every operand pair that addSameQuantum128, subSameQuantum128 and
-// mulShort128 accept; it calls the unexported functions behind these
-// directly, and these export them for the tests and the benchmark rows.
-// The general paths take every operand, those included, so the result is
-// the same for every caller; only the cost of a test that cannot succeed is
-// left out.
-func AddSlow128(x, y Uint128, mode Mode) Uint128 {
-	return addSlow128(x, y, mode)
-}
-
-func SubSlow128(x, y Uint128, mode Mode) Uint128 {
-	return subSlow128(x, y, mode)
-}
-
-func MulSlow128(x, y Uint128, mode Mode) Uint128 {
-	return mulSlow128(x, y, mode)
+	return fromUBD(ubdMulRnd128(toUBD(x), toUBD(y), mode))
 }
 
 // Div64 returns x / y rounded in mode (IEEE 754-2019 clause 5.4.1,
@@ -85,7 +62,7 @@ func Div64(x, y uint64, mode Mode) uint64 {
 
 // Div128 is Div64 for decimal128.
 func Div128(x, y Uint128, mode Mode) Uint128 {
-	return div128(x, y, mode)
+	return fromUBD(ubdDivRnd128(toUBD(x), toUBD(y), mode))
 }
 
 // FMA64 returns x × y + z with a single rounding in mode (IEEE 754-2019
@@ -97,16 +74,7 @@ func FMA64(x, y, z uint64, mode Mode) uint64 {
 
 // FMA128 is FMA64 for decimal128.
 func FMA128(x, y, z Uint128, mode Mode) Uint128 {
-	// Three coefficients of one word each are fmaLong128's, whose word
-	// paths are in front of it; the rest take the path of fmaSlow128
-	// first. The test is here, and not in fmaSlow128, so that it costs
-	// the word operands no call: this function inlines, both of its
-	// calls being charged as cheap ones ("Inline fast paths" in the
-	// package documentation), and fmaWordSlow128 inlines in turn.
-	if wordTriple128(x, y, z) {
-		return fmaWordSlow128(x, y, z, mode)
-	}
-	return fmaSlow128(x, y, z, mode)
+	return fromUBD(UBDFMA128(toUBD(x), toUBD(y), toUBD(z), mode))
 }
 
 // Rem64 returns the IEEE remainder x - y × n, where n is the integer
@@ -120,7 +88,7 @@ func Rem64(x, y uint64) uint64 {
 
 // Rem128 is Rem64 for decimal128.
 func Rem128(x, y Uint128) Uint128 {
-	return rem128(x, y)
+	return fromUBD(UBDRem128(toUBD(x), toUBD(y)))
 }
 
 // Mod64 returns the truncated modulo x - y × trunc(x / y), the decimal
@@ -135,7 +103,7 @@ func Mod64(x, y uint64) uint64 {
 
 // Mod128 is Mod64 for decimal128.
 func Mod128(x, y Uint128) Uint128 {
-	return mod128(x, y)
+	return fromUBD(UBDMod128(toUBD(x), toUBD(y)))
 }
 
 // RoundToIntegral64 rounds x to an integral value in mode (IEEE 754-2019
@@ -150,7 +118,7 @@ func RoundToIntegral64(x uint64, mode Mode) uint64 {
 
 // RoundToIntegral128 is RoundToIntegral64 for decimal128.
 func RoundToIntegral128(x Uint128, mode Mode) Uint128 {
-	return roundToIntegral128(x, mode)
+	return fromUBD(UBDRoundToIntegral128(toUBD(x), mode))
 }
 
 // Quantize64 returns x with the exponent of y, rounded in mode
@@ -164,7 +132,7 @@ func Quantize64(x, y uint64, mode Mode) uint64 {
 
 // Quantize128 is Quantize64 for decimal128.
 func Quantize128(x, y Uint128, mode Mode) Uint128 {
-	return quantize128(x, y, mode)
+	return fromUBD(ubdQuantizeRnd128(toUBD(x), toUBD(y), mode))
 }
 
 // QuoQuantize64 returns x / y rounded once, in mode, to the exponent of q:
@@ -181,7 +149,7 @@ func QuoQuantize64(x, y, q uint64, mode Mode) uint64 {
 
 // QuoQuantize128 is QuoQuantize64 for decimal128.
 func QuoQuantize128(x, y, q Uint128, mode Mode) Uint128 {
-	return quoQuantize128(x, y, q, mode)
+	return fromUBD(UBDQuoQuantize128(toUBD(x), toUBD(y), toUBD(q), mode))
 }
 
 // Reduce64 returns the member of x's cohort with the fewest coefficient
@@ -198,7 +166,7 @@ func Reduce64(x uint64) uint64 {
 
 // Reduce128 is Reduce64 for decimal128.
 func Reduce128(x Uint128) Uint128 {
-	return reduce128(x)
+	return fromUBD(UBDReduce128(toUBD(x)))
 }
 
 // SameQuantum64 reports whether x and y have the same exponent, or are
@@ -210,7 +178,7 @@ func SameQuantum64(x, y uint64) bool {
 
 // SameQuantum128 is SameQuantum64 for decimal128.
 func SameQuantum128(x, y Uint128) bool {
-	return sameQuantum128(x, y)
+	return UBDSameQuantum128(toUBD(x), toUBD(y))
 }
 
 // Quantum64 returns the quantum of x (IEEE 754-2019 clause 5.3.2,
@@ -225,7 +193,7 @@ func Quantum64(x uint64) uint64 {
 
 // Quantum128 is Quantum64 for decimal128.
 func Quantum128(x Uint128) Uint128 {
-	return quantum128(x)
+	return fromUBD(UBDQuantum128(toUBD(x)))
 }
 
 // Min64 is the minimum operation of IEEE 754-2019 clause 9.6 for
@@ -242,7 +210,7 @@ func Min64(x, y uint64) uint64 {
 
 // Min128 is Min64 for decimal128.
 func Min128(x, y Uint128) Uint128 {
-	return min128(x, y)
+	return fromUBD(ubdMin128(toUBD(x), toUBD(y)))
 }
 
 // Max64 is the maximum operation of IEEE 754-2019 clause 9.6 for
@@ -257,7 +225,7 @@ func Max64(x, y uint64) uint64 {
 
 // Max128 is Max64 for decimal128.
 func Max128(x, y Uint128) Uint128 {
-	return max128(x, y)
+	return fromUBD(ubdMax128(toUBD(x), toUBD(y)))
 }
 
 // compareWords compares finite values with uint64 coefficients, returning
@@ -269,7 +237,7 @@ func Max128(x, y Uint128) Uint128 {
 // uint64; it is taken as the last power of the table and counted with the
 // high word. Exponents come from the bounded fields of unpackWord64/128.
 // No digit count, general division or rounding is needed, and nothing is
-// a branch: see magCmpW, whose word form this is.
+// a branch: see magCmp64, whose word form this is.
 func compareWords(xneg bool, xc uint64, xe int, yneg bool, yc uint64, ye int) int {
 	// The sign that counts: a zero is not negative.
 	xs := int(b2u(xneg) & ((xc | -xc) >> 63))

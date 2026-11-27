@@ -6,16 +6,19 @@ package bid
 
 // Kernel entries for the language's min and max and for its conversions
 // between decimal128 and the 64-bit integers, the rounding behind
-// math/decimal's Compose, and the runtime's map hash and equality, on UBD. Each is this package's BID function of
-// the same name without the ubd prefix, with UBD's decoding; none converts
-// to BID. A conversion from an integer needs no entry: the integer is the
-// coefficient at exponent 0, which the compiler builds inline.
+// math/decimal's Compose, and the runtime's map hash and equality, on UBD.
+// Each computes the operation of the BID-128 function of the same stem
+// (Min128 for ubdMin128, Round128 for UBDRound128) and follows
+// decimal64's function of that stem (min64) where there is one; none
+// converts to BID. A conversion from an integer needs no entry: the
+// integer is the coefficient at exponent 0, which the compiler builds
+// inline.
 
-// ubdMin128 is min128 on UBD: the IEEE 754-2019 minimum, which is Go's min.
-// A NaN operand gives a NaN, made quiet, as ubdNaN2 chooses it; otherwise
-// the lesser operand, -0 below +0, and of two members of one cohort the one
-// totalOrder puts first. A well-formed operand is canonical, so the result
-// is the operand itself, where min128 repacks it.
+// ubdMin128 follows min64 on UBD: the IEEE 754-2019 minimum, which is Go's
+// min. A NaN operand gives a NaN, made quiet, as ubdNaN2 chooses it;
+// otherwise the lesser operand, -0 below +0, and of two members of one
+// cohort the one totalOrder puts first. A well-formed operand is canonical,
+// so the result is the operand itself, where min64 repacks it.
 func ubdMin128(x, y UBD128) UBD128 {
 	var c int
 	ok := true
@@ -36,7 +39,7 @@ func ubdMin128(x, y UBD128) UBD128 {
 	return ubdSel128(-takeY, x, y)
 }
 
-// ubdMax128 is max128 on UBD: ubdMin128 with the order reversed.
+// ubdMax128 follows max64 on UBD: ubdMin128 with the order reversed.
 func ubdMax128(x, y UBD128) UBD128 {
 	var c int
 	ok := true
@@ -56,7 +59,7 @@ func ubdMax128(x, y UBD128) UBD128 {
 	return ubdSel128(-takeY, x, y)
 }
 
-// ubdTotalBefore128 is totalBefore128 on UBD, for two equal values of one
+// ubdTotalBefore128 follows totalBefore64 on UBD, for two equal values of one
 // sign that are not the same pattern: members of one cohort, which are
 // finite (equal infinities of one sign are one pattern). totalOrder puts
 // the smaller exponent first for a positive value, the larger for a
@@ -74,11 +77,11 @@ func ubdSel128(m uint64, a, b UBD128) UBD128 {
 	return UBD128{Lo: a.Lo ^ (a.Lo^b.Lo)&m, Hi: a.Hi ^ (a.Hi^b.Hi)&m}
 }
 
-// ubdIntParts128 is intParts128 on UBD with TowardZero, the language's
-// rounding for a conversion to an integer, which never increments: x
-// truncated to an integer, as a class, a sign and a magnitude, with big for
-// a magnitude beyond a uint64 and inexact for a truncated one.
-func ubdIntParts128(x UBD128) (kind Kind, neg bool, m uint64, big, inexact bool) {
+// ubdIntParts128 returns x rounded to an integer in mode, as a class, a
+// sign and a magnitude, with big for a magnitude beyond a uint64 and
+// inexact for a rounded one. The language's conversion to an integer
+// rounds TowardZero, which never increments.
+func ubdIntParts128(x UBD128, mode Mode) (kind Kind, neg bool, m uint64, big, inexact bool) {
 	neg = x.Hi&UBDSignHi != 0
 	if x.Hi>>60 == UBDSpecialTag {
 		if x.Hi>>59 == UBDNaNTag {
@@ -97,7 +100,10 @@ func ubdIntParts128(x UBD128) (kind Kind, neg bool, m uint64, big, inexact bool)
 		return kind, neg, m, false, false
 	}
 	q, class := cShift128(c, -exp)
-	inexact = class != classZero
+	if class != classZero {
+		inexact = true
+		q = cAddU64128(q, roundInc(class, mode, neg, cOdd128(q)))
+	}
 	m, fits := cToU64128(q)
 	if !fits {
 		return kind, neg, 0, true, inexact
@@ -129,7 +135,7 @@ func ubdInt64From128(x UBD128) int64 {
 			return int64(q)
 		}
 	}
-	r, _ := int64Result(ubdIntParts128(x))
+	r, _ := int64Result(ubdIntParts128(x, TowardZero))
 	return r
 }
 
@@ -147,7 +153,7 @@ func ubdUint64From128(x UBD128) uint64 {
 			return q
 		}
 	}
-	r, _ := uint64Result(ubdIntParts128(x))
+	r, _ := uint64Result(ubdIntParts128(x, TowardZero))
 	return r
 }
 
@@ -224,7 +230,7 @@ func ubdStripWord(c uint64, exp int) (uint64, int) {
 }
 
 // ubdStrip128 is ubdStripWord for a non-zero coefficient of two words:
-// key128's binary search on the count of trailing zeros, by exact division
+// strip128's binary search on the count of trailing zeros, by exact division
 // (cDivExactPow10128).
 func ubdStrip128(c coef128, exp int) (coef128, int) {
 	q, ok := cDivExactPow10128(c, 1)
@@ -252,7 +258,7 @@ func UBDEqual128(x, y UBD128) bool { return ubdEqual128(x, y) }
 
 // UBDNaN128 is the NaN result of an operation on x and y, at least one of
 // them a NaN, on UBD: the first signaling NaN, else the first NaN, made
-// quiet, as nan128(x, y, y) chooses it ("NaN results" in the package
+// quiet, as nan64(x, y, y) chooses it ("NaN results" in the package
 // documentation). For one operand pass it twice. math/decimal's
 // elementary functions propagate NaNs with it.
 func UBDNaN128(x, y UBD128) UBD128 { return ubdNaN2(x, y) }

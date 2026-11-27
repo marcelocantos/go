@@ -6,12 +6,14 @@ package bid
 
 import "math/bits"
 
-// The decimal128 instantiation of the coefficient vocabulary used by the
-// shared core (see "Width parameterisation" in the package documentation,
-// rule 4). The decimal64 instantiation, with identical signatures, is in
-// coef64.go. These functions may call any of the unexported Uint128 and
-// Uint256 arithmetic freely; unlike their decimal64 counterparts they are
-// not required to inline.
+// The coefficient vocabulary (see "Width-specific code" in the package
+// documentation, rule 2) at 128 bits, with the signatures of coef64.go.
+// The UBD kernel (ubd_*.go) writes decimal64's algorithms at 128 bits in
+// these functions, and the layout-free helpers it shares with nothing else
+// (strip128, remScaled128, addDigits128, fmaDigits128) are here too. These
+// functions may call any of the unexported Uint128 and Uint256 arithmetic
+// freely; unlike their decimal64 counterparts they are not required to
+// inline.
 //
 // Preconditions are as in coef64.go: stated, and a cheap one is checked by
 // a panic rather than answered wrongly.
@@ -210,7 +212,7 @@ func cMulFull128(a, b coef128) wide128 {
 // (the sticky bit of the discarded digits). Precondition: k >= 0 and the
 // quotient fits 128 bits; a quotient that does not panics rather than
 // truncate. Both hold for the product of two decimal128 coefficients
-// reduced to PrecisionW+1 digits.
+// reduced to Precision128+1 digits.
 func cReduce128(p wide128, k int) (q coef128, sticky bool) {
 	q, class := cReduceClass128(p, k)
 	return q, class != classZero
@@ -531,7 +533,7 @@ func cFromU64128(m uint64) coef128 {
 	return Uint128{Lo: m}
 }
 
-// cWords128 returns c as the two words that packWord128 encodes, most
+// cWords128 returns c as its two words, most
 // significant first.
 func cWords128(c coef128) (hi, lo uint64) {
 	return c.Hi, c.Lo
@@ -586,3 +588,109 @@ func cSplit128(c coef128) (hi, lo uint64) {
 func cWide128(m Uint128) wide128 {
 	return wide128{Lo: m}
 }
+
+// strip128 removes trailing zeros from the exact quotient q, which is k
+// places below the preferred exponent, up to k of them, and returns the
+// coefficient and the places that remain. k is positive.
+//
+// The first attempt is the likely count of zeros, first, by one exact
+// division through the modular inverse of 10^first (cDivExactPow10128, which
+// tests divisibility without a remainder and refuses by the low bits
+// alone), and the binary search runs only when the attempt leaves the count
+// open. A dividend over a power of ten keeps its own coefficient, which as
+// a rule has no trailing zero: one place is tried, and a failure ends the
+// strip. The long division's all-at-once attempt ends the strip on success.
+func strip128(q coef128, k, first int) (coef128, int) {
+	search := true
+	if first > 0 {
+		if sq, ok := cDivExactPow10128(q, first); ok {
+			q, k = sq, k-first
+			search = first == 1
+		} else {
+			search = first > 1
+		}
+	}
+	if search && k > 0 {
+		step := 1
+		for step*2 <= min(k, Precision128+1) {
+			step *= 2
+		}
+		for ; step > 0; step /= 2 {
+			if step > k {
+				continue
+			}
+			if sq, ok := cDivExactPow10128(q, step); ok {
+				q, k = sq, k-step
+			}
+		}
+	}
+	return q, k
+}
+
+// remStep128 is the exponent of the largest power of ten a coefficient word
+// holds, the stride of remScaled128. The product of two such words fits wide128.
+const remStep128 = len(pow10tab128) - 1
+
+// remScaled128 returns c × 10^k mod m, by repeated squaring in the base
+// 10^remStep128: one multiplication and division for a gap within one stride,
+// and at most 2 × log2(k / remStep128) more beyond it, which is under twenty at
+// the largest gap of decimal128. No intermediate value exceeds wide128, because
+// every factor is a word.
+//
+// Precondition: m is not zero.
+func remScaled128(c coef128, k int, m coef128) coef128 {
+	if k < remStep128 {
+		return cModFull128(cMulFull128(c, cPow10128(k)), m)
+	}
+	// Beyond one stride every reduction is by the one modulus, prepared
+	// once: its reciprocals are part of every division. A gap within one
+	// stride, the usual one, has the one division above and prepares
+	// nothing. The residues are in the prepared modulus's own form from
+	// here to the return.
+	pm := cModPrepare128(m)
+	r := cMulMod128(cModEnter128(c, &pm), cModEnter128(cPow10128(k%remStep128), &pm), &pm)
+	b := cModEnter128(cPow10128(remStep128), &pm)
+	for k /= remStep128; ; {
+		if k&1 != 0 {
+			r = cMulMod128(r, b, &pm)
+		}
+		// The square after the last bit would be computed and thrown
+		// away, and the squares are the chain that sets the time.
+		if k >>= 1; k == 0 {
+			return cModLeave128(r, &pm)
+		}
+		b = cMulMod128(b, b, &pm)
+	}
+}
+
+// addDigits128 is the number of digits the UBD add (ubdAddLong128) scales a
+// coefficient up to: 38, the exponent of the last power of ten in
+// pow10tab128. Two bounds allow it. The sum of two operands aligned this
+// way is below 10^38 + 10^34 < 2^128, so no addition needs the wide type.
+// And an operand scaled this far keeps more than Precision128 digits when
+// the other, shifted, is taken from it, which rounding a value with a
+// discarded tail requires: Precision128 plus two digits would do, because
+// the shifted operand is at most 10^Precision128, a borrow included, and
+// addDigits128 is Precision128+4. Two operands of Precision128 digits up
+// to four places apart are added exactly and rounded once, with no shift
+// of the smaller.
+const addDigits128 = len(pow10tab128) - 1
+
+// fmaDigits128 is the number of digits ubdFMALong128 scales a value up to.
+// Three facts fix it.
+//
+// Fit. The aligned values and their sum must fit the wide type: this is 71
+// digits, and 2×10^71 < 2^256 (10^77 is the largest power below it).
+//
+// Reach. No value may start above it, or the scale count would be negative:
+// the product has at most 2×Precision128 digits and the addend Precision128.
+//
+// The tail. A value is shifted, and leaves a fraction, only when the other
+// has been scaled to exactly this many digits. What is shifted has at most
+// 2×Precision128 digits and loses at least one, so with the borrow of a
+// difference it is at most 10^(2×Precision128-1). What remains therefore
+// has at least 2×Precision128+2 digits, more than the Precision128 that
+// rounding a value with a discarded tail requires. 2×Precision128+1 is the
+// least that keeps a non-zero difference; the two digits above it are the
+// margin addDigits128 also keeps.
+const fmaDigits128 = 2*Precision128 + 3

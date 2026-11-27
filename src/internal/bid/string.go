@@ -69,20 +69,12 @@ func Append64(dst []byte, x uint64) []byte {
 // Append128 is Append64 for decimal128; it needs MaxLen128 bytes of spare
 // capacity to avoid allocating.
 func Append128(dst []byte, x Uint128) []byte {
-	if i := len(dst); IsShort128(x) && cap(dst)-i >= ShortLen128 {
-		sign, frac := shortParts128(x)
-		return dst[:i+PutShort128((*[ShortLen128]byte)(dst[i:i+ShortLen128]), sign, frac, x.Lo)]
-	}
-	if IsLong128(x) {
-		c, _ := longCoeff128(x)
-		sign, exp := longParts128(x)
-		if i := len(dst); cap(dst)-i >= LongLen128 {
-			return dst[:i+PutLong128((*[LongLen128]byte)(dst[i:i+LongLen128]), sign, exp, c)]
-		}
-		var buf [LongLen128]byte
-		return append(dst, buf[:PutLong128(&buf, sign, exp, c)]...)
-	}
-	return append128(dst, x, false)
+	return UBDAppend128(dst, toUBD(x))
+}
+
+// UnpackDigits128 is UnpackDigits64 for decimal128.
+func UnpackDigits128(buf *[Precision128]byte, x Uint128) (kind Kind, neg bool, n, exp int) {
+	return UBDUnpackDigits128(buf, toUBD(x))
 }
 
 // AppendSci64 is Append64 for the to-scientific-string form of the General
@@ -95,11 +87,7 @@ func AppendSci64(dst []byte, x uint64) []byte {
 // AppendSci128 is AppendSci64 for decimal128. The short values have the
 // same plain notation in both forms.
 func AppendSci128(dst []byte, x Uint128) []byte {
-	if i := len(dst); IsShort128(x) && cap(dst)-i >= ShortLen128 {
-		sign, frac := shortParts128(x)
-		return dst[:i+PutShort128((*[ShortLen128]byte)(dst[i:i+ShortLen128]), sign, frac, x.Lo)]
-	}
-	return append128(dst, x, true)
+	return ubdAppendSci128(dst, toUBD(x))
 }
 
 // The short values, which dominate formatting (money and quantities): a
@@ -307,14 +295,15 @@ func Parse64(s string, mode Mode) (uint64, Status) {
 
 // Parse128 is Parse64 for decimal128.
 func Parse128(s string, mode Mode) (Uint128, Status) {
-	return parse128(s, mode)
+	r, st := UBDParse128(s, mode)
+	return fromUBD(r), st
 }
 
-// The width-independent half of the conversions (rule 7 of "Width
-// parameterisation" in the package documentation). string_tmpl.go
-// instantiates the part that mentions a coefficient: it unpacks an operand
-// and hands the digits to appendDecimal, and it hands the output of
-// scanDecimal to the rounding routine. Everything about the character form
+// The width-independent half of the conversions (rule 5 of "Width-specific
+// code" in the package documentation). string64.go and ubd_string.go hold
+// the part that mentions a coefficient: each unpacks an operand and hands
+// the digits to appendDecimal, and hands the output of scanDecimal to the
+// rounding routine. Everything about the character form
 // itself is here, once, for both widths.
 
 const (
@@ -376,14 +365,14 @@ func writeDigits(buf []byte, hi, lo uint64) int {
 	return u64Digits + writeWordDigits(buf[:i], hi)
 }
 
-// writeWordDigits writes a word backwards into the end of buf without
-// a temporary buffer or a digit-counting pass. It returns the digit count.
-// cSplitW establishes lo < 10^19, so u64Digits bytes suffice even for zero.
-// A digit at a time is the right shape here: the word is usually short
-// (money has six digits), and a conversion in chunks of eight costs its
-// three multiplications whatever the length and a branch on the length
-// that mixed operands mispredict (see "Digit conversion" in the package
-// documentation).
+// writeWordDigits writes a word backwards into the end of buf without a
+// temporary buffer or a digit-counting pass. It returns the digit count.
+// cSplit64 and cSplit128 establish lo < 10^19, so u64Digits bytes suffice
+// even for zero. A digit at a time is the right shape here: the word is
+// usually short (money has six digits), and a conversion in chunks of eight
+// costs its three multiplications whatever the length and a branch on the
+// length that mixed operands mispredict (see "Digit conversion" in the
+// package documentation).
 func writeWordDigits(buf []byte, lo uint64) int {
 	i := len(buf)
 	for {

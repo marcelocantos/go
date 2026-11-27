@@ -234,75 +234,49 @@ func appendDecimalRest(dst []byte, x bid.Uint128, fmt byte, prec int) []byte {
 	return formatDigits(dst, v.neg, v.exp, v.digs[len(v.digs)-v.n:], normalFormat(fmt), prec)
 }
 
-// decimalWords returns the words of d in the encoding the kernel formats
-// it in: decimal128's own where that is UBD (bid.NativeUBD128), which
-// formats with no conversion, and otherwise BID. The functions below read
-// the words in that encoding; bid.NativeUBD128 is a constant, so each is a
-// single kernel call.
+// decimalWords returns the UBD words of d, the encoding the kernel formats
+// it in (decimal.UBD128bits): its stored words where decimal128 is stored as
+// UBD, which formats with no conversion. The functions below read the words
+// in that encoding.
 func decimalWords(d decimal128) bid.Uint128 {
-	if bid.NativeUBD128 {
-		hi, lo := decimal.Bits128(d)
-		return bid.Uint128{Hi: hi, Lo: lo}
-	}
-	hi, lo := decimal.BID128bits(d)
+	hi, lo := decimal.UBD128bits(d)
 	return bid.Uint128{Hi: hi, Lo: lo}
 }
 
 func ubdWords(x bid.Uint128) bid.UBD128 { return bid.UBD128{Lo: x.Lo, Hi: x.Hi} }
 
 func isShortDecimal(x bid.Uint128) bool {
-	if bid.NativeUBD128 {
-		return bid.UBDIsShort128(ubdWords(x))
-	}
-	return bid.IsShort128(x)
+	return bid.UBDIsShort128(ubdWords(x))
 }
 
 // shortParts returns the sign (0 or 1) and the places after the point of
 // x, a value isShortDecimal accepts, for bid.PutShort128.
 func shortParts(x bid.Uint128) (sign, frac uint) {
-	if bid.NativeUBD128 {
-		return uint(x.Hi >> bid.UBDSignShift & 1), uint(-(int64(x.Hi) >> bid.UBDExpShift))
-	}
-	return uint(x.Hi >> 63), uint(bid.Bias128 - int(x.Hi>>bid.ExpShift128&bid.ExpMask128))
+	return uint(x.Hi >> bid.UBDSignShift & 1), uint(-(int64(x.Hi) >> bid.UBDExpShift))
 }
 
 // isShortFixedDecimal reports whether x is short in the fixed form: what
 // isShortDecimal accepts, at any magnitude.
 func isShortFixedDecimal(x bid.Uint128) bool {
-	if bid.NativeUBD128 {
-		return bid.UBDIsShortFixed128(ubdWords(x))
-	}
-	return bid.IsShortFixed128(x)
+	return bid.UBDIsShortFixed128(ubdWords(x))
 }
 
 func isLongDecimal(x bid.Uint128) bool {
-	if bid.NativeUBD128 {
-		return bid.UBDIsLong128(ubdWords(x))
-	}
-	return bid.IsLong128(x)
+	return bid.UBDIsLong128(ubdWords(x))
 }
 
 // longParts returns the sign (0 or 1), the exponent and the coefficient of
 // x, a value isLongDecimal accepts, for bid.PutLong128.
 func longParts(x bid.Uint128) (sign uint, exp int, c bid.Uint128) {
-	if bid.NativeUBD128 {
-		return uint(x.Hi >> bid.UBDSignShift & 1), int(int64(x.Hi) >> bid.UBDExpShift), bid.Uint128{Hi: x.Hi & bid.UBDCoeffMaskHi, Lo: x.Lo}
-	}
-	return uint(x.Hi >> 63), int(x.Hi>>bid.ExpShift128&bid.ExpMask128) - bid.Bias128, bid.Uint128{Hi: x.Hi & bid.CoeffMask128Hi, Lo: x.Lo}
+	return uint(x.Hi >> bid.UBDSignShift & 1), int(int64(x.Hi) >> bid.UBDExpShift), bid.Uint128{Hi: x.Hi & bid.UBDCoeffMaskHi, Lo: x.Lo}
 }
 
 func unpackDecimal(x bid.Uint128) (kind bid.Kind, neg bool, coeff bid.Uint128, exp int) {
-	if bid.NativeUBD128 {
-		return bid.UBDUnpack128(ubdWords(x))
-	}
-	return bid.Unpack128(x)
+	return bid.UBDUnpack128(ubdWords(x))
 }
 
 func unpackDigitsDecimal(buf *[bid.Precision128]byte, x bid.Uint128) (kind bid.Kind, neg bool, n, exp int) {
-	if bid.NativeUBD128 {
-		return bid.UBDUnpackDigits128(buf, ubdWords(x))
-	}
-	return bid.UnpackDigits128(buf, x)
+	return bid.UBDUnpackDigits128(buf, ubdWords(x))
 }
 
 // decimal64Exact reports whether d is a finite decimal128 whose coefficient
@@ -430,21 +404,14 @@ func (v *finite) round(x bid.Uint128, format byte, prec int) {
 	// so quantize the coefficient alone, at exponent zero, and put the
 	// exponent back afterwards.
 	_, neg, coeff, _ := unpackDecimal(x)
-	var q bid.Uint128
-	if bid.NativeUBD128 {
-		// UBD: the sign and the coefficient at exponent zero, and the
-		// quantum's exponent, are fields; nothing packs.
-		c := bid.UBD128{Lo: coeff.Lo, Hi: coeff.Hi}
-		if neg {
-			c.Hi |= bid.UBDSignHi
-		}
-		r := bid.UBDQuantizeMode128(c, bid.UBD128{Lo: 1, Hi: uint64(drop) << bid.UBDExpShift}, bid.ToNearestEven)
-		q = bid.Uint128{Hi: r.Hi, Lo: r.Lo}
-	} else {
-		c, _ := bid.Pack128(neg, coeff, 0)
-		quantum, _ := bid.Pack128(false, bid.Uint128{Lo: 1}, drop)
-		q = bid.Quantize128(c, quantum, bid.ToNearestEven)
+	// The sign and the coefficient at exponent zero, and the quantum's
+	// exponent, are UBD fields; nothing packs.
+	c := bid.UBD128{Lo: coeff.Lo, Hi: coeff.Hi}
+	if neg {
+		c.Hi |= bid.UBDSignHi
 	}
+	r := bid.UBDQuantizeMode128(c, bid.UBD128{Lo: 1, Hi: uint64(drop) << bid.UBDExpShift}, bid.ToNearestEven)
+	q := bid.Uint128{Hi: r.Hi, Lo: r.Lo}
 
 	_, _, n, qexp := unpackDigitsDecimal(v.digs, q)
 	v.n = n

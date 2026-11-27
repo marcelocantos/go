@@ -276,8 +276,8 @@ func initBIDKernelSyms() {
 	ubdKernelNarrow = base.PkgLinksym("internal/bid", "ubdNarrowTTE128", obj.ABIInternal)
 }
 
-// ubdLevel is the -d=ubdlevel setting, which chooses the fast paths of
-// decimal128 operations on a UBD target:
+// ubdLevel is the -d=decimalinline setting (base.DecimalInline*), which
+// chooses the fast paths of decimal128 operations on a UBD target:
 //
 //	1  every operation is its kernel call, with nothing inline: the
 //	   smallest code at each call site; comparisons call the predicate
@@ -294,23 +294,15 @@ func initBIDKernelSyms() {
 //	   multiply, comparisons, min and max, integral rounding and quantize
 //	   to a coarser exponent. Every operand pair level 2 decides inline
 //	   runs level 2's code; the inline results are the kernel's by
-//	   construction. Developed as level 4 (research/ubd-level4/README.md)
+//	   construction.
 //
-// Until 2026-11-22 the levels were 1 to 10 and -1, adding paths one at a
-// time; research/ubd-size/README.md maps them to these. Until 2026-11-23
-// level 3 was the inline paths derived from the BID lowering, behind level
-// 2's, and the present level 3 was level 4. Any other value is a usage
-// error (base.ParseFlags).
-func ubdLevel() int {
-	if base.Debug.UBDLevel == 0 {
-		return 2
-	}
-	return base.Debug.UBDLevel // 1 to 3: base.ParseFlags rejects the rest
-}
+// decimal64 follows the same setting (bid64BelowFull). base.ParseFlags
+// rejects any other value.
+func ubdLevel() int { return base.Debug.DecimalInline }
 
 // ubdLevel3 reports whether ubdLevel is 3: level 2's lowering, with the
 // kernel's first paths promoted inline behind level 2's.
-func ubdLevel3() bool { return ubdLevel() == 3 }
+func ubdLevel3() bool { return ubdLevel() == base.DecimalInlineFull }
 
 // ubdLowered reports whether the decimal128 operation on x is lowered as
 // the kernel call, with the fast paths of ubdLevel in front of it: every
@@ -415,7 +407,7 @@ func (s *state) ubdAddNarrow(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 // multiply: its high word shifted right by 48 must be zero (below 2^112).
 // That costs a shift, a test and a third conditional branch at every call
 // site: 2 more instructions on linux/amd64 (30 against 28) and 1 more on
-// arm64 (21 against 20), measured with research/ubd-size. What it buys is
+// arm64 (21 against 20). What it buys is
 // the products of word coefficients of 2^56 (about 7.2e16) or more that
 // still fit, which the narrowed path sends to the kernel.
 func (s *state) ubdMulFast(rt *types.Type, x, y *ssa.Value) *ssa.Value {

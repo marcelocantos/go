@@ -2,84 +2,71 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build ignore
-
-// This file is the template for zarith64.go and zarith128.go, written once
-// in the vocabulary of "Width parameterisation" in the package
-// documentation: every identifier that depends on the width ends in a
-// capital W, and the generator (gen_arith.go) replaces that W with 64 or
-// 128. Nothing else is substituted. This file is not compiled; the build
-// ignores it, and only the generated files are compiled. Everything from
-// the build constraint to the package clause is commentary on the template
-// and is dropped from the generated files, which nobody edits.
-//
-// Nothing below the package clause, in code or in a comment, may end an
-// identifier with that capital letter unless it is meant to be replaced.
 package bid
 
-// magCmpW compares the magnitudes of two finite values, returning -1, 0 or
-// +1: cCmpFiniteW with both signs positive, which see.
+// magCmp64 compares the magnitudes of two finite values, returning -1, 0 or
+// +1: cCmpFinite64 with both signs positive, which see.
 //
-// Precondition: xc and yc are at most MaxCoeffW.
-func magCmpW(xc coefW, xe int, yc coefW, ye int) int {
-	return cCmpFiniteW(false, xc, xe, false, yc, ye)
+// Precondition: xc and yc are at most MaxCoeff64.
+func magCmp64(xc coef64, xe int, yc coef64, ye int) int {
+	return cCmpFinite64(false, xc, xe, false, yc, ye)
 }
 
-// nanW returns the NaN result of an operation whose operands x, y and z,
+// nan64 returns the NaN result of an operation whose operands x, y and z,
 // in that order, include a NaN: the first signaling NaN among them if there
 // is one, and otherwise the first NaN, made quiet with its sign and payload
 // kept. An operation of one or two operands repeats its last operand. See
 // "NaN results" in the package documentation.
-func nanW(x, y, z coefW) coefW {
+func nan64(x, y, z coef64) coef64 {
 	switch {
-	case IsSignalingW(x), !IsSignalingW(y) && !IsSignalingW(z) && IsNaNW(x):
-		return cQuietW(x)
-	case IsSignalingW(y), !IsSignalingW(z) && IsNaNW(y):
-		return cQuietW(y)
+	case IsSignaling64(x), !IsSignaling64(y) && !IsSignaling64(z) && IsNaN64(x):
+		return cQuiet64(x)
+	case IsSignaling64(y), !IsSignaling64(z) && IsNaN64(y):
+		return cQuiet64(y)
 	}
-	return cQuietW(z)
+	return cQuiet64(z)
 }
 
-// quietCmpSlowW returns the ordering of x and y as -1, 0 or +1 with ok =
+// quietCmpSlow64 returns the ordering of x and y as -1, 0 or +1 with ok =
 // true, or 0 and ok = false when either is a NaN. It is the general path of
-// equalW, lessW and lessEqualW, which compare word operands of one sign and
-// one exponent inline by their keys from sameQuantumKeysW (see "Inline fast
-// paths" in the package documentation), and the whole of CompareW, minW and
-// maxW, where such a front would not pay: Compare64 and Compare128 miss the
-// inlining budget with it, and out of line it costs every operand it refuses
-// a second call.
+// equal64, less64 and lessEqual64, which compare word operands of one sign and
+// one exponent inline by their keys from sameQuantumKeys64 (see "Inline fast
+// paths" in the package documentation), and the whole of Compare64, min64 and
+// max64, where such a front would not pay: Compare64 misses the inlining
+// budget with it, and out of line it costs every operand it refuses a
+// second call.
 //
-// The compiler calls the decimal128 instantiation of this function
-// directly, so its parameters and results are a contract with it: see the
-// end of "Inline fast paths" in the package documentation.
-func quietCmpSlowW(x, y coefW) (c int, ok bool) {
-	if xn, xc, xe, ok := unpackWordW(x); ok {
-		if yn, yc, ye, ok := unpackWordW(y); ok {
+// The compiler calls this function directly, so its parameters and results
+// are a contract with it: see the end of "Inline fast paths" in the package
+// documentation.
+func quietCmpSlow64(x, y coef64) (c int, ok bool) {
+	if xn, xc, xe, ok := unpackWord64(x); ok {
+		if yn, yc, ye, ok := unpackWord64(y); ok {
 			return compareWords(xn, xc, xe, yn, yc, ye), true
 		}
 	}
 	// Two finite values in the first form, the pair that is not word
 	// operands and not special: one call that makes none decides them, and
 	// nothing is kept across it or across the call for the rest.
-	xneg, xc, xe, xok := unpackFirstW(x)
-	yneg, yc, ye, yok := unpackFirstW(y)
+	xneg, xc, xe, xok := unpackFirst64(x)
+	yneg, yc, ye, yok := unpackFirst64(y)
 	if xok && yok {
-		return cCmpFiniteW(xneg, xc, xe, yneg, yc, ye), true
+		return cCmpFinite64(xneg, xc, xe, yneg, yc, ye), true
 	}
-	return quietCmpRestW(x, y)
+	return quietCmpRest64(x, y)
 }
 
-// quietCmpRestW is quietCmpSlowW for a pair with an operand that is not a
+// quietCmpRest64 is quietCmpSlow64 for a pair with an operand that is not a
 // canonical finite value in the first form: a NaN, an infinity, the second
 // form or a non-canonical encoding.
-func quietCmpRestW(x, y coefW) (c int, ok bool) {
-	xk, xneg, xc, xe := unpackRestW(x)
-	yk, yneg, yc, ye := unpackRestW(y)
+func quietCmpRest64(x, y coef64) (c int, ok bool) {
+	xk, xneg, xc, xe := unpackRest64(x)
+	yk, yneg, yc, ye := unpackRest64(y)
 	switch {
 	case xk == KindNaN || yk == KindNaN:
 		return 0, false
 	case xk == KindFinite && yk == KindFinite:
-		return cCmpFiniteW(xneg, xc, xe, yneg, yc, ye), true
+		return cCmpFinite64(xneg, xc, xe, yneg, yc, ye), true
 	case xk == KindInf && yk == KindInf:
 		// Two infinities: equal if of one sign, else the negative is the lesser.
 		if xneg == yneg {
@@ -102,49 +89,49 @@ func quietCmpRestW(x, y coefW) (c int, ok bool) {
 	return -1, true
 }
 
-// equalW reports whether x == y by value; it is false if either is a NaN.
-func equalW(x, y coefW) bool {
-	if kx, ky, ok := sameQuantumKeysW(x, y); ok {
+// equal64 reports whether x == y by value; it is false if either is a NaN.
+func equal64(x, y coef64) bool {
+	if kx, ky, ok := sameQuantumKeys64(x, y); ok {
 		return kx == ky
 	}
-	c, ok := quietCmpSlowW(x, y)
+	c, ok := quietCmpSlow64(x, y)
 	return ok && c == 0
 }
 
-// lessW reports whether x < y; it is false if either is a NaN.
-func lessW(x, y coefW) bool {
-	if kx, ky, ok := sameQuantumKeysW(x, y); ok {
+// less64 reports whether x < y; it is false if either is a NaN.
+func less64(x, y coef64) bool {
+	if kx, ky, ok := sameQuantumKeys64(x, y); ok {
 		return kx < ky
 	}
-	c, ok := quietCmpSlowW(x, y)
+	c, ok := quietCmpSlow64(x, y)
 	return ok && c < 0
 }
 
-// lessEqualW reports whether x <= y; it is false if either is a NaN.
-func lessEqualW(x, y coefW) bool {
-	if kx, ky, ok := sameQuantumKeysW(x, y); ok {
+// lessEqual64 reports whether x <= y; it is false if either is a NaN.
+func lessEqual64(x, y coef64) bool {
+	if kx, ky, ok := sameQuantumKeys64(x, y); ok {
 		return kx <= ky
 	}
-	c, ok := quietCmpSlowW(x, y)
+	c, ok := quietCmpSlow64(x, y)
 	return ok && c <= 0
 }
 
-// totalOrderW reports whether x precedes or equals y in the total order of
+// totalOrder64 reports whether x precedes or equals y in the total order of
 // IEEE 754-2019 clause 5.10 as the package defines it: by sign first
 // (negative operands, NaNs included, precede positive ones), then, within
 // one sign, finite values by value, then infinities, then NaNs; two finite
 // values of equal value, zeros included, by exponent. For negative operands
 // everything within the sign reverses. All NaNs of one sign are equal.
-func totalOrderW(x, y coefW) bool {
-	xneg, xc, xe, xok := unpackFirstW(x)
+func totalOrder64(x, y coef64) bool {
+	xneg, xc, xe, xok := unpackFirst64(x)
 	xk := KindFinite
 	if !xok {
-		xk, xneg, xc, xe = unpackRestW(x)
+		xk, xneg, xc, xe = unpackRest64(x)
 	}
-	yneg, yc, ye, yok := unpackFirstW(y)
+	yneg, yc, ye, yok := unpackFirst64(y)
 	yk := KindFinite
 	if !yok {
-		yk, yneg, yc, ye = unpackRestW(y)
+		yk, yneg, yc, ye = unpackRest64(y)
 	}
 	if xneg != yneg {
 		return xneg
@@ -162,7 +149,7 @@ func totalOrderW(x, y coefW) bool {
 	case xk != KindFinite:
 		// Infinities of one sign are equal, as are NaNs.
 	default:
-		xz, yz := cIsZeroW(xc), cIsZeroW(yc)
+		xz, yz := cIsZero64(xc), cIsZero64(yc)
 		switch {
 		case xz && yz:
 		case xz:
@@ -170,7 +157,7 @@ func totalOrderW(x, y coefW) bool {
 		case yz:
 			c = 1
 		default:
-			c = magCmpW(xc, xe, yc, ye)
+			c = magCmp64(xc, xe, yc, ye)
 		}
 		if c == 0 {
 			// One value, two quanta: the smaller exponent first.
@@ -188,12 +175,12 @@ func totalOrderW(x, y coefW) bool {
 	return c <= 0
 }
 
-// keyW returns the fields of the hash key of x. See Key.
-func keyW(x coefW) (kind Kind, neg bool, c coefW, exp int) {
-	neg, c, exp, ok := unpackFirstW(x)
+// key64 returns the fields of the hash key of x. See Key.
+func key64(x coef64) (kind Kind, neg bool, c coef64, exp int) {
+	neg, c, exp, ok := unpackFirst64(x)
 	kind = KindFinite
 	if !ok {
-		kind, neg, c, exp = unpackRestW(x)
+		kind, neg, c, exp = unpackRest64(x)
 	}
 	if kind == KindNaN {
 		return KindNaN, false, c, 0
@@ -201,65 +188,65 @@ func keyW(x coefW) (kind Kind, neg bool, c coefW, exp int) {
 	if kind == KindInf {
 		return KindInf, neg, c, 0
 	}
-	if cIsZeroW(c) {
+	if cIsZero64(c) {
 		return KindFinite, false, c, 0
 	}
 	// Strip the trailing zeros of the coefficient by binary search on their
-	// number: at most PrecisionW-1 of them, so steps of the powers of two
-	// from the largest one not above PrecisionW down to 1 can remove any
+	// number: at most Precision64-1 of them, so steps of the powers of two
+	// from the largest one not above Precision64 down to 1 can remove any
 	// count. Most coefficients have none, which one division settles.
-	q, ok := cDivExactPow10W(c, 1)
+	q, ok := cDivExactPow1064(c, 1)
 	if !ok {
 		return kind, neg, c, exp
 	}
 	c, exp = q, exp+1
 	step := 1
-	for step*2 <= PrecisionW {
+	for step*2 <= Precision64 {
 		step *= 2
 	}
 	for ; step > 0; step /= 2 {
-		if q, ok := cDivExactPow10W(c, step); ok {
+		if q, ok := cDivExactPow1064(c, step); ok {
 			c, exp = q, exp+step
 		}
 	}
 	return kind, neg, c, exp
 }
 
-// roundFiniteW is the bounded-coefficient part of the rounding routine.
-// c is canonical (at most PrecisionW digits), floor is within the format,
-// and exp <= MaxExpW. It preserves exp when exp >= floor; otherwise it
+// roundFinite64 is the bounded-coefficient part of the rounding routine.
+// c is canonical (at most Precision64 digits), floor is within the format,
+// and exp <= MaxExp64. It preserves exp when exp >= floor; otherwise it
 // rounds once at floor. Discarding at least one digit leaves room for an
-// increment, so the result cannot carry beyond PrecisionW digits. Zero
+// increment, so the result cannot carry beyond Precision64 digits. Zero
 // keeps its sign and takes max(exp, floor). No overflow or fold-down is
 // possible under these preconditions.
 //
-// Quantize and RoundToIntegral already establish these bounds. roundW
+// Quantize and RoundToIntegral already establish these bounds. round64
 // shares this helper after checking them, and derives conversion Status
 // from the returned discarded class plus the original magnitude.
-func roundFiniteW(neg bool, c coefW, exp int, mode Mode, floor int) (coefW, digitClass) {
+func roundFinite64(neg bool, c coef64, exp int, mode Mode, floor int) (coef64, digitClass) {
 	class := classZero
 	if exp < floor {
 		// Clamp before subtracting so an arbitrary negative int exponent
-		// from RoundW cannot overflow. Such a far shift discards all digits.
+		// from Round64 cannot overflow. Such a far shift discards all digits.
 		shift := floor - max(exp, floor-maxWideDigits)
-		c, class = cShiftW(c, shift)
+		c, class = cShift64(c, shift)
 		// The increment is added, not branched on (roundInc), and an
 		// exact shift, for which roundInc is not defined, adds zero.
-		inc := roundInc(class, mode, neg, cOddW(c))
+		inc := roundInc(class, mode, neg, cOdd64(c))
 		if class == classZero {
 			inc = 0
 		}
-		c = cAddU64W(c, inc)
+		c = cAddU6464(c, inc)
 		exp = floor
 	}
-	return packW(neg, c, exp), class
+	return pack64(neg, c, exp), class
 }
 
-// roundW is the general rounding routine of the package. Together with
-// its bounded-coefficient helper roundFiniteW, it is the only way an
+// round64 is the general rounding routine of the package. Together with
+// its bounded-coefficient helper roundFinite64, it is the only way an
 // operation produces a rounded result under each of the six modes, but
-// for the face-value rounding of addW's swamped addend, roundFaceW in
-// add_tmpl.go (see "Face-value rounding" in the package documentation),
+// for the face-value rounding of add64's swamped addend, roundFace64 in
+// add64.go (see "Face-value rounding" in the package documentation),
 // which takes the one step of this routine that such an input reaches.
 // Every rule of "Exponent of a result", "Overflow", "Underflow and
 // subnormal results" and "Sign of a result" (for zeros) in the package
@@ -273,7 +260,7 @@ func roundFiniteW(neg bool, c coefW, exp int, mode Mode, floor int) (coefW, digi
 // with p a wide integer (the full product of two coefficients fits it) and
 // f a fraction, 0 <= f < 1, described only by class: classZero for f = 0,
 // otherwise where f lies relative to one half. floor is the least exponent
-// the result may take: MinExpW for every operation with a preferred
+// the result may take: MinExp64 for every operation with a preferred
 // exponent (exp is then that preferred exponent), and the fixed exponent
 // itself, equal to exp, for Quantize and RoundToIntegral, whose result
 // exponent is fixed by the operation rather than by the precision; such a
@@ -285,60 +272,60 @@ func roundFiniteW(neg bool, c coefW, exp int, mode Mode, floor int) (coefW, digi
 //   - p and class together describe v exactly. A caller holding more
 //     digits than p can carry (FMA, a quotient generated beyond the
 //     precision, a sum whose operands are far apart) reduces them with the
-//     digit primitives, cShiftFullW or cReduceClassW, and passes the class
+//     digit primitives, cShiftFull64 or cReduceClass64, and passes the class
 //     they return as class; two reductions compose as digits.go says.
 //   - If class is not classZero and stands for a fraction of unknown size,
-//     p must have more than PrecisionW digits. roundW then discards at
+//     p must have more than Precision64 digits. round64 then discards at
 //     least one digit of p itself, and withSticky combines the two
-//     discarded parts exactly. A caller meets this by keeping PrecisionW+1
+//     discarded parts exactly. A caller meets this by keeping Precision64+1
 //     digits or more, or by scaling its exact part up to that many digits
 //     before truncating the rest, or by passing the whole exact product, as
-//     mulW does.
-//   - If class is not classZero and p has PrecisionW digits or fewer, no
+//     mul64 does.
+//   - If class is not classZero and p has Precision64 digits or fewer, no
 //     digit of p is discarded and class alone decides the rounding, taken
 //     at face value: classHalf is a tie and classAboveHalf rounds up in the
-//     nearest modes. roundPartsW passes such a class, classBelowHalf,
-//     which is how RoundW's sticky bit means "p + ε for an arbitrarily
+//     nearest modes. roundParts64 passes such a class, classBelowHalf,
+//     which is how Round64's sticky bit means "p + ε for an arbitrarily
 //     small ε > 0" ("Rounding from exact parts"). Among the operations
-//     only addW does, for an operand so far below the other that it is a
+//     only add64 does, for an operand so far below the other that it is a
 //     fraction f of one unit with 0 < f < 1/10: it rounds p with exactly
-//     PrecisionW digits, so that nothing is padded, and the class that f
+//     Precision64 digits, so that nothing is padded, and the class that f
 //     or 1 - f truly has, classBelowHalf or classAboveHalf, through
-//     roundFaceW, which gives this routine's result for that input. Every
+//     roundFace64, which gives this routine's result for that input. Every
 //     other operation keeps a round digit. A p of zero with a non-zero
 //     class is a value below 10^exp, and a caller meaning "arbitrarily
-//     small" passes exp <= MinExpW with it, as roundPartsW does, so that it
-//     rounds at MinExpW.
+//     small" passes exp <= MinExp64 with it, as roundParts64 does, so that it
+//     rounds at MinExp64.
 //
 // The result exponent x is exp for an exact value, raised when p has more
-// than PrecisionW digits, when exp is below floor, or when exp is above
-// MaxExpW and the coefficient can be padded with zeros to make up the
+// than Precision64 digits, when exp is below floor, or when exp is above
+// MaxExp64 and the coefficient can be padded with zeros to make up the
 // difference (fold-down); if it cannot, the value overflows. An inexact
 // value is encoded at the least exponent at or above floor at which its
-// rounded coefficient has at most PrecisionW digits, so p is padded or
+// rounded coefficient has at most Precision64 digits, so p is padded or
 // shifted to that place before the increment, and a coefficient that
-// carries out to 10^PrecisionW becomes 10^(PrecisionW-1) one place up. An
-// exact zero takes exp clamped into [floor, MaxExpW] and keeps the sign.
+// carries out to 10^Precision64 becomes 10^(Precision64-1) one place up. An
+// exact zero takes exp clamped into [floor, MaxExp64] and keeps the sign.
 //
 // Status: Exact when the result is v, including an exact subnormal, an
 // exact fold-down and a zero; Inexact otherwise; Inexact|Underflow when,
-// in addition, v is non-zero and below 10^EminW (tininess before
+// in addition, v is non-zero and below 10^Emin64 (tininess before
 // rounding); Inexact|Overflow when the rounded value is above the largest
 // finite one, in which case the result is the infinity or the largest
 // finite value of sign neg that overflowsToInf selects. The arithmetic
-// wrappers discard the Status; it is meaningful to RoundW, to the parser
+// wrappers discard the Status; it is meaningful to Round64, to the parser
 // and to the integer conversions, which report it.
 //
-// Exact fast paths. PackW is the raw encoder; it rounds nothing and
-// refuses what does not fit. Only the rounding routines may call it,
-// unless it re-encodes a coefficient and exponent already known to be
-// representable because UnpackW returned them, possibly with another
-// sign or for a narrower width, decoded them from an encoding that cannot
-// hold anything else, or accepts an integer type whose whole range fits,
-// and is named both here and in the allowlist of TestRoundIsTheOnlyPacker,
-// which parses the package source. Widen re-encodes the decimal64
-// coefficient and exponent
-// that Unpack64 returned as a decimal128 with Pack128, because every
+// Exact fast paths. Pack64 and Pack128 are the raw encoders; they round
+// nothing and refuse what does not fit. Only the rounding routines may
+// call them, unless the caller re-encodes a coefficient and exponent
+// already known to be representable because Unpack64 returned them,
+// possibly with another sign or for a narrower width, decoded them from an
+// encoding that cannot hold anything else, or accepts an integer type
+// whose whole range fits, and is named both here and in the allowlist of
+// TestRoundIsTheOnlyPacker, which parses the package source. Widen
+// re-encodes the decimal64 coefficient and exponent that Unpack64
+// returned as a decimal128 with Pack128, because every
 // decimal64 value is a decimal128 value. It measured two to three times
 // faster than the rounding routine on a 256-bit wide value. BIDFromDPD64
 // and BIDFromDPD128 encode the coefficient and exponent of a DPD encoding,
@@ -349,39 +336,39 @@ func roundFiniteW(neg bool, c coefW, exp int, mode Mode, floor int) (coefW, digi
 // between encodings, not operations, and round nothing. Int64To128 and
 // Uint64To128 encode an exponent-zero magnitude below 2^64, which has at
 // most 20 digits and therefore always fits Precision128's 34 digits.
-// packWord64 and packWord128, in encoding.go, encode the exact results of
-// the word fast paths of addW, mulW, fmaLongW, quantizeW and remainderW,
+// packWord64, in encoding.go, encodes the exact results of
+// the word fast paths of add64, mul64, fmaLong64, quantize64 and remainder64,
 // operands whose coefficients fit a uint64: an exact sum, product, fused
 // sum, rescaled coefficient or remainder at its preferred exponent, which
-// roundW would encode
+// round64 would encode
 // unchanged, refusing it when it does not fit the format so that the caller
 // takes its general path. Each of those functions says why the two paths
 // agree.
-func roundW(neg bool, p wideW, exp int, class digitClass, mode Mode, floor int) (coefW, Status) {
+func round64(neg bool, p wide64, exp int, class digitClass, mode Mode, floor int) (coef64, Status) {
 	// An exact coefficient already inside the format keeps its exponent.
 	// Check its bound directly instead of counting wide digits and deriving
 	// the same exponent through the general rounding path. floor still
 	// applies to quantize and integral rounding, including exact results.
 	if class == classZero {
-		var zero coefW
+		var zero coef64
 		if p.Hi == zero {
-			if cIsZeroW(p.Lo) {
-				return packW(neg, zero, min(max(exp, floor), MaxExpW)), Exact
+			if cIsZero64(p.Lo) {
+				return pack64(neg, zero, min(max(exp, floor), MaxExp64)), Exact
 			}
-			if exp <= MaxExpW && floor <= MaxExpW && !cGtMaxW(p.Lo) {
+			if exp <= MaxExp64 && floor <= MaxExp64 && !cGtMax64(p.Lo) {
 				if exp >= floor {
-					return packW(neg, p.Lo, exp), Exact
+					return pack64(neg, p.Lo, exp), Exact
 				}
 				// A bounded coefficient shifted right to floor cannot exceed
 				// Precision digits, even after an increment. Quantize and
 				// integral rounding therefore need no wide digit count.
-				r, dropped := roundFiniteW(neg, p.Lo, exp, mode, floor)
+				r, dropped := roundFinite64(neg, p.Lo, exp, mode, floor)
 				st := Exact
 				if dropped != classZero {
 					st = Inexact
 					// Far-below-format exponents are tiny without adding to
 					// them, which also avoids overflow for an int minimum.
-					if exp < EminW && (exp < EminW-PrecisionW || cDigitsW(p.Lo)-1+exp < EminW) {
+					if exp < Emin64 && (exp < Emin64-Precision64 || cDigits64(p.Lo)-1+exp < Emin64) {
 						st |= Underflow
 					}
 				}
@@ -393,113 +380,113 @@ func roundW(neg bool, p wideW, exp int, class digitClass, mode Mode, floor int) 
 	// mode above, a value below a tenth of the smallest subnormal below.
 	// Clamping keeps the exponent arithmetic below in range and the shift
 	// counts within what the digit primitives are specified for.
-	exp = min(max(exp, MinExpW-maxWideDigits-2), MaxExpW+PrecisionW+2)
+	exp = min(max(exp, MinExp64-maxWideDigits-2), MaxExp64+Precision64+2)
 
 	// a is the adjusted exponent of v, the power of ten of its leading
-	// digit, and tiny whether v is below 10^EminW. For p = 0, v is below
+	// digit, and tiny whether v is below 10^Emin64. For p = 0, v is below
 	// 10^exp, which is what a = exp - 1 says. A p whose high half is zero,
 	// which every sum is, has the digits of its low half, counted in the
 	// coefficient type by a helper that inlines, and is reduced below by
-	// cShiftW, which cReduceClassW would call for it after a test of its
+	// cShift64, which cReduceClass64 would call for it after a test of its
 	// own.
 	var d int
-	narrow := cIsZeroW(p.Hi)
+	narrow := cIsZero64(p.Hi)
 	if narrow {
-		d = cDigitsW(p.Lo)
+		d = cDigits64(p.Lo)
 	} else {
-		d = cLenFullW(p)
+		d = cLenFull64(p)
 	}
 	a := d - 1 + exp
-	tiny := a < EminW
+	tiny := a < Emin64
 
 	// x is the exponent of an inexact result: the least, at or above floor,
-	// at which PrecisionW digits hold the value. s is the number of places
+	// at which Precision64 digits hold the value. s is the number of places
 	// p moves to reach it: left (padding) when positive, right (dropping
 	// digits, which can make an exact value inexact) when negative.
-	x := max(a-(PrecisionW-1), floor)
+	x := max(a-(Precision64-1), floor)
 	s := exp - x
-	var q coefW
+	var q coef64
 	if s < 0 {
 		var dropped digitClass
 		if narrow {
-			q, dropped = cShiftW(p.Lo, -s)
+			q, dropped = cShift64(p.Lo, -s)
 		} else {
-			q, dropped = cReduceClassW(p, -s)
+			q, dropped = cReduceClass64(p, -s)
 		}
 		class = dropped.withSticky(class != classZero)
 	} else {
-		q = cLoW(p)
+		q = cLo64(p)
 	}
 
 	if class == classZero {
 		// Exact: the member of the cohort whose exponent is closest to exp.
 		// Dropping digits raised it to x; otherwise it is exp, folded down
-		// to MaxExpW if the coefficient has room for the zeros.
+		// to MaxExp64 if the coefficient has room for the zeros.
 		if s < 0 {
 			exp = x
 		}
-		if exp > MaxExpW {
-			padded, overflow := cScaleW(q, exp-MaxExpW)
-			if overflow || cGtMaxW(padded) {
-				return overflowW(neg, mode)
+		if exp > MaxExp64 {
+			padded, overflow := cScale64(q, exp-MaxExp64)
+			if overflow || cGtMax64(padded) {
+				return overflow64(neg, mode)
 			}
-			q, exp = padded, MaxExpW
+			q, exp = padded, MaxExp64
 		}
-		return packW(neg, q, exp), Exact
+		return pack64(neg, q, exp), Exact
 	}
 
 	// Inexact: pad to the result's place, then increment or not.
 	if s > 0 {
-		q = cMulPow10W(q, s)
+		q = cMulPow1064(q, s)
 	}
-	q = cAddU64W(q, roundInc(class, mode, neg, cOddW(q)))
-	if cGtMaxW(q) {
-		q, x = cPow10W(PrecisionW-1), x+1
+	q = cAddU6464(q, roundInc(class, mode, neg, cOdd64(q)))
+	if cGtMax64(q) {
+		q, x = cPow1064(Precision64-1), x+1
 	}
-	if x > MaxExpW {
-		return overflowW(neg, mode)
+	if x > MaxExp64 {
+		return overflow64(neg, mode)
 	}
 	st := Inexact
 	if tiny {
 		st |= Underflow
 	}
-	return packW(neg, q, x), st
+	return pack64(neg, q, x), st
 }
 
-// overflowW returns the default result of an overflow of sign neg in mode
+// overflow64 returns the default result of an overflow of sign neg in mode
 // and its Status (IEEE 754-2019 clause 7.4; "Overflow" in the package
 // documentation).
-func overflowW(neg bool, mode Mode) (coefW, Status) {
+func overflow64(neg bool, mode Mode) (coef64, Status) {
 	if overflowsToInf(mode, neg) {
-		return cInfW(neg), Inexact | Overflow
+		return cInf64(neg), Inexact | Overflow
 	}
-	return packW(neg, cMaxW(), MaxExpW), Inexact | Overflow
+	return pack64(neg, cMax64(), MaxExp64), Inexact | Overflow
 }
 
-// packW is PackW for a coefficient and exponent that a rounding routine
-// has brought within the format. PackW refusing them is an internal bug,
+// pack64 is Pack64 for a coefficient and exponent that a rounding routine
+// has brought within the format. Pack64 refusing them is an internal bug,
 // not an input condition, and panics rather than yielding a NaN.
-func packW(neg bool, c coefW, exp int) coefW {
-	x, ok := PackW(neg, c, exp)
+func pack64(neg bool, c coef64, exp int) coef64 {
+	x, ok := Pack64(neg, c, exp)
 	if !ok {
 		panic(errRoundRange)
 	}
 	return x
 }
 
-// roundPartsW is RoundW: the sticky bit stands for an arbitrarily small
-// fraction, which is classBelowHalf when p has PrecisionW digits or fewer
-// and acts as a sticky bit when roundW drops digits of p (see roundW). A
+// roundParts64 is Round64: the sticky bit stands for an arbitrarily small
+// fraction, which is classBelowHalf when p has Precision64 digits or fewer
+// and acts as a sticky bit when round64 drops digits of p (see round64). A
 // zero p with the bit set is a value below every subnormal, so it is
-// placed at MinExpW, where it rounds to the zero or the smallest
+// placed at MinExp64, where it rounds to the zero or the smallest
 // subnormal of its sign.
-func roundPartsW(neg bool, p wideW, exp int, sticky bool, mode Mode) (coefW, Status) {
+func roundParts64(neg bool, p wide64, exp int, sticky bool, mode Mode) (coef64, Status) {
 	class := classZero
 	if sticky {
 		class = classBelowHalf
-		if p == (wideW{}) {
-			exp = min(exp, MinExpW)
+		if p == (wide64{}) {
+			exp = min(exp, MinExp64)
 		}
 	}
-	return roundW(neg, p, exp, class, mode, MinExpW)
+	return round64(neg, p, exp, class, mode, MinExp64)
 }

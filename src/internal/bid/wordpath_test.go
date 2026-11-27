@@ -176,14 +176,14 @@ func TestSwampedAdd(t *testing.T) {
 	}
 }
 
-// TestAlignedAdd drives the aligned addend of addSlowW, a y that reaches into
-// the PrecisionW digits of x scaled to full precision without being swamped
-// (addSlowW's comment), against the reference in every mode, both signs and
-// both operand orders: gaps from one place past the scale to the last that
-// leaves a digit of y in x's range; discarded digits of every class,
-// exactly zero and exactly a half included; sums that carry to
-// PrecisionW+1 digits; and differences that lose the leading digit and
-// take the general alignment instead.
+// TestAlignedAdd drives the aligned addend of addSlow64 and ubdAddTTE128, a
+// y that reaches into the Precision digits of x scaled to full precision
+// without being swamped (addSlow64's comment), against the reference in
+// every mode, both signs and both operand orders: gaps from one place past
+// the scale to the last that leaves a digit of y in x's range; discarded
+// digits of every class, exactly zero and exactly a half included; sums
+// that carry to Precision+1 digits; and differences that lose the leading
+// digit and take the general alignment instead.
 func TestAlignedAdd(t *testing.T) {
 	var k kernel
 	for _, f := range []*format{dec64, dec128} {
@@ -377,13 +377,14 @@ func TestAddAlignBound(t *testing.T) {
 	}
 }
 
-// TestAddFarWord drives the word path of a swamped addend (addLongW:
-// coefficients of one word each, further apart than farWordGap beyond the
-// places that scale x to full precision) at and around its bound, against
-// the reference in every mode: x of every length, at the powers of ten,
-// whose differences round one place lower, next to them, and zero; y zero, one,
-// and the largest word; the gaps either side of the bound and of the last
-// gap the exact word path aligns; and exponents at both ends of the range.
+// TestAddFarWord drives the word path of a swamped addend (addLong64 and
+// ubdAddLong128: coefficients of one word each, further apart than
+// farWordGap beyond the places that scale x to full precision) at and
+// around its bound, against the reference in every mode: x of every length,
+// at the powers of ten, whose differences round one place lower, next to
+// them, and zero; y zero, one, and the largest word; the gaps either side
+// of the bound and of the last gap the exact word path aligns; and
+// exponents at both ends of the range.
 func TestAddFarWord(t *testing.T) {
 	var k kernel
 	maxWord := new(big.Int).SetUint64(1<<64 - 1)

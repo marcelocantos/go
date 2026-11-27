@@ -245,48 +245,15 @@ func unpackWord128(x Uint128) (neg bool, coeff uint64, exp int, ok bool) {
 	return x.Hi&SignMask128Hi != 0, x.Lo, int(x.Hi >> ExpShift128 & ExpMask128), true
 }
 
-// divPair128 decodes what div128's own paths need. ok reports that x and y
-// are both finite encodings of the first form: neither has both bits of
-// the second form and the special values, which x & x<<1 brings together in
-// the upper of the two. xhi and yhi are the high words of the coefficients,
-// whose low words are those of x and y; exp is the exponent of x less that
-// of y, and neg whether their signs differ.
-func divPair128(x, y Uint128) (xhi, yhi uint64, exp int, neg, ok bool) {
-	ok = (x.Hi&(x.Hi<<1)|y.Hi&(y.Hi<<1))&(Form2Mask128Hi&(Form2Mask128Hi<<1)) == 0
-	exp = int(x.Hi>>ExpShift128&ExpMask128) - int(y.Hi>>ExpShift128&ExpMask128)
-	return x.Hi & CoeffMask128Hi, y.Hi & CoeffMask128Hi, exp, (x.Hi^y.Hi)&SignMask128Hi != 0, ok
-}
-
-// divPair64 decodes what div64's own path needs, as divPair128 does for
-// div128. first reports that x and y are both finite encodings of the first
-// form (see divPair128); a and b are then their coefficients, exp the
-// exponent of x less that of y, and sign the sign bit of the quotient. For
-// any other pair the caller decodes again with unpackWordCanon64.
+// divPair64 decodes what div64's own path needs. first reports that x and
+// y are both finite encodings of the first form (see unpackFirst64); a and b
+// are then their coefficients, exp the exponent of x less that of y, and
+// sign the sign bit of the quotient. For any other pair the caller decodes
+// again with unpackWordCanon64.
 func divPair64(x, y uint64) (a, b uint64, exp int, sign uint64, first bool) {
 	first = (x&(x<<1)|y&(y<<1))&(Form2Mask64&(Form2Mask64<<1)) == 0
 	exp = int(x>>ExpShift64&ExpMask64) - int(y>>ExpShift64&ExpMask64)
 	return x & (1<<CoeffBits64 - 1), y & (1<<CoeffBits64 - 1), exp, (x ^ y) & SignMask64, first
-}
-
-// wordPair128 reports whether neither x nor y has a coefficient bit above
-// its low word: coefficients of one word each, if they are finite and of
-// the first form.
-func wordPair128(x, y Uint128) bool {
-	return (x.Hi|y.Hi)&CoeffMask128Hi == 0
-}
-
-// wordTriple128 is wordPair128 for three operands.
-func wordTriple128(x, y, z Uint128) bool {
-	return (x.Hi|y.Hi|z.Hi)&CoeffMask128Hi == 0
-}
-
-// addPair128 decodes what addSlow128's own path needs. ok reports that x
-// and y are both finite encodings of the first form (see divPair128). xhi
-// and yhi are the high words of the coefficients, whose low words are those
-// of x and y, and xe and ye the exponents, biased.
-func addPair128(x, y Uint128) (xhi, yhi uint64, xe, ye int, ok bool) {
-	ok = (x.Hi&(x.Hi<<1)|y.Hi&(y.Hi<<1))&(Form2Mask128Hi&(Form2Mask128Hi<<1)) == 0
-	return x.Hi & CoeffMask128Hi, y.Hi & CoeffMask128Hi, int(x.Hi >> ExpShift128 & ExpMask128), int(y.Hi >> ExpShift128 & ExpMask128), ok
 }
 
 // wordParts64 decodes what addSlow64's own path needs of an operand: the
@@ -331,15 +298,6 @@ func packWordSign64(sign, c uint64, exp int) uint64 {
 	return sign<<63 | e<<ExpShift64 + c + k&-(c>>CoeffBits64)
 }
 
-// finite128 decodes what fmaSlow128's own path needs of its third operand. ok
-// reports that z is a finite encoding of the first form (see divPair128).
-// zhi is the high word of the coefficient, whose low word is that of z,
-// and ze the exponent, biased.
-func finite128(z Uint128) (zhi uint64, ze int, ok bool) {
-	ok = z.Hi&(z.Hi<<1)&(Form2Mask128Hi&(Form2Mask128Hi<<1)) == 0
-	return z.Hi & CoeffMask128Hi, int(z.Hi >> ExpShift128 & ExpMask128), ok
-}
-
 // shortExp128 returns the exponent of x less shortMinExp, a value from 0
 // to -shortMinExp, if x is a finite first-form encoding whose coefficient
 // fits its low word and whose exponent is from shortMinExp to 0; for every
@@ -380,12 +338,9 @@ func longParts128(x Uint128) (sign uint, exp int) {
 	return uint(x.Hi >> 63), int(x.Hi>>ExpShift128&ExpMask128) - Bias128
 }
 
-// unpackWordCanon64 and unpackWordCanon128 recognize every finite canonical
-// encoding whose coefficient fits uint64, for the word fast paths of the
-// arithmetic: for decimal64 that is every finite canonical encoding, the
-// second form included, whose coefficient is tested against MaxCoeff64 as
-// Unpack64 tests it; for decimal128 it is what unpackWord128 recognizes,
-// because a decimal128 second form is never canonical. The exponent is
+// unpackWordCanon64 recognizes every finite canonical encoding, for the word
+// fast paths of the arithmetic: the second form included, whose coefficient
+// is tested against MaxCoeff64 as Unpack64 tests it. The exponent is
 // biased, as unpackWord's, and the other results are unspecified when ok is
 // false. The comparisons keep unpackWord: there the second form measured
 // faster on the general path.
@@ -396,10 +351,6 @@ func unpackWordCanon64(x uint64) (neg bool, coeff uint64, exp int, ok bool) {
 	}
 	coeff = 1<<53 | x&(1<<Form2CoeffBits64-1)
 	return neg, coeff, int(x >> Form2ExpShift64 & ExpMask64), x&SpecialMask64 != SpecialMask64 && coeff <= MaxCoeff64
-}
-
-func unpackWordCanon128(x Uint128) (neg bool, coeff uint64, exp int, ok bool) {
-	return unpackWord128(x)
 }
 
 // fields64 decodes what mulSlow64's own path needs of a decimal64: the
@@ -440,13 +391,13 @@ func packSign64(sign, c uint64, exp int) (uint64, bool) {
 	return x, true
 }
 
-// packWord64 and packWord128 encode the exact value (-1)^neg × (hi·2^64 +
+// packWord64 encodes the exact value (-1)^neg × (hi·2^64 +
 // lo) × 10^exp, which a word fast path computed at its preferred exponent,
-// if it fits the format, and report ok = false otherwise, when the caller
+// if it fits the format, and reports ok = false otherwise, when the caller
 // takes its general path. They are the exact packing exception of the word
-// fast paths (see roundW in arith_tmpl.go): the rounding routine would
+// fast paths (see round64 in arith64.go): the rounding routine would
 // encode the value unchanged, and nothing is rounded here.
-// TestRoundIsTheOnlyPacker lists their callers.
+// TestRoundIsTheOnlyPacker lists its callers.
 func packWord64(neg bool, hi, lo uint64, exp int) (uint64, bool) {
 	if hi != 0 || lo > MaxCoeff64 || uint(exp-MinExp64) > MaxExp64-MinExp64 {
 		return 0, false
@@ -477,21 +428,10 @@ func packQuotient64(q uint64, exp int, sign uint64) (uint64, bool) {
 	return r | sign, true
 }
 
-func packWord128(neg bool, hi, lo uint64, exp int) (Uint128, bool) {
-	if (hi > MaxCoeff128Hi || hi == MaxCoeff128Hi && lo > MaxCoeff128Lo) || uint(exp-MinExp128) > MaxExp128-MinExp128 {
-		return Uint128{}, false
-	}
-	hi |= uint64(exp+Bias128) << ExpShift128
-	if neg {
-		hi |= SignMask128Hi
-	}
-	return Uint128{Hi: hi, Lo: lo}, true
-}
-
 // The inline paths. The functions below decide, from the bits alone, the
 // operations of money arithmetic whose result is exact and needs no
 // decoding: operands of one quantum whose coefficients fit a word. The
-// arithmetic templates call them in front of the general paths, and they are
+// decimal64 arithmetic calls them in front of the general paths, and they are
 // small enough that the front and its call to the general path inline into
 // every caller (see "Inline fast paths" in the package documentation). Each
 // reports ok = false for every operand it does not decide, and then the
@@ -505,9 +445,8 @@ func packWord128(neg bool, hi, lo uint64, exp int) (Uint128, bool) {
 // general path, and saves a test of the second form.
 const inlineWordBit = 1 << 62
 
-// addSameQuantum64 and addSameQuantum128 return x + y for word operands of
-// one sign and one exponent: the sum, if its coefficient fits the first form
-// (always, for decimal128: two words sum below 2^65), with that sign and
+// addSameQuantum64 returns x + y for word operands of one sign and one
+// exponent: the sum, if its coefficient fits the first form, with that sign and
 // exponent, the preferred one. The general path computes the same exact sum
 // at the same exponent in its word fast path and packWord encodes it the same
 // way, a first-form coefficient below 2^53 for decimal64.
@@ -516,12 +455,7 @@ func addSameQuantum64(x, y uint64) (uint64, bool) {
 	return s, ((x^y)|(s^x))>>ExpShift64|x&inlineWordBit == 0
 }
 
-func addSameQuantum128(x, y Uint128) (Uint128, bool) {
-	lo, carry := bits.Add64(x.Lo, y.Lo, 0)
-	return Uint128{Hi: x.Hi + carry, Lo: lo}, (x.Hi^y.Hi)|x.Hi&(CoeffMask128Hi|inlineWordBit) == 0
-}
-
-// subSameQuantum64 and subSameQuantum128 return x - y for word operands of
+// subSameQuantum64 returns x - y for word operands of
 // one sign and one exponent whose coefficients differ: the difference of the
 // coefficients, with the sign of x if its coefficient is the larger and the
 // other sign if not, at that exponent, the preferred one. The general path
@@ -535,13 +469,8 @@ func subSameQuantum64(x, y uint64) (uint64, bool) {
 	return x&^m ^ borrow<<63 | (d ^ -borrow + borrow), ((x^y)|x&inlineWordBit)>>ExpShift64|(d-1)&^d>>63 == 0
 }
 
-func subSameQuantum128(x, y Uint128) (Uint128, bool) {
-	d, borrow := bits.Sub64(x.Lo, y.Lo, 0)
-	return Uint128{Hi: x.Hi ^ borrow<<63, Lo: d ^ -borrow + borrow}, (x.Hi^y.Hi)|x.Hi&(CoeffMask128Hi|inlineWordBit)|(d-1)&^d>>63 == 0
-}
-
-// mulShort64 and mulShort128 return x × y for word operands whose product is
-// below 2^53 (decimal64) or 2^96 (decimal128) at a biased exponent below
+// mulShort64 returns x × y for word operands whose product is below 2^53 at
+// a biased exponent below
 // 2^(ExpBits-1), which is then exact and in the first form: the general
 // path's word fast path computes the same product at the same preferred
 // exponent, the sum of the exponents, and packWord encodes it the same way.
@@ -555,13 +484,7 @@ func mulShort64(x, y uint64) (uint64, bool) {
 	return t | lo, (x|y|t&^SignMask64)&inlineWordBit|hi|lo>>CoeffBits64 == 0
 }
 
-func mulShort128(x, y Uint128) (Uint128, bool) {
-	hi, lo := bits.Mul64(x.Lo, y.Lo)
-	t := x.Hi + y.Hi - Bias128<<ExpShift128
-	return Uint128{Hi: t | hi, Lo: lo}, (x.Hi|y.Hi)&(CoeffMask128Hi|inlineWordBit)|(t&^SignMask128Hi)&inlineWordBit|hi>>32 == 0
-}
-
-// quantizeSame64 and quantizeSame128 report whether x is a word operand with
+// quantizeSame64 reports whether x is a word operand with
 // the exponent of y, whose bits then agree with those of x from bit 62 down
 // to the exponent field, so that y is finite too. Quantizing x to y gives x
 // itself: the general path's word fast path scales the coefficient by 10^0
@@ -570,11 +493,7 @@ func quantizeSame64(x, y uint64) bool {
 	return ((x^y)&^SignMask64|x&inlineWordBit)>>ExpShift64 == 0
 }
 
-func quantizeSame128(x, y Uint128) bool {
-	return (x.Hi^y.Hi)&^SignMask128Hi>>ExpShift128|x.Hi&(CoeffMask128Hi|inlineWordBit) == 0
-}
-
-// sameQuantumKeys64 and sameQuantumKeys128 report whether x and y are word
+// sameQuantumKeys64 reports whether x and y are word
 // operands of one sign and one exponent, and return keys for them, words
 // whose unsigned order is the order of the values: the coefficients, with
 // every bit inverted for negative operands, which reverses their order. Zeros
@@ -584,14 +503,9 @@ func sameQuantumKeys64(x, y uint64) (kx, ky uint64, ok bool) {
 	return x ^ m, y ^ m, ((x^y)|x&inlineWordBit)>>ExpShift64 == 0
 }
 
-func sameQuantumKeys128(x, y Uint128) (kx, ky uint64, ok bool) {
-	m := -(x.Hi >> 63)
-	return x.Lo ^ m, y.Lo ^ m, (x.Hi^y.Hi)|x.Hi&(CoeffMask128Hi|inlineWordBit) == 0
-}
-
-// kindExp64 and kindExp128 decode only the fields that quantum operations
+// kindExp64 decodes only the fields that quantum operations
 // use. A coefficient, canonical or otherwise, cannot change these fields.
-// Keeping that work separate lets these small decoders inline into callers
+// Keeping that work separate lets this small decoder inline into callers
 // that do not need Unpack's sign and coefficient results.
 func kindExp64(x uint64) (Kind, int) {
 	if x&Form2Mask64 != Form2Mask64 {
@@ -604,20 +518,6 @@ func kindExp64(x uint64) (Kind, int) {
 		return KindInf, 0
 	}
 	return KindFinite, int(x>>Form2ExpShift64&ExpMask64) - Bias64
-}
-
-func kindExp128(x Uint128) (Kind, int) {
-	t := x.Hi
-	if t&Form2Mask128Hi != Form2Mask128Hi {
-		return KindFinite, int(t>>ExpShift128&ExpMask128) - Bias128
-	}
-	if t&SpecialMask128Hi == SpecialMask128Hi {
-		if t&NaNBit128Hi != 0 {
-			return KindNaN, 0
-		}
-		return KindInf, 0
-	}
-	return KindFinite, int(t>>Form2ExpShift128&ExpMask128) - Bias128
 }
 
 // Pack64 encodes the finite value (-1)^neg × coeff × 10^exp exactly in
@@ -805,7 +705,7 @@ func Payload64(x uint64) uint64 {
 // Payload128 is Payload64 for decimal128; a payload of 10^33 or more reads
 // as 0.
 func Payload128(x Uint128) Uint128 {
-	return payload128(x)
+	return fromUBD(UBDPayload128(toUBD(x)))
 }
 
 // NaNWithPayload64 returns the positive quiet NaN whose payload is the value
@@ -822,7 +722,7 @@ func NaNWithPayload64(p uint64) uint64 {
 // NaNWithPayload128 is NaNWithPayload64 for decimal128, whose canonical
 // payloads are the integers in [0, 10^33).
 func NaNWithPayload128(p Uint128) Uint128 {
-	return nanWithPayload128(p, false)
+	return fromUBD(UBDNaNWithPayload128(toUBD(p), false))
 }
 
 // SignalingNaNWithPayload64 is NaNWithPayload64 with a signaling NaN as its
@@ -835,7 +735,7 @@ func SignalingNaNWithPayload64(p uint64) uint64 {
 
 // SignalingNaNWithPayload128 is SignalingNaNWithPayload64 for decimal128.
 func SignalingNaNWithPayload128(p Uint128) Uint128 {
-	return nanWithPayload128(p, true)
+	return fromUBD(UBDNaNWithPayload128(toUBD(p), true))
 }
 
 // Neg64 returns x with its sign bit inverted (IEEE 754-2019 clause 5.5.1,

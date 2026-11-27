@@ -27,10 +27,10 @@ func Widen(x uint64) Uint128 {
 	case KindInf:
 		return cInf128(neg)
 	}
-	// Exact fast path (named in roundW's comment and in the allowlist of
+	// Exact fast path (named in round64's comment and in the allowlist of
 	// TestRoundIsTheOnlyPacker): the coefficient and exponent came from
 	// Unpack64, and every decimal64 pair is a decimal128 pair, so nothing
-	// is rounded and Pack128 cannot refuse. Going through round128 for a
+	// is rounded and Pack128 cannot refuse. Going through the rounding for a
 	// 256-bit wide value costs two to three times as much (measured, 2026-10-30,
 	// under load) for a result that is never anything but this one.
 	z, _ := Pack128(neg, Uint128{Lo: coeff}, exp)
@@ -101,7 +101,7 @@ func Int64From64(x uint64, mode Mode) (int64, Status) {
 
 // Int64From128 is Int64From64 for decimal128.
 func Int64From128(x Uint128, mode Mode) (int64, Status) {
-	return int64From128(x, mode)
+	return int64Result(ubdIntParts128(toUBD(x), mode))
 }
 
 // Uint64From64 is Int64From64 with a uint64 result, whose range is
@@ -115,5 +115,5 @@ func Uint64From64(x uint64, mode Mode) (uint64, Status) {
 
 // Uint64From128 is Uint64From64 for decimal128.
 func Uint64From128(x Uint128, mode Mode) (uint64, Status) {
-	return uint64From128(x, mode)
+	return uint64Result(ubdIntParts128(toUBD(x), mode))
 }

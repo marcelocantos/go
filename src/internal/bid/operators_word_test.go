@@ -13,7 +13,7 @@ import (
 
 // TestWordPathsAgreeWithCompiler runs the kernel's word fast paths and the
 // compiler's inline lowering of + - * and the comparisons (ssagen's
-// ubdAddNarrow, ubdMulFast and ubdCompareNarrow at the default ubdlevel,
+// ubdAddNarrow, ubdMulFast and ubdCompareNarrow at the default -d=decimalinline,
 // and bidCompare for decimal64) on the operands at their bounds: word
 // coefficients at gaps around both the add bound of the compiler's level 3
 // (14) and the kernel's (19), at both ends of the exponent range. The two were
@@ -55,6 +55,21 @@ func TestWordPathsAgreeWithCompiler(t *testing.T) {
 			}
 		}
 		t.Logf("%s: %d operand pairs", f.name, n)
+	}
+}
+
+// TestBoundsAgreeWithCompiler runs the compiled decimal64 operators on every
+// pair of the pool of TestInlinePaths, which sits on both sides of each
+// bound of the compact lowering (ssagen's bid64_inline.go), with specials
+// and noncanonical encodings. decimal128's are TestOperatorsRawUBD's.
+// cmd/compile's TestDecimalInlineLevels runs both at the other settings of
+// -d=decimalinline.
+func TestBoundsAgreeWithCompiler(t *testing.T) {
+	pool := inlinePool64()
+	for _, x := range pool {
+		for _, y := range pool {
+			checkCompiled64(t, bits{Lo: x}, bits{Lo: y})
+		}
 	}
 }
 

@@ -19,8 +19,9 @@ import (
 //
 // Decimal to binary needs only the operand's parts, which UBD gives as
 // fields: strconv's Float64FromCoeff and Float32FromCoeff take them as they
-// are. Binary to decimal is fromFloat128 with its result rounded and packed
-// as UBD; its arithmetic (fromfloat.go, fromfloat_fast.go) is shared.
+// are. Binary to decimal follows decimal64's fromFloat64, with its
+// result rounded and packed as UBD; its arithmetic (fromfloat.go,
+// fromfloat_fast.go) is shared.
 
 // UBDFloat64To128 is Float64To128 on UBD: f rounded in mode from its exact
 // binary value, with clause 5.4.2's preferred exponent.
@@ -54,12 +55,11 @@ func UBDFloat32From128(x UBD128, mode Mode) float32 {
 	return strconv.Float32FromCoeff(c.Hi, c.Lo, exp, neg, binaryRounding(mode, neg))
 }
 
-// ubdFromFloat128 is fromFloat128 (fromfloat_tmpl.go) on UBD: the binary
+// ubdFromFloat128 follows fromFloat64 (fromfloat64.go) on UBD: the binary
 // value of kind kind and, when finite, (-1)^neg × m × 2^e, as decimal128,
 // rounded once in mode with clause 5.4.2's preferred exponent. A NaN is the
 // canonical quiet NaN and an infinity keeps its sign. The digit count, the
-// four cases and their exactness argument are fromFloat128's, unchanged;
-// TestUBDFloat checks the two against each other.
+// four cases and their exactness argument are fromFloat64's, unchanged.
 func ubdFromFloat128(kind Kind, neg bool, m uint64, e int, mode Mode) UBD128 {
 	switch kind {
 	case KindNaN:
