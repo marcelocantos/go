@@ -419,6 +419,21 @@ their fast paths. If this is revisited, rebuild cmd/compile with the
 product test and remeasure the site (expected 21 instructions on arm64)
 and the `x * y` money rows before changing it.
 
+Revisited 2026-11-27: level 2 now takes one-word coefficients and tests
+the product. As two or three guards, the extra blocks changed the register
+assignment at a loop's merge, and microbench's `Mul/128/cents` and `d16`
+reloaded their loop-carried state from the stack each iteration (40-60%
+slower). The shipped form is one unsigned comparison after an
+unconditional multiply: the biased exponent sum (at most 12287, below
+2^14), ORed with the product's high word shifted right by 48 and moved to
+2^14, and with the high words' coefficient bits moved to 2^15 (`ubdMulFast`).
+Per site: arm64 20 instructions at level 2 (unchanged) and 20 at level 3
+(was 33; level 3's word multiply, `ubdMulWord3`, is deleted); amd64 27 at
+both (was 28 and 52). Microbench and BenchmarkOperatorMul128, Apple M3 Pro,
+before and after alternately, median of 6: level 2 within +4% (d16 and
+cents 2.18 -> 2.27 ns, hit 2.07 -> 2.13, miss 9.87 -> 9.65), level 3 1-6%
+faster on every row.
+
 ## Not done
 
 - The GDB printer does not know UBD (`TestGdbDecimal` fails).

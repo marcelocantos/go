@@ -79,10 +79,11 @@ func Sub128(x, y decimal128) decimal128 {
 func Mul128(x, y decimal128) decimal128 {
 	// ppc64le:"DMULQ" -"CALL"
 	// UBD (the default, ubdLevel 2): decimal128-go's first-level
-	// multiply path, coefficients below 2^56, in front of the kernel's
-	// ties-to-even entry.
-	// arm64:"UMULH" "CALL internal/bid.ubdMulTTE128" -"CALL runtime.dmul128"
-	// amd64:"MULX?Q" "CALL internal/bid.ubdMulTTE128" -"CALL runtime.dmul128"
+	// multiply path, one-word coefficients and a product below 2^112 (its
+	// high word shifted right by 48), in front of the kernel's ties-to-even
+	// entry.
+	// arm64:"UMULH" "LSR [$]48" "CALL internal/bid.ubdMulTTE128" -"CALL runtime.dmul128"
+	// amd64:"MULX?Q" "SHRQ [$]48" "CALL internal/bid.ubdMulTTE128" -"CALL runtime.dmul128"
 	return x * y
 }
 

@@ -214,33 +214,6 @@ func (s *state) ubdAddWord3(op ir.Op, rt *types.Type, x, y, xh, yh, xl, yl *ssa.
 	return u.finish(rt, func() *ssa.Value { return s.softDecimalOp(op, rt, x, y) })
 }
 
-// ubdMulWord3 is x * y at ubdLevel 3 where level 2's guard has failed
-// (ubdMulFast): the kernel's ubdMulShort128 for a pair of one-word
-// coefficients, whose product needs no test of the factors, only of
-// itself. The 64×64 product below 2^112, so below 10^34, is exact at the
-// sum of the exponents, which must be in the format; the sign is the XOR
-// of the operands'. Level 2 takes factors below 2^56; this takes the
-// products of larger word factors that still fit. Every other pair is the
-// kernel call.
-func (s *state) ubdMulWord3(rt *types.Type, x, y, xh, yh, xl, yl *ssa.Value) *ssa.Value {
-	u := s.newUBD3("ubdmul3")
-	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
-	zero := s.constInt64(u64, 0)
-	c := func(v int64) *ssa.Value { return s.constInt64(u64, v) }
-	words := s.newValue2(ssaop.OpLsh64x64, u64, s.newValue2(ssaop.OpOr64, u64, xh, yh), c(64-bid.UBDExpShift+1))
-	u.guard(s.newValue2(ssaop.OpEq64, boolT, words, zero), u.call)
-	shift := c(bid.UBDExpShift)
-	exp := s.newValue2(ssaop.OpAdd64, u64, s.newValue2(ssaop.OpRsh64x64, u64, xh, shift), s.newValue2(ssaop.OpRsh64x64, u64, yh, shift))
-	u.guard(s.newValue2(ssaop.OpLeq64U, boolT, s.newValue2(ssaop.OpAdd64, u64, exp, c(-bid.MinExp128)), c(bid.MaxExp128-bid.MinExp128)), u.call)
-	prod := s.newValue2(ssaop.OpMul64uhilo, types.NewTuple(u64, u64), xl, yl)
-	phi, plo := s.newValue1(ssaop.OpSelect0, u64, prod), s.newValue1(ssaop.OpSelect1, u64, prod)
-	u.guard(s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpRsh64Ux64, u64, phi, c(48)), zero), u.call)
-	sign := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpXor64, u64, xh, yh), c(bid.UBDSignHi))
-	header := s.newValue2(ssaop.OpOr64, u64, sign, s.newValue2(ssaop.OpLsh64x64, u64, exp, shift))
-	u.done(s.newValue2(ssaop.OpDecimal128Make, rt, plo, s.newValue2(ssaop.OpOr64, u64, header, phi)))
-	return u.finish(rt, func() *ssa.Value { return s.softDecimalOp(ir.OMUL, rt, x, y) })
-}
-
 // ubdCmpWord3 is the comparison op of x and y at ubdLevel 3 where level
 // 2's guard has failed (ubdCompareNarrow): the kernel's ubdCmpWord, the
 // predicate entries' first path, for a pair of one-word coefficients
