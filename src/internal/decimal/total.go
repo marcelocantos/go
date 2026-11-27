@@ -7,26 +7,22 @@ package decimal
 import "internal/bid"
 
 // totalOrder of IEEE 754-2019 clause 5.10 and totalOrderMag of clause
-// 5.7.2. A decimal128 stored as UBD uses the UBD order, which orders NaNs
-// as clause 5.10 d) does; decimal64, and decimal128 on a target that stores
-// BID, use internal/bid's TotalOrder64 and TotalOrder128, which order NaNs
-// by sign alone.
+// 5.7.2. decimal128 uses the UBD order on its UBD encoding, which orders
+// NaNs as clause 5.10 d) does; decimal64 uses internal/bid's TotalOrder64,
+// which orders NaNs by sign alone.
 
 // TotalOrder reports whether x precedes or is y in the total order.
 func TotalOrder[D Decimal](x, y D) bool {
 	if is64(x) {
 		return bid.TotalOrder64(BID64bits(decimal64(x)), BID64bits(decimal64(y)))
 	}
-	if bid.NativeUBD128 {
-		return bid.UBDTotalOrder128(ubdWords(decimal128(x)), ubdWords(decimal128(y)))
-	}
-	return bid.TotalOrder128(b128(decimal128(x)), b128(decimal128(y)))
+	return bid.UBDTotalOrder128(ubdWords(decimal128(x)), ubdWords(decimal128(y)))
 }
 
 // TotalCompare returns -1, 0 or +1 as x precedes, is, or follows y in the
 // total order.
 func TotalCompare[D Decimal](x, y D) int {
-	if !is64(x) && bid.NativeUBD128 {
+	if !is64(x) {
 		return bid.UBDTotalCompare128(ubdWords(decimal128(x)), ubdWords(decimal128(y)))
 	}
 	xy, yx := TotalOrder(x, y), TotalOrder(y, x)
@@ -42,7 +38,7 @@ func TotalCompare[D Decimal](x, y D) int {
 // TotalOrderMag reports whether the magnitude of x precedes or is the
 // magnitude of y in the total order: TotalOrder(Abs(x), Abs(y)).
 func TotalOrderMag[D Decimal](x, y D) bool {
-	if !is64(x) && bid.NativeUBD128 {
+	if !is64(x) {
 		return bid.UBDTotalOrderMag128(ubdWords(decimal128(x)), ubdWords(decimal128(y)))
 	}
 	return TotalOrder(Abs(x), Abs(y))
@@ -51,7 +47,7 @@ func TotalOrderMag[D Decimal](x, y D) bool {
 // TotalCompareMag returns -1, 0 or +1 as the magnitude of x precedes, is, or
 // follows the magnitude of y in the total order: TotalCompare(Abs(x), Abs(y)).
 func TotalCompareMag[D Decimal](x, y D) int {
-	if !is64(x) && bid.NativeUBD128 {
+	if !is64(x) {
 		return bid.UBDTotalCompareMag128(ubdWords(decimal128(x)), ubdWords(decimal128(y)))
 	}
 	return TotalCompare(Abs(x), Abs(y))

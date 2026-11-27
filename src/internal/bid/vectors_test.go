@@ -375,11 +375,11 @@ package bid_test
 // decimal128, see ubd_vectors_test.go); or operators, the path a program
 // takes (see operators_vectors_test.go): BID64frombits or BID128frombits,
 // Go's operators or math/decimal's FMA, then BID64bits or BID128bits. The
-// operators round TiesToEven only, and on a UBD target they are
-// compiled at a ubdlevel, which the run reads from the test binary and puts
-// in its output; run them at each level with
+// operators round TiesToEven only, and on a UBD target they are compiled
+// at a decimalinline setting, which the run reads from the test binary and
+// puts in its output; run them at each setting with
 //
-//	go test -gcflags=all=-d=ubdlevel=N -run PublishedVectors internal/bid -bid.vectors=operators
+//	go test -gcflags=all=-d=decimalinline=N -run PublishedVectors internal/bid -bid.vectors=operators
 //
 // for N of 1, 2 and 3. A kernel function that is not implemented counts as
 // a skip, never as a failure. -bid.vecshow and -bid.vecall control how many
@@ -536,7 +536,8 @@ var vecTargets = map[string]impl{
 }
 
 // vecTargetName is the target as the run's output names it: -bid.vectors,
-// with what the target's describe adds, such as the operators' ubdlevel.
+// with what the target's describe adds, such as the operators' decimalinline
+// setting.
 var vecTargetName string
 
 // vecDescriber is a target whose name alone does not say what ran.

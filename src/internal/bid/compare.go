@@ -72,9 +72,14 @@ func TotalOrder64(x, y uint64) bool {
 	return totalOrder64(x, y)
 }
 
-// TotalOrder128 is TotalOrder64 for decimal128.
+// TotalOrder128 is TotalOrder64 for decimal128. Apart from NaNs of one
+// sign, which are equal here, it is UBDTotalOrder128, which orders them by
+// the signaling bit and payload, on the operands converted to UBD.
 func TotalOrder128(x, y Uint128) bool {
-	return ubdTotalOrder128(toUBD(x), toUBD(y))
+	if IsNaN128(x) && IsNaN128(y) && x.Hi>>63 == y.Hi>>63 {
+		return true
+	}
+	return UBDTotalOrder128(toUBD(x), toUBD(y))
 }
 
 // Key is the canonical hash key of a decimal value. Two values have equal
