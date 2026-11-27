@@ -77,7 +77,7 @@ var ubdBenchClasses = []ubdBenchClass{
 	{"w19", 17, 19, -6, 17, 19, -9, 0, 0},  // just inside one word
 	{"w25", 22, 25, -6, 22, 25, -9, 10, 0}, // two words, exact
 	{"d34", 34, 34, -20, 34, 34, -24, 10, 0},
-	{"w2q", 20, 34, -6, 20, 34, -6, 50, 0}, // two words at one exponent, half negative: half the sums differences
+	{"w2q", 20, 34, -6, 20, 34, -6, 50, 0},  // two words at one exponent, half negative: half the sums differences
 	{"q34", 30, 34, -28, 1, 6, -2, 10, 0},   // a quotient and an amount: quantize rounds 26 places
 	{"mixexp", 3, 10, -2, 1, 8, -2, 10, -4}, // half one exponent, half two apart, at random
 }

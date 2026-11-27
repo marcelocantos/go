@@ -386,17 +386,40 @@ func ubdAddTTE128(x, y UBD128) UBD128 {
 		return ubdAddLong128(x, y, mode)
 	}
 	xhi, yhi := x.Hi&UBDCoeffMaskHi, y.Hi&UBDCoeffMaskHi
-	if (x.Hi^y.Hi)>>UBDSignShift == 0 {
-		// One exponent and one sign, the running total of amounts past
-		// 2^64: the sum of the coefficients, exact if it does not pass
-		// MaxCoeff128, under the operands' exponent and sign (17- to
-		// 19-digit amounts at one exponent, a running total: 6.25 ns
-		// against BID's 5.33 through the general path below).
-		lo, c := bits.Add64(x.Lo, y.Lo, 0)
-		hi := xhi + yhi + c
-		_, bw := bits.Sub64(MaxCoeff128Lo, lo, 0)
-		if _, bw = bits.Sub64(MaxCoeff128Hi, hi, bw); bw == 0 {
-			return UBD128{Lo: lo, Hi: x.Hi&^UBDCoeffMaskHi | hi}
+	if (x.Hi^y.Hi)>>UBDExpShift == 0 {
+		if (x.Hi^y.Hi)&UBDSignHi == 0 {
+			// One exponent and one sign, the running total of amounts
+			// past 2^64: the sum of the coefficients, exact if it does not
+			// pass MaxCoeff128, under the operands' exponent and sign (17-
+			// to 19-digit amounts at one exponent, a running total: 6.25
+			// ns against BID's 5.33 through the general path below).
+			lo, c := bits.Add64(x.Lo, y.Lo, 0)
+			hi := xhi + yhi + c
+			_, bw := bits.Sub64(MaxCoeff128Lo, lo, 0)
+			if _, bw = bits.Sub64(MaxCoeff128Hi, hi, bw); bw == 0 {
+				return UBD128{Lo: lo, Hi: x.Hi&^UBDCoeffMaskHi | hi}
+			}
+		} else {
+			// One exponent, opposite signs: the two-word difference,
+			// negated by selects when it borrows, since x - y goes either
+			// way for random amounts, and the sign flipped then. Its
+			// magnitude is at most the larger operand's, so it is exact:
+			// no digit count and no MaxCoeff128 check. An exact
+			// cancellation is +0. (These pairs took the gap path below at
+			// a gap of 0: a digit count, a multiply by 10^0 and the bound
+			// checks. The exponents are compared first so that a pair at
+			// two exponents still takes one test to reach that path.)
+			lo, b := bits.Sub64(x.Lo, y.Lo, 0)
+			hi, bw := bits.Sub64(xhi, yhi, b)
+			m := -bw // all ones when y's magnitude was the larger
+			nlo, nb := bits.Sub64(0, lo, 0)
+			nhi, _ := bits.Sub64(0, hi, nb)
+			lo, hi = lo&^m|nlo&m, hi&^m|nhi&m
+			sign := (x.Hi ^ bw<<UBDSignShift) & UBDSignHi
+			if hi|lo == 0 {
+				sign = 0
+			}
+			return UBD128{Lo: lo, Hi: x.Hi>>UBDExpShift<<UBDExpShift | sign | hi}
 		}
 	}
 	xe, ye := int(int64(x.Hi)>>UBDExpShift), int(int64(y.Hi)>>UBDExpShift)
