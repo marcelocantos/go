@@ -364,7 +364,47 @@ func ubdPackWord(neg bool, hi, lo uint64, exp int) (UBD128, bool) {
 	return UBD128{Lo: lo, Hi: h}, true
 }
 
-// ubdAddTTE128, the add entry the compiler calls, tries ubdAddWordTTE and
+// The word path of the ties-to-even add and subtract entries adds two finite
+// operands whose coefficients are one word each, so that their high words
+// hold only qExp and the sign, when their exponents are at most maxWordGap
+// apart: the exact sum at the smaller exponent, the preferred one. A sum past
+// MaxCoeff128, which must round, and exponents further apart go to
+// ubdAddLong128, whose word path this is. It is the first thing both entries
+// do, written into each (it was ubdAddWordTTE, called from them, until
+// 2026-11-27: with that call, a word pair took the entry's frame, its
+// spills and a second call; P-fin MIX, money amounts at level 1, 2.67 ns).
+//
+// Three paths, in the order of how common they are in money arithmetic:
+//
+//   - One exponent and one sign, a sum of amounts: an add and its carry.
+//     This is a branch, and it must be: a running total waits for each sum,
+//     and with the sum chosen by masks (the third path) it took 4.82 ns a
+//     step against 2.39 (and BID's 3.72); operands of mixed sign, which
+//     mispredict it, take 2.67 against 2.21 that way.
+//   - One exponent and opposite signs, a difference: both differences, and
+//     the one that did not borrow chosen by a select, not a branch, since
+//     x - y of random positive amounts goes either way half the time (a
+//     branch there took 5.89 ns). A running balance that stays positive
+//     takes 2.39 ns a step.
+//   - Exponents up to maxWordGap apart: the operand with the larger exponent
+//     scaled, and the other added or subtracted, each chosen by a branch, as
+//     in ubdAddLong128, and a difference that goes negative negated by a
+//     select, its magnitude then below 2^64. These are most of what reaches
+//     the kernel at -d=ubdlevel=2, whose inline path takes one exponent and
+//     one sign. With the operand and the operation chosen by masks instead,
+//     tax_preparation's FED program at level 2 was 3.5% slower than before
+//     this word path existed; with branches, 4.4% faster. (An amount and a
+//     rate, 2.52 ns against 3.52; a running total at either of two
+//     exponents at random, 3.49 against 4.50 a step.)
+//
+// (Apple M3 Pro, BenchmarkUBDKernel, rows money, cents10neg, gap2, mixexp,
+// Sub and the AddChain and SubChain rows.) An exact zero is the operands' sign when they
+// agree and +0 when they differ, as rounding to nearest gives (IEEE 754-2019
+// clause 6.3). The same one-exponent branch in ubdCmpWord was set aside: on
+// operands of one exponent or two apart at random a compare took 50%
+// longer.
+//
+// ubdAddTTE128, the add entry the compiler calls, starts with the word path and
 // is then addSlow128 on UBD for ties to even, written into the entry so that
 // an add past the word path is one call with one frame, where it was the
 // entry and then a ubdAddSlow128. The operands' signs are bit 49 and their
@@ -375,12 +415,57 @@ func ubdPackWord(neg bool, hi, lo uint64, exp int) (UBD128, bool) {
 func ubdAddTTE128(x, y UBD128) UBD128 {
 	const mode = ToNearestEven
 	if (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {
-		if r, ok := ubdAddWordTTE(x, y); ok {
-			return r
+		xh, xl, yh, yl := x.Hi, x.Lo, y.Hi, y.Lo
+		if (xh^yh)>>UBDSignShift == 0 {
+			// One exponent and one sign: the usual sum, an add and its carry.
+			lo, c := bits.Add64(xl, yl, 0)
+			return UBD128{Lo: lo, Hi: xh | c}
 		}
-		// Exponents too far apart, or a sum that rounds: as in
-		// addSlow128, ubdAddLong128 decides coefficients of one word each.
-		return ubdAddLong128(x, y, mode)
+		if (xh^yh)>>UBDExpShift == 0 {
+			// One exponent, opposite signs: both differences, and the one
+			// that did not borrow, chosen by a select.
+			d, b := bits.Sub64(xl, yl, 0)
+			if b != 0 {
+				d = yl - xl
+			}
+			sign := (xh>>UBDSignShift ^ b) & b2u(d != 0)
+			return UBD128{Lo: d, Hi: xh&^UBDSignHi | sign<<UBDSignShift}
+		}
+		// a is the operand with the larger exponent, b the other, whose
+		// exponent is the result's. Which it is goes with the data's kind
+		// (an amount and a rate), so it is a branch.
+		ah, al, bh, bl := xh, xl, yh, yl
+		if int64(xh) < int64(yh) { // qExp is the high word's top bits
+			ah, al, bh, bl = yh, yl, xh, xl
+		}
+		gap := uint64(int64(ah)>>UBDExpShift - int64(bh)>>UBDExpShift)
+		if gap > uint64(maxWordGap) {
+			return ubdAddLong128(x, y, ToNearestEven)
+		}
+		hi, lo := bits.Mul64(al, pow10tab64[gap])
+		sign := ah >> UBDSignShift & 1
+		if (ah^bh)&UBDSignHi == 0 {
+			var c uint64
+			lo, c = bits.Add64(lo, bl, 0)
+			hi += c
+		} else {
+			// a × 10^gap - b, negative only when a × 10^gap is below 2^64:
+			// both differences, and the one that did not borrow selected.
+			d, b := bits.Sub64(lo, bl, 0)
+			var bw uint64
+			hi, bw = bits.Sub64(hi, 0, b)
+			lo = d
+			if bw != 0 {
+				lo, hi, sign = -d, 0, sign^1 // b's magnitude, below 2^64, the larger
+			}
+			sign &= b2u(hi|lo != 0) // an exact zero is +0
+		}
+		_, bw := bits.Sub64(MaxCoeff128Lo, lo, 0)
+		_, bw = bits.Sub64(MaxCoeff128Hi, hi, bw)
+		if bw != 0 {
+			return ubdAddLong128(x, y, ToNearestEven)
+		}
+		return UBD128{Lo: lo, Hi: bh&^(UBDSignHi|UBDCoeffMaskHi) | sign<<UBDSignShift | hi}
 	}
 	if x.Hi>>60 == UBDSpecialTag || y.Hi>>60 == UBDSpecialTag || mode > ToNearestAway {
 		return ubdAddLong128(x, y, mode)

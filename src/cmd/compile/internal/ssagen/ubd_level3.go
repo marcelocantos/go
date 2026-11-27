@@ -83,8 +83,9 @@ func (u *ubd3) finish(rt *types.Type, call func() *ssa.Value) *ssa.Value {
 }
 
 // ubdAddWord3 lowers x + y and x - y at ubdLevel 3 where level 2's guard
-// has failed (ubdAddNarrow): the kernel's ubdAddWordTTE for a pair of
-// one-word coefficients, the ties-to-even entries' first path. x - y is
+// has failed (ubdAddNarrow): the word path of the kernel's ubdAddTTE128,
+// for a pair of one-word coefficients, the ties-to-even entries' first
+// path. x - y is
 // x + (-y): a word is not a NaN, so y's sign is flipped as it is.
 //
 //   - One exponent: level 2 took one sign (x + y) or an effective

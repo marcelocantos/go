@@ -8,6 +8,8 @@ import (
 	. "internal/bid"
 	mbits "math/bits"
 	"math/rand/v2"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -343,7 +345,7 @@ func TestUBDKernelBenchAgrees(t *testing.T) {
 }
 
 // TestUBDAddWordAgrees checks the ties-to-even add and subtract entries on
-// word operands, which their word path (ubdAddWordTTE) decides, against the
+// word operands, which their word path decides, against the
 // BID kernel: exponent gaps of 0 to 20 either way, coefficients of every
 // size up to 2^64 - 1, zeros, and both signs.
 func TestUBDAddWordAgrees(t *testing.T) {
@@ -433,6 +435,35 @@ func TestUBDAddWideAgrees(t *testing.T) {
 		if got, want := UBDKernelSub(ux, uy), BIDKernelSub(bx, by, ToNearestEven); BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}) != want {
 			t.Fatalf("sub %#x %#x: got %#x, want %#x", bx, by, BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}), want)
 		}
+	}
+}
+
+// TestUBDWordPathsMatch checks that the word path written into
+// ubdSubTTE128 is the text of the one in ubdAddTTE128.
+func TestUBDWordPathsMatch(t *testing.T) {
+	block := func(file, sig string) string {
+		src, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := string(src)
+		i := strings.Index(s, sig)
+		if i < 0 {
+			t.Fatalf("%s: %q not found", file, sig)
+		}
+		s = s[i:]
+		const open = "\tif (x.Hi|y.Hi)&UBDCoeffMaskHi == 0 {\n"
+		j := strings.Index(s, open)
+		k := strings.Index(s[j:], "\n\t}\n")
+		if j < 0 || k < 0 {
+			t.Fatalf("%s: no word path in %q", file, sig)
+		}
+		return s[j : j+k]
+	}
+	add := block("ubd_add.go", "func ubdAddTTE128(x, y UBD128) UBD128 {")
+	sub := block("ubd.go", "func ubdSubTTE128(x, y UBD128) UBD128 {")
+	if add != sub {
+		t.Errorf("the word paths of ubdAddTTE128 and ubdSubTTE128 differ")
 	}
 }
 
