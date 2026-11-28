@@ -604,3 +604,101 @@ func TestUBDWidenNarrow(t *testing.T) {
 		t.Logf("%d encodings widened, %d values narrowed in %d modes", n, len(xs), len(modes))
 	}
 }
+
+// TestUBDFMAGaps checks UBDFMA128 against FMA128 on random finite
+// operands of every length, with z at every distance from the product,
+// above and below it, near the ends of the exponent range, and with z
+// close to -x × y, where the paths of ubdFMASlow128 and ubdFMAWide128
+// divide the work.
+func TestUBDFMAGaps(t *testing.T) {
+	r := rand.New(rand.NewPCG(54, 128))
+	coef := func() (hi, lo uint64) {
+		n := 1 + r.IntN(bid.Precision128)
+		c := new(big.Int)
+		for range n {
+			c.Mul(c, big.NewInt(10)).Add(c, big.NewInt(int64(r.IntN(10))))
+		}
+		if r.IntN(4) == 0 { // a top digit, so that the length is n
+			c.Add(c, new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(n-1)), nil))
+			if c.Cmp(new(big.Int).Exp(big.NewInt(10), big.NewInt(bid.Precision128), nil)) >= 0 {
+				c.Sub(c, new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(n-1)), nil))
+			}
+		}
+		return new(big.Int).Rsh(c, 64).Uint64(), new(big.Int).And(c, new(big.Int).SetUint64(math.MaxUint64)).Uint64()
+	}
+	modes := []bid.Mode{bid.ToNearestEven, bid.ToNearestAway, bid.TowardZero, bid.TowardNegative, bid.TowardPositive}
+	errs := 0
+	for i := range 400000 {
+		var base int
+		switch i % 4 {
+		case 0:
+			base = 0
+		case 1:
+			base = bid.MinExp128 + r.IntN(80)
+		case 2:
+			base = bid.MaxExp128 - r.IntN(80)
+		default:
+			base = r.IntN(200) - 100
+		}
+		xh, xl := coef()
+		yh, yl := coef()
+		zh, zl := coef()
+		xe := base/2 + r.IntN(41) - 20
+		ye := base - xe
+		ze := base + r.IntN(181) - 90
+		if i%7 == 0 {
+			// z near -x × y: the product, rounded to its first digits.
+			p := new(big.Int).Mul(new(big.Int).Or(new(big.Int).Lsh(new(big.Int).SetUint64(xh), 64), new(big.Int).SetUint64(xl)),
+				new(big.Int).Or(new(big.Int).Lsh(new(big.Int).SetUint64(yh), 64), new(big.Int).SetUint64(yl)))
+			k := 0
+			for p.Cmp(new(big.Int).Exp(big.NewInt(10), big.NewInt(bid.Precision128), nil)) >= 0 {
+				p.Quo(p, big.NewInt(10))
+				k++
+			}
+			p.Add(p, big.NewInt(int64(r.IntN(3)-1)))
+			if p.Sign() <= 0 {
+				p.SetInt64(1)
+			}
+			zh, zl = new(big.Int).Rsh(p, 64).Uint64(), new(big.Int).And(p, new(big.Int).SetUint64(math.MaxUint64)).Uint64()
+			ze = xe + ye + k
+		}
+		if i%7 == 1 {
+			// Ties: x = 5 × 10^(n-1) and y = c × 10^s with c odd make the
+			// product 5c × 10^(n-1+s), exactly half a unit of 10^(n+s).
+			// z is placed so that the product is divided by about 10^(n+s),
+			// in exact alignment or with z far above it.
+			n := 1 + r.IntN(bid.Precision128)
+			s := r.IntN(bid.Precision128 - 15)
+			c := 2*r.Uint64N(5e14) + 1
+			xv := new(big.Int).Mul(big.NewInt(5), new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(n-1)), nil))
+			yv := new(big.Int).Mul(new(big.Int).SetUint64(c), new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(s)), nil))
+			if yv.BitLen() > 113 {
+				continue
+			}
+			xh, xl = new(big.Int).Rsh(xv, 64).Uint64(), new(big.Int).And(xv, new(big.Int).SetUint64(math.MaxUint64)).Uint64()
+			yh, yl = new(big.Int).Rsh(yv, 64).Uint64(), new(big.Int).And(yv, new(big.Int).SetUint64(math.MaxUint64)).Uint64()
+			if r.IntN(2) == 0 {
+				// z just below 10^34, so that the sum can reach 35 digits.
+				zh, zl = 0x0001ed09bead87c0, 0x378d8e63ffffffff-r.Uint64N(1e6)
+			}
+			da := len(new(big.Int).Or(new(big.Int).Lsh(new(big.Int).SetUint64(zh), 64), new(big.Int).SetUint64(zl)).String())
+			ze = xe + ye + n + s + bid.Precision128 - da + r.IntN(5) - 2
+		}
+		if ze < bid.MinExp128 || ze > bid.MaxExp128 || xe < bid.MinExp128 || xe > bid.MaxExp128 || ye < bid.MinExp128 || ye > bid.MaxExp128 {
+			continue
+		}
+		x := ubd128(r.IntN(2) == 0, xe, xh, xl)
+		y := ubd128(r.IntN(2) == 0, ye, yh, yl)
+		z := ubd128(r.IntN(2) == 0, ze, zh, zl)
+		bx, by, bz := bid.BIDFromUBD128(x), bid.BIDFromUBD128(y), bid.BIDFromUBD128(z)
+		for _, m := range modes {
+			got := bid.UBDFMA128(bid.UBD128{Lo: x.Lo, Hi: x.Hi}, bid.UBD128{Lo: y.Lo, Hi: y.Hi}, bid.UBD128{Lo: z.Lo, Hi: z.Hi}, m)
+			want := bid.UBDFromBID128(bid.FMA128(bx, by, bz, m))
+			if g := (bid.Uint128{Hi: got.Hi, Lo: got.Lo}); g != want {
+				if errs++; errs <= 20 {
+					t.Errorf("UBDFMA128(%#x, %#x, %#x, %v) = %#x, want %#x", x, y, z, m, g, want)
+				}
+			}
+		}
+	}
+}

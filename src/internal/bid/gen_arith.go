@@ -290,6 +290,29 @@ package bid
 		return fmt.Sprintf("{m: Uint128{Hi: %#016x, Lo: %#016x}, t: Uint128{Hi: %#016x, Lo: %#016x}, s: %d}", w[1], w[0], t[1], t[0], s)
 	})
 
+	// The same 128-bit reciprocals for every power of ten below 2^256, for
+	// the division of a value of four words (u256DivRemPow10 in recip.go).
+	// The method needs nothing of the divisor's width: m and s are the
+	// formula above with n = 128.
+	{
+		limit := new(big.Int).Lsh(big.NewInt(1), 256)
+		var lines []string
+		for p := big.NewInt(1); p.Cmp(limit) < 0; p = new(big.Int).Mul(p, big.NewInt(10)) {
+			if p.Cmp(big.NewInt(1)) == 0 {
+				lines = append(lines, "{}")
+				continue
+			}
+			s := uint(max(p.BitLen()-1-recipSlack, 0))
+			w := words(new(big.Int).Quo(new(big.Int).Lsh(big.NewInt(1), 128+s), p))
+			lines = append(lines, fmt.Sprintf("{m: Uint128{Hi: %#016x, Lo: %#016x}, s: %d}", w[1], w[0], s))
+		}
+		fmt.Fprintf(&sb, "\n// recip10tab256[k] is the 128-bit reciprocal of 10^k (see recipWide), for k in [1, %d].\nvar recip10tab256 = [%d]recipWide{\n", len(lines)-1, len(lines))
+		for _, l := range lines {
+			sb.WriteString("\t" + l + ",\n")
+		}
+		sb.WriteString("}\n")
+	}
+
 	// The rounding of a decimal64 product, by the number of leading zeros
 	// of the product in two words (see prodRound64 in mul128.go). A
 	// product that rounds has from 17 to 32 digits, 54 to 107 bits, and so
