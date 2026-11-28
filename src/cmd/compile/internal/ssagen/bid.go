@@ -284,15 +284,15 @@ func initBIDKernelSyms() {
 //	   entries (ubdComparePredCall)
 //	2  the narrowed inline paths in front of those calls (the default):
 //	   x + y and x - y with one-word coefficients (ubdAddNarrow), x * y
-//	   with coefficients below 2^56 (ubdMulFast), comparisons with a
+//	   with one-word coefficients (ubdMulFast), comparisons with a
 //	   constant zero with no call (bidIsZero, ubdCompareZeroOrdered), and
 //	   comparisons of two values with one-word coefficients
 //	   (ubdCompareNarrow)
 //	3  level 2's paths, unchanged, then the kernel's own first paths
 //	   promoted inline behind them, for one-word coefficients
 //	   (ubd_level3.go): add and subtract at exponents up to 14 apart,
-//	   multiply, comparisons, min and max, integral rounding and quantize
-//	   to a coarser exponent. Every operand pair level 2 decides inline
+//	   comparisons, min and max, integral rounding and quantize to a
+//	   coarser exponent (multiply's, one-word coefficients, is level 2's). Every operand pair level 2 decides inline
 //	   runs level 2's code; the inline results are the kernel's by
 //	   construction. Developed as level 4 (research/ubd-level4/README.md)
 //
@@ -392,77 +392,80 @@ func (s *state) ubdAddNarrow(op ir.Op, rt *types.Type, x, y *ssa.Value) *ssa.Val
 	return r
 }
 
-// ubdMulFast lowers x * y on decimal128 to a narrowed form of
-// decimal128-go's first-level multiply path (d128_multiply_rnd_ctxnull's
-// fast entry) in front of the kernel call (ubdLevel 2): both coefficients
-// below 2^56, and the sum of the exponents in the format. The product of
-// the two coefficients is then below 2^112, so below 10^34: the exact
-// result at the sum of the exponents, the preferred one, with the sign the
-// XOR of the operands' (a zero's included). Every other pair, the kernel
-// call.
+// ubdMulFast lowers x * y on decimal128 to decimal128-go's first-level
+// multiply path (d128_multiply_rnd_ctxnull's fast entry) in front of the
+// kernel call (ubdLevel 2): both coefficients of one word, the sum of the
+// exponents in the format, and the 64×64 product below 2^112, so below
+// 10^34: the exact result at the sum of the exponents, the preferred one,
+// with the sign the XOR of the operands' (a zero's included). Every other
+// pair, the kernel call.
 //
-// The operand test is one expression and one branch: shifting the OR of
-// the high words left past qExp and sign leaves their high coefficient
-// bits, zero when both coefficients fit a word (which also rules out the
-// special values, whose coefficients begin 0x1F there), and the OR of the
-// low words shifted right by 56 is zero when both are below 2^56. The
-// exponent test is one unsigned comparison of the sum biased by 6176,
-// which rejects both overflow and underflow; the sum itself goes into the
-// result's header.
+// The three tests are one unsigned comparison with 12287, after an
+// unconditional multiply: the sum of the exponents biased by 6176, in the
+// format when it is at most 12287 (below 2^14; an underflow wraps above
+// it), ORed with the product's bits from 2^112 up (its high word shifted
+// right by 48) moved to 2^14 and up, and with the OR of the high words
+// shifted left past qExp and sign, the one-word test every level-2 path
+// uses, whose bits land at 2^15 and up (it also rules out the special
+// values, whose coefficients begin 0x1F there). A product of operands that
+// fail the test is discarded. The sum itself goes into the result's header.
 //
-// decimal128-go takes full 64-bit coefficients, and so would this path
-// with the low-word test dropped and the product tested instead after the
-// multiply: its high word shifted right by 48 must be zero (below 2^112).
-// That costs a shift, a test and a third conditional branch at every call
-// site: 2 more instructions on linux/amd64 (30 against 28) and 1 more on
-// arm64 (21 against 20), measured with research/ubd-size. What it buys is
-// the products of word coefficients of 2^56 (about 7.2e16) or more that
-// still fit, which the narrowed path sends to the kernel.
+// One branch, not three: with the tests as guards (one before the
+// multiply, one or two after), the extra blocks changed the register
+// assignment at the merge, and a caller's loop (microbench's
+// Mul/128/cents and d16) reloaded its loop-carried state from the stack
+// each iteration, 40-60% slower.
+//
+// Until 2026-11-27 this path took factors below 2^56, which needed no test
+// of the product, and sent to the kernel the products of word factors of
+// 2^56 (about 7.2e16) or more that still fit, which level 3 then took
+// inline (research/ubd-size, "Multiply's 2^56 bound, reviewed"). This form
+// is 20 instructions a site on arm64, as that one was, and 27 on amd64
+// against 28.
 func (s *state) ubdMulFast(rt *types.Type, x, y *ssa.Value) *ssa.Value {
 	result := ssaMarker("ubdmul1") // one per lowering; see ubdAddNarrow
 	u64, boolT := types.Types[types.TUINT64], types.Types[types.TBOOL]
-	zero := s.constInt64(u64, 0)
+	c := func(v int64) *ssa.Value { return s.constInt64(u64, v) }
 	xh, yh := s.newValue1(ssaop.OpDecimal128Hi, u64, x), s.newValue1(ssaop.OpDecimal128Hi, u64, y)
 	xl, yl := s.newValue1(ssaop.OpDecimal128Lo, u64, x), s.newValue1(ssaop.OpDecimal128Lo, u64, y)
-	// Both coefficients below 2^56, so the product is below 2^112.
-	small := s.newValue2(ssaop.OpRsh64Ux64, u64, s.newValue2(ssaop.OpOr64, u64, xl, yl), s.constInt64(u64, 56))
-	words := s.newValue2(ssaop.OpEq64, boolT, s.newValue2(ssaop.OpOr64, u64, s.newValue2(ssaop.OpLsh64x64, u64, s.newValue2(ssaop.OpOr64, u64, xh, yh), s.constInt64(u64, 64-bid.UBDExpShift+1)), small), zero)
-	shift := s.constInt64(u64, bid.UBDExpShift)
+	shift := c(bid.UBDExpShift)
 	exp := s.newValue2(ssaop.OpAdd64, u64, s.newValue2(ssaop.OpRsh64x64, u64, xh, shift), s.newValue2(ssaop.OpRsh64x64, u64, yh, shift))
-	// One unsigned comparison of the biased sum rejects both underflow and
-	// overflow.
-	inRange := s.newValue2(ssaop.OpLeq64U, boolT, s.newValue2(ssaop.OpAdd64, u64, exp, s.constInt64(u64, -bid.MinExp128)), s.constInt64(u64, bid.MaxExp128-bid.MinExp128))
+	product := s.newValue2(ssaop.OpMul64uhilo, types.NewTuple(u64, u64), xl, yl)
+	phi, plo := s.newValue1(ssaop.OpSelect0, u64, product), s.newValue1(ssaop.OpSelect1, u64, product)
+	// One unsigned comparison: the exponent sum biased by 6176, in the
+	// format when it is at most 12287 (below 2^14; an underflow wraps
+	// above it), ORed with the product's bits from 2^112 up moved to 2^14
+	// and up, and with the high coefficient bits of both operands moved
+	// to 2^15 and up.
+	const expBits = 14
+	if bid.MaxExp128-bid.MinExp128 >= 1<<expBits || 64-bid.UBDExpShift+1 <= expBits {
+		s.Fatalf("ubdMulFast: the exponent range needs more than %d bits", expBits)
+	}
+	check := s.newValue2(ssaop.OpAdd64, u64, exp, c(-bid.MinExp128))
+	check = s.newValue2(ssaop.OpOr64, u64, check, s.newValue2(ssaop.OpLsh64x64, u64, s.newValue2(ssaop.OpRsh64Ux64, u64, phi, c(48)), c(expBits)))
+	check = s.newValue2(ssaop.OpOr64, u64, check, s.newValue2(ssaop.OpLsh64x64, u64, s.newValue2(ssaop.OpOr64, u64, xh, yh), c(64-bid.UBDExpShift+1)))
+
+	fits := s.newValue2(ssaop.OpLeq64U, boolT, check, c(bid.MaxExp128-bid.MinExp128))
 
 	bSlow := s.f.NewBlock(block.BlockPlain)
 	bAfter := s.f.NewBlock(block.BlockPlain)
-	guard := func(v *ssa.Value) {
-		b := s.endBlock()
-		b.Kind = block.BlockIf
-		b.SetControl(v)
-		next := s.f.NewBlock(block.BlockPlain)
-		b.AddEdgeTo(next)
-		b.AddEdgeTo(bSlow)
-		s.startBlock(next)
-	}
-	guard(words)
-	guard(inRange)
-	product := s.newValue2(ssaop.OpMul64uhilo, types.NewTuple(u64, u64), xl, yl)
-	phi, plo := s.newValue1(ssaop.OpSelect0, u64, product), s.newValue1(ssaop.OpSelect1, u64, product)
-	sign := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpXor64, u64, xh, yh), s.constInt64(u64, bid.UBDSignHi))
+	b := s.endBlock()
+	b.Kind = block.BlockIf
+	b.SetControl(fits)
+	bFast := s.f.NewBlock(block.BlockPlain)
+	b.AddEdgeTo(bFast)
+	b.AddEdgeTo(bSlow)
+	s.startBlock(bFast)
+	sign := s.newValue2(ssaop.OpAnd64, u64, s.newValue2(ssaop.OpXor64, u64, xh, yh), c(bid.UBDSignHi))
 	header := s.newValue2(ssaop.OpOr64, u64, sign, s.newValue2(ssaop.OpLsh64x64, u64, exp, shift))
 	s.vars[result] = s.newValue2(ssaop.OpDecimal128Make, rt, plo, s.newValue2(ssaop.OpOr64, u64, header, phi))
 	s.endBlock().AddEdgeTo(bAfter)
 
 	s.startBlock(bSlow)
-	// The former level 3 kept level 2's kernel call here: the BID-derived
-	// multiply behind this path changed the fast path's register
-	// allocation and made x * y 6-8% slower on its own operands, for
-	// products that only factors of 2^56 or more (17 digits) need.
-	if ubdLevel3() {
-		s.vars[result] = s.ubdMulWord3(rt, x, y, xh, yh, xl, yl)
-	} else {
-		s.vars[result] = s.softDecimalOp(ir.OMUL, rt, x, y)
-	}
+	// Level 3 has nothing more inline here: its word path (ubdMulWord3,
+	// the kernel's ubdMulShort128) took the products of one-word
+	// coefficients below 2^112, which this path now takes.
+	s.vars[result] = s.softDecimalOp(ir.OMUL, rt, x, y)
 	s.endBlock().AddEdgeTo(bAfter)
 	s.startBlock(bAfter)
 	r := s.variable(result, rt)

@@ -399,6 +399,41 @@ non-canonical BID patterns to survive a round trip now expect UBD /
 canonical values, as they already do for DPD on ppc64le. `ubd.go` is
 excluded from `internal/bid`'s API-coverage and layout lint tests.
 
+## Multiply's 2^56 bound, reviewed (2026-11-26)
+
+Reviewed whether level 2's `x * y` should take full one-word coefficients
+and test the product (high word >> 48 == 0, below 2^112) instead of
+requiring both coefficients below 2^56, so that every level-2 path (`+`,
+`-`, the comparisons, `*`) uses the one-word criterion. The 2^56 bound was
+deliberate (`ubdMulFast`'s comment; History, `efdd84e4` → `b5c2edb4`): the
+low-word test is ORed into the same single guard as the high-word test,
+while the 64-bit form drops it but adds a product test and a branch after
+the multiply, a net 1 instruction more on arm64 (21 against 20) and 2 on
+amd64 (30 against 28). It gains only factors of 2^56 or more whose product
+still fits (17–19 digits), which neither the money-form workloads (0% sent
+to the kernel at 2^56) nor the apps produce.
+
+Decision (the user's): no change here at this time; level 2 keeps 2^56.
+The decimal128-* ports adopt the uniform one-word (64-bit) criterion for
+their fast paths. If this is revisited, rebuild cmd/compile with the
+product test and remeasure the site (expected 21 instructions on arm64)
+and the `x * y` money rows before changing it.
+
+Revisited 2026-11-27: level 2 now takes one-word coefficients and tests
+the product. As two or three guards, the extra blocks changed the register
+assignment at a loop's merge, and microbench's `Mul/128/cents` and `d16`
+reloaded their loop-carried state from the stack each iteration (40-60%
+slower). The shipped form is one unsigned comparison after an
+unconditional multiply: the biased exponent sum (at most 12287, below
+2^14), ORed with the product's high word shifted right by 48 and moved to
+2^14, and with the high words' coefficient bits moved to 2^15 (`ubdMulFast`).
+Per site: arm64 20 instructions at level 2 (unchanged) and 20 at level 3
+(was 33; level 3's word multiply, `ubdMulWord3`, is deleted); amd64 27 at
+both (was 28 and 52). Microbench and BenchmarkOperatorMul128, Apple M3 Pro,
+before and after alternately, median of 6: level 2 within +4% (d16 and
+cents 2.18 -> 2.27 ns, hit 2.07 -> 2.13, miss 9.87 -> 9.65), level 3 1-6%
+faster on every row.
+
 ## Not done
 
 - The GDB printer does not know UBD (`TestGdbDecimal` fails).

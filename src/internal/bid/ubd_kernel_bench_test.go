@@ -8,6 +8,8 @@ import (
 	. "internal/bid"
 	mbits "math/bits"
 	"math/rand/v2"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -77,6 +79,7 @@ var ubdBenchClasses = []ubdBenchClass{
 	{"w19", 17, 19, -6, 17, 19, -9, 0, 0},  // just inside one word
 	{"w25", 22, 25, -6, 22, 25, -9, 10, 0}, // two words, exact
 	{"d34", 34, 34, -20, 34, 34, -24, 10, 0},
+	{"w2q", 20, 34, -6, 20, 34, -6, 50, 0},  // two words at one exponent, half negative: half the sums differences
 	{"q34", 30, 34, -28, 1, 6, -2, 10, 0},   // a quotient and an amount: quantize rounds 26 places
 	{"mixexp", 3, 10, -2, 1, 8, -2, 10, -4}, // half one exponent, half two apart, at random
 }
@@ -342,7 +345,7 @@ func TestUBDKernelBenchAgrees(t *testing.T) {
 }
 
 // TestUBDAddWordAgrees checks the ties-to-even add and subtract entries on
-// word operands, which their word path (ubdAddWordTTE) decides, against the
+// word operands, which their word path decides, against the
 // BID kernel: exponent gaps of 0 to 20 either way, coefficients of every
 // size up to 2^64 - 1, zeros, and both signs.
 func TestUBDAddWordAgrees(t *testing.T) {
@@ -370,6 +373,96 @@ func TestUBDAddWordAgrees(t *testing.T) {
 		if got, want := UBDKernelSub(ux, uy), BIDKernelSub(bx, by, ToNearestEven); BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}) != want {
 			t.Fatalf("sub %#x %#x: got %#x, want %#x", bx, by, BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}), want)
 		}
+	}
+}
+
+// TestUBDAddWideAgrees checks the ties-to-even add and subtract entries on
+// finite operands at one exponent with coefficients of up to two words
+// against the BID kernel: both signs, so that half are differences, equal
+// and near-equal magnitudes (cancellations, borrows out of the low word),
+// zeros, the largest coefficient, and both ends of the exponent range.
+func TestUBDAddWideAgrees(t *testing.T) {
+	r := rand.New(rand.NewPCG(13, 17))
+	coeff := func() Uint128 {
+		switch r.IntN(8) {
+		case 0:
+			return Uint128{}
+		case 1:
+			return Uint128{Hi: MaxCoeff128Hi, Lo: MaxCoeff128Lo - uint64(r.IntN(3))}
+		case 2:
+			return Uint128{Hi: uint64(r.IntN(3)), Lo: ^uint64(0) - uint64(r.IntN(3))}
+		case 3:
+			return Uint128{Lo: r.Uint64()}
+		default:
+			return ubdBenchDigits(r, 20, 34)
+		}
+	}
+	gtMax := func(c Uint128) bool {
+		return c.Hi > MaxCoeff128Hi || c.Hi == MaxCoeff128Hi && c.Lo > MaxCoeff128Lo
+	}
+	exps := []int{MinExp128, MinExp128 + 1, -6, 0, 3, MaxExp128 - 1, MaxExp128}
+	for i := 0; i < 2000000; i++ {
+		e := exps[r.IntN(len(exps))]
+		xc := coeff()
+		yc := xc
+		switch r.IntN(4) {
+		case 0: // equal magnitudes
+		case 1: // magnitudes one apart, either way
+			var c uint64
+			if r.IntN(2) == 0 {
+				yc.Lo, c = mbits.Add64(xc.Lo, 1, 0)
+				yc.Hi += c
+				if gtMax(yc) {
+					yc = xc
+				}
+			} else if xc != (Uint128{}) {
+				yc.Lo, c = mbits.Sub64(xc.Lo, 1, 0)
+				yc.Hi -= c
+			}
+		case 2: // the same high word
+			yc.Lo = r.Uint64()
+			if gtMax(yc) {
+				yc = xc
+			}
+		default:
+			yc = coeff()
+		}
+		bx, ux := ubdBenchVal(r.IntN(2) == 0, xc, e)
+		by, uy := ubdBenchVal(r.IntN(2) == 0, yc, e)
+		if got, want := UBDKernelAdd(ux, uy), BIDKernelAdd(bx, by, ToNearestEven); BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}) != want {
+			t.Fatalf("add %#x %#x: got %#x, want %#x", bx, by, BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}), want)
+		}
+		if got, want := UBDKernelSub(ux, uy), BIDKernelSub(bx, by, ToNearestEven); BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}) != want {
+			t.Fatalf("sub %#x %#x: got %#x, want %#x", bx, by, BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}), want)
+		}
+	}
+}
+
+// TestUBDSubTTEMatchesAdd checks that ubdSubTTE128's body, after the
+// statement that flips y's sign, is ubdAddTTE128's.
+func TestUBDSubTTEMatchesAdd(t *testing.T) {
+	src, err := os.ReadFile("ubd_add.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := func(sig, after string) string {
+		s := string(src)
+		i := strings.Index(s, sig)
+		if i < 0 {
+			t.Fatalf("%q not found", sig)
+		}
+		s = s[i+len(sig):]
+		s = s[:strings.Index(s, "\n}\n")]
+		j := strings.Index(s, after)
+		if j < 0 {
+			t.Fatalf("%q not found", after)
+		}
+		return s[j+len(after):]
+	}
+	add := body("func ubdAddTTE128(x, y UBD128) UBD128 {\n", "")
+	sub := body("func ubdSubTTE128(x, y UBD128) UBD128 {\n", "\ty.Hi ^= UBDSignHi\n\t}\n")
+	if add != sub {
+		t.Errorf("ubdSubTTE128's body differs from ubdAddTTE128's")
 	}
 }
 
@@ -502,6 +595,52 @@ func TestUBDDivAgrees(t *testing.T) {
 		g := UBDDivRnd128(Uint128{Hi: ux.Hi, Lo: ux.Lo}, Uint128{Hi: uy.Hi, Lo: uy.Lo}, m)
 		if g, want := BIDFromUBDAny128(g), Div128(bx, by, m); g != want {
 			t.Fatalf("div(%#x, %#x, %v): got %#x, want %#x", bx, by, m, g, want)
+		}
+	}
+}
+
+// TestUBDDivPow10Agrees checks the ties-to-even divide entry with divisors
+// that are powers of ten, which it decides from the divisor's trailing zero
+// bits, and with divisors that look like them (10^k ± 1, 2^k, 5^k, and
+// 10^k times 2^32, whose trailing zeros index past the table), against the
+// BID kernel: dividends of every width with trailing zeros, so that the
+// quotient strips, at exponents at both ends of the range.
+func TestUBDDivPow10Agrees(t *testing.T) {
+	r := rand.New(rand.NewPCG(61, 67))
+	var divisors []uint64
+	p := uint64(1)
+	for k := 0; k <= 19; k++ {
+		divisors = append(divisors, p, p+1, p<<32)
+		if p > 1 {
+			divisors = append(divisors, p-1)
+		}
+		p *= 10 // wraps after 10^19, when the loop ends
+	}
+	for k := 0; k < 64; k++ {
+		divisors = append(divisors, 1<<k)
+	}
+	for f := uint64(5); f < 1<<62; f *= 5 {
+		divisors = append(divisors, f)
+	}
+	exps := []int{MinExp128, MinExp128 + 20, -6, -2, 0, 4, MaxExp128 - 20, MaxExp128}
+	for i := 0; i < 1000000; i++ {
+		xc := ubdBenchDigits(r, 1, 34)
+		if r.IntN(2) == 0 {
+			// Append zeros, up to 34 digits in all.
+			for z := r.IntN(20); z > 0; z-- {
+				hi, lo := mbits.Mul64(xc.Lo, 10)
+				n := Uint128{Hi: xc.Hi*10 + hi, Lo: lo}
+				if n.Hi > MaxCoeff128Hi || n.Hi == MaxCoeff128Hi && n.Lo > MaxCoeff128Lo {
+					break
+				}
+				xc = n
+			}
+		}
+		bx, ux := ubdBenchVal(r.IntN(2) == 0, xc, exps[r.IntN(len(exps))])
+		by, uy := ubdBenchVal(r.IntN(2) == 0, Uint128{Lo: divisors[r.IntN(len(divisors))]}, exps[r.IntN(len(exps))])
+		got := UBDKernelDiv(ux, uy)
+		if g, want := BIDFromUBDAny128(Uint128{Hi: got.Hi, Lo: got.Lo}), BIDKernelDiv(bx, by, ToNearestEven); g != want {
+			t.Fatalf("div(%#x, %#x): got %#x, want %#x", bx, by, g, want)
 		}
 	}
 }

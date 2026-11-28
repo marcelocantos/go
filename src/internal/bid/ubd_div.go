@@ -56,10 +56,13 @@ func ubdDivTTE128(x, y UBD128) UBD128 {
 		}
 		return ubdDivLong128(x, y, mode)
 	}
-	db := wordDigits(b)
-	if b == pow10word[(db-1)&31] {
-		// A power of ten divides by moving the point.
-		q, k := Uint128{Hi: xhi, Lo: a}, db-1
+	if tb := bits.TrailingZeros64(b); b == pow10word[tb&31] {
+		// A power of ten divides by moving the point. 10^k has exactly k
+		// trailing zero bits, so the table entry at the divisor's
+		// trailing zeros is the only one it can equal: no digit count.
+		// (pow10word is zero past 10^19, and an index past 31 wraps to
+		// 10^(tb-32), whose trailing zeros are not tb, so neither matches.)
+		q, k := Uint128{Hi: xhi, Lo: a}, tb
 		if u128GtMaxCoeff(q) {
 			return ubdDivLong128(x, y, mode)
 		}
@@ -71,6 +74,8 @@ func ubdDivTTE128(x, y UBD128) UBD128 {
 		}
 		return ubdDivLong128(x, y, mode)
 	}
+
+	db := wordDigits(b)
 
 	// An exact quotient of one-word operands, the usual result of dividing
 	// an amount by a count or a small rate, is found without the long
