@@ -3,9 +3,10 @@
 # license that can be found in the LICENSE file.
 
 # Comparisons ("Comparisons and ordering"): the quiet predicates compare
-# values, TotalOrder compares values then exponents and NaNs by sign bit
-# alone, and Key is the hash key of a value. None rounds, so the classes
-# are exact, underflow (subnormal operands), zero, inf, nan and noncanon.
+# values, TotalOrder compares values then exponents; decimal64 NaNs order
+# by sign, signaling kind and payload. Key is the hash key of a value.
+# None rounds, so the classes are exact, underflow (subnormal operands),
+# zero, inf, nan and noncanon.
 # A Key result is coeff exp kind neg.
 
 # --- Equal64 ---
@@ -305,12 +306,12 @@ TotalOrder64 - nan -NaN NaN -> true
 TotalOrder64 - nan NaN -NaN -> false
 TotalOrder64 - nan NaN NaN -> true
 TotalOrder64 - nan sNaN NaN -> true
-TotalOrder64 - nan NaN sNaN -> true
-TotalOrder64 - nan -sNaN -NaN -> true
+TotalOrder64 - nan NaN sNaN -> false
+TotalOrder64 - nan -sNaN -NaN -> false
 TotalOrder64 - nan -NaN -sNaN -> true
-TotalOrder64 - nan 0x7c00000000000001 NaN -> true
+TotalOrder64 - nan 0x7c00000000000001 NaN -> false
 TotalOrder64 - nan NaN 0x7c00000000000001 -> true
-TotalOrder64 - nan 0xfe0000000001e240 -NaN -> true
+TotalOrder64 - nan 0xfe0000000001e240 -NaN -> false
 TotalOrder64 - nan -NaN 0xfe0000000001e240 -> true
 TotalOrder64 - nan 0xfe0000000001e240 NaN -> true
 TotalOrder64 - nan 1 NaN -> true

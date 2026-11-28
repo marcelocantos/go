@@ -462,6 +462,22 @@ func (f *format) minMax(x, y bits, wantMax bool) bits {
 // totalOrder is TotalOrder; see "Comparisons and ordering".
 func (f *format) totalOrder(x, y bits) bool {
 	a, b := f.decode(x), f.decode(y)
+	if f.width == 64 && a.kind == notANumber && b.kind == notANumber && a.neg == b.neg {
+		c := 0
+		if a.signaling != b.signaling {
+			if a.signaling {
+				c = -1
+			} else {
+				c = 1
+			}
+		} else {
+			c = a.coeff.Cmp(b.coeff)
+		}
+		if a.neg {
+			return c >= 0
+		}
+		return c <= 0
+	}
 	if a.neg != b.neg {
 		return a.neg
 	}

@@ -576,14 +576,12 @@
 // positive values the smaller exponent precedes (1.0 precedes 1), for
 // negative values the larger exponent precedes (-1 precedes -1.0). A
 // non-canonical encoding orders as the canonical value it reads as. A NaN
-// operand is ordered by its sign bit alone (TotalOrder reads a sign; it
-// does not produce a NaN) and all NaNs of one sign are equal in the
-// order, so TotalOrder64(x, y) and TotalOrder64(y, x) are both true for
-// two NaNs of the same sign. IEEE 754-2008's clause 5.10 required that a
-// signaling NaN be ordered before a quiet one of the same sign, and NaNs
-// of the same kind by payload; IEEE 754-2019 relaxed the ordering of NaNs.
-// This package orders NaNs by sign alone and ignores the signaling bit and
-// the payload in TotalOrder.
+// operand is ordered by sign, signaling kind and payload: positive signaling
+// precedes positive quiet, and within one kind the smaller canonical payload
+// precedes; negative NaNs reverse that order. Non-canonical payloads read as
+// zero. This is the implementation-defined payload order of clause
+// 5.10(d)(iii). TotalOrder128 still orders BID NaNs of one sign equally;
+// UBDTotalOrder128 provides full clause 5.10(d) ordering for decimal128.
 //
 // SameQuantum64 (clause 5.7.3) is true when both operands are finite with
 // the same exponent, both are infinities, or both are NaNs, and false
@@ -1418,8 +1416,8 @@
 //	TotalOrder64(NaN, -NaN) = false
 //	TotalOrder64(NaN, NaN) = true
 //	TotalOrder64(sNaN, NaN) = true
-//	TotalOrder64(NaN, sNaN) = true
-//	TotalOrder64(-sNaN, -NaN) = true
+//	TotalOrder64(NaN, sNaN) = false
+//	TotalOrder64(-sNaN, -NaN) = false
 //	SameQuantum64(1.0, 2.0) = true
 //	SameQuantum64(1.0, 1) = false
 //	SameQuantum64(Infinity, -Infinity) = true

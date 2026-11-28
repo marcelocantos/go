@@ -260,8 +260,8 @@ func TestSignedZeroBits(t *testing.T) {
 
 // TestTotalOrderCases checks the order the contract states, in a list from
 // the least opnd to the greatest. Each opnd precedes every later one
-// and follows every earlier one; equal operands (the NaNs of one sign) are
-// listed once.
+// and follows every earlier one; this list includes one NaN of each sign.
+// TestTotalOrder64NaNs pins the ordering within each NaN sign.
 func TestTotalOrderCases(t *testing.T) {
 	ordered := []opnd{
 		cNegNaN, cNegInf,
@@ -283,6 +283,36 @@ func TestTotalOrderCases(t *testing.T) {
 						t.Errorf("%T %s TotalOrder(%v, %v) = %t, want %t", im, f.name, a, b, got, i <= j)
 					}
 				}
+			}
+		}
+	}
+}
+
+// TestTotalOrder64NaNs pins clause 5.10(d): sign, signaling, then
+// payload, with the latter two reversed for negative NaNs. Non-canonical
+// payloads compare as zero, not as their raw coefficient field.
+func TestTotalOrder64NaNs(t *testing.T) {
+	p := bid.NaN64
+	s := bid.SNaN64
+	ordered := []uint64{
+		bid.SignMask64 | p | 42, bid.SignMask64 | p | 1,
+		bid.SignMask64 | p, bid.SignMask64 | s | 42,
+		bid.SignMask64 | s | 1, bid.SignMask64 | s,
+		s, s | 1, s | 42, p, p | 1, p | 42,
+	}
+	for i, x := range ordered {
+		for j, y := range ordered {
+			if got := bid.TotalOrder64(x, y); got != (i <= j) {
+				t.Errorf("TotalOrder64(%#x, %#x) = %t, want %t", x, y, got, i <= j)
+			}
+		}
+	}
+	for _, sign := range []uint64{0, bid.SignMask64} {
+		for _, kind := range []uint64{p, s} {
+			x := sign | kind | 1<<50 - 1 // invalid payload reads as zero
+			y := sign | kind
+			if !bid.TotalOrder64(x, y) || !bid.TotalOrder64(y, x) {
+				t.Errorf("non-canonical payload %#x does not order as zero %#x", x, y)
 			}
 		}
 	}
@@ -662,11 +692,14 @@ func FuzzTotalOrder(f *testing.F) {
 
 // sameInOrder reports whether x and y are the same element of the total
 // order: the same sign and, for finite values, the same value and
-// exponent, or the same kind for infinities and NaNs.
+// exponent, or the same kind for infinities and (for decimal128) NaNs.
 func sameInOrder(f *format, x, y bits) bool {
 	a, b := f.decode(x), f.decode(y)
 	if a.kind != b.kind || a.neg != b.neg {
 		return false
+	}
+	if a.kind == notANumber && f.width == 64 {
+		return a.signaling == b.signaling && a.coeff.Cmp(b.coeff) == 0
 	}
 	return a.kind != finite || a.exp == b.exp && a.coeff.Cmp(b.coeff) == 0
 }

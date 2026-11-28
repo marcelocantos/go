@@ -256,7 +256,8 @@ package bid_test
 // Results are compared bit for bit, NaN payloads and signs included; the
 // NaN divergences of vectors_nan_test.go are skipped with their reason.
 // Min and Max, and
-// TotalOrder on NaNs of one sign, are skipped where the vectors expect
+// legacy BID decimal128 TotalOrder on NaNs of one sign, are skipped where
+// the vectors expect
 // IEEE 754-2008's minNum and maxNum or its clause 5.10 order of NaNs and
 // the target differs in the documented way and in no other. Each skip has a reason, counted. Not mapped, each with its own
 // reason: the C99 functions and the transcendental functions math/decimal
@@ -2331,11 +2332,9 @@ func (c *intelCall) quantexp() vecOutcome {
 	return vecOutcome{pass: got == strconv.Itoa(want), got: got}.noted(noteNoStatus)
 }
 
-// totalOrder runs totalOrder and totalOrderMag. The contract orders a NaN by
-// its sign alone, so two NaNs of one sign are ordered both ways; IEEE
-// 754-2008's clause 5.10, which the vectors follow, also orders by
-// signaling bit and payload (754-2019 relaxed the ordering of NaNs). A
-// vector that expects that order is the documented divergence.
+// totalOrder runs totalOrder and totalOrderMag. decimal64 and UBD decimal128
+// order NaNs by kind and payload. Legacy BID decimal128 orders NaNs of one
+// sign equally; its disagreement with published vectors is recorded.
 func (c *intelCall) totalOrder(mag bool) vecOutcome {
 	ops, res, _, skip := c.split(2)
 	if skip != "" {
@@ -2360,9 +2359,9 @@ func (c *intelCall) totalOrder(mag bool) vecOutcome {
 		gotText = "1"
 	}
 	out := vecOutcome{pass: gotText == res, got: gotText}
-	if !out.pass && !ubdTotal(c.im, c.f) && vecRef.isNaN(c.f, a[0]) && vecRef.isNaN(c.f, a[1]) &&
+	if !out.pass && c.f.width == 128 && !ubdTotal(c.im, c.f) && vecRef.isNaN(c.f, a[0]) && vecRef.isNaN(c.f, a[1]) &&
 		vecRef.signbit(c.f, a[0]) == vecRef.signbit(c.f, a[1]) {
-		return vecSkip("contract: TotalOrder ignores the signaling bit and the payload of NaNs of one sign")
+		return vecSkip("contract: decimal128 BID TotalOrder ignores the signaling bit and payload of NaNs of one sign")
 	}
 	return out.noted(noteNoStatus)
 }
@@ -3563,7 +3562,7 @@ func TestIntelLineParser(t *testing.T) {
 		{"bid64_sameQuantum 0 1.0 2 1 00", fail},
 		{"bid64_totalOrder 0 -0 0 1 00", pass},
 		{"bid64_totalOrder 0 0 -0 0 00", pass},
-		{"bid64_totalOrder 0 [7c00000000000000] [7e00000000000000] 0 00", "contract: TotalOrder ignores"},
+		{"bid64_totalOrder 0 [7c00000000000000] [7e00000000000000] 0 00", pass},
 		{"bid64_totalOrder 0 -NaN NaN 1 00", pass},
 		{"bid64_totalOrderMag 0 -1 -2 1 00", pass},
 		{"bid64_class 0 -Infinity 2 00", pass},

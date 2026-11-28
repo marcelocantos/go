@@ -78,21 +78,37 @@ func Compare128(x, y Uint128) (c int, ok bool) {
 }
 
 // TotalOrder64 reports whether x precedes or equals y in the total order of
-// IEEE 754-2019 clause 5.10 (totalOrder): -NaN < -∞ < negative finite
-// values < -0 < +0 < positive finite values < +∞ < +NaN, with members of a
-// cohort ordered by exponent (the smaller exponent first for positive
-// values and last for negative ones). A NaN is ordered by its sign bit
-// alone: its payload and whether it is signaling are ignored, so all NaNs
-// of one sign are equal in the order (IEEE 754-2008's clause 5.10 ordered
-// them by signaling bit and payload; 754-2019 relaxed the ordering of
-// NaNs; see "Comparisons and ordering" in the package documentation).
-// Unlike the other comparisons it is defined on
-// every pair of operands, so it can sort a slice of bit patterns.
+// IEEE 754-2019 clause 5.10. Negative NaNs precede all numbers, positive
+// NaNs follow them. Among NaNs of one sign, signaling precedes quiet and
+// payloads increase for positive NaNs; both orders reverse for negative NaNs.
+// Non-canonical NaN payloads read as zero. Finite cohorts are ordered by
+// exponent (smaller first for positive values, larger first for negative).
 func TotalOrder64(x, y uint64) bool {
+	if IsNaN64(x) && IsNaN64(y) && x&SignMask64 == y&SignMask64 {
+		// Order the magnitudes as signaling, then quiet, then by the
+		// canonical payload. Reverse that order for negative NaNs.
+		xs, ys := x&SignalingBit64 != 0, y&SignalingBit64 != 0
+		if xs != ys {
+			return xs != (x&SignMask64 != 0)
+		}
+		px, py := x&nanPayloadMask64, y&nanPayloadMask64
+		if px >= maxNaNPayload64 {
+			px = 0
+		}
+		if py >= maxNaNPayload64 {
+			py = 0
+		}
+		if x&SignMask64 != 0 {
+			return px >= py
+		}
+		return px <= py
+	}
 	return totalOrder64(x, y)
 }
 
-// TotalOrder128 is TotalOrder64 for decimal128.
+// TotalOrder128 is TotalOrder64 for decimal128, except that its legacy BID
+// NaN order remains by sign alone. UBDTotalOrder128 supplies the full NaN
+// order for decimal128.
 func TotalOrder128(x, y Uint128) bool {
 	return totalOrder128(x, y)
 }

@@ -65,7 +65,7 @@ const (
 	skipNaNText          = "contract: the character form of every NaN is NaN (sign, signaling and payload in the character form are out of scope)"
 	skipNaNPayloadSyntax = "contract: Parse rejects a NaN payload with Syntax (payloads in the character form are out of scope)"
 	skipNaNMalformed     = "contract: a string outside the grammar gives the canonical NaN with Syntax (Intel reads it as another NaN)"
-	skipNaNTotalOrder    = "contract: TotalOrder ignores the signaling bit and the payload of NaNs of one sign"
+	skipNaNTotalOrder    = "contract: decimal128 BID TotalOrder ignores the signaling bit and payload of NaNs of one sign"
 	skipGDAAbsNaN        = "op: GDA abs is arithmetic on a NaN (made quiet, sign kept); the contract's Abs is IEEE 754 abs, which copies the bits with the sign clear"
 	noteUnorderedNaN     = "result matches; Compare reports unordered and returns no NaN, so the NaN's payload is not compared"
 )
@@ -82,11 +82,11 @@ func gdaAbsDivergence(f *format, x, want, got bits) string {
 }
 
 // totalOrderNaNDivergence reports skipNaNTotalOrder for a comparetotal
-// whose operands x and y (made absolute for comparetotmag) are NaNs of one
-// sign, which the contract orders both ways, and whose target answered 0.
+// whose decimal128 operands x and y (absolute for comparetotmag) are NaNs
+// of one sign, which legacy BID orders both ways, and whose target answered 0.
 func totalOrderNaNDivergence(f *format, x, y bits, got string) string {
 	a, b := f.decode(x), f.decode(y)
-	if a.kind == notANumber && b.kind == notANumber && a.neg == b.neg && got == "0" {
+	if f.width == 128 && a.kind == notANumber && b.kind == notANumber && a.neg == b.neg && got == "0" {
 		return skipNaNTotalOrder
 	}
 	return ""
